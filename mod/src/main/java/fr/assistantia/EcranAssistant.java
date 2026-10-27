@@ -34,6 +34,8 @@ public class EcranAssistant extends Screen {
 
     private final List<Zone> zones = new ArrayList<>();
     private EditBox saisie;
+    private Button relancer;          // visible seulement quand l'assistant ne tourne pas
+    private boolean lanceurInconnu;
     private int defilement = 0;
     private String enAttente = null;
 
@@ -70,6 +72,8 @@ public class EcranAssistant extends Screen {
         }
         addRenderableWidget(Button.builder(Component.literal("Arbre EMI"), b -> ouvrirArbre())
                 .bounds(this.width - MARGE - 104, bas - 26, 104, 20).build());
+        relancer = addRenderableWidget(Button.builder(Component.literal("Relancer l'assistant"),
+                b -> lanceurInconnu = !Pont.relancer()).bounds(this.width - MARGE - 120, MARGE, 120, 18).build());
         setInitialFocus(saisie);
     }
 
@@ -157,9 +161,20 @@ public class EcranAssistant extends Screen {
         JsonObject ecran = ecran();
         int haut = MARGE + 26, bas = this.height - MARGE - 18 - 32;
         g.fill(MARGE - 4, haut - 4, this.width - MARGE + 4, bas, FOND);
-        String statut = Pont.texte(ecran, "statut");
-        String droite = !statut.isEmpty() ? statut : Pont.vrai(ecran, "serveur") ? "serveur ✔" : "";
-        g.drawString(this.font, droite, this.width - MARGE - this.font.width(droite), MARGE + 5, Hud.GRIS, false);
+        boolean actif = Pont.assistantActif();
+        relancer.visible = !actif && !Pont.relanceEnCours();
+        if (actif) {
+            lanceurInconnu = false;
+            String statut = Pont.texte(ecran, "statut");
+            String droite = !statut.isEmpty() ? statut : Pont.vrai(ecran, "serveur") ? "serveur ✔" : "";
+            g.drawString(this.font, droite, this.width - MARGE - this.font.width(droite), MARGE + 5, Hud.GRIS, false);
+        } else { // l'assistant ne tourne pas : rien ne répondra tant qu'il n'est pas relancé
+            String arret = Pont.relanceEnCours() ? "L'assistant démarre…" : lanceurInconnu
+                    ? "Lance « Lancer assistant.bat »" : "Assistant arrêté";
+            int fin = relancer.visible ? relancer.getX() - 6 : this.width - MARGE;
+            g.drawString(this.font, arret, fin - this.font.width(arret), MARGE + 5,
+                    Pont.relanceEnCours() ? Hud.GRIS : Hud.ROUGE, false);
+        }
         int largeur = this.width - 2 * MARGE;
         switch (onglet) {
             case 0 -> plan(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
@@ -296,7 +311,8 @@ public class EcranAssistant extends Screen {
             couleurs.add(Hud.BLANC);
         }
         if (enAttente != null && !dejaDedans) {
-            for (FormattedCharSequence l : this.font.split(Component.literal("Toi : " + enAttente + " (envoyé…)"), largeur)) {
+            String suite = Pont.assistantActif() ? " (envoyé…)" : " (en attente : l'assistant est arrêté)";
+            for (FormattedCharSequence l : this.font.split(Component.literal("Toi : " + enAttente + suite), largeur)) {
                 lignes.add(l);
                 couleurs.add(Hud.GRIS);
             }

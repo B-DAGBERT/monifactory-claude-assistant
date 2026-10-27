@@ -172,6 +172,34 @@ public final class Pont {
         return cibles;
     }
 
+    /** L'assistant tourne : il réécrit vue_mod.json au moins toutes les 5 secondes (dateLue en est la date). */
+    public static boolean assistantActif() {
+        return dateLue > 0 && System.currentTimeMillis() - dateLue < 20000;
+    }
+
+    private static long relanceA = 0;
+
+    /** Vrai pendant la minute qui suit « Relancer l'assistant » (le temps qu'il démarre). */
+    public static boolean relanceEnCours() {
+        return !assistantActif() && System.currentTimeMillis() - relanceA < 60000;
+    }
+
+    /** Relance l'assistant avec son lanceur (Lancer assistant.bat), connu tant qu'il a tourné une fois. */
+    public static boolean relancer() {
+        String lanceur = texte(vue, "lanceur");
+        if (lanceur.isEmpty() || !Files.exists(Path.of(lanceur)) || relanceEnCours()) {
+            return false;
+        }
+        try {
+            new ProcessBuilder("cmd", "/c", "start", "", lanceur).start();
+            relanceA = System.currentTimeMillis();
+            return true;
+        } catch (IOException e) {
+            LOGGER.warn("Assistant IA : relance impossible", e);
+            return false;
+        }
+    }
+
     /** Une recherche est en cours (« trouve-moi mes torches », « les minerais qui donnent du Iron Ingot »). */
     public static boolean rechercheActive() {
         return !cherches.isEmpty() || !motifs.isEmpty();

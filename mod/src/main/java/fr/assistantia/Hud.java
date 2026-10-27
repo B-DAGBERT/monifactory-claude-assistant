@@ -63,6 +63,9 @@ public final class Hud {
         }
         g.fill(-3, -3, LARGEUR + 3, hauteur + 1, 0xC80D1013);
         g.fill(-3, -3, -1, hauteur + 1, 0xFFFFC94A);
+        if (!arret().isEmpty()) {
+            y = ecrire(g, font, arret(), 2, y, LARGEUR - 4, Pont.relanceEnCours() ? GRIS : ROUGE, 2) + 1;
+        }
         if (Pont.vrai(hud, "recharger")) {
             g.drawString(font, "⚠ F3 + T pour recharger le script", 2, y, ROUGE, false);
             y += 11;
@@ -109,6 +112,9 @@ public final class Hud {
     /** Hauteur du panneau, pour dessiner son fond avant son contenu. */
     private static int hauteurPanneau(Font font, JsonObject hud) {
         int h = Pont.vrai(hud, "recharger") ? 11 : 0;
+        if (!arret().isEmpty()) {
+            h += Math.min(2, font.split(Component.literal(arret()), LARGEUR - 4).size()) * 10 + 1;
+        }
         for (JsonElement a : Pont.liste(hud, "alertes")) {
             h += Math.min(2, font.split(Component.literal(a.getAsString()), LARGEUR - 4).size()) * 10 + 1;
         }
@@ -184,6 +190,14 @@ public final class Hud {
             y += 10;
         }
         g.pose().popPose();
+    }
+
+    /** Ce qu'il faut savoir quand l'assistant ne tourne pas (rien s'il tourne). */
+    static String arret() {
+        if (Pont.assistantActif()) {
+            return "";
+        }
+        return Pont.relanceEnCours() ? "L'assistant démarre…" : "⚠ Assistant arrêté : touche Y pour le relancer";
     }
 
     /** Distance et flèche vers la destination, recalculées à chaque image avec l'orientation du joueur. */

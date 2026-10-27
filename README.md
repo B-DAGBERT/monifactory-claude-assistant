@@ -174,6 +174,7 @@ Le mod compilé se trouve dans `mod/build/libs/assistantia-1.0.0.jar`. La premi�
 
 ## Dépannage
 
+- **« Assistant arrêté » sur le panneau, ou plus de réponse** : l'application ne tourne plus. Touche **Y** puis **Relancer l'assistant**, ou double-clic sur `Lancer assistant.bat`. Une question posée juste avant est traitée dès qu'il redémarre.
 - **Rien ne s'affiche en jeu** :
   - vérifie que l'assistant tourne ;
   - fais **F3 + T** ;

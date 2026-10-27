@@ -1068,7 +1068,10 @@ def build_mod_view(app):
                             for i, (s, done) in enumerate(zip(plan["etapes"], progress["etapes"]))]
         main = next((recipes[t["item"]] for t in plan["cibles"] if t["item"] in recipes), None)
         screen["arbre"] = {"item": main["item"], "id": main.get("id")} if main else None
-    return {"v": 2, "hud": hud, "bulle": bubble, "besoins": sorted(needed), "guidage": beams,
+    # vie : le fichier est réécrit au moins toutes les 5 s, le mod sait ainsi que l'assistant tourne ;
+    # lanceur : de quoi le relancer depuis le jeu s'il s'arrête
+    return {"v": 2, "vie": int(now // 5), "lanceur": str(HERE / "Lancer assistant.bat"),
+            "hud": hud, "bulle": bubble, "besoins": sorted(needed), "guidage": beams,
             "marqueurs": markers, "ecran": screen, "recette": recipe_now, "recherche": search,
             "info": dict(app.info) if app.info else None}  # une copie : sinon la fiche complétée semble inchangée
 
@@ -1885,9 +1888,12 @@ class App:
             if path.exists() and path.stat().st_mtime != self.mod_request_time:
                 self.mod_request_time = path.stat().st_mtime
                 request = json.loads(path.read_text(encoding="utf-8"))
-                if self.mod_request_n is not None and request.get("n") != self.mod_request_n:
+                # Celle d'avant le démarrage est ignorée, sauf si elle est toute récente : posée pendant que
+                # l'assistant était arrêté, juste avant que le joueur le relance depuis le jeu
+                recent = time.time() * 1000 - float(request.get("n") or 0) < 45000
+                if request.get("n") != self.mod_request_n and (self.mod_request_n is not None or recent):
                     self.handle_mod_request(request)
-                self.mod_request_n = request.get("n")  # la première, d'avant le démarrage, est ignorée
+                self.mod_request_n = request.get("n")
         except (OSError, ValueError):
             pass  # fichier en cours d'écriture : on relira au prochain passage
         except Exception:
