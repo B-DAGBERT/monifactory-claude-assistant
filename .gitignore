@@ -1,0 +1,23 @@
+# Données personnelles créées à l'usage (partie, coffres, lieux, conversation, captures d'écran)
+assistant.log
+journal.jsonl
+lieux.json
+monde_memoire.json
+plan_ia.json
+session.json
+fiches.json
+captures/
+
+# Python
+__pycache__/
+*.pyc
+
+# Outils de compilation téléchargés (JDK, Forge MDK)
+outils/
+
+# Compilation du mod (le .jar est publié dans les Releases)
+mod/build/
+mod/.gradle/
+mod/run/
+mod/*.log
+mod/build.err

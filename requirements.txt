@@ -1,0 +1,7 @@
+keyboard
+mss
+Pillow
+numpy
+sounddevice
+faster-whisper
+edge-tts
