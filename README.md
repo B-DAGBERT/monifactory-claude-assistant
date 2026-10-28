@@ -11,14 +11,25 @@ Il utilise Claude via **Claude Code et ton abonnement Claude** (Pro ou Max) : pa
 ## Ce qu'il fait
 
 **Progression guidée**
-- Un objectif à la fois, choisi d'après tes quêtes et ce que tu possèdes, avec le **pourquoi**, les étapes dans l'ordre et l'arbre de fabrication.
+- Un **plan**, c'est un objectif principal (« Passer en LV ») choisi d'après tes quêtes et ce que tu possèdes, découpé en **objectifs** dans l'ordre.
+- L'**objectif** en cours est détaillé **étape par étape**, avec le **pourquoi** et l'arbre de fabrication.
 - Il met à jour en direct ce qui reste **à fabriquer**, **à récupérer dans tes coffres** et **à récolter**.
-- Une **feuille de route** (« passer en LV ») enchaîne les objectifs : le suivant se prépare tout seul.
-- Un panneau discret en jeu montre l'objectif, la progression, l'étape en cours, les 3 prochains objets et une flèche vers la destination.
+- Les étapes se cochent toutes seules quand tu les fais. Tu peux aussi les cocher ou les décocher à la main.
+- Un objectif terminé, le suivant du plan se prépare tout seul.
+- Un panneau discret en jeu montre le plan, l'objectif, la progression, l'étape en cours, les 3 prochains objets et une flèche vers la destination.
 
 **Tableau de bord (touche Y)**
-- Onglets Plan, Feuille de route, Base (machines vues par le serveur) et Discussion.
-- Tous les objets du plan apparaissent avec leur icône. Un clic ouvre la recette dans EMI, un clic droit ouvre la fiche « à quoi ça sert ».
+- **Objectif** :
+  - les étapes, à cocher d'un clic ;
+  - tous les objets avec leur icône : un clic ouvre la recette dans EMI, un clic droit la fiche « à quoi ça sert ».
+- **Plan** : l'objectif principal et ses objectifs (faits, en cours, à venir).
+- **Base** : les machines vues par le serveur.
+- **Discussion** : la conversation avec Claude.
+- **Réglages** : chaque option avec son état (✔ Activé / ✘ Désactivé), changeable d'un clic, et gardée d'une partie à l'autre.
+- Boutons :
+  - **Objectif suivant** : passer au prochain objectif du plan ;
+  - **Nouveau plan** : un nouvel objectif principal, découpé en objectifs ;
+  - **Valider l'étape** : cocher l'étape en cours.
 
 **Voix**
 - Tu parles en maintenant **F8**. La transcription se fait en local (faster-whisper) et la réponse est lue par une voix neuronale.
@@ -39,6 +50,11 @@ Il utilise Claude via **Claude Code et ton abonnement Claude** (Pro ou Max) : pa
   - le piège classique du mode Expert.
 - Pour une machine posée, elle donne aussi son **état en direct**.
 - La première fiche prend 15 à 20 s, ensuite elle est instantanée.
+
+**Caractéristiques des objets**
+- Le mod exporte ce que les recettes ne disent pas : durabilité, ce qu'un outil peut miner, vitesse, dégâts, armure, enchantements et l'infobulle complète du jeu.
+- Ça couvre ce que tu as sur toi et dans le coffre ouvert, en direct, ainsi que tous les outils, armes et armures du pack.
+- Claude peut donc répondre à « quelle pioche emporter en expédition ? » ou « ma Bronze Pickaxe mine-t-elle le diamant ? ».
 
 **Aide à la fabrication**
 - À l'établi, la fabrication que le plan attend apparaît au-dessus de l'interface, avec **Remplir** et **Tout (×N)**. Ces boutons remplissent la grille comme le « + » d'EMI.
@@ -78,7 +94,7 @@ Il utilise Claude via **Claude Code et ton abonnement Claude** (Pro ou Max) : pa
   - l'état du joueur ;
   - les quêtes FTB ;
   - toutes les recettes (via EMI), les coffres ouverts et les minerais vus.
-- **`mod/`** : le mod Forge côté client. Il dessine l'interface : panneau, écran Y, fiche I, surbrillance, contours, faisceaux et boutons de remplissage.
+- **`mod/`** : le mod Forge côté client. Il dessine l'interface : panneau, écran Y, fiche I, surbrillance, contours, faisceaux et boutons de remplissage. Il exporte aussi les caractéristiques des objets.
 - **`serveur/assistant_ia_serveur.js`** : un script KubeJS serveur optionnel, en lecture seule. Il envoie au client les coffres et l'état des machines autour du joueur.
 
 ## Prérequis
@@ -117,18 +133,19 @@ En solo, le script serveur va dans `kubejs/server_scripts/` de ton instance.
 |---|---|
 | **F8** (maintenir) | Parler à l'assistant, relâcher pour envoyer |
 | **Maj + F8** | Question écrite |
-| **F7** | Objectif suivant : Claude regarde ta progression et prépare un plan |
+| **F7** | Objectif suivant du plan (sans plan : Claude en prépare un) |
 | **Y** | Tableau de bord |
 | **I** | Fiche « à quoi ça sert » (objet survolé, bloc regardé ou objet en main) ; **Maj + I** : objet en main |
 | **F9** | Cacher ou réafficher le panneau (coupe aussi la voix) |
-| **F10** | Voix on/off |
+| **F10** | Lecture à voix haute on/off (désactivée par défaut) |
 | **Ctrl + F8** | Nouvelle conversation |
 
 Y et I se changent dans *Options > Contrôles > Assistant IA*. Les touches F se changent en haut de `assistant_mc.py`.
 
 **Exemples de phrases (en maintenant F8)**
 
-- « Fais-moi une feuille de route pour passer en LV » · « Ajoute la Steam Foundry juste après » · « Objectif suivant »
+- « Fais-moi un plan pour passer en LV » · « Ajoute la Steam Foundry juste après » · « Objectif suivant »
+- « Fais-moi un objectif pour un Solid Boiler de plus » · « Valide l'étape » · « Coupe les alertes des machines »
 - « Régénère le plan pour la quête Steam Grinder » · « Planifie-moi une usine de 2 Steel par minute »
 - « Où est mon Alloy Smelter ? » · « Trouve-moi mes torches » · « C'est bon, enlève la surbrillance »
 - « Retiens qu'ici c'est ma base » · « Ramène-moi à mon filon de Galena »
@@ -136,19 +153,37 @@ Y et I se changent dans *Options > Contrôles > Assistant IA*. Les touches F se 
 
 ## Réglages
 
-Ils se trouvent en haut de `assistant_mc.py`.
+**Dans le jeu**, écran Y > Réglages :
+- lecture à voix haute (désactivée par défaut) ;
+- panneau en jeu ;
+- briefing de reprise ;
+- conseils automatiques (dangers, mort, nuit loin de la base, faim, inventaire plein, aide si tu n'avances plus) ;
+- annonces de progression ;
+- alertes des machines ;
+- objectif suivant automatique ;
+- surbrillance des besoins ;
+- faisceau de guidage ;
+- boutons Remplir.
+
+Tu peux aussi les demander à la voix (« coupe les alertes des machines »).
+
+Les **réglages avancés** se trouvent en haut de `assistant_mc.py` :
 
 | Réglage | Rôle |
 |---|---|
 | `MINECRAFT_DIR` | Dossier de l'instance Monifactory |
-| `MODEL_PLAN`, `MODEL_QUESTION`, `MODEL_QUICK` | Modèles Claude utilisés : `sonnet` pour réfléchir, `haiku` pour les questions simples ; `opus` est possible mais plus lent et consomme plus de quota |
-| `AUTO_NEXT` | Préparer tout seul l'objectif suivant |
-| `COACH` | `"calme"` (dangers seulement), `"normal"` ou `"bavard"` |
-| `BRIEFING`, `BRIEFING_PAUSE` | Briefing de reprise, après combien de minutes sans jouer |
+| `MODEL_PLAN`, `MODEL_QUESTION`, `MODEL_QUICK` | Modèles Claude : `sonnet` pour les plans et tes questions, `haiku` pour le coach. `haiku` en question est encore plus rapide mais se trompe plus ; `opus` est plus fort mais plus lent et consomme plus de quota |
+| `EFFORT_QUESTION`, `EFFORT_PLAN` | Réflexion avant de répondre : `"low"` (rapide), `"medium"`, `"high"` |
+| `COACH` | Quand les conseils sont activés : `"calme"` (dangers seulement), `"normal"` ou `"bavard"` |
+| `BRIEFING_PAUSE` | Briefing de reprise après combien de minutes sans jouer |
 | `STUCK_MINUTES` | Au bout de combien de minutes sans avancer le coach propose son aide |
 | `SEARCH_MINUTES` | Durée de la surbrillance d'une recherche |
-| `VOICE`, `VOICE_SPEED`, `SPEAK` | Voix de lecture (Microsoft Edge, gratuite) et vitesse |
+| `VOICE`, `VOICE_SPEED` | Voix de lecture (Microsoft Edge, gratuite) et vitesse |
 | `WHISPER_MODEL` | `"small"` comprend mieux, `"base"` est plus rapide |
+
+**Reconnaissance vocale sur carte graphique NVIDIA** (optionnel, environ 10 fois plus rapide) : installe cuBLAS avec `python -m pip install nvidia-cublas-cu12` (550 Mo). L'assistant l'utilise tout seul au démarrage suivant ; `assistant.log` indique « Reconnaissance vocale prête (carte graphique…) ».
+
+**Vitesse** : l'assistant garde Claude ouvert entre deux questions, donc il n'a pas à redémarrer. Il lui joint aussi les recettes des objets cités, pour qu'il n'ait pas à les chercher. `assistant.log` note le temps de chaque question (transcription, premier mot, fin).
 
 ## Confidentialité et quota
 

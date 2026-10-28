@@ -12,6 +12,7 @@ matériaux manquants et coffres où les trouver, mis à jour en direct.
 """
 
 import ctypes
+import faulthandler
 import fnmatch
 import glob
 import json
@@ -44,16 +45,34 @@ HOTKEY_TYPE = "shift+f8"
 HOTKEY_NEW = "ctrl+f8"
 HOTKEY_HIDE = "f9"
 HOTKEY_VOICE = "f10"
-MODEL_PLAN = "sonnet"       # "opus" : plus fort, mais plus lent et consomme plus ton quota
-MODEL_QUESTION = "sonnet"   # questions qui demandent de réfléchir (recettes, progression...)
-MODEL_QUICK = "haiku"       # questions simples (« j'ai des torches ? », « guide-moi à la base »)
-AUTO_NEXT = True            # prépare tout seul l'objectif suivant quand le précédent est terminé
+MODEL_PLAN = "sonnet"       # plans et objectifs ; "opus" : plus fort, mais plus lent et consomme plus ton quota
+MODEL_QUESTION = "sonnet"   # tes questions ; "haiku" : encore plus rapide, mais se trompe plus sur les recettes
+MODEL_QUICK = "haiku"       # messages du coach et briefing
+EFFORT_QUESTION = "low"     # réflexion avant de répondre : "low" (rapide), "medium", "high"
+EFFORT_PLAN = "medium"
 COACH = "normal"            # "calme" : seulement les dangers ; "normal" ; "bavard" : il commente tout
-BRIEFING = True             # un point rapide à voix haute quand tu reprends la partie
-BRIEFING_PAUSE = 20         # ... seulement après au moins 20 minutes sans jouer
+BRIEFING_PAUSE = 20         # briefing de reprise seulement après au moins 20 minutes sans jouer
 STUCK_MINUTES = 15          # au bout de combien de minutes sans avancer le coach propose son aide
 SEARCH_MINUTES = 10         # durée de la surbrillance demandée (« trouve-moi mes torches »)
-SPEAK = True                # lire les réponses à voix haute
+# Réglages modifiables dans le jeu (écran Y > Réglages) et gardés dans reglages.json :
+# clé : (nom affiché, ce que ça fait, valeur par défaut)
+SETTINGS = {
+    "voix": ("Lecture à voix haute", "Les réponses et les messages de l'assistant sont lus à voix haute.", False),
+    "panneau": ("Panneau en jeu", "L'objectif, l'étape en cours et les objets utiles, en haut à gauche.", True),
+    "briefing": ("Briefing de reprise", "Quand tu reprends la partie, un point sur où tu en étais.", True),
+    "coach": ("Conseils automatiques", "Dangers, mort, nuit loin de la base, faim, inventaire plein, aide si tu "
+                                       "n'avances plus.", True),
+    "progression": ("Annonces de progression", "Étapes et quêtes terminées, nouveaux filons, machines retenues.",
+                    True),
+    "machines": ("Alertes des machines", "Boiler à sec, machine en attente, multibloc cassé : messages, panneau "
+                                         "et faisceaux au-dessus des machines.", True),
+    "enchainer": ("Objectif suivant automatique", "Un objectif terminé, le suivant du plan se prépare tout seul.",
+                  True),
+    "surbrillance": ("Surbrillance des besoins", "Les objets dont l'objectif a besoin brillent en vert dans les "
+                                                 "coffres.", True),
+    "faisceaux": ("Faisceau de guidage", "Le faisceau bleu vers la destination (coffre, filon, lieu demandé).", True),
+    "remplir": ("Boutons Remplir", "À l'établi, la fabrication attendue avec Remplir et Tout.", True),
+}
 # Voix : fr-FR-VivienneMultilingualNeural (femme) ou fr-FR-RemyMultilingualNeural (homme) prononcent
 # aussi bien les noms anglais du jeu ; autres : fr-FR-DeniseNeural, fr-FR-HenriNeural, fr-FR-EloiseNeural
 VOICE = "fr-FR-VivienneMultilingualNeural"
@@ -65,12 +84,12 @@ TIMEOUT = 420               # secondes max par réponse
 
 HERE = Path(__file__).resolve().parent
 CAPTURES = HERE / "captures"
-SESSION_FILE = HERE / "session.json"
 PLAN_FILE = HERE / "plan_ia.json"
 PLACES_FILE = HERE / "lieux.json"
 JOURNAL_FILE = HERE / "journal.jsonl"
 WORLD_FILE = HERE / "monde_memoire.json"   # ce que le serveur a vu (coffres, machines), gardé entre deux parties
 INFO_FILE = HERE / "fiches.json"           # fiches « à quoi ça sert » déjà rédigées par Claude (touche I)
+SETTINGS_FILE = HERE / "reglages.json"
 COACH_LEVELS = {"calme": 0, "normal": 1, "bavard": 2}
 DANGER, USEFUL, CHATTY = 0, 1, 2  # niveau minimal du coach pour chaque message
 LOG_FILE = HERE / "assistant.log"
@@ -94,16 +113,24 @@ ce qu'il veut), termine ta réponse par une ligne <actions>[...]</actions> conte
 {"type": "oublier_coffre", "proche": true} pour le coffre mémorisé le plus proche du joueur. Un coffre cassé \
 près du joueur est retiré automatiquement après quelques secondes : s'il figure dans « coffres retirés \
 automatiquement », ne retire rien d'autre.
-- {"type": "nouveau_plan", "demande": "ce que veut le joueur, par exemple : la quête Steam Grinder"} : remplacer \
-l'objectif affiché par un nouveau plan.
-- {"type": "effacer_plan"} : retirer l'objectif affiché.
-- {"type": "feuille_de_route", "objectifs": [{"titre": "titre court", "demande": "ce qu'il faut faire"}]} : \
-remplacer la feuille de route, la suite d'objectifs qui viendront après l'objectif affiché (par exemple tout \
-ce qu'il faut pour passer en LV, dans l'ordre, 3 à 10 objectifs). Elle remplace tout : ne l'accompagne pas \
+Vocabulaire : le PLAN est l'objectif principal (« Passer en LV »), découpé en OBJECTIFS ; l'objectif en cours \
+est détaillé en ÉTAPES.
+- {"type": "nouveau_plan", "demande": "passer en LV"} : remplacer le plan par un nouveau (sans "demande" : le \
+plus utile maintenant) ; Claude le découpe en objectifs et détaille le premier.
+- {"type": "nouvel_objectif", "demande": "fabriquer un LP Steam Solid Boiler de plus"} : détailler tout de \
+suite un objectif précis que le joueur demande (une quête, une machine, un objet) ; il passe avant l'objectif \
+en cours, qui reprendra juste après.
+- {"type": "objectif_suivant"} : passer à l'objectif suivant du plan.
+- {"type": "refaire_objectif"} : refaire le détail de l'objectif en cours (étapes plus précises, machine \
+oubliée) quand le joueur le trouve flou, faux ou incomplet.
+- {"type": "modifier_plan", "objectifs": [{"titre": "titre court", "demande": "ce qu'il faut faire"}]} : \
+remplacer les objectifs qui restent à faire dans le plan (dans l'ordre, 3 à 10). Ne l'accompagne pas \
 d'ajouter_objectif.
 - {"type": "ajouter_objectif", "titre": "...", "demande": "...", "position": 1} (position 1 = juste après \
-l'objectif affiché ; sans position, à la fin) et {"type": "retirer_objectif", "titre": "..."}.
-- {"type": "objectif_suivant"} : passer tout de suite au prochain objectif de la feuille de route.
+l'objectif en cours ; sans position, à la fin du plan) et {"type": "retirer_objectif", "titre": "..."}.
+- {"type": "valider_etape"} : cocher l'étape en cours (ou {"type": "valider_etape", "numero": 2}) ; \
+{"type": "decocher_etape", "numero": 2}.
+- {"type": "effacer_objectif"} (retirer l'objectif en cours) et {"type": "effacer_plan"} (tout retirer).
 - {"type": "planifier_usine", "demande": "2 Steel Ingot par minute"} : calculer une petite usine pour un débit \
 voulu (nombre de machines, Steam ou énergie, boilers, ordre de construction) et l'afficher comme objectif.
 - {"type": "memoriser_lieu", "nom": "base"} : retenir la position actuelle du joueur sous ce nom.
@@ -119,7 +146,8 @@ torches ») ou demande une surbrillance. "objets" : des id exacts, ou avec * («
 famille d'objets (« les minerais qui donnent du Iron Ingot »), cherche d'abord dans recettes_*.json ce qui donne \
 ce résultat (four, Blast Furnace, broyage...) et liste tous les id trouvés. {"type": "effacer_surbrillance"} \
 quand il a fini (« c'est bon », « enlève la surbrillance »).
-- {"type": "affichage", "visible": false} et {"type": "voix", "active": false} (true pour réactiver).
+- {"type": "reglage", "cle": "voix", "valeur": false} : changer un réglage. Clés : """ + ", ".join(
+    f"{key} ({name})" for key, (name, _, _) in SETTINGS.items()) + """.
 Quand tu fais une action, dis-le en une phrase courte."""
 
 SYSTEM_PROMPT = """Tu es un assistant intégré au jeu Minecraft du joueur. Il joue au modpack Monifactory \
@@ -132,6 +160,15 @@ et leur description).
 Cherche-les avec Grep, ce sont les vraies recettes du mode Expert.
 - stockage.txt : le contenu des coffres que le joueur a ouverts, une ligne par objet \
 "id | quantité | x y z | dimension | bloc | date". Cherche dedans avec Grep pour dire où aller chercher un objet.
+- inventaire_details.txt : chaque objet que le joueur a sur lui (en main, barre, sac, armure portée) et dans le \
+coffre ouvert, avec ses caractéristiques : durabilité restante, ce qu'un outil peut miner (Stone, Iron Ore, \
+Diamond Ore, Obsidian, Ancient Debris : ✔ ou ✘), vitesse, dégâts, armure, enchantements et infobulle complète.
+- stats_objets.txt : les mêmes caractéristiques pour TOUS les outils, armes et armures du pack, une ligne par \
+objet. Cherche-y avec Grep (exemple : "_pickaxe |") pour comparer des outils que le joueur n'a pas encore.
+- machines_recettes.txt : quelle machine fait quelles recettes, une ligne par catégorie \
+"catégorie | nom | N recettes | machines (ids)". Les recettes de recettes_*.json commencent par leur catégorie, \
+pas par le nom de la machine : pour savoir à quoi sert une machine (un multibloc comme la Steam Foundry), \
+cherche son id ici, puis les recettes de ses catégories.
 Règles :
 - Réponds en français, mais écris tous les noms d'objets, de machines et de fluides en anglais, \
 exactement comme dans le jeu.
@@ -141,9 +178,12 @@ affichées dans le jeu et lues à voix haute. Si le joueur demande une liste, un
 (minecraft:flint) : écris le nom du jeu (Flint).
 - Quand on te demande si le joueur a un objet ou où le trouver, regarde son inventaire ET ses coffres (liste \
 fournie avec la question) et donne les coordonnées du coffre.
-- Vérifie une recette dans recettes_*.json avant de la donner. Si tu n'es pas sûr, dis-le."""
+- Vérifie une recette dans recettes_*.json avant de la donner. Si tu n'es pas sûr, dis-le.
+- Pour une question sur les caractéristiques d'un objet (durabilité, niveau de minage, vitesse, dégâts, armure, \
+quelle pioche choisir), lis inventaire_details.txt et cherche dans stats_objets.txt : ne dis pas que tu n'y as \
+pas accès. Si ces fichiers manquent, le mod du jeu n'est pas à jour : dis-le."""
 
-PLAN_REQUEST = """Prépare mon prochain objectif de progression.
+PLAN_REQUEST = """Prépare mon prochain objectif de progression, étape par étape.
 Choisis l'objectif le plus utile maintenant (en priorité une quête principale disponible). Vérifie les \
 recettes avec Grep dans recettes_*.json (exemple de motif : "=> [0-9x ]*gtceu:steel_ingot") et tiens compte \
 de mon inventaire et de mes coffres.
@@ -157,25 +197,38 @@ Réponds UNIQUEMENT avec ce JSON, sans texte autour ni bloc de code :
    "entrees": [{{"item": "id", "nom": "Nom anglais", "quantite": 2}}],
    "outils": [{{"item": "id", "nom": "Nom anglais"}}]}}],
  "cible": null,
- "resume": "1 ou 2 phrases à lire à voix haute : quoi faire et pourquoi",
- "feuille_de_route": [{{"titre": "titre court", "demande": "ce qu'il faudra faire"}}]}}
+ "resume": "1 ou 2 phrases à lire à voix haute : quoi faire et pourquoi"}}
 Règles :
 - "cibles" : les 1 à 4 objets à avoir à la fin de l'objectif (si je dois construire un multibloc, ses blocs). \
-Ne me fais pas refabriquer une machine que j'ai déjà posée (liste fournie).
+"quantite" = combien j'en aurai AU TOTAL à la fin : si j'en ai déjà (sur moi ou posés, liste fournie) et que \
+j'en veux d'autres, compte-les. Ne me fais pas refabriquer une machine déjà posée, sauf si je le demande.
 - "recettes" : une recette pour CHAQUE objet à fabriquer (cibles et intermédiaires), avec les quantités exactes \
 du pack ("sortie" = nombre d'objets produits par une fabrication). Les objets sans recette dans la liste sont les \
 matières premières : arrête-toi aux matériaux simples (lingots, minerais, poussières, bois, argile…).
 - "outils" : les outils non consommés (Hammer, File, Screwdriver, Saw, Wrench, Mortar…), jamais dans "entrees". \
 Si j'en ai un dans mon inventaire, donne son id exact.
-- "etapes" : 3 à 6 étapes dans l'ordre, de moins de 70 caractères, rédigées en français avec les noms d'objets \
-en anglais comme dans le jeu (« Fabrique 3 Iron Rods »), jamais les ids. \
-"item" et "quantite" servent à cocher l'étape automatiquement quand je l'ai faite.
+- "recettes" > "machine" : le nom exact de la machine (« LP Steam Compressor », pas « Compressor »). Si une \
+recette demande une machine que je n'ai pas (machines posées fournies), l'objectif DOIT d'abord me la faire \
+fabriquer : sa recette dans "recettes", elle dans "cibles", et une étape pour la fabriquer AVANT celle qui s'en sert.
+- "etapes" : 4 à 12 étapes, UNE action concrète par étape (une fabrication, une cuisson, un passage en machine, \
+une récolte, aller chercher dans un coffre), dans l'ordre où je les fais, en partant de ce que j'ai, sans sauter \
+aucune fabrication intermédiaire (chaque objet de "recettes" que je n'ai pas a son étape). Chaque étape \
+dit quoi, combien et avec quoi (« Passe 198 Fireclay Dust au LP Steam Compressor », « Cuis 198 Compressed \
+Fireclay au Furnace »), en moins de 90 caractères, en français avec les noms d'objets en anglais comme dans le jeu, \
+jamais les ids. Pas d'étape qui en regroupe plusieurs. "item" et "quantite" servent à cocher l'étape \
+automatiquement quand je l'ai faite.
 - "cible" : {{"label": "...", "x": 0, "y": 0, "z": 0}} seulement si je dois aller à un endroit précis \
 (x et z à null si seule la hauteur compte, par exemple pour miner à la bonne couche), sinon null.
-- "feuille_de_route" : seulement si je n'en ai pas encore (voir le contexte) : les 4 à 8 objectifs qui suivront \
-celui-ci, dans l'ordre de la progression du pack. Sinon, une liste vide.
 
 {context}"""
+
+# Ajouté à PLAN_REQUEST pour « Nouveau plan » : l'objectif principal, découpé en objectifs, et le premier détaillé
+NEW_PLAN_EXTRA = """
+C'est un NOUVEAU PLAN : un objectif principal (par exemple « Passer en LV », « Steam Foundry et ses machines ») \
+découpé en 3 à 8 objectifs, dans l'ordre de la progression du pack. Ajoute au JSON :
+ "plan": {"titre": "l'objectif principal, court", "pourquoi": "1 phrase : ce qu'il débloque",
+  "objectifs": [{"titre": "titre court", "demande": "ce qu'il faudra faire, en une phrase"}]}
+Le premier de "objectifs" est l'objectif que tu détailles dans ce JSON."""
 
 
 FACTORY_REQUEST = """Planifie une petite usine : {demande}.
@@ -196,7 +249,8 @@ chiffres clés (débit obtenu, Steam nécessaire, nombre de boilers)."""
 INFO_REQUEST = """Fiche « à quoi ça sert » pour : {nom} (id {item}).
 Dis à quoi sert cet objet, ce bloc ou cette machine dans Monifactory en mode Expert, et comment s'en servir. \
 Regarde au besoin dans recettes_*.json ce qu'il fabrique ou à quoi il sert (2 recherches au plus : la fiche \
-doit arriver vite).
+doit arriver vite). Pour un outil, une arme ou une armure, donne ses chiffres clés (durabilité, ce qu'il mine, \
+vitesse, dégâts, armure) d'après sa ligne dans stats_objets.txt.
 Réponds UNIQUEMENT avec ce JSON, sans texte autour :
 {{"sert": "1 ou 2 phrases : son rôle, et à quel moment de la progression il compte",
  "utilise": ["2 à 4 étapes courtes et concrètes : le poser, l'alimenter (Steam, EU, eau...), brancher ses \
@@ -373,6 +427,109 @@ def load_craftable(recipes_dir):
                 continue
             items.add(output[-1])
     return items
+
+
+class RecipeIndex:
+    """Les recettes du pack rangées par objet produit et par catégorie, et les machines qui font chaque catégorie,
+    pour donner à Claude ce qui concerne les objets cités dans une question : comment les fabriquer et, pour une
+    machine, ce qu'elle fait. Il n'a plus à le chercher lui-même (un aller-retour de 3 à 5 s de moins), et il sait
+    à quoi sert une machine même quand ses recettes ne portent pas son nom (la Steam Foundry fait celles d'une autre
+    catégorie)."""
+    # Mots de la question qui ne sont jamais à eux seuls un nom d'objet
+    IGNORED = {"comment", "pour", "avec", "dans", "faire", "fais", "fabrique", "fabriquer", "quoi", "quel", "quelle",
+               "est", "que", "qui", "les", "des", "une", "mon", "mes", "ton", "tes", "sur", "par", "plus", "moins",
+               "peux", "faut", "trouve", "where", "what", "how", "make", "the", "and"}
+
+    def __init__(self, recipes_dir=None):
+        self.by_output = defaultdict(list)    # « gtceu:bronze_plate » -> lignes « catégorie | entrées => sorties | id »
+        self.by_category = defaultdict(list)  # « gtceu:alloy_smelter » -> ses recettes
+        self.by_name = defaultdict(set)       # « bronze_plate » -> {« gtceu:bronze_plate »}
+        self.machine_of = defaultdict(list)   # machine -> [(catégorie, nom, nombre de recettes)]
+        self.machines = defaultdict(list)     # catégorie -> machines qui la font
+        self.category_of = {}                 # id de recette -> sa catégorie
+        if recipes_dir is None:
+            return
+        for path in recipes_dir.glob("recettes_*.json"):
+            if path.stem == "recettes_info":
+                continue
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip().strip('",')
+                parts = line.split(" | ")
+                self.by_category[parts[0]].append(line)
+                if len(parts) > 2:
+                    self.category_of[parts[2]] = parts[0]
+                outputs = line.partition(" => ")[2].split(" | ")[0]
+                for output in outputs.split(" + ")[:1]:
+                    item = output.strip().split(" ")[-1]
+                    if ":" in item:
+                        self.by_output[item].append(line)
+                        self.by_name[item.split(":")[-1]].add(item)
+        machines = recipes_dir / "machines_recettes.txt"  # écrit par le mod : quelle machine fait quelles recettes
+        if machines.exists():
+            for line in machines.read_text(encoding="utf-8").splitlines():
+                parts = line.split(" | ")
+                if line.startswith("#") or len(parts) < 4:
+                    continue
+                category, name, count = parts[0], parts[1], parts[2].split(" ")[0]
+                for machine in filter(None, (m.strip() for m in parts[3].split(","))):
+                    self.machine_of[machine].append((category, name, count))
+                    self.machines[category].append(machine)
+                    self.by_name[machine.split(":")[-1]].add(machine)
+
+    def machines_for(self, recipe_id):
+        """La catégorie d'une recette et les machines qui la font (les moins chères d'abord : vapeur, puis LV...)."""
+        category = self.category_of.get(recipe_id or "")
+        tiers = ("lp_steam", "steam", "hp_steam", "primitive", "lv_", "mv_", "hv_")
+        machines = sorted(self.machines.get(category, []), key=lambda m: next(
+            (i for i, t in enumerate(tiers) if t in m.split(":")[-1]), len(tiers)))
+        if not machines and category and category.startswith("gtceu:"):
+            # Sans la liste du mod : les machines GregTech portent le nom de leur catégorie (gtceu:lp_steam_compressor)
+            kind = category.split(":")[1]
+            machines = [m for m in (f"gtceu:{t}{kind}" for t in ("lp_steam_", "hp_steam_", "lv_", "mv_", "hv_", "ev_"))
+                        if m in self.by_output]
+        return category, machines
+
+    def items_in(self, text, limit=3):
+        """Les objets du pack cités dans un texte (« Bronze Plate », « bronze plate »), les noms longs d'abord."""
+        words = re.findall(r"[a-z0-9]+", text.lower())
+        found, used = [], set()
+        for size in (4, 3, 2, 1):
+            for i in range(len(words) - size + 1):
+                if used & set(range(i, i + size)):
+                    continue
+                key = "_".join(words[i:i + size])
+                if size == 1 and (len(key) < 4 or key in self.IGNORED):
+                    continue
+                if key not in self.by_name and key.endswith("s"):  # « bronze gears » -> bronze_gear
+                    key = key[:-1]
+                ids = sorted(self.by_name.get(key, ()), key=lambda x: (not x.startswith(("gtceu:", "minecraft:")), x))
+                if ids:
+                    found.append(ids[0])
+                    used |= set(range(i, i + size))
+        return found[:limit]
+
+    def about(self, item):
+        """Ce que le pack dit d'un objet : comment le fabriquer et, si c'est une machine, ce qu'elle fait."""
+        lines = sorted(self.by_output.get(item, []), key=lambda r: (
+            not r.startswith(("minecraft:crafting", "minecraft:smelting")), "nuclearcraft" in r, len(r)))
+        text = f"{item} se fabrique ainsi :\n" + "\n".join(f"  {r}" for r in lines[:6]) if lines else ""
+        jobs = [j for j in self.machine_of.get(item, []) if not j[0].endswith(("multiblock_info", "_recycling"))]
+        if jobs:
+            text += (f"\n{item} est une machine : elle fait les recettes des catégories suivantes (une recette de la "
+                     "catégorie gtceu:alloy_smelter se fait dans toutes les machines de cette catégorie) :")
+            for category, name, count in jobs[:4]:
+                examples = sorted(self.by_category.get(category, []), key=len)[:6]
+                text += f"\n  « {name} » ({category}, {count} recettes), par exemple :" + "".join(
+                    f"\n    {r}" for r in examples)
+        return text.strip()
+
+    def hint(self, text):
+        """Ce qui concerne les objets cités, prêt à joindre à la question (l'établi et le four d'abord)."""
+        parts = [part for part in map(self.about, self.items_in(text)) if part]
+        if not parts:
+            return ""
+        return ("Ce que le pack dit des objets de ma question (déjà cherché dans recettes_*.json et "
+                "machines_recettes.txt : inutile de le rechercher, sauf pour un autre objet) :\n" + "\n".join(parts))
 
 
 def block_name(block_id):
@@ -676,11 +833,19 @@ def parse_plan(text):
     target = data.get("cible")
     if not isinstance(target, dict) or not target.get("label"):
         target = None
-    roadmap = [{"titre": str(r.get("titre") or r.get("demande"))[:60], "demande": str(r.get("demande") or r.get("titre"))}
-               for r in data.get("feuille_de_route") or [] if isinstance(r, dict) and (r.get("titre") or r.get("demande"))]
+    main = data.get("plan") if isinstance(data.get("plan"), dict) else {}
+    objectives = [objective_entry(o) for o in main.get("objectifs") or [] if isinstance(o, dict)]
     return {"objectif": str(data.get("objectif", "")), "pourquoi": str(data.get("pourquoi", "")), "etapes": steps,
             "cibles": [entry(c) for c in data.get("cibles") or [] if c.get("item")],
-            "recettes": recipes, "cible": target, "resume": str(data.get("resume", "")), "feuille_de_route": roadmap}
+            "recettes": recipes, "cible": target, "resume": str(data.get("resume", "")),
+            "plan": {"titre": str(main.get("titre") or ""), "pourquoi": str(main.get("pourquoi") or ""),
+                     "objectifs": objectives} if objectives else None}
+
+
+def objective_entry(data, state="a_faire"):
+    """Un objectif du plan : titre court, ce qu'il faudra faire, et où on en est (a_faire, en_cours, fait)."""
+    title = str(data.get("titre") or data.get("demande") or "Objectif")
+    return {"titre": title[:60], "demande": str(data.get("demande") or title), "etat": data.get("etat") or state}
 
 
 def item_names(plan):
@@ -708,23 +873,37 @@ def has_tool(tool, have):
                                     for i, n in have.items())
 
 
-def evaluate(plan, have, reached, done_steps, stored=None, placed=None):
-    """Où en est le plan : objets encore à fabriquer, à récupérer dans les coffres, matières premières qui
-    manquent, étapes faites.
+def evaluate(plan, have, reached, done_steps, stored=None, placed=None, undone=(), obtained=None):
+    """Où en est l'objectif : objets encore à fabriquer, à récupérer dans les coffres, matières premières qui
+    manquent, étapes faites, et combien il faut encore de chaque objet (ça baisse à chaque fabrication : une Bronze
+    Plate faite, c'est 2 Bronze Ingots de moins à trouver).
 
-    reached (cibles déjà obtenues) et done_steps (étapes déjà cochées) sont mémorisés : une cible posée
-    dans le monde, ou un objet intermédiaire consommé, ne fait pas revenir en arrière. stored : objets dans
-    les coffres ; placed : machines déjà posées (une cible posée compte comme obtenue)."""
+    reached (cibles déjà obtenues) et done_steps (étapes cochées, à la main ou toutes seules) sont mémorisés :
+    une cible posée dans le monde, ou un objet intermédiaire consommé, ne fait pas revenir en arrière. undone :
+    les étapes que le joueur a décochées à la main. stored : objets dans les coffres ; placed : machines déjà
+    posées. obtained : ce que le joueur a obtenu de chaque cible depuis le début de l'objectif, même s'il l'a déjà
+    posée ailleurs (les blocs d'un multibloc, par exemple). Une cible « deja » (le joueur en avait déjà assez quand
+    l'objectif a été créé) en demande autant de plus : « un Solid Boiler » quand deux sont posés, c'est un troisième."""
     recipes = {r["item"]: r for r in plan["recettes"]}
-    placed = placed or {}
-    reached = set(reached) | {t["item"] for t in plan["cibles"]
-                              if max(have.get(t["item"], 0), placed.get(t["item"], 0)) >= t["quantite"]}
-    stock, chests = dict(have), dict(stored or {})
+    placed, stored, obtained = placed or {}, stored or {}, obtained or {}
+
+    def goal(t):
+        return t["quantite"] + t.get("deja", 0)
+
+    def count(t):  # sur lui + dans ses coffres + posé, ou ce qu'il en a obtenu s'il l'a posé ailleurs depuis
+        item = t["item"]
+        return max(have.get(item, 0) + stored.get(item, 0) + placed.get(item, 0), obtained.get(item, 0))
+
+    reached = set(reached)
+    stock, chests = dict(have), dict(stored)
     to_make, from_chests, missing, tools = defaultdict(int), defaultdict(int), defaultdict(int), {}
+    from_stock = defaultdict(int)  # ce que la suite de l'objectif prend dans son inventaire
 
     def need(item, quantity, depth=0):
         used = min(stock.get(item, 0), quantity)  # d'abord ce que le joueur a sur lui
         stock[item] = stock.get(item, 0) - used
+        if used:
+            from_stock[item] += used
         quantity -= used
         used = min(chests.get(item, 0), quantity)  # puis ce qu'il a dans ses coffres
         if used:
@@ -744,9 +923,19 @@ def evaluate(plan, have, reached, done_steps, stored=None, placed=None):
         for e in recipe["entrees"]:
             need(e["item"], crafts * e["quantite"], depth + 1)
 
-    for target in plan["cibles"]:
-        if target["item"] not in reached:
-            need(target["item"], target["quantite"])
+    # Une cible qui sert aussi à en fabriquer une autre (6 Steam Machine Casings dans la recette de la Steam Foundry,
+    # en plus des 20 du multibloc) passe en dernier : ce que l'autre fabrication prend ne compte pas pour elle.
+    ingredients = {e["item"] for r in plan["recettes"] for e in r["entrees"]}
+    counts = {}
+    for target in sorted(plan["cibles"], key=lambda t: t["item"] in ingredients):
+        item = target["item"]
+        counts[item] = max(0, count(target) - from_stock.get(item, 0) - from_chests.get(item, 0))
+        if item in reached:
+            continue
+        if counts[item] >= goal(target):
+            reached.add(item)
+        else:  # need() reprend ce qui lui reste sur lui et dans ses coffres, puis fabrique le reste
+            need(item, goal(target) - counts[item] + stock.get(item, 0) + chests.get(item, 0))
     for tool in list(tools):  # un outil sert à toutes les fabrications : il en faut un seul
         if not has_tool(tool, have):
             need(tool, 1)
@@ -754,13 +943,16 @@ def evaluate(plan, have, reached, done_steps, stored=None, placed=None):
     complete = bool(plan["cibles"]) and all(t["item"] in reached for t in plan["cibles"])
     tree = set(recipes) | {t["item"] for t in plan["cibles"]} | {
         e["item"] for r in plan["recettes"] for e in r["entrees"]}
+    targets = {t["item"] for t in plan["cibles"]}
     steps = []
     for i, step in enumerate(plan["etapes"]):
         item = step.get("item")
-        done = complete or i in done_steps or bool(item) and (
-            have.get(item, 0) >= (step.get("quantite") or 1)
-            or (item in tree and item not in to_make and item not in missing))
-        steps.append(done)
+        if item in targets:  # l'étape qui fabrique une cible est faite quand la cible l'est
+            made = item in reached
+        else:
+            made = bool(item) and (have.get(item, 0) >= (step.get("quantite") or 1)
+                                   or (item in tree and item not in to_make and item not in missing))
+        steps.append(complete or i in done_steps or made)
     # Une étape qui ne produit rien est faite dès qu'une étape suivante l'est
     later_done = False
     for i in range(len(steps) - 1, -1, -1):
@@ -768,8 +960,59 @@ def evaluate(plan, have, reached, done_steps, stored=None, placed=None):
             later_done = True
         elif later_done and not plan["etapes"][i].get("item"):
             steps[i] = True
+    steps = [done and i not in undone for i, done in enumerate(steps)]
+    # Toutes les étapes cochées (à la main ou non) : l'objectif est terminé, même sans cible vérifiable
+    complete = complete or bool(steps) and all(steps)
+    # Combien il faut encore de chaque objet pour finir (sur lui compris) : recalculé à chaque fabrication
+    needs = {item: sum(d.get(item, 0) for d in (from_stock, from_chests, to_make, missing))
+             for item in set(from_stock) | set(from_chests) | set(to_make) | set(missing)}
     return {"a_fabriquer": dict(to_make), "a_recuperer": dict(from_chests), "manque": dict(missing),
-            "atteints": reached, "etapes": steps, "termine": complete}
+            "atteints": reached, "etapes": steps, "termine": complete, "besoins": needs,
+            "comptes": counts, "buts": {t["item"]: goal(t) for t in plan["cibles"]}}
+
+
+def machine_label(machine_id):
+    """« gtceu:lp_steam_compressor » -> « LP Steam Compressor »."""
+    words = block_name(machine_id).split(" ")
+    return " ".join(w.upper() if w.lower() in ("lp", "hp", "lv", "mv", "hv", "ev", "iv") else w for w in words)
+
+
+def needed_machines(plan, progress, index, have, placed):
+    """Les machines dont les fabrications qui restent ont besoin (un Compressor pour la Compressed Fireclay), et
+    celle que le joueur a déjà (posée ou sur lui), sinon None : sans elle, l'objectif ne peut pas avancer.
+    L'établi et le four (catégories minecraft:) ne sont pas comptés : il en a toujours."""
+    needed = {}
+    for recipe in plan["recettes"]:
+        if recipe["item"] not in progress["a_fabriquer"]:
+            continue
+        category, machines = index.machines_for(recipe.get("id"))
+        if not machines or category.startswith("minecraft:"):
+            continue
+        entry = needed.setdefault(category, {"machines": machines, "pour": [], "a": None})
+        entry["pour"].append(recipe["nom"])
+        entry["a"] = entry["a"] or next((m for m in machines if placed.get(m) or have.get(m)), None)
+    return list(needed.values())
+
+
+def step_count(step, progress, have):
+    """L'objet d'une étape : (ce qu'il en a, ce qu'il en faut), recalculé à chaque fabrication. « 276 Bronze
+    Ingots » au départ devient 274 dès qu'une Bronze Plate est faite. None si l'étape ne produit rien."""
+    item = step.get("item")
+    if not item:
+        return None
+    if item in progress["buts"]:  # une cible : ce qu'il en a obtenu (même déjà posé) sur ce qu'il en veut
+        return min(progress["comptes"][item], progress["buts"][item]), progress["buts"][item]
+    if item in progress["besoins"]:  # un objet utilisé plus loin : ce qu'il en faut encore, sur lui compris
+        need = progress["besoins"][item]
+        return min(have.get(item, 0), need), need
+    return min(have.get(item, 0), step.get("quantite") or 1), step.get("quantite") or 1
+
+
+def step_text(step, done, progress, have):
+    """Le texte de l'étape, avec ce qu'il reste à obtenir tant qu'elle n'est pas faite (« · encore 117 »)."""
+    counts = None if done else step_count(step, progress, have)
+    left = counts[1] - counts[0] if counts else 0
+    return step["texte"] + (f" · encore {left}" if left > 0 else "")
 
 
 def step_recipe(plan, progress):
@@ -781,15 +1024,33 @@ def step_recipe(plan, progress):
     return next((recipes[i] for i in progress["a_fabriquer"] if i in recipes), None)
 
 
-def craftable_now(plan, progress, have):
-    """La fabrication du plan que le joueur peut faire tout de suite avec ce qu'il a sur lui (les plus simples
-    d'abord : les objets intermédiaires avant ce qu'ils servent à fabriquer)."""
+def craft_suggestions(plan, progress, limit=12):
+    """Les fabrications de l'objectif encore à faire, les plus utiles d'abord : l'objet de l'étape en cours, puis ce
+    qu'il demande (du plus proche au plus lointain), puis les étapes suivantes et le reste de l'objectif. Le mod ne
+    garde que celles que l'écran ouvert sait remplir (l'établi : pas les recettes de machines) et que l'inventaire
+    permet tout de suite, en tenant compte des équivalents (n'importe quelles planches, n'importe quel Hammer)."""
     recipes = {r["item"]: r for r in plan["recettes"]}
-    for item in reversed(list(progress["a_fabriquer"])):
-        recipe = recipes.get(item)
-        if recipe and recipe["entrees"] and all(have.get(e["item"], 0) >= e["quantite"] for e in recipe["entrees"]):
-            return recipe
-    return None
+    todo = progress["a_fabriquer"]
+    order, seen = [], set()
+
+    def add_tree(item):
+        waiting = [item]
+        while waiting:
+            current = waiting.pop(0)
+            if current in seen or current not in recipes:
+                continue
+            seen.add(current)
+            if todo.get(current):
+                order.append(current)
+            waiting += [e["item"] for e in recipes[current]["entrees"]]
+
+    for step, done in zip(plan["etapes"], progress["etapes"]):
+        if not done and step.get("item"):
+            add_tree(step["item"])
+    for item in [t["item"] for t in plan["cibles"]] + list(todo):
+        add_tree(item)
+    return [{"item": i, "nom": recipes[i]["nom"], "id": recipes[i].get("id"), "machine": recipes[i]["machine"],
+             "fois": max(1, math.ceil(todo[i] / recipes[i]["sortie"]))} for i in order[:limit]]
 
 
 def nearest_vein(item, veins, state):
@@ -823,9 +1084,10 @@ def build_view(plan, progress, state, storage, have, status, message, guide=None
         names = item_names(plan)
         recipes = {r["item"]: r for r in plan["recettes"]}
         add("✦ " + plan["objectif"], "or")
-        if roadmap:
-            add("Ensuite : " + " · ".join(r["titre"] for r in roadmap[:2])
-                + (f" (+{len(roadmap) - 2})" if len(roadmap) > 2 else ""), "gris", indent=8)
+        upcoming = [o["titre"] for o in roadmap if o.get("etat", "a_faire") == "a_faire"]
+        if upcoming:
+            add("Ensuite : " + " · ".join(upcoming[:2])
+                + (f" (+{len(upcoming) - 2})" if len(upcoming) > 2 else ""), "gris", indent=8)
         steps, states = plan["etapes"], progress["etapes"]
         current = next((i for i, done in enumerate(states) if not done), None)
         if steps and current is None:
@@ -833,14 +1095,15 @@ def build_view(plan, progress, state, storage, have, status, message, guide=None
         elif steps:
             if any(states):
                 add(f"✔ {sum(states)}/{len(steps)} étapes faites", "vert")
-            add("▶ " + steps[current]["texte"], "jaune", indent=8)
+            add("▶ " + step_text(steps[current], False, progress, have), "jaune", indent=8)
             for i in range(current + 1, min(current + 3, len(steps))):
                 if not states[i]:
                     add("   " + steps[i]["texte"], "gris", indent=8)
         for t in plan["cibles"]:
             ok = t["item"] in progress["atteints"]
-            count = t["quantite"] if ok else min(int(have.get(t["item"], 0)), t["quantite"])
-            add(f"{'✔ ' if ok else ''}{t['nom']}  {count}/{t['quantite']}", "vert" if ok else "blanc", t["item"])
+            goal = progress["buts"][t["item"]]
+            count = goal if ok else min(progress["comptes"][t["item"]], goal)
+            add(f"{'✔ ' if ok else ''}{t['nom']}  {count}/{goal}", "vert" if ok else "blanc", t["item"])
         recipe = step_recipe(plan, progress)
         if recipe and recipe["entrees"]:
             machine = recipe["machine"] if recipe["machine"].lower() != "crafting table" else ""
@@ -956,9 +1219,14 @@ def build_mod_view(app):
             return f"filon · {where_hint(vein, state)}", vein
         return "", None
 
+    machine_alerts = app.settings["machines"] and app.world.active
     hud = {"visible": app.visible, "recharger": app.bridge.script_outdated(state), "statut": app.status,
-           "alertes": (app.world.alerts() if app.world.active else [])[:2], "prochains": [], "direction": None}
-    sections, needed, beams, recipe_now = [], set(), [], None
+           "alertes": app.world.alerts()[:2] if machine_alerts else [], "prochains": [], "direction": None}
+    current = app.current_objective()
+    if app.objectives:  # « Plan : Passer en LV · 2/6 » au-dessus de l'objectif
+        position = f" · {current + 1}/{len(app.objectives)}" if current is not None else ""
+        hud["plan"] = f"Plan : {app.plan_title or 'en cours'}{position}"
+    sections, needed, beams, recipe_now, crafts = [], set(), [], None, []
     search = find_search(app.search, storage, have, state) if app.search and now < app.search["fin"] else None
     if search:
         hud["recherche"] = search.pop("resume")
@@ -971,10 +1239,10 @@ def build_mod_view(app):
 
         def step_share(i):
             """Une étape pas encore faite compte pour ce que tu as déjà de son objet (159/250 Bronze Ingots)."""
-            item = steps[i].get("item")
-            if states[i] or not item:
+            counts = None if states[i] else step_count(steps[i], progress, have)
+            if not counts:
                 return float(states[i])
-            return min(1, have.get(item, 0) / (steps[i].get("quantite") or 1))
+            return min(1, counts[0] / counts[1]) if counts[1] else 1.0
 
         def how(item):
             return "à fabriquer" if item in recipes or item in app.craftable else "à récolter"
@@ -982,7 +1250,8 @@ def build_mod_view(app):
         hud.update({"objectif": plan["objectif"],
                     "progres": round(sum(map(step_share, range(len(states)))) / len(states), 3) if states
                     else round(target_share, 3),
-                    "etape": steps[current]["texte"] if current is not None else "Toutes les étapes sont faites",
+                    "etape": step_text(steps[current], False, progress, have) if current is not None
+                    else "Toutes les étapes sont faites",
                     "etape_num": f"{(current if current is not None else len(steps)) + (1 if current is not None else 0)}"
                                  f"/{len(steps)}"})
         # Les 3 prochains objets utiles : à récupérer d'abord (le plus simple), puis l'objet de l'étape, puis à récolter
@@ -993,9 +1262,9 @@ def build_mod_view(app):
                              "besoin": have.get(item, 0) + count, "ou": hint or "dans tes coffres", "c": "jaune"})
         step_item = steps[current].get("item") if current is not None else None
         if step_item and step_item not in {u["item"] for u in upcoming}:
+            got, wanted = step_count(steps[current], progress, have)
             upcoming.append({"item": step_item, "nom": names.get(step_item, block_name(step_item)),
-                             "a": have.get(step_item, 0), "besoin": steps[current].get("quantite") or 1,
-                             "ou": how(step_item), "c": "blanc"})
+                             "a": got, "besoin": wanted, "ou": how(step_item), "c": "blanc"})
         for item, count in sorted(progress["manque"].items(), key=lambda kv: -kv[1]):
             if item in {u["item"] for u in upcoming}:
                 continue
@@ -1011,8 +1280,19 @@ def build_mod_view(app):
                 sections.append({"titre": title, "couleur": color, "objets": entries})
 
         section("Objectif", "or", [{"item": t["item"], "nom": t["nom"], "texte": (
-            "✔ " if t["item"] in progress["atteints"] else "") + f"{min(have.get(t['item'], 0), t['quantite'])}/{t['quantite']}"}
+            "✔ " if t["item"] in progress["atteints"] else "")
+            + f"{min(progress['comptes'][t['item']], progress['buts'][t['item']])}/{progress['buts'][t['item']]}"}
             for t in targets])
+        # Les machines dont l'objectif a besoin : sans elles, impossible d'avancer, donc on le dit tout de suite
+        machines_needed = needed_machines(plan, progress, app.recipe_index, have, storage.placed())
+        lacking = [m for m in machines_needed if not m["a"]]
+        section("Machines nécessaires", "rouge" if lacking else "vert", [
+            {"item": m["a"] or m["machines"][0], "nom": machine_label(m["a"] or m["machines"][0]),
+             "texte": ("✔ tu en as une" if m["a"] else "✘ à fabriquer d'abord") + " · pour " + ", ".join(m["pour"][:2])}
+            for m in machines_needed])
+        hud["alertes"] = ([f"⚠ Il te faut un {machine_label(m['machines'][0])} (pour {', '.join(m['pour'][:2])})"
+                           for m in lacking] + hud["alertes"])[:3]
+        needed |= {m["machines"][0] for m in lacking}  # elle brille si elle traîne dans un coffre
         section("À fabriquer", "blanc", [{"item": i, "nom": names.get(i, i), "texte": f"×{n}" + (
             f" · {recipes[i]['machine']}" if recipes[i]["machine"] and recipes[i]["machine"].lower() != "crafting table"
             else "")} for i, n in progress["a_fabriquer"].items() if i not in {t["item"] for t in targets}]
@@ -1024,13 +1304,10 @@ def build_mod_view(app):
         section("À récolter", "rouge", [{"item": i, "nom": names.get(i, i), "texte": f"×{n}" + (
             f" · {where(i)[0]}" if where(i)[0] else "")} for i, n in progress["manque"].items()
             if i not in app.craftable])
-        recipe = craftable_now(plan, progress, have) or step_recipe(plan, progress)
-        if recipe:
-            remaining = progress["a_fabriquer"].get(recipe["item"], recipe["sortie"])
-            recipe_now = {"item": recipe["item"], "nom": recipe["nom"], "id": recipe.get("id"),
-                          "fois": max(1, math.ceil(remaining / recipe["sortie"])), "machine": recipe["machine"]}
+        crafts = craft_suggestions(plan, progress)
+        recipe_now = crafts[0] if crafts else None  # pour un mod d'avant les propositions multiples
     # La destination principale : celle que montre aussi le panneau du script du jeu (lignes « ➜ »)
-    for line in build_view(plan, progress, state, storage, have, "", "", app.guide, False, app.roadmap,
+    for line in build_view(plan, progress, state, storage, have, "", "", app.guide, False, app.objectives,
                            app.veins) if state else []:
         d = line.get("dir")
         if d and d.get("x") is not None and d.get("z") is not None:
@@ -1039,7 +1316,7 @@ def build_mod_view(app):
             beams.append(target)
             hud["direction"] = hud["direction"] or target
     markers = []
-    if app.world.active:
+    if machine_alerts:
         for m in app.world.machines():
             st = m["etat"]
             color = "rouge" if "eau" in st and st.get("se") and st["t"][0] >= 100 else \
@@ -1054,7 +1331,11 @@ def build_mod_view(app):
     machines = [{"nom": m["nom"], "etat": machine_status(m), "x": m["x"], "y": m["y"], "z": m["z"],
                  "couleur": machine_color(machine_status(m))}
                 for m in app.world.machines() if not re.search(r"hatch|_bus$", m["bloc"])][:30]
-    screen = {"statut": app.status, "feuille_de_route": [r["titre"] for r in app.roadmap],
+    screen = {"statut": app.status,
+              "plan": {"titre": app.plan_title, "pourquoi": app.plan_why,
+                       "objectifs": [{"titre": o["titre"], "etat": o["etat"]} for o in app.objectives]},
+              "reglages": [{"cle": key, "nom": name, "description": text, "valeur": app.settings[key]}
+                           for key, (name, text, _) in SETTINGS.items()],
               "conversation": app.history[-30:] + ([{"de": "claude", "texte": live}] if live else []),
               "sections": sections, "machines": machines, "coffres": len(storage.containers),
               "joueurs": [f"{p['nom']} en {p['x']} {p['y']} {p['z']}" for p in app.world.players],
@@ -1064,15 +1345,18 @@ def build_mod_view(app):
         screen["objectif"] = plan["objectif"]
         screen["pourquoi"] = plan.get("pourquoi", "")
         screen["progres"] = hud.get("progres", 0)
-        screen["etapes"] = [{"texte": s["texte"], "fait": done, "courant": i == current}
+        screen["etapes"] = [{"texte": step_text(s, done, progress, have), "fait": done, "courant": i == current}
                             for i, (s, done) in enumerate(zip(plan["etapes"], progress["etapes"]))]
         main = next((recipes[t["item"]] for t in plan["cibles"] if t["item"] in recipes), None)
         screen["arbre"] = {"item": main["item"], "id": main.get("id")} if main else None
     # vie : le fichier est réécrit au moins toutes les 5 s, le mod sait ainsi que l'assistant tourne ;
     # lanceur : de quoi le relancer depuis le jeu s'il s'arrête
+    on = app.settings
     return {"v": 2, "vie": int(now // 5), "lanceur": str(HERE / "Lancer assistant.bat"),
-            "hud": hud, "bulle": bubble, "besoins": sorted(needed), "guidage": beams,
-            "marqueurs": markers, "ecran": screen, "recette": recipe_now, "recherche": search,
+            "hud": hud, "bulle": bubble, "besoins": sorted(needed) if on["surbrillance"] else [],
+            "guidage": beams if on["faisceaux"] else [], "marqueurs": markers, "ecran": screen,
+            "recette": recipe_now if on["remplir"] else None, "fabrications": crafts if on["remplir"] else [],
+            "recherche": search,
             "info": dict(app.info) if app.info else None}  # une copie : sinon la fiche complétée semble inchangée
 
 
@@ -1094,97 +1378,147 @@ def clean_env():
     return {k: v for k, v in os.environ.items() if not k.startswith(("ANTHROPIC", "CLAUDE"))}
 
 
-def run_claude(prompt, session_id, data_dir, model, on_text=None, on_tool=None):
-    """Lance Claude Code et suit sa réponse au fil de l'eau (texte et recherches en cours)."""
+CLAUDE_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch"
+
+
+def claude_command(model, data_dir, effort=None, persistent=False):
+    """La ligne de commande de Claude Code, allégée : sans les serveurs MCP ni les outils dont il n'a pas besoin
+    (une seconde de moins au démarrage, un prompt quatre fois plus court), en lecture seule sur les données du jeu.
+    persistent : il reste ouvert et attend les questions suivantes (voir Conversation)."""
     exe = find_claude()
     if not exe:
         raise RuntimeError("Claude Code introuvable : ouvre l'app Claude une fois, ou installe Claude Code.")
     cmd = [exe, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
            "--model", model, "--append-system-prompt", SYSTEM_PROMPT.format(data_dir=data_dir),
-           "--add-dir", str(data_dir),
-           "--allowedTools", "Read,Grep,Glob,WebSearch,WebFetch"]
-    if session_id:
-        cmd += ["--resume", session_id]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+           "--add-dir", str(data_dir), "--tools", CLAUDE_TOOLS, "--allowedTools", CLAUDE_TOOLS, "--strict-mcp-config"]
+    if effort:
+        cmd += ["--effort", effort]
+    return cmd + (["--input-format", "stream-json"] if persistent else ["--no-session-persistence"])
+
+
+def start_claude(cmd, keep_errors=None):
+    """Lance Claude Code ; ses lignes de sortie arrivent dans une file (None quand il s'arrête)."""
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE if keep_errors is not None else subprocess.DEVNULL,
                             text=True, encoding="utf-8", errors="replace", cwd=HERE, env=clean_env(),
                             creationflags=NO_WINDOW)
-    errors = []
-    threading.Thread(target=lambda: errors.extend(proc.stderr), daemon=True).start()
-    timer = threading.Timer(TIMEOUT, proc.kill)
-    timer.start()
+    lines = queue.Queue()
+
+    def read():
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=read, daemon=True).start()
+    if keep_errors is not None:
+        threading.Thread(target=lambda: keep_errors.extend(proc.stderr), daemon=True).start()
+    return proc, lines
+
+
+def read_reply(lines, on_text=None, on_tool=None, deadline=None):
+    """Suit une réponse de Claude au fil de l'eau (texte et recherches en cours) jusqu'à son résultat."""
+    deadline = deadline or time.time() + TIMEOUT
     text, result = "", None
+    while result is None:
+        try:
+            line = lines.get(timeout=max(0.1, deadline - time.time()))
+        except queue.Empty:
+            raise RuntimeError("pas de réponse de Claude (délai dépassé)") from None
+        if line is None:
+            raise RuntimeError("Claude Code s'est arrêté sans répondre")
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        kind = event.get("type")
+        if kind == "stream_event":
+            inner = event.get("event", {})
+            if inner.get("type") == "message_start":
+                text = ""  # nouveau message de Claude (après une recherche, par exemple)
+            delta = inner.get("delta", {})
+            if delta.get("type") == "text_delta":
+                text += delta.get("text", "")
+                if on_text:
+                    on_text(text)
+        elif kind == "assistant" and on_tool:
+            for block in event.get("message", {}).get("content", []):
+                if block.get("type") == "tool_use":
+                    on_tool(block.get("name", ""), block.get("input") or {})
+        elif kind == "result":
+            result = event
+    if result.get("is_error"):
+        raise RuntimeError(str(result.get("result") or result.get("subtype")))
+    return (result.get("result") or "").strip()
+
+
+def ask_claude(prompt, data_dir, model, on_text=None, on_tool=None, effort=None):
+    """Une demande isolée (plan, coach, fiche) : Claude Code démarre, répond, puis s'arrête."""
+    errors = []
+    proc, lines = start_claude(claude_command(model, data_dir, effort), errors)
     try:
         proc.stdin.write(prompt)
         proc.stdin.close()
-        for line in proc.stdout:
-            try:
-                event = json.loads(line)
-            except ValueError:
-                continue
-            kind = event.get("type")
-            if kind == "stream_event":
-                inner = event.get("event", {})
-                if inner.get("type") == "message_start":
-                    text = ""  # nouveau message de Claude (après une recherche, par exemple)
-                delta = inner.get("delta", {})
-                if delta.get("type") == "text_delta":
-                    text += delta.get("text", "")
-                    if on_text:
-                        on_text(text)
-            elif kind == "assistant" and on_tool:
-                for block in event.get("message", {}).get("content", []):
-                    if block.get("type") == "tool_use":
-                        on_tool(block.get("name", ""), block.get("input") or {})
-            elif kind == "result":
-                result = event
-        proc.wait()
+        return read_reply(lines, on_text, on_tool)
+    except RuntimeError as e:
+        raise RuntimeError(("".join(errors).strip() or str(e))[-600:]) from None
     finally:
-        timer.cancel()
-    if result is None:
-        raise RuntimeError(("".join(errors) or "pas de réponse de Claude (délai dépassé ?)").strip()[-600:])
-    if result.get("is_error"):
-        raise RuntimeError(str(result.get("result") or result.get("subtype")))
-    return (result.get("result") or "").strip(), result.get("session_id")
+        if proc.poll() is None:
+            proc.kill()
 
 
-def ask_claude(prompt, session_id, data_dir, model, on_text=None, on_tool=None):
-    try:
-        return run_claude(prompt, session_id, data_dir, model, on_text, on_tool)
-    except RuntimeError:
-        if not session_id:
-            raise
-        log("Reprise de la conversation impossible, nouvelle conversation")
-        return run_claude(prompt, None, data_dir, model, on_text, on_tool)
+class Conversation:
+    """Claude Code gardé ouvert pour les questions du joueur : pas de démarrage à chaque question (le premier mot
+    arrive en 1 à 2 s au lieu de 5), et il se souvient de la discussion. Il repart d'une discussion neuve, préparée
+    d'avance, après quelques questions : sinon chaque question repasse toute la discussion (plus lent, plus de quota)."""
+    MAX_QUESTIONS = 10
 
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self.proc = self.lines = None
+        self.questions = 0
+        self.lock = threading.Lock()
+        threading.Thread(target=self.restart, daemon=True).start()  # prêt avant la première question
 
-QUICK_QUESTION = re.compile(
-    r"\b(est-ce que j'ai|j'ai (des?|du|un|une)|combien|o[uù] (est|sont|j'ai|se trouve|trouver)|trouve|retiens|m[ée]morise|"
-    r"oublie|guide|ram[eè]ne|emm[eè]ne|cache|affiche|coupe|remets|active|d[ée]sactive|enl[eè]ve|retire|ajoute)\b",
-    re.IGNORECASE)
+    def restart(self):
+        with self.lock:
+            self.stop()
+            try:
+                self.proc, self.lines = start_claude(
+                    claude_command(MODEL_QUESTION, self.data_dir, EFFORT_QUESTION, persistent=True))
+            except Exception:
+                log("Claude Code ne démarre pas :\n" + traceback.format_exc())
+                self.proc = None
+            self.questions = 0
 
+    def stop(self):
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.kill()
+        self.proc = None
 
-def pick_model(question):
-    """Haiku pour les questions simples (inventaire, coffres, lieux, réglages), Sonnet pour le reste."""
-    if len(question) <= 140 and QUICK_QUESTION.search(question):
-        return MODEL_QUICK
-    return MODEL_QUESTION
+    def ask(self, prompt, on_text=None, on_tool=None):
+        if self.proc is None or self.proc.poll() is not None:
+            self.restart()
+        with self.lock:
+            if self.proc is None:
+                raise RuntimeError("Claude Code ne démarre pas")
+            try:
+                self.proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}})
+                                      + "\n")
+                self.proc.stdin.flush()
+                self.questions += 1
+                answer = read_reply(self.lines, on_text, on_tool)
+            except (OSError, RuntimeError):
+                self.stop()  # la prochaine question repartira d'un Claude neuf
+                raise
+        if self.questions >= self.MAX_QUESTIONS:
+            threading.Thread(target=self.restart, daemon=True).start()
+        return answer
 
 
 def tool_status(name, data):
     detail = (data.get("pattern") or data.get("query") or data.get("url")
               or Path(data.get("file_path") or data.get("path") or "").name)
     return (f"Claude cherche : {detail}" if detail else f"Claude utilise {name}…")[:90]
-
-
-def load_session():
-    try:
-        return json.loads(SESSION_FILE.read_text(encoding="utf-8")).get("session_id")
-    except (OSError, ValueError):
-        return None
-
-
-def save_session(session_id):
-    SESSION_FILE.write_text(json.dumps({"session_id": session_id}), encoding="utf-8")
 
 
 # ---------------- Écran ----------------
@@ -1274,27 +1608,64 @@ class Recorder:
 
 
 class Transcriber:
+    """Reconnaissance vocale locale (Whisper). Sur la carte graphique NVIDIA quand c'est possible (une phrase en
+    moins d'une seconde), sinon sur le processeur, réglé pour aller vite."""
+
     def __init__(self):
         self.model = None
         self.error = None
+        self.gpu = False
         self.ready = threading.Event()
         threading.Thread(target=self._load, daemon=True).start()
 
     def _load(self):
         try:
             from faster_whisper import WhisperModel
-            self.model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
+            import numpy
+            silence = numpy.zeros(SAMPLE_RATE // 2, dtype=numpy.float32)
+            if self._cuda_ready():
+                try:
+                    model = WhisperModel(WHISPER_MODEL, device="cuda", compute_type="float16")
+                    list(model.transcribe(silence, language="fr", without_timestamps=True)[0])  # charge CUDA
+                    list(model.transcribe(silence, language="fr", vad_filter=True)[0])  # et le tri voix/silence
+                    self.model, self.gpu = model, True
+                except Exception as e:
+                    log(f"Reconnaissance vocale sur la carte graphique impossible ({e}), sur le processeur")
+            if self.model is None:
+                self.model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8",
+                                          cpu_threads=min(8, os.cpu_count() or 4))
+                list(self.model.transcribe(silence, language="fr", beam_size=1)[0])  # la première est plus lente
+                list(self.model.transcribe(silence, language="fr", vad_filter=True)[0])
+            log(f"Reconnaissance vocale prête ({'carte graphique' if self.gpu else 'processeur'}, {WHISPER_MODEL})")
         except Exception as e:
             self.error = e
             log("Reconnaissance vocale indisponible :\n" + traceback.format_exc())
         self.ready.set()
 
-    def transcribe(self, audio):
+    @staticmethod
+    def _cuda_ready():
+        """Une carte NVIDIA, et cuBLAS installé (pip install nvidia-cublas-cu12) : on le rend trouvable."""
+        try:
+            import ctranslate2
+            if ctranslate2.get_cuda_device_count() == 0:
+                return False
+        except Exception:
+            return False
+        for folder in glob.glob(os.path.join(sys.prefix, "Lib", "site-packages", "nvidia", "*", "bin")):
+            os.add_dll_directory(folder)
+            os.environ["PATH"] = folder + os.pathsep + os.environ.get("PATH", "")
+        return True
+
+    def transcribe(self, audio, names=()):
+        """names : les noms d'objets du moment (ceux de l'objectif), donnés à Whisper pour qu'il les reconnaisse."""
         self.ready.wait()
         if self.model is None:
             raise RuntimeError(f"Reconnaissance vocale indisponible ({self.error}). Tape ta question.")
-        segments, _ = self.model.transcribe(audio, language="fr", vad_filter=True,
-                                            initial_prompt=WHISPER_HINT)
+        hint = WHISPER_HINT + (" " + ", ".join(names)[:400] + "." if names else "")
+        # Sur le processeur, une seule hypothèse à la fois (beam 1) : presque aussi juste, deux fois plus rapide
+        segments, _ = self.model.transcribe(audio, language="fr", vad_filter=True, initial_prompt=hint,
+                                            beam_size=5 if self.gpu else 1, condition_on_previous_text=False,
+                                            without_timestamps=True)
         return " ".join(s.text.strip() for s in segments).strip()
 
 
@@ -1403,8 +1774,12 @@ class App:
         self.recorder = Recorder()
         self.transcriber = Transcriber() if self.recorder.available else None
         self.speaker = Speaker()
-        self.session_id = load_session()
-        self.speak = SPEAK
+        self.conversation = Conversation(self.bridge.dir)  # Claude gardé ouvert pour tes questions
+        try:
+            saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            saved = {}
+        self.settings = {key: bool(saved.get(key, default)) for key, (_, _, default) in SETTINGS.items()}
         self.busy = False
         self.popup = self.entry = None
         self.overlay = self.overlay_text = None
@@ -1417,7 +1792,6 @@ class App:
         self.storage = Storage([])
         self.storage_text = None
         self.logged_errors = set()
-        self.visible = True
         self.status = ""
         self.message, self.message_until = "", 0
         self.last_view = None
@@ -1427,6 +1801,7 @@ class App:
         self.veins = []              # filons de minerai repérés
         self.veins_read = 0
         self.craftable, self.craftable_read = set(), 0  # objets qu'une recette du pack produit
+        self.recipe_index = RecipeIndex()                # recettes par objet, jointes aux questions
         self.info, self.info_pending = None, set()      # fiche « à quoi ça sert » affichée, fiches en rédaction
         self.search = None           # objets à mettre en surbrillance (« trouve-moi mes torches »)
         try:
@@ -1480,6 +1855,25 @@ class App:
     def run(self):
         self.root.mainloop()
 
+    # --- réglages (écran Y > Réglages, à la voix, F9 et F10) ---
+
+    @property
+    def speak(self):
+        return self.settings["voix"]
+
+    @property
+    def visible(self):
+        return self.settings["panneau"]
+
+    def set_setting(self, key, value):
+        if key not in SETTINGS:
+            return
+        self.settings[key] = bool(value)
+        SETTINGS_FILE.write_text(json.dumps(self.settings, indent=1), encoding="utf-8")
+        if key == "voix" and not value:
+            self.speaker.stop()
+        self.refresh(force=True)
+
     def poll(self):
         try:
             while not self.events.empty():
@@ -1489,7 +1883,10 @@ class App:
             log(traceback.format_exc())
         self.root.after(50, self.poll)
 
-    # --- plan mémorisé ---
+    # --- plan et objectif mémorisés ---
+    # Le PLAN est l'objectif principal (« Passer en LV »), découpé en objectifs : self.plan_title, self.plan_why et
+    # self.objectives ([{titre, demande, etat}], etat : a_faire, en_cours ou fait). L'OBJECTIF en cours est détaillé
+    # étape par étape dans self.plan (son nom vient d'avant ce découpage).
 
     def load_plan(self):
         try:
@@ -1500,14 +1897,31 @@ class App:
         self.plan_version = saved.get("version", 0)
         self.reached = set(saved.get("atteints", []))
         self.done_steps = set(saved.get("etapes_faites", []))
-        self.roadmap = saved.get("feuille_de_route", [])   # objectifs suivants : [{titre, demande}]
-        self.plan_done_announced = True  # pas d'enchaînement automatique sur un ancien plan au démarrage
+        self.undone_steps = set(saved.get("etapes_decochees", []))
+        self.obtained = saved.get("obtenus", {})            # cible -> combien il en a obtenu depuis le début
+        self.last_totals = saved.get("derniers_totaux", {})  # cible -> sur lui + coffres + posé, au dernier passage
+        main = saved.get("plan_principal")
+        if main:
+            self.plan_title, self.plan_why = main.get("titre", ""), main.get("pourquoi", "")
+            self.objectives = [objective_entry(o) for o in main.get("objectifs", [])]
+        else:  # ancienne « feuille de route » : les objectifs qui suivaient l'objectif affiché
+            self.plan_title, self.plan_why = "", ""
+            self.objectives = [objective_entry(o) for o in saved.get("feuille_de_route", [])]
+            if self.plan:
+                self.objectives.insert(0, objective_entry({"titre": self.plan["objectif"]}, "en_cours"))
+        self.plan_done_announced = True  # pas d'enchaînement automatique sur un ancien objectif au démarrage
 
     def save_plan(self):
-        PLAN_FILE.write_text(json.dumps({"plan": self.plan, "version": self.plan_version,
-                                         "atteints": sorted(self.reached), "etapes_faites": sorted(self.done_steps),
-                                         "feuille_de_route": self.roadmap},
-                                        ensure_ascii=False, indent=1), encoding="utf-8")
+        PLAN_FILE.write_text(json.dumps({
+            "plan": self.plan, "version": self.plan_version, "atteints": sorted(self.reached),
+            "etapes_faites": sorted(self.done_steps), "etapes_decochees": sorted(self.undone_steps),
+            "obtenus": self.obtained, "derniers_totaux": self.last_totals,
+            "plan_principal": {"titre": self.plan_title, "pourquoi": self.plan_why, "objectifs": self.objectives}},
+            ensure_ascii=False, indent=1), encoding="utf-8")
+
+    def current_objective(self):
+        """L'index de l'objectif du plan en cours, ou None."""
+        return next((i for i, o in enumerate(self.objectives) if o["etat"] == "en_cours"), None)
 
     def load_places(self):
         try:
@@ -1525,7 +1939,27 @@ class App:
         if not self.plan:
             return None
         return evaluate(self.plan, self.have(), self.reached, self.done_steps,
-                        stored=self.storage.totals(), placed=self.storage.placed())
+                        stored=self.storage.totals(), placed=self.storage.placed(), undone=self.undone_steps,
+                        obtained=self.obtained)
+
+    def target_totals(self):
+        """Combien il a de chaque cible de l'objectif : sur lui, dans ses coffres et posé."""
+        have, stored, placed = self.have(), self.storage.totals(), self.storage.placed()
+        return {t["item"]: have.get(t["item"], 0) + stored.get(t["item"], 0) + placed.get(t["item"], 0)
+                for t in self.plan["cibles"]} if self.plan else {}
+
+    def track_targets(self):
+        """Ce qu'il a obtenu de chaque cible, même déjà posé ailleurs : chaque hausse (fabriqué, ramassé) s'ajoute,
+        une baisse (posé dans un multibloc, utilisé pour une autre fabrication) ne fait pas reculer."""
+        changed = False
+        for item, total in self.target_totals().items():
+            before = self.last_totals.get(item)
+            if before is not None and total > before:
+                self.obtained[item] = self.obtained.get(item, before) + total - before
+            if before != total:
+                self.last_totals[item] = total
+                changed = True
+        return changed
 
     # --- suivi du jeu ---
 
@@ -1593,9 +2027,10 @@ class App:
             self.guide = None
 
         if self.plan:
+            tracked = self.track_targets()
             progress = self.progress()
             new_steps = {i for i, done in enumerate(progress["etapes"]) if done} - self.done_steps
-            if progress["atteints"] != self.reached or new_steps:
+            if progress["atteints"] != self.reached or new_steps or tracked:
                 self.reached = progress["atteints"]
                 self.done_steps |= new_steps
                 self.save_plan()
@@ -1606,14 +2041,26 @@ class App:
                     self.journal("étape", steps[i]["texte"])
                 upcoming = next((s["texte"] for i, s in enumerate(steps) if i not in self.done_steps), None)
                 self.coach(f"Étape faite : {steps[max(new_steps)]['texte']}."
-                           + (f" Ensuite : {upcoming}." if upcoming else ""), USEFUL)
+                           + (f" Ensuite : {upcoming}." if upcoming else ""), USEFUL, kind="progression")
             if progress["termine"] and not self.plan_done_announced:
                 self.plan_done_announced = True
                 self.journal("objectif", f"Objectif atteint : {self.plan['objectif']}")
-                follow = " Je prépare la suite." if AUTO_NEXT else f" Appuie sur {HOTKEY_PLAN.upper()} pour la suite."
-                self.notify("Objectif terminé !" + follow, 30, speak=True)
-                if AUTO_NEXT:
-                    self.root.after(6000, lambda: self.on_plan(auto=True))
+                current = self.current_objective()
+                if current is not None:
+                    self.objectives[current]["etat"] = "fait"
+                    self.save_plan()
+                remaining = any(o["etat"] == "a_faire" for o in self.objectives)
+                if remaining:
+                    done = "Objectif terminé !"
+                else:
+                    done = f"Plan « {self.plan_title} » terminé !" if self.plan_title else "Objectif terminé !"
+                    self.journal("plan", done)
+                auto = self.settings["enchainer"]
+                follow = (" Je prépare la suite." if auto else " Objectif suivant (écran Y ou "
+                          f"{HOTKEY_PLAN.upper()}) pour continuer." if remaining else " Nouveau plan (écran Y) pour la suite.")
+                self.notify(done + follow, 30, speak=True)
+                if auto:
+                    self.root.after(6000, lambda: self.on_next_objective(auto=True))
 
     # --- journal de la partie ---
 
@@ -1642,15 +2089,21 @@ class App:
             f"{datetime.fromtimestamp(e['t']):%d/%m %H:%M} {e['type']} : {e['texte']}" for e in events)
 
     def check_craftable(self):
-        """Relit la liste des objets fabricables quand le jeu a réexporté ses recettes."""
+        """Relit les recettes quand le jeu les a réexportées, ou que le mod a écrit quelle machine fait quoi."""
         try:
             changed = (self.bridge.dir / "recettes_info.json").stat().st_mtime
         except OSError:
             return
+        machines = self.bridge.dir / "machines_recettes.txt"
+        if machines.exists():
+            changed = (changed, machines.stat().st_mtime)
         if changed != self.craftable_read:
             self.craftable_read = changed
-            threading.Thread(target=lambda: setattr(self, "craftable", load_craftable(self.bridge.dir)),
-                             daemon=True).start()
+            threading.Thread(target=self.load_recipes, daemon=True).start()
+
+    def load_recipes(self):
+        self.craftable = load_craftable(self.bridge.dir)
+        self.recipe_index = RecipeIndex(self.bridge.dir)
 
     def on_game_connected(self):
         if self.session_open:
@@ -1659,11 +2112,11 @@ class App:
         last = self.journal_tail(1)  # un retour après une courte pause (ou un redémarrage de l'assistant) : pas de briefing
         away = bool(last) and time.time() - last[-1]["t"] > BRIEFING_PAUSE * 60
         self.journal("session", "Début de la partie")
-        if BRIEFING and away:
+        if self.settings["briefing"] and away:
             self.root.after(15000, self.start_briefing)
         if not self.plan:
-            # Pas d'objectif en arrivant : l'assistant le prépare tout seul (avec la feuille de route s'il n'y en a pas)
-            self.root.after(25000, lambda: self.on_plan(auto=True))
+            # Pas d'objectif en arrivant : l'assistant prépare le suivant du plan (ou un nouveau plan s'il n'y en a pas)
+            self.root.after(25000, lambda: self.on_next_objective(auto=True))
 
     def check_quests(self):
         """Quêtes terminées depuis la dernière lecture (quetes.json est réécrit toutes les 10 s)."""
@@ -1678,7 +2131,8 @@ class App:
             for title in sorted(titles - self.quest_titles):
                 self.journal("quête", title)
                 self.last_progress = time.time()
-                self.coach(f"Quête terminée : {title.split(' > ')[-1]} !", USEFUL, key="quête " + title)
+                self.coach(f"Quête terminée : {title.split(' > ')[-1]} !", USEFUL, key="quête " + title,
+                           kind="progression")
         self.quest_titles = titles
 
     def check_new_machines(self, storage):
@@ -1687,7 +2141,7 @@ class App:
             for key in keys.keys() - self.known_machines:
                 m = keys[key]
                 self.journal("machine", f"{m['nom']} en {int(m['x'])} {int(m['y'])} {int(m['z'])}")
-                self.coach(f"Machine retenue : {m['nom']}.", CHATTY)
+                self.coach(f"Machine retenue : {m['nom']}.", CHATTY, kind="progression")
         self.known_machines = set(keys)
 
     def check_new_veins(self):
@@ -1698,7 +2152,7 @@ class App:
                 name = material.replace("_", " ").title()
                 self.journal("filon", f"{name} en {int(v['x'])} {int(v['y'])} {int(v['z'])}")
                 self.coach(f"Nouveau filon repéré : {name}, en {int(v['x'])} {int(v['y'])} {int(v['z'])}. "
-                           "Je le garde en mémoire.", USEFUL)
+                           "Je le garde en mémoire.", USEFUL, kind="progression")
         self.known_veins = set(materials)
 
     def check_world_alerts(self, before):
@@ -1713,7 +2167,8 @@ class App:
                         and state["vap"][0] / state["vap"][1] < 0.6:
                     self.coach(f"Tes boilers sont éteints : ton {m['nom']} tourne sur sa réserve de Steam "
                                f"({round(100 * state['vap'][0] / state['vap'][1])} %) et va bientôt s'arrêter. "
-                               "Remets du combustible.", USEFUL, cooldown=600, key="boilers éteints")
+                               "Remets du combustible.", USEFUL, cooldown=600, key="boilers éteints",
+                               kind="machines")
                     break
         for m in machines:
             state, key = m["etat"], m["cle"]
@@ -1725,22 +2180,26 @@ class App:
                 if state.get("se") and hot:
                     self.coach(f"Danger : le {where} est à sec et chaud. Ne lui remets surtout pas d'eau, il "
                                "exploserait : retire le combustible et laisse-le refroidir.", DANGER, cooldown=120,
-                               key="à sec " + key)
+                               key="à sec " + key, kind="machines")
                 elif capacity and hot and water / capacity < 0.15:
                     self.coach(f"Le {where} va manquer d'eau ({round(100 * water / capacity)} %).", USEFUL,
-                               cooldown=300, key="eau " + key)
+                               cooldown=300, key="eau " + key, kind="machines")
             if state.get("s") == "WAITING" and old.get("s") == "WAITING" and state.get("r"):
-                self.coach(f"{where} est en attente : {state['r']}.", USEFUL, cooldown=600, key="attente " + key)
+                self.coach(f"{where} est en attente : {state['r']}.", USEFUL, cooldown=600, key="attente " + key,
+                           kind="machines")
             if old.get("s") == "WORKING" and state.get("s") == "IDLE" and not re.search(r"boiler", m["bloc"]):
-                self.coach(f"{where} a fini : plus rien à faire.", CHATTY, cooldown=300, key="fini " + key)
+                self.coach(f"{where} a fini : plus rien à faire.", CHATTY, cooldown=300, key="fini " + key,
+                           kind="machines")
             if old.get("f") is True and state.get("f") is False:
                 self.coach(f"{where} n'est plus formé : il lui manque un bloc.", USEFUL, cooldown=600,
-                           key="formé " + key)
+                           key="formé " + key, kind="machines")
 
     # --- coach : il parle de lui-même au bon moment ---
 
-    def coach(self, text, level=USEFUL, cooldown=0, key=None, speak=True):
-        if COACH_LEVELS.get(COACH, 1) < level:
+    def coach(self, text, level=USEFUL, cooldown=0, key=None, speak=True, kind="coach"):
+        """kind : la famille du message, que le joueur peut couper dans les réglages (coach, progression,
+        machines, briefing)."""
+        if COACH_LEVELS.get(COACH, 1) < level or not self.settings.get(kind, True):
             return
         key = key or text
         if time.time() - self.coach_times.get(key, 0) < cooldown:
@@ -1802,14 +2261,15 @@ class App:
         """Pas d'avancée sur le plan depuis un moment alors que le joueur joue : le coach propose son aide."""
         if (not self.plan or self.busy or self.coach_busy or self.progress()["termine"]
                 or now - self.last_progress < STUCK_MINUTES * 60 or now - self.last_moved > 120
-                or now - self.coach_times.get("bloqué", 0) < 20 * 60 or COACH_LEVELS.get(COACH, 1) < USEFUL):
+                or now - self.coach_times.get("bloqué", 0) < 20 * 60 or COACH_LEVELS.get(COACH, 1) < USEFUL
+                or not self.settings["coach"]):
             return
         self.coach_times["bloqué"] = now
         self.coach_busy = True
         threading.Thread(target=self.work_coach, args=(
             f"Le joueur n'a pas avancé sur son objectif depuis {STUCK_MINUTES} minutes. En 2 phrases au plus, "
-            "donne-lui un conseil concret pour se débloquer : quoi fabriquer, où aller, quelle machine utiliser.",),
-            daemon=True).start()
+            "donne-lui un conseil concret pour se débloquer : quoi fabriquer, où aller, quelle machine utiliser.",
+            "coach"), daemon=True).start()
 
     def start_briefing(self):
         if self.busy or self.coach_busy or not self.game:
@@ -1818,20 +2278,20 @@ class App:
         threading.Thread(target=self.work_coach, args=(
             "Le joueur reprend sa partie. Fais-lui un briefing de reprise en 2 ou 3 phrases, sans formule de "
             "politesse : où il en était la dernière fois (d'après le journal), ce qui a changé, et quoi faire "
-            "maintenant.",), daemon=True).start()
+            "maintenant.", "briefing"), daemon=True).start()
 
-    def work_coach(self, request):
+    def work_coach(self, request, kind):
         try:
             prompt = f"{self.context(None, with_storage=True)}\n{self.describe_journal(60)}\n\n{request}"
-            answer, _ = ask_claude(prompt, None, self.bridge.dir, MODEL_QUICK)
-            self.events.put(("coach_message", readable(split_actions(answer)[0])))
+            answer = ask_claude(prompt, self.bridge.dir, MODEL_QUICK, effort="low")
+            self.events.put(("coach_message", readable(split_actions(answer)[0]), kind))
         except Exception:
             log(traceback.format_exc())
         finally:
             self.coach_busy = False
 
-    def on_coach_message(self, text):
-        self.coach(text, USEFUL)
+    def on_coach_message(self, text, kind):
+        self.coach(text, USEFUL, kind=kind)
 
     def check_removed_chests(self, storage):
         """Signale les coffres qui ont disparu de la mémoire du jeu (cassés, ou oubliés à la demande)."""
@@ -1859,7 +2319,8 @@ class App:
         try:
             lines = build_view(self.plan, self.progress(), self.game, self.storage, self.have(),
                                self.status, message, self.guide, self.bridge.script_outdated(self.game),
-                               self.roadmap, self.veins, self.world.alerts() if self.world.active else [],
+                               self.objectives, self.veins,
+                               self.world.alerts() if self.world.active and self.settings["machines"] else [],
                                self.world.active)
         except Exception:
             log(traceback.format_exc())
@@ -1910,10 +2371,23 @@ class App:
                 self.start_question(str(request["texte"]), None)
         elif kind == "info" and request.get("item"):
             self.show_info(request)
+        elif kind == "reglage":
+            self.set_setting(str(request.get("cle")), bool(request.get("valeur")))
         elif kind == "action":
             action = request.get("action")
-            if action in ("objectif_suivant", "plan"):
-                self.on_plan()
+            if action == "objectif_suivant":
+                self.on_next_objective()
+            elif action in ("nouveau_plan", "plan"):
+                self.on_new_plan()
+            elif action == "refaire_objectif":
+                self.on_redo_objective()
+            elif action == "valider_etape":
+                self.set_step(None, True)
+            elif action == "etape" and isinstance(request.get("index"), int) and self.plan:
+                states = self.progress()["etapes"]
+                index = request["index"]
+                if 0 <= index < len(states):
+                    self.set_step(index + 1, not states[index])  # clic sur une étape : la cocher ou la décocher
             elif action == "affichage":
                 self.on_hide()
             elif action == "voix":
@@ -1950,7 +2424,9 @@ class App:
 
     def work_info(self, item, name):
         try:
-            answer, _ = ask_claude(INFO_REQUEST.format(nom=name, item=item), None, self.bridge.dir, MODEL_QUESTION)
+            known = self.recipe_index.about(item)  # sa fabrication et, pour une machine, ce qu'elle fait
+            prompt = INFO_REQUEST.format(nom=name, item=item) + (f"\n\nDéjà trouvé dans le pack :\n{known}" if known else "")
+            answer = ask_claude(prompt, self.bridge.dir, MODEL_QUESTION, effort="low")
             self.events.put(("info_ready", item, parse_info(answer), None))
         except Exception as e:
             log(traceback.format_exc())
@@ -2037,8 +2513,37 @@ class App:
         self.shot = self.safe_screenshot()
         self.open_popup()
 
-    def on_plan(self, auto=False, request=""):
-        """Nouveau plan : avec F7 ou tout seul (Claude choisit), ou à la voix pour une demande précise."""
+    def on_plan(self):  # touche F7
+        self.on_next_objective()
+
+    def on_next_objective(self, auto=False):
+        """Objectif suivant : le prochain objectif du plan, détaillé par Claude (celui en cours est alors marqué
+        fait). Sans plan, ou à la fin du plan, un nouveau plan."""
+        following = next((i for i, o in enumerate(self.objectives) if o["etat"] == "a_faire"), None)
+        if following is None:
+            self.on_new_plan(auto=auto)
+        else:
+            self.start_objective(self.objectives[following]["demande"], index=following, auto=auto)
+
+    def on_redo_objective(self):
+        """Refait le détail de l'objectif en cours, à la même place dans le plan (étapes plus précises, recettes et
+        machines revérifiées)."""
+        current = self.current_objective()
+        if current is not None:
+            self.start_objective(self.objectives[current]["demande"], index=current)
+        elif self.plan:
+            self.start_objective(self.plan["objectif"])
+        else:
+            self.on_next_objective()
+
+    def on_new_plan(self, request="", auto=False):
+        """Nouveau plan : Claude choisit l'objectif principal (ou celui que le joueur demande), le découpe en
+        objectifs et détaille le premier."""
+        self.start_objective(request, new_plan=True, auto=auto)
+
+    def start_objective(self, request="", index=None, new_plan=False, auto=False):
+        """Fait détailler un objectif par Claude. index : sa place dans le plan ; sans index ni nouveau plan, c'est
+        un objectif demandé à la voix, qui passe avant celui en cours (repris juste après)."""
         if self.busy:
             if not auto:
                 self.notify("Patience, je réfléchis encore…", 4)
@@ -2050,34 +2555,27 @@ class App:
             return
         if not auto:
             self.speaker.stop()
-        from_roadmap = False
-        if not request and self.roadmap:  # la feuille de route décide de l'objectif suivant
-            request, from_roadmap = self.roadmap[0]["demande"], True
         self.busy = True
         self.plan_done_announced = True
-        self.set_status("Claude prépare ton objectif…")
+        self.set_status("Claude prépare ton nouveau plan…" if new_plan else "Claude prépare ton objectif…")
         shot = None if auto or request else self.safe_screenshot()
-        threading.Thread(target=self.work_plan, args=(shot, request, from_roadmap), daemon=True).start()
+        threading.Thread(target=self.work_plan, args=(shot, request, index, new_plan), daemon=True).start()
 
     def on_new(self):
-        self.session_id = None
-        save_session(None)
+        threading.Thread(target=self.conversation.restart, daemon=True).start()
         self.notify("Nouvelle conversation.", 4)
 
     def on_hide(self):
         self.speaker.stop()
         if self.game:
-            self.visible = not self.visible
-            self.refresh(force=True)
+            self.set_setting("panneau", not self.visible)
         elif self.overlay and self.overlay.winfo_viewable():
             self.overlay.withdraw()
         elif self.message:
             self.show_overlay(self.message)
 
     def on_voice(self):
-        self.speak = not self.speak
-        if not self.speak:
-            self.speaker.stop()
+        self.set_setting("voix", not self.speak)
         self.notify("Voix activée." if self.speak else "Voix coupée.", 3)
 
     def safe_screenshot(self):
@@ -2101,9 +2599,11 @@ class App:
             world = describe_world(self.world)
             if world:
                 parts.append(world)
-        if self.roadmap:
-            parts.append("Feuille de route (objectifs suivants, dans l'ordre) : "
-                         + " ; ".join(f"{i + 1}. {r['titre']}" for i, r in enumerate(self.roadmap)))
+        if self.objectives:
+            marks = {"fait": "✔ ", "en_cours": "▶ ", "a_faire": ""}
+            parts.append(f"Plan (objectif principal) : {self.plan_title or 'sans titre'} ; ses objectifs dans "
+                         "l'ordre (✔ fait, ▶ en cours) : " + " ; ".join(
+                             f"{i + 1}. {marks.get(o['etat'], '')}{o['titre']}" for i, o in enumerate(self.objectives)))
         if with_storage:
             journal = self.describe_journal(25)
             if journal:
@@ -2114,7 +2614,15 @@ class App:
             current = next((s["texte"] for s, done in zip(self.plan["etapes"], progress["etapes"]) if not done), None)
             state = "terminé" if progress["termine"] else f"étape en cours : {current or 'aucune'}"
             missing = ", ".join(f"{n}x {names.get(i, i)}" for i, n in progress["manque"].items())
-            parts.append(f"Objectif affiché : {self.plan['objectif']} ({state}) ; il me manque : {missing or 'rien'}")
+            steps = " ; ".join(f"{i + 1}. {'✔ ' if done else ''}{s['texte']}"
+                               for i, (s, done) in enumerate(zip(self.plan["etapes"], progress["etapes"])))
+            parts.append(f"Objectif en cours : {self.plan['objectif']} ({state}) ; ses étapes : {steps} ; "
+                         f"il me manque : {missing or 'rien'}")
+            machines = needed_machines(self.plan, progress, self.recipe_index, self.have(), self.storage.placed())
+            if machines:
+                parts.append("Machines dont l'objectif a besoin : " + " ; ".join(
+                    f"{machine_label(m['a'] or m['machines'][0])} pour {', '.join(m['pour'])} : "
+                    + ("je l'ai" if m["a"] else "JE NE L'AI PAS, il faut la fabriquer d'abord") for m in machines))
         if self.places:
             parts.append("Lieux mémorisés : " + " ; ".join(
                 f"{name} ({p['x']} {p['y']} {p['z']}, {p['dimension']})" for name, p in self.places.items()))
@@ -2125,21 +2633,21 @@ class App:
         if removed:
             parts.append("Coffres retirés automatiquement de la mémoire (cassés) : " + ", ".join(removed))
         if shot:
-            parts.append(f"Capture de mon écran (lis-la avec Read) : {shot}")
+            parts.append(f"Capture de mon écran : {shot} (lis-la avec Read SEULEMENT si ma question porte sur ce que "
+                         "je vois : « ça », « ce bloc », « cet écran »… ; sinon ne l'ouvre pas, ça ralentit)")
         return "\n".join(parts)
 
-    def work_plan(self, shot, request="", from_roadmap=False):
+    def work_plan(self, shot, request="", index=None, new_plan=False):
         try:
             context = self.context(shot, with_storage=True) + "\n" + describe_quests(self.bridge.read("quetes.json"))
-            prompt = PLAN_REQUEST.format(context=context)
+            prompt = PLAN_REQUEST.format(context=context) + (NEW_PLAN_EXTRA if new_plan else "")
             if request:
-                prompt = (f"Le joueur demande précisément : « {request} ». Construis l'objectif pour répondre à "
-                          f"cette demande (par exemple la quête qu'il cite), même si ce n'est pas la plus urgente.\n"
-                          + prompt)
-            answer, session_id = ask_claude(
-                prompt, self.session_id, self.bridge.dir, MODEL_PLAN,
-                on_tool=lambda name, data: self.events.put(("status", tool_status(name, data))))
-            self.events.put(("plan_ready", parse_plan(answer), session_id, from_roadmap))
+                what = "le plan" if new_plan else "l'objectif"
+                prompt = (f"Le joueur demande précisément : « {request} ». Construis {what} pour répondre à cette "
+                          f"demande (par exemple la quête qu'il cite), même si ce n'est pas la plus urgente.\n" + prompt)
+            answer = ask_claude(prompt, self.bridge.dir, MODEL_PLAN, effort=EFFORT_PLAN,
+                                on_tool=lambda name, data: self.events.put(("status", tool_status(name, data))))
+            self.events.put(("plan_ready", parse_plan(answer), request, index, new_plan))
         except Exception as e:
             log(traceback.format_exc())
             self.events.put(("error", str(e)))
@@ -2150,9 +2658,12 @@ class App:
         threading.Thread(target=self.work_question, args=(text, audio, self.shot), daemon=True).start()
 
     def work_question(self, text, audio, shot):
+        timing = {"début": time.time()}  # pour le journal : où passe le temps
         try:
             if audio is not None:
-                text = self.transcriber.transcribe(audio)
+                text = self.transcriber.transcribe(audio, sorted(set(item_names(self.plan).values()))
+                                                   if self.plan else ())
+                timing["transcrite"] = time.time()
                 if not text:
                     raise RuntimeError("Je n'ai rien entendu : parle plus près du micro en tenant F8.")
             self.events.put(("status", f"« {text} » : Claude réfléchit…"))
@@ -2160,6 +2671,7 @@ class App:
             spoken = [0]
 
             def on_text(partial):
+                timing.setdefault("premier mot", time.time())
                 partial = readable(visible_text(partial))  # la ligne d'actions n'est ni affichée ni lue
                 self.events.put(("live_text", partial))
                 if len(partial) < spoken[0]:  # nouveau message de Claude
@@ -2172,14 +2684,22 @@ class App:
                 spoken[0] = cut
 
             self.speaker.stop()
-            prompt = f"{self.context(shot, with_storage=True)}\n\n{ACTIONS_HELP}\n\nMa question : {text}"
-            answer, session_id = ask_claude(
-                prompt, self.session_id, self.bridge.dir, pick_model(text), on_text=on_text,
-                on_tool=lambda name, data: self.events.put(("status", tool_status(name, data))))
+            recipes = self.recipe_index.hint(text)  # les recettes des objets cités : Claude n'a pas à les chercher
+            prompt = (f"{self.context(shot, with_storage=True)}\n\n{ACTIONS_HELP}\n\n"
+                      + (recipes + "\n\n" if recipes else "") + f"Ma question : {text}")
+            on_tool = lambda name, data: self.events.put(("status", tool_status(name, data)))  # noqa: E731
+            try:
+                answer = self.conversation.ask(prompt, on_text, on_tool)
+            except RuntimeError:  # Claude gardé ouvert indisponible : une demande isolée, plus lente mais sûre
+                log("Conversation indisponible, demande isolée :\n" + traceback.format_exc())
+                answer = ask_claude(prompt, self.bridge.dir, MODEL_QUESTION, on_text, on_tool, EFFORT_QUESTION)
             shown = readable(split_actions(answer)[0])
             if self.speak and spoken[0] < len(shown):
                 self.speaker.add(shown[spoken[0]:])
-            self.events.put(("answer", text, answer, session_id))
+            self.events.put(("answer", text, answer))
+            timing["fin"] = time.time()
+            log("Temps : " + ", ".join(f"{step} {moment - timing['début']:.1f} s" for step, moment in timing.items()
+                                       if step != "début"))
         except Exception as e:
             log(traceback.format_exc())
             self.events.put(("error", str(e)))
@@ -2193,16 +2713,40 @@ class App:
         self.message, self.message_until = text, 0
         self.refresh()
 
-    def on_plan_ready(self, plan, session_id, from_roadmap=False):
+    def on_plan_ready(self, plan, request="", index=None, new_plan=False):
         self.busy = False
-        self.session_id = session_id
-        save_session(session_id)
-        if from_roadmap and self.roadmap:
-            self.roadmap.pop(0)  # cet objectif de la feuille de route est maintenant le plan affiché
-        if not self.roadmap and plan.get("feuille_de_route"):
-            self.roadmap = plan["feuille_de_route"]  # première fois : l'ordre de la suite, sans rien demander
+        current = self.current_objective()
+        if new_plan and plan.get("plan"):
+            main = plan["plan"]
+            self.plan_title = main["titre"] or plan["objectif"]
+            self.plan_why = main["pourquoi"]
+            self.objectives = main["objectifs"]
+            self.objectives[0]["etat"] = "en_cours"
+            self.journal("plan", f"Nouveau plan : {self.plan_title}")
+        elif index is not None and index < len(self.objectives):  # l'objectif suivant du plan
+            if current is not None and current != index:
+                self.objectives[current]["etat"] = "fait"
+            self.objectives[index]["etat"] = "en_cours"
+        else:  # objectif demandé à la voix : il passe avant celui en cours, qui reprendra juste après
+            entry = objective_entry({"titre": plan["objectif"], "demande": request or plan["objectif"]}, "en_cours")
+            if current is None:
+                self.objectives.insert(next((i for i, o in enumerate(self.objectives) if o["etat"] == "a_faire"),
+                                            len(self.objectives)), entry)
+            else:
+                self.objectives[current]["etat"] = "a_faire"
+                self.objectives.insert(current, entry)
         self.plan, self.plan_version = plan, int(time.time())
-        self.reached, self.done_steps = set(), set()
+        self.reached, self.done_steps, self.undone_steps = set(), set(), set()
+        # Ce qu'il a au départ est le point de départ de ce qu'il obtiendra ensuite. Une cible qu'il a déjà sur lui ou
+        # posée (un Solid Boiler quand deux tournent) : il en veut une de plus, pas la valider tout de suite. Ce qui
+        # dort dans ses coffres, en revanche, compte comme déjà là (des casings en réserve pour un multibloc).
+        self.last_totals = self.target_totals()
+        self.obtained = dict(self.last_totals)
+        have, placed = self.have(), self.storage.placed()
+        for target in plan["cibles"]:
+            already = have.get(target["item"], 0) + placed.get(target["item"], 0)
+            if already >= target["quantite"]:
+                target["deja"] = already
         # Les étapes déjà faites au départ sont cochées sans être annoncées
         self.done_steps = {i for i, done in enumerate(self.progress()["etapes"]) if done}
         self.last_progress = time.time()
@@ -2214,10 +2758,8 @@ class App:
         self.status = ""
         self.notify(readable(plan["resume"]), 45, speak=bool(plan["resume"]))
 
-    def on_answer(self, question, answer, session_id):
+    def on_answer(self, question, answer):
         self.busy = False
-        self.session_id = session_id
-        save_session(session_id)
         log(f"Q : {question}\nR : {answer}")
         answer, actions = split_actions(answer)
         answer = readable(answer)
@@ -2264,43 +2806,90 @@ class App:
         self.send_command("oublier_coffres", cles=keys)
 
     def action_nouveau_plan(self, action):
-        self.root.after(300, lambda: self.on_plan(request=str(action.get("demande") or "")))
+        self.root.after(300, lambda: self.on_new_plan(request=str(action.get("demande") or "")))
 
-    def action_effacer_plan(self, _action):
-        self.plan, self.reached, self.done_steps = None, set(), set()
+    def action_nouvel_objectif(self, action):
+        self.root.after(300, lambda: self.start_objective(str(action.get("demande") or "")))
+
+    def action_effacer_objectif(self, _action):
+        current = self.current_objective()
+        if current is not None:
+            self.objectives[current]["etat"] = "a_faire"
+        self.plan, self.reached, self.done_steps, self.undone_steps = None, set(), set(), set()
         self.save_plan()
 
-    @staticmethod
-    def roadmap_entry(data):
-        title = str(data.get("titre") or data.get("demande") or "Objectif")
-        return {"titre": title[:60], "demande": str(data.get("demande") or title)}
-
-    def action_feuille_de_route(self, action):
-        self.roadmap = [self.roadmap_entry(o) for o in action.get("objectifs") or [] if isinstance(o, dict)]
+    def action_effacer_plan(self, action):
+        self.action_effacer_objectif(action)
+        self.objectives, self.plan_title, self.plan_why = [], "", ""
         self.save_plan()
-        if not self.plan and self.roadmap:  # aucun objectif affiché : on attaque le premier tout de suite
-            self.root.after(300, self.on_plan)
+
+    def action_modifier_plan(self, action):
+        """Remplace les objectifs qui restent à faire (ceux faits et celui en cours ne bougent pas)."""
+        kept = [o for o in self.objectives if o["etat"] != "a_faire"]
+        self.objectives = kept + [objective_entry(o) for o in action.get("objectifs") or [] if isinstance(o, dict)]
+        if action.get("titre"):
+            self.plan_title = str(action["titre"])
+        self.save_plan()
+        if not self.plan and self.objectives:  # aucun objectif en cours : on attaque le premier tout de suite
+            self.root.after(300, self.on_next_objective)
+
+    action_feuille_de_route = action_modifier_plan  # ancien nom
 
     def action_ajouter_objectif(self, action):
-        entry = self.roadmap_entry(action)
-        if any(r["titre"].lower() == entry["titre"].lower() for r in self.roadmap):
-            return  # déjà dans la feuille de route
-        position = action.get("position")
-        index = len(self.roadmap) if not isinstance(position, int) else max(0, min(position - 1, len(self.roadmap)))
-        self.roadmap.insert(index, entry)
+        entry = objective_entry(action, "a_faire")
+        if any(o["titre"].lower() == entry["titre"].lower() and o["etat"] != "fait" for o in self.objectives):
+            return  # déjà dans le plan
+        position = action.get("position")  # 1 = juste après l'objectif en cours
+        start = next((i + 1 for i, o in enumerate(self.objectives) if o["etat"] == "en_cours"), 0)
+        start = max(start, sum(1 for o in self.objectives if o["etat"] == "fait"))
+        index = len(self.objectives) if not isinstance(position, int) else min(start + max(0, position - 1),
+                                                                                len(self.objectives))
+        self.objectives.insert(index, entry)
         self.save_plan()
 
     def action_retirer_objectif(self, action):
         title = str(action.get("titre", "")).lower()
-        self.roadmap = [r for r in self.roadmap if title not in r["titre"].lower()]
+        self.objectives = [o for o in self.objectives if o["etat"] != "a_faire" or title not in o["titre"].lower()]
         self.save_plan()
 
     def action_objectif_suivant(self, _action):
-        self.root.after(300, self.on_plan)
+        self.root.after(300, self.on_next_objective)
+
+    def action_refaire_objectif(self, _action):
+        self.root.after(300, self.on_redo_objective)
+
+    def action_valider_etape(self, action):
+        self.set_step(action.get("numero"), True)
+
+    def action_decocher_etape(self, action):
+        self.set_step(action.get("numero"), False)
+
+    def set_step(self, number=None, done=True):
+        """Coche ou décoche une étape de l'objectif à la main (number : 1, 2... ; sans numéro, l'étape en cours)."""
+        if not self.plan:
+            return
+        states = self.progress()["etapes"]
+        if isinstance(number, int) and 1 <= number <= len(states):
+            index = number - 1
+        else:
+            index = next((i for i, d in enumerate(states) if not d), None) if done else \
+                max((i for i, d in enumerate(states) if d), default=None)
+        if index is None:
+            return
+        if done:
+            self.done_steps.add(index)
+            self.undone_steps.discard(index)
+        else:
+            self.done_steps.discard(index)
+            self.undone_steps.add(index)
+            self.plan_done_announced = False  # si l'objectif était fini, il ne l'est plus
+        self.last_progress = time.time()
+        self.save_plan()
+        self.refresh(force=True)
 
     def action_planifier_usine(self, action):
         request = FACTORY_REQUEST.format(demande=str(action.get("demande") or "une usine"))
-        self.root.after(300, lambda: self.on_plan(request=request))
+        self.root.after(300, lambda: self.start_objective(request))
 
     def action_memoriser_lieu(self, action):
         if not self.game:
@@ -2335,13 +2924,14 @@ class App:
     def action_effacer_surbrillance(self, _action):
         self.search = None
 
+    def action_reglage(self, action):
+        self.set_setting(str(action.get("cle")), bool(action.get("valeur", True)))
+
     def action_affichage(self, action):
-        self.visible = bool(action.get("visible", True))
+        self.set_setting("panneau", action.get("visible", True))
 
     def action_voix(self, action):
-        self.speak = bool(action.get("active", True))
-        if not self.speak:
-            self.speaker.stop()
+        self.set_setting("voix", action.get("active", True))
 
     def on_error(self, message):
         self.busy = False
@@ -2415,26 +3005,47 @@ class App:
             self.root.after(hide_after, lambda: self.overlay_token == token and self.overlay.withdraw())
 
 
+def supervise():
+    """Lance l'assistant dans un processus à part et le relance s'il plante : un module en C (micro, voix,
+    reconnaissance vocale) peut faire tomber tout le processus sans prévenir. Une seule instance à la fois."""
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "AssistantMinecraftClaude")
+    if ctypes.windll.kernel32.GetLastError() == 183:
+        messagebox.showinfo("Assistant Minecraft", "L'assistant est déjà lancé.")
+        return
+    crashes = []
+    try:
+        while True:
+            code = subprocess.call([sys.executable, str(Path(__file__).resolve()), "--enfant"])
+            if code == 0:  # arrêt normal, ou erreur déjà signalée au joueur
+                return
+            crashes = [t for t in crashes if time.time() - t < 300] + [time.time()]
+            if len(crashes) >= 3:
+                log(f"L'assistant a planté 3 fois en 5 minutes (code {code:#x}) : relance automatique abandonnée")
+                messagebox.showerror("Assistant Minecraft", "L'assistant plante sans arrêt, détails dans assistant.log.")
+                return
+            log(f"L'assistant a planté (code {code:#x}) : relance automatique")
+            time.sleep(2)
+    finally:
+        ctypes.windll.kernel32.CloseHandle(mutex)
+
+
 def main():
     if sys.stderr is None:  # lancé avec pythonw : les messages des modules vont dans le journal
-        sys.stdout = sys.stderr = LOG_FILE.open("a", encoding="utf-8")
+        sys.stdout = sys.stderr = LOG_FILE.open("a", encoding="utf-8", buffering=1)
+    faulthandler.enable(sys.stderr)  # un plantage natif (module en C) laisse sa pile Python dans le journal
+    if "--enfant" not in sys.argv:
+        supervise()
+        return
     os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except (AttributeError, OSError):
         pass
-    # Une seule instance à la fois
-    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "AssistantMinecraftClaude")
-    if ctypes.windll.kernel32.GetLastError() == 183:
-        messagebox.showinfo("Assistant Minecraft", "L'assistant est déjà lancé.")
-        return
     try:
         App().run()
     except Exception:
         log(traceback.format_exc())
         messagebox.showerror("Assistant Minecraft", "L'assistant a planté, détails dans assistant.log.")
-    finally:
-        ctypes.windll.kernel32.CloseHandle(mutex)
 
 
 if __name__ == "__main__":

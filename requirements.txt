@@ -4,4 +4,5 @@ Pillow
 numpy
 sounddevice
 faster-whisper
+pyyaml
 edge-tts

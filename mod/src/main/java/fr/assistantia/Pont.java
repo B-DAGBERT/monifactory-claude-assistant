@@ -221,6 +221,18 @@ public final class Pont {
         return reperes;
     }
 
+    /** Écrit un fichier texte pour l'assistant et Claude, d'un coup : il n'est jamais lu à moitié écrit. */
+    static void ecrireTexte(String nom, List<String> lignes) {
+        try {
+            Files.createDirectories(DOSSIER);
+            Path temporaire = DOSSIER.resolve(nom + ".tmp");
+            Files.write(temporaire, lignes, StandardCharsets.UTF_8);
+            Files.move(temporaire, DOSSIER.resolve(nom), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            LOGGER.warn("Assistant IA : {} non écrit", nom, e);
+        }
+    }
+
     /** Transmet une demande du joueur à l'assistant (question écrite, action, nouveau plan...). */
     public static void envoyer(JsonObject demande) {
         demande.addProperty("n", System.currentTimeMillis());

@@ -82,6 +82,11 @@ public final class Hud {
             g.drawString(font, "Je prépare ton prochain objectif…", 2, y, GRIS, false);
             return;
         }
+        String plan = Pont.texte(hud, "plan"); // « Plan : Passer en LV · 2/6 »
+        if (!plan.isEmpty()) {
+            g.drawString(font, font.plainSubstrByWidth(plan, LARGEUR - 4), 2, y, GRIS, false);
+            y += 10;
+        }
         double progres = Mth.clamp(Pont.nombre(hud, "progres", 0), 0, 1);
         String pourcent = Math.round(progres * 100) + " %";
         g.drawString(font, font.plainSubstrByWidth("✦ " + objectif, LARGEUR - font.width(pourcent) - 8), 2, y, OR, true);
@@ -125,7 +130,7 @@ public final class Hud {
         if (Pont.texte(hud, "objectif").isEmpty()) {
             return h + 10;
         }
-        h += 17;
+        h += 17 + (Pont.texte(hud, "plan").isEmpty() ? 0 : 10);
         String etape = Pont.texte(hud, "etape");
         if (!etape.isEmpty()) {
             h += Math.min(2, font.split(Component.literal("▶ " + etape), LARGEUR - 4).size()) * 10 + 2;

@@ -16,6 +16,7 @@ public final class Client {
         MinecraftForge.EVENT_BUS.register(Surbrillance.class);
         MinecraftForge.EVENT_BUS.register(Guidage.class);
         MinecraftForge.EVENT_BUS.register(Reperage.class);
+        MinecraftForge.EVENT_BUS.register(Stats.class);
         MinecraftForge.EVENT_BUS.register(AideEcran.class);
     }
 }
