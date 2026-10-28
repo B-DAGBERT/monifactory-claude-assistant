@@ -1,3 +1,6 @@
+> **Variante Codex (`codex-compat`)** : mêmes fonctions de jeu, intégration Codex et lanceurs Mac.
+> Lire [Installation, configuration et mises à jour Codex](README_CODEX.md) avant les instructions Claude ci-dessous.
+
 # Monifactory Claude Assistant
 
 Un assistant IA **dans** Minecraft, pour le modpack [Monifactory](https://www.curseforge.com/minecraft/modpacks/monifactory) (GregTech CEu Modern, Minecraft 1.20.1). Il connaît ta partie en temps réel (inventaire, coffres, quêtes, machines, recettes du pack). Il te dit **quoi faire ensuite, dans quel ordre, comment et pourquoi**, et tu lui parles à la voix pendant que tu joues.

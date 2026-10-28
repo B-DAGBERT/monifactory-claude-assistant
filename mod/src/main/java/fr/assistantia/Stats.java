@@ -31,7 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Les caractéristiques des objets, que les recettes ne donnent pas, pour que Claude réponde à « quelle pioche est la
+ * Les caractéristiques des objets, que les recettes ne donnent pas, pour que Codex réponde à « quelle pioche est la
  * meilleure ? » : durabilité, ce qu'un outil peut miner et à quelle vitesse, dégâts, armure, enchantements, et
  * l'infobulle complète du jeu (ce que les mods y ajoutent : niveau de minage GregTech, charge, contenu...).
  * - inventaire_details.txt : ce que le joueur a sur lui et dans le coffre ouvert, mis à jour en direct ;

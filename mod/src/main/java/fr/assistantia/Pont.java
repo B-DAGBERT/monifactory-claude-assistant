@@ -191,7 +191,11 @@ public final class Pont {
             return false;
         }
         try {
-            new ProcessBuilder("cmd", "/c", "start", "", lanceur).start();
+            if (System.getProperty("os.name", "").startsWith("Mac")) {
+                new ProcessBuilder("/usr/bin/open", lanceur).start();
+            } else {
+                new ProcessBuilder("cmd", "/c", "start", "", lanceur).start();
+            }
             relanceA = System.currentTimeMillis();
             return true;
         } catch (IOException e) {
@@ -221,7 +225,7 @@ public final class Pont {
         return reperes;
     }
 
-    /** Écrit un fichier texte pour l'assistant et Claude, d'un coup : il n'est jamais lu à moitié écrit. */
+    /** Écrit un fichier texte pour l'assistant et Codex, d'un coup : il n'est jamais lu à moitié écrit. */
     static void ecrireTexte(String nom, List<String> lignes) {
         try {
             Files.createDirectories(DOSSIER);

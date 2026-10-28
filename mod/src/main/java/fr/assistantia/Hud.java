@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * Ce qui reste à l'écran pendant qu'on joue, volontairement léger : l'objectif et sa progression, l'étape en
  * cours, les trois prochains objets utiles, la direction, et seulement les alertes qui comptent. Les réponses
- * de Claude et du coach arrivent dans une bulle qui s'efface toute seule. Le détail est dans l'écran (touche Y).
+ * de Codex et du coach arrivent dans une bulle qui s'efface toute seule. Le détail est dans l'écran (touche Y).
  */
 public final class Hud {
     static final int OR = 0xFFC94A, BLANC = 0xF2F2F2, GRIS = 0x9A9A9A, VERT = 0x6BE36B, JAUNE = 0xFFE45C,
@@ -162,7 +162,7 @@ public final class Hud {
         return y + 18;
     }
 
-    /** La dernière réponse de Claude ou du coach, à droite sous la mini-carte, qui s'efface toute seule. */
+    /** La dernière réponse de Codex ou du coach, à droite sous la mini-carte, qui s'efface toute seule. */
     private static void bulle(GuiGraphics g, Minecraft mc, int largeurEcran, int hauteurEcran, float echelle) {
         JsonObject b = Pont.partie("bulle");
         String texte = Pont.texte(b, "texte");
@@ -188,7 +188,7 @@ public final class Hud {
         g.pose().scale(echelle, echelle, 1);
         g.fill(0, 0, BULLE, h, (int) (0xC8 * opacite) << 24 | 0x0D1013);
         g.fill(0, 0, 2, h, alpha | 0xFFC94A);
-        g.drawString(font, "Claude", 6, 3, alpha | OR, false);
+        g.drawString(font, "Codex", 6, 3, alpha | OR, false);
         int y = 14;
         for (int i = lignes.size() - visibles; i < lignes.size(); i++) { // les dernières lignes si c'est long
             g.drawString(font, lignes.get(i), 6, y, alpha | BLANC, false);

@@ -1,9 +1,9 @@
 """
-Assistant Minecraft (Monifactory) avec Claude, via ton abonnement Claude (pas de clé API).
+Assistant Minecraft (Monifactory) avec Codex, via ton compte Codex (pas de clé API).
 
 Dans le jeu (script KubeJS installé automatiquement) : objectif, étape en cours, objets à fabriquer,
 matériaux manquants et coffres où les trouver, mis à jour en direct.
-  F7          objectif suivant : Claude regarde ta progression et prépare un plan
+  F7          objectif suivant : Codex regarde ta progression et prépare un plan
   F8 (tenir)  parle tant que tu tiens F8, relâche pour envoyer
   Maj+F8      question écrite
   F9          cacher / réafficher l'affichage (coupe aussi la voix)
@@ -33,21 +33,28 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
 
-import keyboard
+if sys.platform == "darwin":
+    import mac_keys as keyboard
+else:
+    import keyboard
+
+from codex_config import CONFIG, minecraft_dir, find_codex
+from codex_integration import ask as ask_codex, Conversation as CodexConversation
+from platform_support import SingleInstance
 import mss
 from PIL import Image
 
 # ---------------- Réglages ----------------
-MINECRAFT_DIR = Path.home() / "curseforge" / "minecraft" / "Instances" / "Monifactory"
+MINECRAFT_DIR = minecraft_dir()
 HOTKEY_PLAN = "f7"
 HOTKEY_TALK = "f8"          # à maintenir pendant qu'on parle
 HOTKEY_TYPE = "shift+f8"
 HOTKEY_NEW = "ctrl+f8"
 HOTKEY_HIDE = "f9"
 HOTKEY_VOICE = "f10"
-MODEL_PLAN = "sonnet"       # plans et objectifs ; "opus" : plus fort, mais plus lent et consomme plus ton quota
-MODEL_QUESTION = "sonnet"   # tes questions ; "haiku" : encore plus rapide, mais se trompe plus sur les recettes
-MODEL_QUICK = "haiku"       # messages du coach et briefing
+MODEL_PLAN = CONFIG.get("model_plan", "gpt-6.1-sol")
+MODEL_QUESTION = CONFIG.get("model_question", "gpt-5.6-sol")
+MODEL_QUICK = CONFIG.get("model_quick", "gpt-5.6-sol")
 EFFORT_QUESTION = "low"     # réflexion avant de répondre : "low" (rapide), "medium", "high"
 EFFORT_PLAN = "medium"
 COACH = "normal"            # "calme" : seulement les dangers ; "normal" ; "bavard" : il commente tout
@@ -88,14 +95,14 @@ PLAN_FILE = HERE / "plan_ia.json"
 PLACES_FILE = HERE / "lieux.json"
 JOURNAL_FILE = HERE / "journal.jsonl"
 WORLD_FILE = HERE / "monde_memoire.json"   # ce que le serveur a vu (coffres, machines), gardé entre deux parties
-INFO_FILE = HERE / "fiches.json"           # fiches « à quoi ça sert » déjà rédigées par Claude (touche I)
+INFO_FILE = HERE / "fiches.json"           # fiches « à quoi ça sert » déjà rédigées par Codex (touche I)
 SETTINGS_FILE = HERE / "reglages.json"
 COACH_LEVELS = {"calme": 0, "normal": 1, "bavard": 2}
 DANGER, USEFUL, CHATTY = 0, 1, 2  # niveau minimal du coach pour chaque message
 LOG_FILE = HERE / "assistant.log"
-NO_WINDOW = subprocess.CREATE_NO_WINDOW
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 SAMPLE_RATE = 16000
-user32 = ctypes.windll.user32
+user32 = ctypes.windll.user32 if os.name == "nt" else None
 
 BG, FG, FG_DIM = "#1e1f22", "#f2f2f2", "#a8a8a8"
 
@@ -116,7 +123,7 @@ automatiquement », ne retire rien d'autre.
 Vocabulaire : le PLAN est l'objectif principal (« Passer en LV »), découpé en OBJECTIFS ; l'objectif en cours \
 est détaillé en ÉTAPES.
 - {"type": "nouveau_plan", "demande": "passer en LV"} : remplacer le plan par un nouveau (sans "demande" : le \
-plus utile maintenant) ; Claude le découpe en objectifs et détaille le premier.
+plus utile maintenant) ; Codex le découpe en objectifs et détaille le premier.
 - {"type": "nouvel_objectif", "demande": "fabriquer un LP Steam Solid Boiler de plus"} : détailler tout de \
 suite un objectif précis que le joueur demande (une quête, une machine, un objet) ; il passe avant l'objectif \
 en cours, qui reprendra juste après.
@@ -431,7 +438,7 @@ def load_craftable(recipes_dir):
 
 class RecipeIndex:
     """Les recettes du pack rangées par objet produit et par catégorie, et les machines qui font chaque catégorie,
-    pour donner à Claude ce qui concerne les objets cités dans une question : comment les fabriquer et, pour une
+    pour donner à Codex ce qui concerne les objets cités dans une question : comment les fabriquer et, pour une
     machine, ce qu'elle fait. Il n'a plus à le chercher lui-même (un aller-retour de 3 à 5 s de moins), et il sait
     à quoi sert une machine même quand ses recettes ne portent pas son nom (la Steam Foundry fait celles d'une autre
     catégorie)."""
@@ -705,7 +712,7 @@ def describe_machines(storage, limit=60):
 
 
 def split_actions(text):
-    """Sépare la réponse (affichée et lue) des actions demandées par Claude dans <actions>[...]</actions>."""
+    """Sépare la réponse (affichée et lue) des actions demandées par Codex dans <actions>[...]</actions>."""
     match = ACTION_TAG.search(text)
     if not match:
         return text.strip(), []
@@ -731,7 +738,7 @@ def visible_text(partial):
 
 
 def readable(text):
-    """Remplace les identifiants qui échappent à Claude (minecraft:torch) par le nom du jeu (Torch)."""
+    """Remplace les identifiants qui échappent à Codex (minecraft:torch) par le nom du jeu (Torch)."""
     return ITEM_ID.sub(lambda m: m.group(1).split("/")[-1].replace("_", " ").title(), text)
 
 
@@ -752,7 +759,7 @@ def describe_state(state, inventory_limit=60):
 
 
 def describe_storage(storage, limit=150):
-    """Contenu des coffres avec leurs coordonnées, pour que Claude puisse dire où aller chercher un objet."""
+    """Contenu des coffres avec leurs coordonnées, pour que Codex puisse dire où aller chercher un objet."""
     where = defaultdict(list)
     for c in storage.containers:
         for o in c["objets"]:
@@ -790,10 +797,10 @@ def describe_quests(quests, limit=25, per_chapter=8):
 # ---------------- Plan : arbre de fabrication ----------------
 
 def parse_info(text):
-    """La fiche « à quoi ça sert » renvoyée par Claude, nettoyée et bornée pour tenir dans l'écran du jeu."""
+    """La fiche « à quoi ça sert » renvoyée par Codex, nettoyée et bornée pour tenir dans l'écran du jeu."""
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:
-        raise RuntimeError("Claude n'a pas renvoyé de fiche lisible : " + text[:200])
+        raise RuntimeError("Codex n'a pas renvoyé de fiche lisible : " + text[:200])
     data = json.loads(text[start:end + 1])
     chains = []
     for chain in data.get("schema") or []:
@@ -809,7 +816,7 @@ def parse_info(text):
 def parse_plan(text):
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:
-        raise RuntimeError("Claude n'a pas renvoyé de plan lisible : " + text[:200])
+        raise RuntimeError("Codex n'a pas renvoyé de plan lisible : " + text[:200])
     data = json.loads(text[start:end + 1])
 
     def entry(e):
@@ -1198,7 +1205,7 @@ def find_search(search, storage, have, state):
 def build_mod_view(app):
     """Tout ce que le mod Minecraft affiche, sous forme de données (le mod s'occupe de la mise en forme) :
     - hud : le panneau compact (objectif, progression, étape en cours, 3 prochains objets, direction, alertes) ;
-    - bulle : la dernière réponse de Claude ou du coach, qui s'efface toute seule ;
+    - bulle : la dernière réponse de Codex ou du coach, qui s'efface toute seule ;
     - besoins, guidage, marqueurs : surbrillance dans les interfaces et faisceaux dans le monde ;
     - ecran : le tableau de bord de la touche Y ; recette : la fabrication en cours, pour le bouton « Remplir »."""
     plan, progress, state, storage = app.plan, app.progress(), app.game, app.storage
@@ -1352,7 +1359,7 @@ def build_mod_view(app):
     # vie : le fichier est réécrit au moins toutes les 5 s, le mod sait ainsi que l'assistant tourne ;
     # lanceur : de quoi le relancer depuis le jeu s'il s'arrête
     on = app.settings
-    return {"v": 2, "vie": int(now // 5), "lanceur": str(HERE / "Lancer assistant.bat"),
+    return {"v": 2, "vie": int(now // 5), "lanceur": str(HERE / ("Lancer Mac.command" if sys.platform == "darwin" else "Lancer assistant.bat")),
             "hud": hud, "bulle": bubble, "besoins": sorted(needed) if on["surbrillance"] else [],
             "guidage": beams if on["faisceaux"] else [], "marqueurs": markers, "ecran": screen,
             "recette": recipe_now if on["remplir"] else None, "fabrications": crafts if on["remplir"] else [],
@@ -1360,165 +1367,22 @@ def build_mod_view(app):
             "info": dict(app.info) if app.info else None}  # une copie : sinon la fiche complétée semble inchangée
 
 
-# ---------------- Claude Code ----------------
+# ---------------- Codex ----------------
 
-def find_claude():
-    """Le CLI `claude` s'il est installé, sinon celui fourni avec l'app Claude (version la plus récente)."""
-    on_path = shutil.which("claude")
-    if on_path:
-        return on_path
-    pattern = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Claude-Data", "*",
-                           "claude-code", "*", "*", "claude.exe")
-    candidates = glob.glob(pattern)
-    return max(candidates, key=os.path.getmtime) if candidates else None
-
-
-def clean_env():
-    # Sans ANTHROPIC_API_KEY, Claude Code utilise ton compte claude.ai, donc ton abonnement.
-    return {k: v for k, v in os.environ.items() if not k.startswith(("ANTHROPIC", "CLAUDE"))}
-
-
-CLAUDE_TOOLS = "Read,Grep,Glob,WebSearch,WebFetch"
-
-
-def claude_command(model, data_dir, effort=None, persistent=False):
-    """La ligne de commande de Claude Code, allégée : sans les serveurs MCP ni les outils dont il n'a pas besoin
-    (une seconde de moins au démarrage, un prompt quatre fois plus court), en lecture seule sur les données du jeu.
-    persistent : il reste ouvert et attend les questions suivantes (voir Conversation)."""
-    exe = find_claude()
-    if not exe:
-        raise RuntimeError("Claude Code introuvable : ouvre l'app Claude une fois, ou installe Claude Code.")
-    cmd = [exe, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-           "--model", model, "--append-system-prompt", SYSTEM_PROMPT.format(data_dir=data_dir),
-           "--add-dir", str(data_dir), "--tools", CLAUDE_TOOLS, "--allowedTools", CLAUDE_TOOLS, "--strict-mcp-config"]
-    if effort:
-        cmd += ["--effort", effort]
-    return cmd + (["--input-format", "stream-json"] if persistent else ["--no-session-persistence"])
-
-
-def start_claude(cmd, keep_errors=None):
-    """Lance Claude Code ; ses lignes de sortie arrivent dans une file (None quand il s'arrête)."""
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE if keep_errors is not None else subprocess.DEVNULL,
-                            text=True, encoding="utf-8", errors="replace", cwd=HERE, env=clean_env(),
-                            creationflags=NO_WINDOW)
-    lines = queue.Queue()
-
-    def read():
-        for line in proc.stdout:
-            lines.put(line)
-        lines.put(None)
-
-    threading.Thread(target=read, daemon=True).start()
-    if keep_errors is not None:
-        threading.Thread(target=lambda: keep_errors.extend(proc.stderr), daemon=True).start()
-    return proc, lines
-
-
-def read_reply(lines, on_text=None, on_tool=None, deadline=None):
-    """Suit une réponse de Claude au fil de l'eau (texte et recherches en cours) jusqu'à son résultat."""
-    deadline = deadline or time.time() + TIMEOUT
-    text, result = "", None
-    while result is None:
-        try:
-            line = lines.get(timeout=max(0.1, deadline - time.time()))
-        except queue.Empty:
-            raise RuntimeError("pas de réponse de Claude (délai dépassé)") from None
-        if line is None:
-            raise RuntimeError("Claude Code s'est arrêté sans répondre")
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        kind = event.get("type")
-        if kind == "stream_event":
-            inner = event.get("event", {})
-            if inner.get("type") == "message_start":
-                text = ""  # nouveau message de Claude (après une recherche, par exemple)
-            delta = inner.get("delta", {})
-            if delta.get("type") == "text_delta":
-                text += delta.get("text", "")
-                if on_text:
-                    on_text(text)
-        elif kind == "assistant" and on_tool:
-            for block in event.get("message", {}).get("content", []):
-                if block.get("type") == "tool_use":
-                    on_tool(block.get("name", ""), block.get("input") or {})
-        elif kind == "result":
-            result = event
-    if result.get("is_error"):
-        raise RuntimeError(str(result.get("result") or result.get("subtype")))
-    return (result.get("result") or "").strip()
-
-
+# Keep the upstream call signature so future gameplay changes merge easily.
 def ask_claude(prompt, data_dir, model, on_text=None, on_tool=None, effort=None):
-    """Une demande isolée (plan, coach, fiche) : Claude Code démarre, répond, puis s'arrête."""
-    errors = []
-    proc, lines = start_claude(claude_command(model, data_dir, effort), errors)
-    try:
-        proc.stdin.write(prompt)
-        proc.stdin.close()
-        return read_reply(lines, on_text, on_tool)
-    except RuntimeError as e:
-        raise RuntimeError(("".join(errors).strip() or str(e))[-600:]) from None
-    finally:
-        if proc.poll() is None:
-            proc.kill()
+    return ask_codex(prompt, data_dir, model, SYSTEM_PROMPT, on_text, on_tool, effort, TIMEOUT)
 
 
-class Conversation:
-    """Claude Code gardé ouvert pour les questions du joueur : pas de démarrage à chaque question (le premier mot
-    arrive en 1 à 2 s au lieu de 5), et il se souvient de la discussion. Il repart d'une discussion neuve, préparée
-    d'avance, après quelques questions : sinon chaque question repasse toute la discussion (plus lent, plus de quota)."""
-    MAX_QUESTIONS = 10
-
+class Conversation(CodexConversation):
     def __init__(self, data_dir):
-        self.data_dir = data_dir
-        self.proc = self.lines = None
-        self.questions = 0
-        self.lock = threading.Lock()
-        threading.Thread(target=self.restart, daemon=True).start()  # prêt avant la première question
-
-    def restart(self):
-        with self.lock:
-            self.stop()
-            try:
-                self.proc, self.lines = start_claude(
-                    claude_command(MODEL_QUESTION, self.data_dir, EFFORT_QUESTION, persistent=True))
-            except Exception:
-                log("Claude Code ne démarre pas :\n" + traceback.format_exc())
-                self.proc = None
-            self.questions = 0
-
-    def stop(self):
-        if self.proc is not None and self.proc.poll() is None:
-            self.proc.kill()
-        self.proc = None
-
-    def ask(self, prompt, on_text=None, on_tool=None):
-        if self.proc is None or self.proc.poll() is not None:
-            self.restart()
-        with self.lock:
-            if self.proc is None:
-                raise RuntimeError("Claude Code ne démarre pas")
-            try:
-                self.proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}})
-                                      + "\n")
-                self.proc.stdin.flush()
-                self.questions += 1
-                answer = read_reply(self.lines, on_text, on_tool)
-            except (OSError, RuntimeError):
-                self.stop()  # la prochaine question repartira d'un Claude neuf
-                raise
-        if self.questions >= self.MAX_QUESTIONS:
-            threading.Thread(target=self.restart, daemon=True).start()
-        return answer
+        super().__init__(data_dir, SYSTEM_PROMPT, MODEL_QUESTION, EFFORT_QUESTION, TIMEOUT)
 
 
 def tool_status(name, data):
     detail = (data.get("pattern") or data.get("query") or data.get("url")
               or Path(data.get("file_path") or data.get("path") or "").name)
-    return (f"Claude cherche : {detail}" if detail else f"Claude utilise {name}…")[:90]
+    return (f"Codex cherche : {detail}" if detail else f"Codex utilise {name}…")[:90]
 
 
 # ---------------- Écran ----------------
@@ -1530,7 +1394,7 @@ class Rect(ctypes.Structure):
 def active_monitor(monitors):
     """L'écran de la fenêtre active (le jeu, quand on appuie sur une touche en jouant), sinon l'écran principal."""
     rect = Rect()
-    if user32.GetWindowRect(user32.GetForegroundWindow(), ctypes.byref(rect)):
+    if user32 and user32.GetWindowRect(user32.GetForegroundWindow(), ctypes.byref(rect)):
         cx, cy = (rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2
         for m in monitors[1:]:
             if m["left"] <= cx < m["left"] + m["width"] and m["top"] <= cy < m["top"] + m["height"]:
@@ -1553,6 +1417,10 @@ def take_screenshot():
 
 def bring_to_front(window):
     window.update_idletasks()
+    if not user32:
+        window.lift()
+        window.focus_force()
+        return
     hwnd = user32.GetParent(window.winfo_id())
     # Un appui sur Alt autorise Windows à nous donner le focus pendant que le jeu est au premier plan.
     user32.keybd_event(0x12, 0, 0, 0)
@@ -1562,6 +1430,8 @@ def bring_to_front(window):
 
 
 def make_non_activating(window):
+    if not user32:
+        return
     window.update_idletasks()
     hwnd = user32.GetParent(window.winfo_id())
     gwl_exstyle, ws_ex_noactivate, ws_ex_toolwindow = -20, 0x08000000, 0x80
@@ -1754,6 +1624,10 @@ class Speaker:
                 log(traceback.format_exc())
 
     def _windows_voice(self, text):
+        if sys.platform == "darwin":
+            self.proc = subprocess.Popen(["/usr/bin/say", "-v", "Amélie", "-r", "175", text])
+            self.proc.wait()
+            return
         text_file = Path(tempfile.gettempdir()) / "assistant_mc_parole.txt"
         text_file.write_text(text, encoding="utf-8")
         self.proc = subprocess.Popen(
@@ -1774,7 +1648,7 @@ class App:
         self.recorder = Recorder()
         self.transcriber = Transcriber() if self.recorder.available else None
         self.speaker = Speaker()
-        self.conversation = Conversation(self.bridge.dir)  # Claude gardé ouvert pour tes questions
+        self.conversation = Conversation(self.bridge.dir)  # Codex gardé ouvert pour tes questions
         try:
             saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -1839,6 +1713,8 @@ class App:
             keyboard.add_hotkey(key, self.events.put, args=((event,),))
         keyboard.on_press_key(HOTKEY_TALK, self.talk_key_down)
         keyboard.on_release_key(HOTKEY_TALK, self.talk_key_up)
+        if sys.platform == "darwin":
+            keyboard.start(self.bridge.dir)
         self.root.after(50, self.poll)
         self.root.after(1000, self.watch_game)
         self.root.after(1000, self.check_mod_requests)
@@ -1850,7 +1726,7 @@ class App:
                           f"{HOTKEY_HIDE.upper()} : cacher   {HOTKEY_VOICE.upper()} : voix on/off\n"
                           f"{HOTKEY_NEW.title()} : nouvelle conversation{hint}",
                           hide_after=25000 if script_changed else 8000)
-        log(f"Démarrage, Claude Code : {find_claude()}, script du jeu {'mis à jour' if script_changed else 'à jour'}")
+        log(f"Démarrage, Codex : {find_codex()}, script du jeu {'mis à jour' if script_changed else 'à jour'}")
 
     def run(self):
         self.root.mainloop()
@@ -2209,7 +2085,7 @@ class App:
         self.flush_coach()
 
     def flush_coach(self):
-        """Le coach ne coupe jamais la parole : il attend que tu aies fini de parler et que Claude ait répondu."""
+        """Le coach ne coupe jamais la parole : il attend que tu aies fini de parler et que Codex ait répondu."""
         if not self.coach_queue or self.busy or self.recorder.stream is not None or self.popup:
             return
         text, speak = self.coach_queue.pop(0)
@@ -2396,7 +2272,7 @@ class App:
     # --- fiches « à quoi ça sert » (touche I du mod) ---
 
     def show_info(self, request):
-        """Fiche d'un objet : tout de suite si Claude l'a déjà rédigée, sinon il la rédige (une fois pour toutes,
+        """Fiche d'un objet : tout de suite si Codex l'a déjà rédigée, sinon il la rédige (une fois pour toutes,
         ou de nouveau quand le joueur demande « Refaire »)."""
         item = str(request["item"])
         if request.get("refaire"):
@@ -2509,7 +2385,7 @@ class App:
         if self.popup:
             return
         self.speaker.stop()
-        self.previous_window = user32.GetForegroundWindow()
+        self.previous_window = user32.GetForegroundWindow() if user32 else None
         self.shot = self.safe_screenshot()
         self.open_popup()
 
@@ -2517,7 +2393,7 @@ class App:
         self.on_next_objective()
 
     def on_next_objective(self, auto=False):
-        """Objectif suivant : le prochain objectif du plan, détaillé par Claude (celui en cours est alors marqué
+        """Objectif suivant : le prochain objectif du plan, détaillé par Codex (celui en cours est alors marqué
         fait). Sans plan, ou à la fin du plan, un nouveau plan."""
         following = next((i for i, o in enumerate(self.objectives) if o["etat"] == "a_faire"), None)
         if following is None:
@@ -2537,12 +2413,12 @@ class App:
             self.on_next_objective()
 
     def on_new_plan(self, request="", auto=False):
-        """Nouveau plan : Claude choisit l'objectif principal (ou celui que le joueur demande), le découpe en
+        """Nouveau plan : Codex choisit l'objectif principal (ou celui que le joueur demande), le découpe en
         objectifs et détaille le premier."""
         self.start_objective(request, new_plan=True, auto=auto)
 
     def start_objective(self, request="", index=None, new_plan=False, auto=False):
-        """Fait détailler un objectif par Claude. index : sa place dans le plan ; sans index ni nouveau plan, c'est
+        """Fait détailler un objectif par Codex. index : sa place dans le plan ; sans index ni nouveau plan, c'est
         un objectif demandé à la voix, qui passe avant celui en cours (repris juste après)."""
         if self.busy:
             if not auto:
@@ -2557,7 +2433,7 @@ class App:
             self.speaker.stop()
         self.busy = True
         self.plan_done_announced = True
-        self.set_status("Claude prépare ton nouveau plan…" if new_plan else "Claude prépare ton objectif…")
+        self.set_status("Codex prépare ton nouveau plan…" if new_plan else "Codex prépare ton objectif…")
         shot = None if auto or request else self.safe_screenshot()
         threading.Thread(target=self.work_plan, args=(shot, request, index, new_plan), daemon=True).start()
 
@@ -2633,7 +2509,7 @@ class App:
         if removed:
             parts.append("Coffres retirés automatiquement de la mémoire (cassés) : " + ", ".join(removed))
         if shot:
-            parts.append(f"Capture de mon écran : {shot} (lis-la avec Read SEULEMENT si ma question porte sur ce que "
+            parts.append(f"Capture de mon écran : {shot} (lis-la avec view_image SEULEMENT si ma question porte sur ce que "
                          "je vois : « ça », « ce bloc », « cet écran »… ; sinon ne l'ouvre pas, ça ralentit)")
         return "\n".join(parts)
 
@@ -2654,7 +2530,7 @@ class App:
 
     def start_question(self, text, audio):
         self.busy = True
-        self.set_status("Je transcris ta question…" if audio is not None else "Claude réfléchit…")
+        self.set_status("Je transcris ta question…" if audio is not None else "Codex réfléchit…")
         threading.Thread(target=self.work_question, args=(text, audio, self.shot), daemon=True).start()
 
     def work_question(self, text, audio, shot):
@@ -2666,7 +2542,7 @@ class App:
                 timing["transcrite"] = time.time()
                 if not text:
                     raise RuntimeError("Je n'ai rien entendu : parle plus près du micro en tenant F8.")
-            self.events.put(("status", f"« {text} » : Claude réfléchit…"))
+            self.events.put(("status", f"« {text} » : Codex réfléchit…"))
             self.events.put(("history", "toi", text))
             spoken = [0]
 
@@ -2674,7 +2550,7 @@ class App:
                 timing.setdefault("premier mot", time.time())
                 partial = readable(visible_text(partial))  # la ligne d'actions n'est ni affichée ni lue
                 self.events.put(("live_text", partial))
-                if len(partial) < spoken[0]:  # nouveau message de Claude
+                if len(partial) < spoken[0]:  # nouveau message de Codex
                     spoken[0] = 0
                 cut = spoken[0]
                 for match in SENTENCE_END.finditer(partial, spoken[0]):
@@ -2684,15 +2560,13 @@ class App:
                 spoken[0] = cut
 
             self.speaker.stop()
-            recipes = self.recipe_index.hint(text)  # les recettes des objets cités : Claude n'a pas à les chercher
+            recipes = self.recipe_index.hint(text)  # les recettes des objets cités : Codex n'a pas à les chercher
             prompt = (f"{self.context(shot, with_storage=True)}\n\n{ACTIONS_HELP}\n\n"
                       + (recipes + "\n\n" if recipes else "") + f"Ma question : {text}")
             on_tool = lambda name, data: self.events.put(("status", tool_status(name, data)))  # noqa: E731
-            try:
-                answer = self.conversation.ask(prompt, on_text, on_tool)
-            except RuntimeError:  # Claude gardé ouvert indisponible : une demande isolée, plus lente mais sûre
-                log("Conversation indisponible, demande isolée :\n" + traceback.format_exc())
-                answer = ask_claude(prompt, self.bridge.dir, MODEL_QUESTION, on_text, on_tool, EFFORT_QUESTION)
+            # Never replay a submitted turn: a timeout must not duplicate an action.
+            on_preview = lambda partial: self.events.put(("live_text", readable(visible_text(partial))))
+            answer = self.conversation.ask(prompt, on_text, on_tool, on_preview)
             shown = readable(split_actions(answer)[0])
             if self.speak and spoken[0] < len(shown):
                 self.speaker.add(shown[spoken[0]:])
@@ -2942,7 +2816,7 @@ class App:
 
     def open_popup(self):
         self.popup = popup = tk.Toplevel(self.root, bg=BG, padx=14, pady=10)
-        popup.title("Question pour Claude")
+        popup.title("Question pour Codex")
         popup.attributes("-topmost", True)
         popup.resizable(False, False)
         tk.Label(popup, text="Tape ta question puis Entrée. Échap : annuler.", bg=BG, fg=FG_DIM,
@@ -3008,25 +2882,22 @@ class App:
 def supervise():
     """Lance l'assistant dans un processus à part et le relance s'il plante : un module en C (micro, voix,
     reconnaissance vocale) peut faire tomber tout le processus sans prévenir. Une seule instance à la fois."""
-    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "AssistantMinecraftClaude")
-    if ctypes.windll.kernel32.GetLastError() == 183:
-        messagebox.showinfo("Assistant Minecraft", "L'assistant est déjà lancé.")
-        return
-    crashes = []
-    try:
+    with SingleInstance() as acquired:
+        if not acquired:
+            messagebox.showinfo("Assistant Minecraft", "L'assistant est déjà lancé.")
+            return
+        crashes = []
         while True:
             code = subprocess.call([sys.executable, str(Path(__file__).resolve()), "--enfant"])
-            if code == 0:  # arrêt normal, ou erreur déjà signalée au joueur
+            if code == 0:
                 return
             crashes = [t for t in crashes if time.time() - t < 300] + [time.time()]
             if len(crashes) >= 3:
-                log(f"L'assistant a planté 3 fois en 5 minutes (code {code:#x}) : relance automatique abandonnée")
-                messagebox.showerror("Assistant Minecraft", "L'assistant plante sans arrêt, détails dans assistant.log.")
+                log(f"L'assistant a planté 3 fois en 5 minutes (code {code:#x})")
+                messagebox.showerror("Assistant Minecraft", "L'assistant plante, détails dans assistant.log.")
                 return
             log(f"L'assistant a planté (code {code:#x}) : relance automatique")
             time.sleep(2)
-    finally:
-        ctypes.windll.kernel32.CloseHandle(mutex)
 
 
 def main():

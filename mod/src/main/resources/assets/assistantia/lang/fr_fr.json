@@ -1,5 +1,9 @@
 {
   "key.categories.assistantia": "Assistant IA",
   "key.assistantia.ouvrir": "Ouvrir l'assistant",
-  "key.assistantia.info": "À quoi ça sert ? (objet survolé, bloc ou objet en main)"
+  "key.assistantia.info": "À quoi ça sert ? (objet survolé, bloc ou objet en main)",
+  "key.assistantia.objectif": "Objectif suivant",
+  "key.assistantia.parler": "Parler (maintenir ; Maj : écrire ; Ctrl : nouvelle conversation)",
+  "key.assistantia.panneau": "Afficher / masquer le panneau",
+  "key.assistantia.voix": "Activer / désactiver la voix"
 }

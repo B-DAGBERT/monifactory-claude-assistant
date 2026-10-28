@@ -1,0 +1,28 @@
+name: Codex compatibility
+on:
+  push:
+    branches: [codex-compat]
+  pull_request:
+    branches: [codex-compat]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Codex adapter and upstream parity tests (no AI account needed)
+        run: python -m unittest discover -s tests -v
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Build Forge mod
+        working-directory: mod
+        run: bash gradlew build --console=plain

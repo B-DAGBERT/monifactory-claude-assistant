@@ -68,7 +68,7 @@ public class EcranAssistant extends Screen {
         int bas = this.height - MARGE - 18;
         saisie = new EditBox(this.font, MARGE, bas, this.width - 2 * MARGE - 70, 18, Component.literal("Question"));
         saisie.setMaxLength(400);
-        saisie.setHint(Component.literal("Une question pour Claude ? Écris-la puis Entrée"));
+        saisie.setHint(Component.literal("Une question pour Codex ? Écris-la puis Entrée"));
         addRenderableWidget(saisie);
         addRenderableWidget(Button.builder(Component.literal("Envoyer"), b -> envoyerQuestion())
                 .bounds(this.width - MARGE - 64, bas - 1, 64, 20).build());
@@ -208,7 +208,7 @@ public class EcranAssistant extends Screen {
             g.drawString(this.font, droite, this.width - MARGE - this.font.width(droite), MARGE + 5, Hud.GRIS, false);
         } else { // l'assistant ne tourne pas : rien ne répondra tant qu'il n'est pas relancé
             String arret = Pont.relanceEnCours() ? "L'assistant démarre…" : lanceurInconnu
-                    ? "Lance « Lancer assistant.bat »" : "Assistant arrêté";
+                    ? "Lance le lanceur de l’assistant (Mac.command ou .bat)" : "Assistant arrêté";
             int fin = relancer.visible ? relancer.getX() - 6 : this.width - MARGE;
             g.drawString(this.font, arret, fin - this.font.width(arret), MARGE + 5,
                     Pont.relanceEnCours() ? Hud.GRIS : Hud.ROUGE, false);

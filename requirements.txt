@@ -1,4 +1,4 @@
-keyboard
+keyboard; sys_platform != "darwin"
 mss
 Pillow
 numpy

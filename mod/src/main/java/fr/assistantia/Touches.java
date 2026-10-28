@@ -34,6 +34,7 @@ public final class Touches {
     public static void enregistrer(RegisterKeyMappingsEvent event) {
         event.register(OUVRIR);
         event.register(INFO);
+        TouchesMac.enregistrer(event);
     }
 
     @SubscribeEvent
@@ -42,6 +43,7 @@ public final class Touches {
             return;
         }
         Pont.rafraichir();
+        TouchesMac.tick();
         Minecraft mc = Minecraft.getInstance();
         while (OUVRIR.consumeClick()) {
             if (mc.screen == null && mc.player != null) {

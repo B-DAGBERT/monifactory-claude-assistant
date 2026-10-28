@@ -21,7 +21,7 @@ import java.util.List;
 
 /**
  * La fiche « à quoi ça sert » (touche I) d'un objet, d'un bloc ou d'une machine : à quoi il sert, comment s'en
- * servir, et un schéma de branchement en icônes quand c'est utile. Claude la rédige la première fois (quelques
+ * servir, et un schéma de branchement en icônes quand c'est utile. Codex la rédige la première fois (quelques
  * secondes), l'assistant la garde ensuite : elle s'affiche alors tout de suite. Pour une machine posée, son état
  * en direct (vu par le serveur) s'ajoute sous le nom. « Refaire » si la fiche ne convient pas. Échap ou I : retour
  * à l'écran d'avant.
@@ -62,7 +62,7 @@ public class EcranInfo extends Screen {
         mc.setScreen(fiche);
     }
 
-    /** refaire : Claude réécrit la fiche au lieu de reprendre celle qu'il a déjà rédigée. */
+    /** refaire : Codex réécrit la fiche au lieu de reprendre celle qu'il a déjà rédigée. */
     private void demander(boolean refaire) {
         JsonObject demande = new JsonObject();
         demande.addProperty("type", "info");
@@ -235,7 +235,7 @@ public class EcranInfo extends Screen {
                     : "L'assistant est arrêté : relance-le depuis l'écran Y.", x, y, l, Hud.ROUGE) - debut;
         }
         if (!"pret".equals(etat)) {
-            y = ecrire(g, "Claude prépare la fiche" + ".".repeat((int) (System.currentTimeMillis() / 400 % 4)), x, y, l, Hud.BLANC);
+            y = ecrire(g, "Codex prépare la fiche" + ".".repeat((int) (System.currentTimeMillis() / 400 % 4)), x, y, l, Hud.BLANC);
             return ecrire(g, "Quelques secondes la première fois, instantané ensuite.", x, y + 2, l, Hud.GRIS) - debut;
         }
         y = section(g, "À QUOI ÇA SERT", x, y);

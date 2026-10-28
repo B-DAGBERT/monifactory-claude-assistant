@@ -22,3 +22,13 @@ mod/.gradle/
 mod/run/
 mod/*.log
 mod/build.err
+
+# Codex / Mac local runtime and configuration
+.venv/
+.runtime/
+backups/
+codex.local.json
+codex.local.json.tmp
+session.json.tmp
+assistant.lock
+.DS_Store
