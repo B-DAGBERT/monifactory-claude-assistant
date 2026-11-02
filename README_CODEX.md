@@ -164,6 +164,9 @@ séparément dans `tests/test_objective_pause.py`. Le reste du code de jeu garde
 ## Filons : liste, surbrillance et téléportation (Codex.3)
 
 Ouvrir **Y → Filons**. La liste fonctionne dans Minecraft même si l'assistant Python est arrêté.
+Elle affiche uniquement les filons de la **partie et de la dimension actives** : en entrant dans le Nether,
+les filons de l'Overworld sont masqués, puis réapparaissent au retour. Changer de partie recharge sa propre
+mémoire et quitter la partie vide la liste. Les données des autres mondes sont conservées sur disque.
 Chaque ligne affiche les minerais, les **blocs repérés restants**, la distance et son propre bouton
 **Afficher / Masquer**. Cliquer sur une ligne sélectionne son détail ; la survoler montre tous ses
 minerais avec leurs quantités. La recherche accepte les noms et identifiants des minerais.

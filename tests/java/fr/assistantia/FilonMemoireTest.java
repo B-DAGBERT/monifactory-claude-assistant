@@ -8,8 +8,23 @@ public final class FilonMemoireTest {
     static FilonMemoire.Position p(int x,int y,int z) { return new FilonMemoire.Position("minecraft:overworld",x,y,z); }
     static void verifier(boolean condition,String raison) { if (!condition) throw new AssertionError(raison); }
     public static void main(String[] args) {
-        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee();
-        System.out.println("11 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee(); mondeActif();
+        System.out.println("12 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+    }
+    static void mondeActif() {
+        var partieA = new FilonMemoire(); var partieB = new FilonMemoire();
+        var nether = new FilonMemoire.Position("minecraft:the_nether",0,20,0);
+        partieA.observer(p(0,20,0),"minecraft:iron_ore",true,100);
+        partieA.observer(nether,"minecraft:nether_gold_ore",true,100);
+        verifier(partieA.filonsDans("minecraft:overworld").size()==1
+                && partieA.filonsDans("minecraft:overworld").get(0).ancre.equals(p(0,20,0)), "Overworld seul");
+        verifier(partieA.filonsDans("minecraft:the_nether").size()==1
+                && partieA.filonsDans("minecraft:the_nether").get(0).ancre.equals(nether), "Le portail affiche uniquement le Nether");
+        verifier(partieA.filonsDans("minecraft:the_end").isEmpty(), "Une dimension non explorée reste vide");
+        verifier(partieA.filonsDans("").isEmpty() && partieA.filonsDans(null).isEmpty(), "Hors partie : aucune donnée visible");
+        verifier(partieB.filonsDans("minecraft:overworld").isEmpty(), "Autre partie, mêmes coordonnées : aucun filon hérité");
+        verifier(partieA.filonsDans("minecraft:overworld").size()==1 && partieA.filons().size()==2,
+                "Retour à la première dimension sans effacer les autres filons");
     }
     static void scanPonctuel() {
         var scan = new FilonMemoire.Scan(); var centre = p(0,20,0);

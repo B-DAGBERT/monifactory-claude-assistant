@@ -66,6 +66,10 @@ public final class FilonMemoire {
     public Collection<Bloc> blocs() { return Collections.unmodifiableCollection(blocs.values()); }
     public Collection<Filon> filons() { return Collections.unmodifiableCollection(filons.values()); }
     public Filon filon(String id) { return filons.get(id); }
+    public List<Filon> filonsDans(String dimension) {
+        if (dimension == null || dimension.isEmpty()) return List.of();
+        return filons.values().stream().filter(f -> f.ancre.dimension().equals(dimension)).toList();
+    }
     public boolean plein() { return blocs.size() >= MAX_BLOCS; }
 
     /** Ne jamais appeler sur une position non chargée : l'air d'un chunk absent n'est pas du minage. */

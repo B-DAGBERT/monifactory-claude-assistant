@@ -100,6 +100,22 @@ public final class Filons {
                     .digest(origine.getBytes(StandardCharsets.UTF_8))).substring(0, 24);
         } catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
+    /** Synchronisé avant d'afficher la liste, même entre deux ticks de changement de partie. */
+    public static boolean synchroniserMonde() {
+        Minecraft mc = Minecraft.getInstance();
+        String id = mc.level == null || mc.player == null ? "" : identite(mc);
+        if (id.equals(monde)) return !id.isEmpty();
+        sauver(true);
+        if (id.isEmpty()) {
+            monde = affiche = guide = message = "";
+            memoire = new FilonMemoire(); scan = new FilonMemoire.Scan(); scan.activer(false);
+            controles = contours = List.of(); MINERAIS.clear(); controle = 0;
+            tpEnCours = modifie = false; tpAttendue = null; revision++;
+            return false;
+        }
+        charger(id);
+        return true;
+    }
     private static Path fichier(String id) { return DOSSIER.resolve("filons").resolve(id + ".json"); }
     private static void charger(String id) {
         memoire = new FilonMemoire(); scan = new FilonMemoire.Scan();
@@ -213,13 +229,7 @@ public final class Filons {
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         Minecraft mc = Minecraft.getInstance(); long now = System.currentTimeMillis();
-        if (mc.level == null || mc.player == null) {
-            if (!monde.isEmpty()) { sauver(true); monde = ""; affiche = guide = ""; tpEnCours = false; }
-            return;
-        }
-        String id = identite(mc);
-        if (id.isEmpty()) return;
-        if (!id.equals(monde)) { sauver(true); charger(id); }
+        if (!synchroniserMonde()) return;
         if (tpEnCours && tpAttendue != null) {
             if (position().dimension().equals(tpAttendue.dimension()) && mc.player.position().distanceToSqr(
                     tpAttendue.x()+.5, tpAttendue.y(), tpAttendue.z()+.5) < .5) finirTP(monde, "Téléportation effectuée.");

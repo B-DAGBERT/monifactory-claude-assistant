@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 
 /** Vue locale : recherche, liste avec bouton Afficher sur CHAQUE ligne, détail et actions. */
 public final class OngletFilons {
-    private static String selection = "", recherche = "", monde = "";
+    private static String selection = "", recherche = "", monde = "", dimension = "";
     private static boolean masquerVides = true;
     private static int tri, decalage;
     private final List<AbstractWidget> widgets = new ArrayList<>();
@@ -70,9 +70,13 @@ public final class OngletFilons {
         return Double.isFinite(d) ? Math.round(Math.sqrt(d)) + " blocs" : "autre dimension";
     }
     private void actualiser() {
-        if (!monde.equals(Filons.monde())) {
-            monde = Filons.monde(); selection = ""; decalage = 0; listeDate = 0;
+        boolean connecte = Filons.synchroniserMonde();
+        String actuelle = connecte ? Filons.position().dimension() : "";
+        if (!monde.equals(Filons.monde()) || !dimension.equals(actuelle)) {
+            monde = Filons.monde(); dimension = actuelle;
+            selection = ""; decalage = 0; listeDate = 0; liste = List.of();
         }
+        if (!connecte) { liste = List.of(); selection = ""; return; }
         if (System.currentTimeMillis() - listeDate < 500) return;
         listeDate = System.currentTimeMillis();
         var position = Filons.position();
@@ -80,7 +84,7 @@ public final class OngletFilons {
         if (tri == 1) ordre = Comparator.<FilonMemoire.Filon, Boolean>comparing(f -> !Filons.utile(f)).thenComparing(ordre);
         if (tri == 2) ordre = Comparator.comparing(this::titre);
         String q = normaliser(recherche);
-        liste = Filons.memoire().filons().stream().filter(f -> !masquerVides || f.restants() > 0)
+        liste = Filons.memoire().filonsDans(dimension).stream().filter(f -> !masquerVides || f.restants() > 0)
                 .filter(f -> q.isEmpty() || normaliser(titre(f) + " " + String.join(" ", f.types().keySet())).contains(q))
                 .sorted(ordre.thenComparing(f -> f.id)).toList();
         if (liste.stream().noneMatch(f -> f.id.equals(selection))) selection = liste.isEmpty() ? "" : liste.get(0).id;
@@ -143,8 +147,9 @@ public final class OngletFilons {
                     : "Surbrillance du filon : blocs chargés à 64 blocs, au plus 768 contours")));
         }
         if (liste.isEmpty()) {
-            String vide = Filons.memoire().filons().isEmpty()
-                    ? "Aucun minerai repéré : clique sur Scanner autour de moi."
+            String vide = monde.isEmpty() ? "Entre dans une partie pour voir ses filons."
+                    : Filons.memoire().filonsDans(dimension).isEmpty()
+                    ? "Aucun filon repéré ici : clique sur Scanner autour de moi."
                     : "Aucun résultat : change la recherche ou affiche les vides.";
             lignes(g,vide,x+4,listeY+5,listeLargeur-8,listeBas,Hud.GRIS);
         }
@@ -191,7 +196,7 @@ public final class OngletFilons {
         if (info.isEmpty()) info = Filons.etatScan()+" · "+liste.size()+" filons";
         if (Filons.memoire().plein()) info = "Mémoire pleine (20 000 blocs) : nouveaux blocs non enregistrés.";
         texte(g,info,x,bas-21,largeur,Hud.JAUNE);
-        texte(g,Filons.etatScan()+" · quantités partielles · molette pour défiler",x,bas-10,largeur,Hud.GRIS);
+        texte(g,Filons.etatScan()+" · dimension actuelle · quantités partielles",x,bas-10,largeur,Hud.GRIS);
         for (int i=0;i<lignes && decalage+i<liste.size();i++) {
             int ly=listeY+i*40;
             if (sx>=x && sx<x+listeLargeur-68 && sy>=ly && sy<ly+38) {
