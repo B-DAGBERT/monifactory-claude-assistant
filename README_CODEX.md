@@ -198,8 +198,14 @@ La mémoire est séparée par sauvegarde solo ou adresse de serveur, dans `kubej
 Elle contient au plus 20 000 positions ; une saturation est signalée sans effacer silencieusement
 l'historique. Les écritures passent par des fichiers temporaires et un thread dédié, toutes les 10 secondes
 si nécessaire. `filons_mod.json` transmet le dernier relevé à l'assistant pour ses réponses et son guidage.
-Les anciens relevés `filons.json` restent conservés, mais ne sont pas importés aveuglément dans un monde :
-ils n'indiquent pas de quelle sauvegarde ils proviennent. La nouvelle liste se remplit au fil de l'exploration.
+Les anciens relevés `filons.json` restent conservés. Pour les récupérer explicitement dans le monde
+actuellement ouvert, exécuter `.venv/bin/python codex_setup.py import-veins` (ou ajouter `--dry-run`
+pour vérifier sans écrire), puis redémarrer Minecraft avec le mod Codex.4 ou plus récent.
+La demande d'import est liée à ce monde dans `filons/imports/<monde>.json` ; le mod la fusionne au chargement.
+Aucun doublon par coordonnées, aucune observation récente écrasée par une ancienne, historique miné conservé.
+La demande reste disponible pour reprendre après un problème d'écriture. Les anciens blocs encore signalés
+présents sont des observations historiques : leur état est revérifié lorsqu'ils sont chargés.
+L'import est explicite car l'ancien fichier ne précise pas de quelle sauvegarde proviennent ses relevés.
 Une réinitialisation du monde d'un serveur à la même adresse nécessite une nouvelle mémoire ; le client
 ne connaît pas la graine distante et ne peut pas identifier cette réinitialisation automatiquement.
 

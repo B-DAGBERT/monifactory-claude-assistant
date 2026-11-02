@@ -103,11 +103,18 @@ def install(instance, dry_run=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "build", "install", "setup"))
+    parser.add_argument("command", choices=("check", "build", "install", "setup", "import-veins"))
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     instance = minecraft_dir()
     check_instance(instance)
+    if args.command == "import-veins":
+        from filons_import import prepare_import
+        result = prepare_import(instance, dry_run=args.dry_run)
+        print(f"{result['blocs']} anciens blocs, dont {result['restants_historiques']} encore présents au dernier relevé.")
+        print("Simulation : aucun fichier modifié." if args.dry_run else
+              "Import préparé pour ce monde. Redémarre Minecraft avec le nouveau mod pour les intégrer.")
+        return
     if args.command == "check":
         print(
             f"Instance : {instance}\nCodex : {find_codex() or 'introuvable'}\nJava : {java_home(instance)}"
@@ -133,6 +140,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (RuntimeError, OSError, subprocess.CalledProcessError) as error:
+    except (RuntimeError, ValueError, OSError, subprocess.CalledProcessError) as error:
         print(f"Erreur : {error}", file=sys.stderr)
         sys.exit(1)

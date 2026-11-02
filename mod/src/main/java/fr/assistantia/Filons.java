@@ -101,8 +101,37 @@ public final class Filons {
                 LogUtils.getLogger().warn("Lecture des filons", e);
             }
         }
+        importerAnciens(id);
         modifie = true; revision++;
     }
+    private static void importerAnciens(String id) {
+        Path demande = DOSSIER.resolve("filons/imports").resolve(id + ".json");
+        if (!Files.exists(demande)) return;
+        try {
+            JsonObject data = JsonParser.parseString(Files.readString(demande)).getAsJsonObject();
+            if (!id.equals(Pont.texte(data, "monde")) || Pont.nombre(data, "v", 0) != 1)
+                throw new IllegalArgumentException("L'import ne vise pas ce monde");
+            int importes = 0, invalides = 0;
+            for (JsonElement e : Pont.liste(data, "blocs")) {
+                try {
+                    JsonObject b = e.getAsJsonObject();
+                    String minerai = Pont.texte(b, "bloc");
+                    ResourceLocation nom = ResourceLocation.tryParse(minerai);
+                    if (nom == null || !ForgeRegistries.BLOCKS.containsKey(nom)) { invalides++; continue; }
+                    if (memoire.importer(lirePosition(b), minerai, Pont.vrai(b, "mine"),
+                            (long) Pont.nombre(b, "t", 0))) importes++;
+                } catch (RuntimeException invalide) { invalides++; }
+            }
+            if (importes > 0 || invalides > 0)
+                message = importes + " anciens blocs intégrés ; état à revérifier dans les zones chargées."
+                        + (invalides > 0 ? " " + invalides + " entrées invalides ignorées." : "");
+            // Garder la demande permet de reprendre après une erreur de sauvegarde. L'import est idempotent.
+        } catch (Exception e) {
+            message = "Import des anciens filons impossible : demande conservée pour réessayer.";
+            LogUtils.getLogger().warn("Import des anciens filons", e);
+        }
+    }
+
     private static FilonMemoire.Position lirePosition(JsonObject b) {
         String dim = Pont.texte(b, "dimension");
         int x = (int) Pont.nombre(b, "x", 0), y = (int) Pont.nombre(b, "y", 0), z = (int) Pont.nombre(b, "z", 0);

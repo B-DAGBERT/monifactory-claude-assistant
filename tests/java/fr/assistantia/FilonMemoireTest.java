@@ -8,8 +8,21 @@ public final class FilonMemoireTest {
     static FilonMemoire.Position p(int x,int y,int z) { return new FilonMemoire.Position("minecraft:overworld",x,y,z); }
     static void verifier(boolean condition,String raison) { if (!condition) throw new AssertionError(raison); }
     public static void main(String[] args) {
-        suivi(); groupes(); restauration(); scan(); securite(); limite();
-        System.out.println("6 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique();
+        System.out.println("7 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+    }
+    static void importHistorique() {
+        FilonMemoire m = new FilonMemoire();
+        var ancien = p(0,20,0); var dejaMine = p(1,20,0);
+        verifier(m.importer(ancien,"minecraft:iron_ore",false,100),"Ancien minerai récupéré");
+        verifier(m.importer(dejaMine,"minecraft:iron_ore",true,100),"Ancien historique miné récupéré");
+        verifier(m.filons().iterator().next().restants()==1,"Anciennes quantités conservées");
+        verifier(!m.importer(ancien,"minecraft:iron_ore",false,100),"Import répété sans doublon");
+        m.observer(ancien,"minecraft:air",false,200);
+        verifier(!m.importer(ancien,"minecraft:iron_ore",false,100),"Ne pas ressusciter un minerai récemment cassé");
+        verifier(m.filons().iterator().next().restants()==0,"Le nouveau relevé reste prioritaire");
+        verifier(m.importer(ancien,"minecraft:gold_ore",false,300),"Une observation importée réellement plus récente prévaut");
+        verifier(m.blocs().size()==2,"Mêmes coordonnées, aucun nouveau bloc");
     }
     static void suivi() {
         FilonMemoire m=new FilonMemoire(); var p=p(1,20,2);

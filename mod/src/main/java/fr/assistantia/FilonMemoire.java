@@ -68,6 +68,19 @@ public final class FilonMemoire {
         return true;
     }
 
+    /** Import explicite : pas de doublon et jamais de retour à une observation plus ancienne. */
+    public boolean importer(Position p, String id, boolean retire, long vu) {
+        Bloc connu = blocs.get(p.cle());
+        if (connu != null) {
+            if (connu.vu >= vu) return false;
+            connu.id = id; connu.retire = retire; connu.vu = vu;
+            return true;
+        }
+        if (!observer(p, id, true, vu)) return false;
+        blocs.get(p.cle()).retire = retire;
+        return true;
+    }
+
     public void restaurer(Position p, String id, boolean retire, long vu, Position ancre) {
         if (plein() || blocs.containsKey(p.cle()) || !p.dimension.equals(ancre.dimension)) return;
         Filon f = filons.computeIfAbsent(ancre.cle(), k -> new Filon(k, ancre));
