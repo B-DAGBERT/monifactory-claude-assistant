@@ -43,6 +43,10 @@ public class EcranAssistant extends Screen {
     /** Réglages changés à l'instant, affichés tout de suite sans attendre la réponse de l'assistant. */
     private static final Map<String, Boolean> REGLAGES_EN_ATTENTE = new HashMap<>();
     private EditBox saisie;
+    private Button pauseObjectif;
+    private static Boolean pauseDemandee;
+    private static String pauseVersion;
+    private static long pauseEnvoyee;
     private Button relancer;          // visible seulement quand l'assistant ne tourne pas
     private boolean lanceurInconnu;
     private int defilement = 0;
@@ -84,6 +88,18 @@ public class EcranAssistant extends Screen {
                 .bounds(this.width - MARGE - 104, bas - 26, 104, 20).build());
         relancer = addRenderableWidget(Button.builder(Component.literal("Relancer l'assistant"),
                 b -> lanceurInconnu = !Pont.relancer()).bounds(this.width - MARGE - 120, MARGE, 120, 18).build());
+        pauseObjectif = addRenderableWidget(Button.builder(Component.literal("Mettre en pause"), b -> {
+            JsonObject vue = ecran();
+            pauseDemandee = !Pont.vrai(vue, "objectif_en_pause");
+            pauseVersion = Pont.texte(vue, "objectif_version");
+            pauseEnvoyee = System.currentTimeMillis();
+            JsonObject demande = new JsonObject();
+            demande.addProperty("type", "action");
+            demande.addProperty("action", pauseDemandee ? "pause_objectif" : "reprendre_objectif");
+            demande.addProperty("version", pauseVersion);
+            Pont.envoyer(demande);
+            b.active = false;
+        }).bounds(this.width - MARGE - 120, MARGE + 26, 120, 18).build());
         setInitialFocus(saisie);
     }
 
@@ -213,6 +229,24 @@ public class EcranAssistant extends Screen {
             g.drawString(this.font, arret, fin - this.font.width(arret), MARGE + 5,
                     Pont.relanceEnCours() ? Hud.GRIS : Hud.ROUGE, false);
         }
+        boolean enPause = Pont.vrai(ecran, "objectif_en_pause");
+        if (pauseDemandee != null && (pauseDemandee == enPause
+                || !Pont.texte(ecran, "objectif_version").equals(pauseVersion)
+                || System.currentTimeMillis() - pauseEnvoyee > 5000)) {
+            pauseDemandee = null;
+        }
+        pauseObjectif.visible = (onglet == OBJECTIF || onglet == PLAN)
+                && !Pont.texte(ecran, "objectif").isEmpty();
+        pauseObjectif.active = actif && !Pont.vrai(ecran, "occupe") && pauseDemandee == null
+                && System.currentTimeMillis() - pauseEnvoyee > 650;
+        pauseObjectif.setMessage(Component.literal(pauseDemandee != null ? "En cours…"
+                : enPause ? "Reprendre" : "Mettre en pause"));
+        if (pauseObjectif.visible) {
+            g.drawString(this.font, this.font.plainSubstrByWidth(enPause ? "Objectif en pause · progression conservée"
+                    : "Objectif actif", this.width - 2 * MARGE - 128),
+                    MARGE, haut + 5, enPause ? Hud.JAUNE : Hud.GRIS, false);
+            haut += 24;
+        }
         int largeur = this.width - 2 * MARGE;
         switch (onglet) {
             case OBJECTIF -> objectif(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
@@ -330,9 +364,9 @@ public class EcranAssistant extends Screen {
         for (JsonElement e : objectifs) {
             JsonObject o = e.getAsJsonObject();
             String etat = Pont.texte(o, "etat");
-            String marque = "fait".equals(etat) ? "✔ " : "en_cours".equals(etat) ? "▶ " : numero + ". ";
+            String marque = "en_pause".equals(etat) ? "Ⅱ " : "fait".equals(etat) ? "✔ " : "en_cours".equals(etat) ? "▶ " : numero + ". ";
             int couleur = "fait".equals(etat) ? Hud.VERT : "en_cours".equals(etat) ? Hud.JAUNE : Hud.BLANC;
-            String texte = marque + Pont.texte(o, "titre") + ("en_cours".equals(etat) ? "  (en cours)" : "");
+            String texte = marque + Pont.texte(o, "titre") + ("en_pause".equals(etat) ? "  (en pause)" : "en_cours".equals(etat) ? "  (en cours)" : "");
             if (y >= debut && y < bas - 12) {
                 ecrire(g, texte, x, y, largeur, couleur);
             }

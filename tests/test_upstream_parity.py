@@ -69,6 +69,13 @@ class ParityTests(unittest.TestCase):
             "supervise",
             "build_mod_view",
         }
+        # User-requested gameplay extension, covered by test_objective_pause.py.
+        pause_changes = {
+            "App.load_plan", "App.save_plan", "App.refresh", "App.check_game", "App.coach", "App.flush_coach",
+            "App.check_stuck", "App.start_briefing", "App.handle_mod_request", "App.on_next_objective",
+            "App.start_objective", "App.on_plan_ready", "App.action_effacer_objectif",
+        }
+        compatibility_changes |= pause_changes
         checked = 0
         for name, code in before.items():
             if name in compatibility_changes:
@@ -83,7 +90,7 @@ class ParityTests(unittest.TestCase):
             self.assertEqual(upstream(path), (ROOT / path).read_text())
 
     def test_original_screens_only_change_branding(self):
-        for name in ("EcranAssistant", "EcranInfo", "AideEcran"):
+        for name in ("EcranInfo", "AideEcran"):
             path = f"mod/src/main/java/fr/assistantia/{name}.java"
             before = normalize(upstream(path)).replace(
                 "Lance « Lancer assistant.bat »",

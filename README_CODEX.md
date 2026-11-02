@@ -142,3 +142,20 @@ La compatibilité Windows reste prévue par le code, mais n'a pas été testée 
 
 Protocole utilisé : [documentation officielle OpenAI du Codex app-server](https://learn.chatgpt.com/docs/app-server).
 Les règles de progression et détails des fonctions du jeu restent décrits dans le [README d'origine](README.md).
+
+
+## Mettre l'objectif en pause
+
+Dans **Y → Objectif** (ou **Plan**), cliquer sur **Mettre en pause**. Le bouton devient
+**Reprendre** et l'état « En pause » reste visible. Aucune requête IA n'est nécessaire.
+Les étapes, compteurs et recettes sont conservés, même après fermeture de l'assistant.
+Les objets obtenus pendant la pause restent comptés pour la reprise. Les rappels de
+progression, le guidage automatique de l'objectif et l'enchaînement sont suspendus.
+Les questions, recherches manuelles et alertes de danger restent disponibles.
+Reprendre avant de changer d'objectif ; supprimer l'objectif reste possible depuis Discussion.
+On peut aussi demander « mets mon objectif en pause » ou « reprends mon objectif » dans Discussion.
+Un double clic envoie le même état ; il ne bascule pas deux fois. Le bouton attend la
+confirmation de l'assistant, puis permet de réessayer après cinq secondes en cas de coupure.
+
+Cette fonction est un ajout volontaire à la parité amont : ses méthodes sont testées
+séparément dans `tests/test_objective_pause.py`. Le reste du code de jeu garde le contrôle de parité.

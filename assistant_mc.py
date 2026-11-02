@@ -127,6 +127,8 @@ plus utile maintenant) ; Codex le découpe en objectifs et détaille le premier.
 - {"type": "nouvel_objectif", "demande": "fabriquer un LP Steam Solid Boiler de plus"} : détailler tout de \
 suite un objectif précis que le joueur demande (une quête, une machine, un objet) ; il passe avant l'objectif \
 en cours, qui reprendra juste après.
+- {"type": "pause_objectif"} : suspendre l’objectif en cours en gardant ses étapes.
+- {"type": "reprendre_objectif"} : reprendre cet objectif seulement sur demande du joueur.
 - {"type": "objectif_suivant"} : passer à l'objectif suivant du plan.
 - {"type": "refaire_objectif"} : refaire le détail de l'objectif en cours (étapes plus précises, machine \
 oubliée) quand le joueur le trouve flou, faux ou incomplet.
@@ -1209,6 +1211,7 @@ def build_mod_view(app):
     - besoins, guidage, marqueurs : surbrillance dans les interfaces et faisceaux dans le monde ;
     - ecran : le tableau de bord de la touche Y ; recette : la fabrication en cours, pour le bouton « Remplir »."""
     plan, progress, state, storage = app.plan, app.progress(), app.game, app.storage
+    paused = app.objective_paused
     have, now = app.have(), time.time()
     names = item_names(plan) if plan else {}
     recipes = {r["item"]: r for r in plan["recettes"]} if plan else {}
@@ -1314,8 +1317,8 @@ def build_mod_view(app):
         crafts = craft_suggestions(plan, progress)
         recipe_now = crafts[0] if crafts else None  # pour un mod d'avant les propositions multiples
     # La destination principale : celle que montre aussi le panneau du script du jeu (lignes « ➜ »)
-    for line in build_view(plan, progress, state, storage, have, "", "", app.guide, False, app.objectives,
-                           app.veins) if state else []:
+    for line in build_view(None if paused else plan, None if paused else progress, state, storage, have,
+                           "", "", app.guide, False, app.objectives, app.veins) if state else []:
         d = line.get("dir")
         if d and d.get("x") is not None and d.get("z") is not None:
             target = {"x": d["x"], "y": d.get("yb", d.get("y")), "z": d["z"], "couleur": "bleu",
@@ -1338,9 +1341,11 @@ def build_mod_view(app):
     machines = [{"nom": m["nom"], "etat": machine_status(m), "x": m["x"], "y": m["y"], "z": m["z"],
                  "couleur": machine_color(machine_status(m))}
                 for m in app.world.machines() if not re.search(r"hatch|_bus$", m["bloc"])][:30]
-    screen = {"statut": app.status,
+    screen = {"statut": app.status, "objectif_en_pause": paused,
+              "objectif_version": str(app.plan_version), "occupe": app.busy,
               "plan": {"titre": app.plan_title, "pourquoi": app.plan_why,
-                       "objectifs": [{"titre": o["titre"], "etat": o["etat"]} for o in app.objectives]},
+                       "objectifs": [{"titre": o["titre"], "etat": "en_pause" if paused and o["etat"] == "en_cours"
+                                     else o["etat"]} for o in app.objectives]},
               "reglages": [{"cle": key, "nom": name, "description": text, "valeur": app.settings[key]}
                            for key, (name, text, _) in SETTINGS.items()],
               "conversation": app.history[-30:] + ([{"de": "claude", "texte": live}] if live else []),
@@ -1356,6 +1361,12 @@ def build_mod_view(app):
                             for i, (s, done) in enumerate(zip(plan["etapes"], progress["etapes"]))]
         main = next((recipes[t["item"]] for t in plan["cibles"] if t["item"] in recipes), None)
         screen["arbre"] = {"item": main["item"], "id": main.get("id")} if main else None
+    if paused and plan:
+        hud.update({"objectif": plan["objectif"] + " · En pause", "etape": "Reprendre dans Y > Objectif",
+                    "etape_num": "", "prochains": [],
+                    "alertes": app.world.alerts()[:2] if machine_alerts else []})
+        needed.clear()
+        recipe_now, crafts = None, []
     # vie : le fichier est réécrit au moins toutes les 5 s, le mod sait ainsi que l'assistant tourne ;
     # lanceur : de quoi le relancer depuis le jeu s'il s'arrête
     on = app.settings
@@ -1770,6 +1781,8 @@ class App:
         except (OSError, ValueError):
             saved = {}
         self.plan = saved.get("plan")
+        self.objective_paused = bool(self.plan and saved.get("objectif_en_pause", False))
+        self.objective_epoch = 0  # invalide les passages à la suite déjà programmés
         self.plan_version = saved.get("version", 0)
         self.reached = set(saved.get("atteints", []))
         self.done_steps = set(saved.get("etapes_faites", []))
@@ -1789,11 +1802,37 @@ class App:
 
     def save_plan(self):
         PLAN_FILE.write_text(json.dumps({
+            "objectif_en_pause": self.objective_paused,
             "plan": self.plan, "version": self.plan_version, "atteints": sorted(self.reached),
             "etapes_faites": sorted(self.done_steps), "etapes_decochees": sorted(self.undone_steps),
             "obtenus": self.obtained, "derniers_totaux": self.last_totals,
             "plan_principal": {"titre": self.plan_title, "pourquoi": self.plan_why, "objectifs": self.objectives}},
             ensure_ascii=False, indent=1), encoding="utf-8")
+
+    def set_objective_paused(self, paused, version=None):
+        """Commande explicite et idempotente : un double clic ne reprend jamais l'objectif."""
+        if not self.plan or (version is not None and str(version) != str(self.plan_version)):
+            return
+        if self.objective_paused == paused:
+            return
+        if self.busy:
+            self.notify("Attends la fin de la réponse, puis réessaie.", 4)
+            return
+        self.objective_paused = paused
+        self.objective_epoch += 1
+        self.last_progress = time.time()
+        if not paused:
+            self.plan_done_announced = False
+        self.coach_queue = [(text, speak, kind) for text, speak, kind in self.coach_queue
+                            if kind not in ("progression", "briefing")]
+        self.save_plan()
+        self.notify("Objectif en pause. Tes étapes sont conservées." if paused
+                    else "Objectif repris. On continue avec ta progression actuelle.", 6)
+        self.refresh(force=True)
+
+    def auto_next_objective(self, epoch):
+        if epoch == self.objective_epoch and not self.objective_paused:
+            self.on_next_objective(auto=True)
 
     def current_objective(self):
         """L'index de l'objectif du plan en cours, ou None."""
@@ -1902,8 +1941,15 @@ class App:
             self.notify(f"Tu es arrivé : {self.guide['label']}.", 8, speak=True)
             self.guide = None
 
+        self.update_objective_progress()
+
+    def update_objective_progress(self):
         if self.plan:
             tracked = self.track_targets()
+            if self.objective_paused:
+                if tracked:
+                    self.save_plan()  # les crafts restent comptés, même utilisés avant la reprise
+                return
             progress = self.progress()
             new_steps = {i for i, done in enumerate(progress["etapes"]) if done} - self.done_steps
             if progress["atteints"] != self.reached or new_steps or tracked:
@@ -1936,7 +1982,8 @@ class App:
                           f"{HOTKEY_PLAN.upper()}) pour continuer." if remaining else " Nouveau plan (écran Y) pour la suite.")
                 self.notify(done + follow, 30, speak=True)
                 if auto:
-                    self.root.after(6000, lambda: self.on_next_objective(auto=True))
+                    epoch = self.objective_epoch
+                    self.root.after(6000, lambda: self.auto_next_objective(epoch))
 
     # --- journal de la partie ---
 
@@ -2081,14 +2128,16 @@ class App:
         if time.time() - self.coach_times.get(key, 0) < cooldown:
             return
         self.coach_times[key] = time.time()
-        self.coach_queue.append((text, speak))
+        if self.objective_paused and kind in ("progression", "briefing"):
+            return
+        self.coach_queue.append((text, speak, kind))
         self.flush_coach()
 
     def flush_coach(self):
         """Le coach ne coupe jamais la parole : il attend que tu aies fini de parler et que Codex ait répondu."""
         if not self.coach_queue or self.busy or self.recorder.stream is not None or self.popup:
             return
-        text, speak = self.coach_queue.pop(0)
+        text, speak, _kind = self.coach_queue.pop(0)
         self.add_history("claude", text)
         self.notify(text, 15, speak=speak)
 
@@ -2135,7 +2184,7 @@ class App:
 
     def check_stuck(self, state, now):
         """Pas d'avancée sur le plan depuis un moment alors que le joueur joue : le coach propose son aide."""
-        if (not self.plan or self.busy or self.coach_busy or self.progress()["termine"]
+        if (not self.plan or self.objective_paused or self.busy or self.coach_busy or self.progress()["termine"]
                 or now - self.last_progress < STUCK_MINUTES * 60 or now - self.last_moved > 120
                 or now - self.coach_times.get("bloqué", 0) < 20 * 60 or COACH_LEVELS.get(COACH, 1) < USEFUL
                 or not self.settings["coach"]):
@@ -2145,10 +2194,10 @@ class App:
         threading.Thread(target=self.work_coach, args=(
             f"Le joueur n'a pas avancé sur son objectif depuis {STUCK_MINUTES} minutes. En 2 phrases au plus, "
             "donne-lui un conseil concret pour se débloquer : quoi fabriquer, où aller, quelle machine utiliser.",
-            "coach"), daemon=True).start()
+            "progression"), daemon=True).start()
 
     def start_briefing(self):
-        if self.busy or self.coach_busy or not self.game:
+        if self.objective_paused or self.busy or self.coach_busy or not self.game:
             return
         self.coach_busy = True
         threading.Thread(target=self.work_coach, args=(
@@ -2193,11 +2242,16 @@ class App:
             return
         message = self.message if (not self.message_until or now < self.message_until) else ""
         try:
-            lines = build_view(self.plan, self.progress(), self.game, self.storage, self.have(),
+            lines = build_view(None if self.objective_paused else self.plan,
+                               None if self.objective_paused else self.progress(),
+                               None if self.objective_paused else self.game, self.storage, self.have(),
                                self.status, message, self.guide, self.bridge.script_outdated(self.game),
                                self.objectives, self.veins,
                                self.world.alerts() if self.world.active and self.settings["machines"] else [],
                                self.world.active)
+            if self.objective_paused and self.plan:
+                lines.insert(0, {"t": self.plan["objectif"] + " · En pause (Y pour reprendre)",
+                                 "c": "jaune", "item": "", "dir": None, "indent": 0, "icones": []})
         except Exception:
             log(traceback.format_exc())
             return
@@ -2251,7 +2305,9 @@ class App:
             self.set_setting(str(request.get("cle")), bool(request.get("valeur")))
         elif kind == "action":
             action = request.get("action")
-            if action == "objectif_suivant":
+            if action in ("pause_objectif", "reprendre_objectif"):
+                self.set_objective_paused(action == "pause_objectif", request.get("version"))
+            elif action == "objectif_suivant":
                 self.on_next_objective()
             elif action in ("nouveau_plan", "plan"):
                 self.on_new_plan()
@@ -2395,6 +2451,10 @@ class App:
     def on_next_objective(self, auto=False):
         """Objectif suivant : le prochain objectif du plan, détaillé par Codex (celui en cours est alors marqué
         fait). Sans plan, ou à la fin du plan, un nouveau plan."""
+        if self.objective_paused:
+            if not auto:
+                self.notify("Objectif en pause : clique sur Reprendre avant de passer à la suite.", 5)
+            return
         following = next((i for i, o in enumerate(self.objectives) if o["etat"] == "a_faire"), None)
         if following is None:
             self.on_new_plan(auto=auto)
@@ -2420,6 +2480,10 @@ class App:
     def start_objective(self, request="", index=None, new_plan=False, auto=False):
         """Fait détailler un objectif par Codex. index : sa place dans le plan ; sans index ni nouveau plan, c'est
         un objectif demandé à la voix, qui passe avant celui en cours (repris juste après)."""
+        if self.objective_paused:
+            if not auto:
+                self.notify("Objectif en pause : clique sur Reprendre avant de le remplacer.", 5)
+            return
         if self.busy:
             if not auto:
                 self.notify("Patience, je réfléchis encore…", 4)
@@ -2432,6 +2496,7 @@ class App:
         if not auto:
             self.speaker.stop()
         self.busy = True
+        self.objective_epoch += 1
         self.plan_done_announced = True
         self.set_status("Codex prépare ton nouveau plan…" if new_plan else "Codex prépare ton objectif…")
         shot = None if auto or request else self.safe_screenshot()
@@ -2466,6 +2531,10 @@ class App:
 
     def context(self, shot, with_storage=False):
         parts = []
+        if self.objective_paused:
+            parts.append("L'objectif est EN PAUSE à la demande du joueur. Ne le relance pas, ne pousse pas "
+                         "à progresser et ne le remplace pas sans demande explicite de reprise. "
+                         "Tu peux toujours répondre aux autres questions.")
         if self.game:
             parts.append(describe_state(self.game))
         if with_storage:
@@ -2609,7 +2678,9 @@ class App:
             else:
                 self.objectives[current]["etat"] = "a_faire"
                 self.objectives.insert(current, entry)
-        self.plan, self.plan_version = plan, int(time.time())
+        self.objective_paused = False
+        self.objective_epoch += 1
+        self.plan, self.plan_version = plan, time.time_ns() // 1000
         self.reached, self.done_steps, self.undone_steps = set(), set(), set()
         # Ce qu'il a au départ est le point de départ de ce qu'il obtiendra ensuite. Une cible qu'il a déjà sur lui ou
         # posée (un Solid Boiler quand deux tournent) : il en veut une de plus, pas la valider tout de suite. Ce qui
@@ -2685,7 +2756,15 @@ class App:
     def action_nouvel_objectif(self, action):
         self.root.after(300, lambda: self.start_objective(str(action.get("demande") or "")))
 
+    def action_pause_objectif(self, _action):
+        self.set_objective_paused(True)
+
+    def action_reprendre_objectif(self, _action):
+        self.set_objective_paused(False)
+
     def action_effacer_objectif(self, _action):
+        self.objective_paused = False
+        self.objective_epoch += 1
         current = self.current_objective()
         if current is not None:
             self.objectives[current]["etat"] = "a_faire"
