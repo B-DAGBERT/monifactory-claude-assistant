@@ -32,7 +32,7 @@ public final class OngletFilons {
         filtre.setResponder(s -> { recherche = s; decalage = 0; listeDate = 0; });
         trier = ajouter(bouton("", b -> { if (System.currentTimeMillis()-optionsDepuis<650) return; optionsDepuis=System.currentTimeMillis(); tri = (tri+1)%3; decalage = 0; listeDate = 0; }), ajout);
         vides = ajouter(bouton("", b -> { if (System.currentTimeMillis()-optionsDepuis<650) return; optionsDepuis=System.currentTimeMillis(); masquerVides = !masquerVides; decalage = 0; listeDate = 0; }), ajout);
-        scan = ajouter(bouton("", b -> Filons.reglerScan(!Filons.scanActif())), ajout);
+        scan = ajouter(bouton("", b -> Filons.viderReleves()), ajout);
         ponctuel = ajouter(bouton("Scanner autour de moi", b -> Filons.scannerAutour()), ajout);
         eteindre = ajouter(bouton("Tout masquer", b -> Filons.afficher("", false)), ajout);
         guider = ajouter(bouton("Me guider", b -> Filons.basculerGuidage(selection)), ajout);
@@ -64,6 +64,7 @@ public final class OngletFilons {
         return Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
     }
     private String titre(FilonMemoire.Filon f) {
+        if (f.gregtech()) return f.nom;
         return String.join(", ", f.types().keySet().stream().map(Filons::nom).toList());
     }
     private String distance(FilonMemoire.Filon f) {
@@ -78,6 +79,7 @@ public final class OngletFilons {
             selection = ""; decalage = 0; listeDate = 0; liste = List.of();
         }
         if (!connecte) { liste = List.of(); selection = ""; return; }
+        Filons.actualiserGregtech();
         if (System.currentTimeMillis() - listeDate < 500) return;
         listeDate = System.currentTimeMillis();
         var position = Filons.position();
@@ -85,7 +87,7 @@ public final class OngletFilons {
         if (tri == 1) ordre = Comparator.<FilonMemoire.Filon, Boolean>comparing(f -> !Filons.utile(f)).thenComparing(ordre);
         if (tri == 2) ordre = Comparator.comparing(this::titre);
         String q = normaliser(recherche);
-        liste = Filons.memoire().filonsDans(dimension).stream().filter(f -> !masquerVides || f.restants() > 0)
+        liste = Filons.memoire().filonsDans(dimension).stream().filter(f -> !masquerVides || f.visible())
                 .filter(f -> q.isEmpty() || normaliser(titre(f) + " " + String.join(" ", f.types().keySet())).contains(q))
                 .sorted(ordre.thenComparing(f -> f.id)).toList();
         if (liste.stream().noneMatch(f -> f.id.equals(selection))) selection = liste.isEmpty() ? "" : liste.get(0).id;
@@ -104,16 +106,12 @@ public final class OngletFilons {
         ponctuel.active = !Filons.monde().isEmpty() && Filons.boutonScanDisponible();
         ponctuel.setTooltip(Tooltip.create(Component.literal(Filons.scanPonctuel()
                 ? "Arrêter ce passage et conserver les observations déjà faites."
-                : "Parcourir une fois le cube à 16 blocs du point de départ, puis arrêter tout scan. Remplace le scan automatique ; aucun chunk forcé.")));
-        scan.setMessage(Component.literal(Filons.scanPonctuel() ? "Auto : désactivé"
-                : Filons.scanActif() ? "Auto : activé" : "Auto : désactivé"));
-        scan.active = !Filons.monde().isEmpty() && !Filons.scanPonctuel() && Filons.boutonScanDisponible();
-        scan.setTooltip(Tooltip.create(Component.literal(Filons.scanPonctuel()
-                ? "Arrête ou termine le passage ponctuel avant de réactiver le scan continu."
-                : Filons.scanActif()
-                ? "Cliquer pour arrêter le repérage et la revérification des minerais."
-                : "Cliquer pour reprendre. Les filons mémorisés restent accessibles. Ce choix est conservé pour ce monde.")));
-        vides.setMessage(Component.literal(masquerVides ? "Vides : masqués" : "Vides : visibles"));
+                : "Parcourir une fois le cube à 16 blocs du point de départ, puis arrêter tout scan. En solo, consulte aussi les gisements GT des chunks chargés ; sur serveur, seulement ceux connus du client.")));
+        scan.setMessage(Component.literal("Vider les relevés"));
+        scan.active = !Filons.monde().isEmpty() && !Filons.scanActif() && Filons.boutonScanDisponible() && !Filons.memoire().blocs().isEmpty();
+        scan.setTooltip(Tooltip.create(Component.literal("Supprimer les "+Filons.memoire().blocs().size()
+                +" blocs scannés de ce monde pour libérer le cache. Les gisements GregTech et les choix d'affichage restent conservés. Arrêter le scan avant de vider.")));
+        vides.setMessage(Component.literal(masquerVides ? "Épuisés : masqués" : "Épuisés : visibles"));
         eteindre.active = !Filons.affiche().isEmpty() && Filons.affichageDisponible();
         listeY = y+68;
         boolean large = largeur >= 430;
@@ -135,13 +133,13 @@ public final class OngletFilons {
             String item = f.types().keySet().stream().findFirst().orElse("");
             g.renderItem(Pont.objet(item),x+3,ly+4);
             texte(g,titre(f),x+23,ly+3,listeLargeur-94,Filons.utile(f)?Hud.JAUNE:Hud.BLANC);
-            texte(g,f.restants()+" repérés · "+distance(f),x+23,ly+15,listeLargeur-94,Hud.GRIS);
-            texte(g,"Relevé : " + f.ageReleve(System.currentTimeMillis())
+            texte(g,(f.epuise ? "Épuisé (GT)" : f.restants()+" observés proches")+" · "+distance(f),x+23,ly+15,listeLargeur-94,Hud.GRIS);
+            texte(g,(f.blocs.isEmpty() ? "Aucun relevé local" : "Relevé : " + f.ageReleve(System.currentTimeMillis()))
                     + (!Filons.scanActif() ? " · pause" : f.releveAncien(System.currentTimeMillis()) ? " · ancien" : ""),
                     x+23,ly+27,listeLargeur-26,f.releveAncien(System.currentTimeMillis())?Hud.JAUNE:Hud.GRIS);
             placer(b,x+listeLargeur-66,ly+5,64);
             b.setMessage(Component.literal(affiche?"Masquer":"Afficher"));
-            b.active = Filons.affichageDisponible() && (affiche || (f.restants()>0
+            b.active = Filons.affichageDisponible() && (affiche || (f.visible() && !f.types().isEmpty()
                     && f.ancre.dimension().equals(Filons.position().dimension())));
             b.setTooltip(Tooltip.create(Component.literal(!f.ancre.dimension().equals(Filons.position().dimension())
                     ? "Rejoins la dimension " + f.ancre.dimension() + " pour afficher ce filon."
@@ -149,10 +147,10 @@ public final class OngletFilons {
                     : "Choisir les types de minerais à afficher. Contours à 64 blocs, au plus 768.")));
         }
         if (liste.isEmpty()) {
-            String vide = monde.isEmpty() ? "Entre dans une partie pour voir ses filons."
+            String vide = monde.isEmpty() ? "En attente de l’identité du monde GregTech."
                     : Filons.memoire().filonsDans(dimension).isEmpty()
-                    ? "Aucun filon repéré ici : clique sur Scanner autour de moi."
-                    : "Aucun résultat : change la recherche ou affiche les vides.";
+                    ? "Aucun gisement GregTech connu ici. Scanne en solo ou utilise la prospection GregTech sur serveur."
+                    : "Aucun résultat : change la recherche ou affiche les gisements épuisés.";
             lignes(g,vide,x+4,listeY+5,listeLargeur-8,listeBas,Hud.GRIS);
         }
         var f = Filons.memoire().filon(selection);
@@ -161,12 +159,12 @@ public final class OngletFilons {
             if (!compact) {
             int dy=detailY;
             g.enableScissor(detailX,detailY,detailX+detailLargeur,Math.max(detailY,bas-72));
-            texte(g,"Filon sélectionné",detailX,dy,detailLargeur,Hud.OR); dy+=12;
+            texte(g,"Gisement GregTech",detailX,dy,detailLargeur,Hud.OR); dy+=12;
             texte(g,f.ancre.x()+" / "+f.ancre.y()+" / "+f.ancre.z()+" · "+distance(f),detailX,dy,detailLargeur,Hud.BLANC);dy+=11;
             texte(g,f.ancre.dimension(),detailX,dy,detailLargeur,Hud.GRIS);dy+=11;
             if (large) {
-                texte(g,f.restants()+" blocs repérés restants",detailX,dy,detailLargeur,Hud.VERT);dy+=11;
-                texte(g,"Relevé : " + f.ageReleve(System.currentTimeMillis()),detailX,dy,detailLargeur,Hud.GRIS);dy+=11;
+                texte(g,f.quantite(),detailX,dy,detailLargeur,Hud.VERT);dy+=11;
+                texte(g,(f.blocs.isEmpty() ? "Aucun relevé local" : "Relevé : " + f.ageReleve(System.currentTimeMillis())),detailX,dy,detailLargeur,Hud.GRIS);dy+=11;
                 texte(g,(f.blocs.size()-f.restants())+" blocs disparus · total inconnu",detailX,dy,detailLargeur,Hud.GRIS);dy+=12;
                 for (var type:f.types().entrySet()) {
                     if (dy+12>bas-95) break;
@@ -196,19 +194,19 @@ public final class OngletFilons {
         }
         String info = Filons.message();
         if (info.isEmpty()) info = Filons.etatScan()+" · "+liste.size()+" filons";
-        if (Filons.memoire().plein()) info = "Mémoire pleine (20 000 blocs) : nouveaux blocs non enregistrés.";
+        if (Filons.memoire().plein()) info = "Cache de relevés plein : arrête le scan puis utilise Vider les relevés. Gisements conservés.";
         texte(g,info,x,bas-21,largeur,Hud.JAUNE);
         texte(g,Filons.etatScan()+" · dimension actuelle · quantités partielles",x,bas-10,largeur,Hud.GRIS);
         for (int i=0;i<lignes && decalage+i<liste.size();i++) {
             int ly=listeY+i*40;
             if (sx>=x && sx<x+listeLargeur-68 && sy>=ly && sy<ly+38) {
                 var survole=liste.get(decalage+i);
-                String detail=survole.restants()+" blocs repérés restants · "+distance(survole)+"\n"
+                String detail=survole.quantite()+" · "+distance(survole)+"\n"
                         +survole.ancre.dimension()+" · "+survole.ancre.x()+" / "+survole.ancre.y()+" / "+survole.ancre.z()
                         +"\nVérification la plus ancienne des blocs restants : " + survole.ageReleve(System.currentTimeMillis())
                         + (survole.releveAncien(System.currentTimeMillis()) ? " (relevé ancien, à revérifier)." : ".")
                         + (!Filons.scanActif() ? "\nScan en pause : quantités figées." : "")
-                        + "\nQuantités partielles : seuls les blocs observés sont comptés."
+                        + "\nRelevé local : blocs compatibles proches du centre, sans garantie des limites du gisement."
                         +"\n"+String.join("\n",survole.types().entrySet().stream()
                         .map(e -> e.getValue()+" × "+Filons.nom(e.getKey())).toList());
                 g.renderTooltip(mc.font,mc.font.split(Component.literal(detail),Math.min(largeur,300)),sx,sy);

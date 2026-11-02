@@ -38,6 +38,8 @@ def prepare_import(instance, dry_run=False):
     folder = Path(instance) / "kubejs/assistant"
     active = folder / "filons_mod.json"
     data = json.loads(active.read_text(encoding="utf-8"))
+    if data.get("source") == "gregtech":
+        raise RuntimeError("Les anciens blocs ne sont pas des gisements GregTech. Utilise la prospection GregTech ou Scanner autour de moi en solo.")
     world = data.get("monde", "")
     if data.get("v") != 1 or not re.fullmatch(r"[0-9a-f]{24}", world):
         raise RuntimeError("Le mod doit avoir identifié le monde actuel.")

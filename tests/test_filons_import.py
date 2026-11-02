@@ -64,6 +64,12 @@ class ImportFilonsTests(unittest.TestCase):
             prepare_import(self.instance)
         self.assertEqual(path.read_bytes(), before)
 
+    def test_legacy_blocks_cannot_be_imported_as_gregtech_deposits(self):
+        self.active.write_text(json.dumps({"v": 1, "monde": self.world, "source": "gregtech", "gisements": []}))
+        with self.assertRaisesRegex(RuntimeError, "GregTech"):
+            prepare_import(self.instance)
+        self.assertFalse((self.folder / "filons/imports").exists())
+
     def test_dry_run_does_not_write(self):
         result = prepare_import(self.instance, dry_run=True)
         self.assertEqual(result["blocs"], 1)

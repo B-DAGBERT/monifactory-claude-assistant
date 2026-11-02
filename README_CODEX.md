@@ -163,78 +163,36 @@ séparément dans `tests/test_objective_pause.py`. Le reste du code de jeu garde
 
 ## Filons : liste, surbrillance et téléportation (Codex.3)
 
-Ouvrir **Y → Filons**. La liste fonctionne dans Minecraft même si l'assistant Python est arrêté.
-Elle affiche uniquement les filons de la **partie et de la dimension actives** : en entrant dans le Nether,
-les filons de l'Overworld sont masqués, puis réapparaissent au retour. Changer de partie recharge sa propre
-mémoire et quitter la partie vide la liste. Les données des autres mondes sont conservées sur disque.
-Chaque ligne affiche les minerais, les **blocs repérés restants**, la distance et son propre bouton
-**Afficher / Masquer**. Cliquer sur une ligne sélectionne son détail ; la survoler montre tous ses
-minerais avec leurs quantités. La recherche accepte les noms et identifiants des minerais.
+Ouvrir **Y → Filons**. La liste utilise les **gisements natifs GregTech**, avec leur nom, leur centre,
+leur composition et leur indicateur d'épuisement. Elle ne transforme plus les blocs voisins en filons.
+Les données proviennent du cache de prospection de GTCEu 7 (intégration vérifiée sur les API de 7.5.3).
+Les gisements déjà découverts sont récupérés, sans IA et sans nouveau scan de blocs.
+Seule la dimension active du monde identifié par GregTech est affichée.
 
-- **Scanner autour de moi** lance un seul passage dans un cube à 16 blocs du point de départ.
-  Le bouton affiche la progression et permet d'arrêter. À **100 %**, le repérage et la revérification
-  s'arrêtent automatiquement. Seuls les blocs chargés sont examinés : 100 % signifie que le parcours
-  est terminé, pas que tout le sous-sol est connu. Se déplacer ne recentre pas ce passage ; changer de
-  dimension l'annule. Le scan ponctuel remplace le scan automatique et laisse ensuite le scan en pause.
-  Il ne se relance pas après redémarrage.
-- **Auto : activé / désactivé** permet de conserver le scan continu si souhaité. Il est indisponible
-  pendant un passage ponctuel. La pause est sauvegardée par monde ; les filons restent consultables.
-  La surbrillance reste indépendante ; **Tout masquer** l'arrête si elle est activée.
-- Chaque filon indique ses **blocs repérés**, l'âge du relevé et la pause éventuelle. L'âge correspond
-  à la vérification la plus ancienne des blocs encore comptés, pas à la dernière mise à jour d'un seul
-  bloc. Dès 10 minutes, le relevé est signalé comme ancien ; les dates inconnues sont indiquées.
-  L'infobulle détaille ces limites. Les compteurs restent partiels et sont figés lorsque le scan est arrêté.
-- **Afficher** ouvre le choix des blocs du filon : cocher les types de minerais souhaités, puis
-  **Afficher la sélection**. Les quantités et les noms complets sont disponibles ; la pagination permet
-  de parcourir tous les types, même dans une petite fenêtre. **Tout cocher / Tout décocher** accélère le choix.
-  **Échap / Annuler** revient à la liste sans appliquer les modifications. Les choix validés sont conservés
-  par filon et par monde après redémarrage. Pour les modifier, **Masquer**, puis **Afficher** de nouveau.
-  Au moins un type encore repéré doit être coché. Après validation, les nouveaux types découverts restent masqués tant que tu ne les coches pas.
-  La surbrillance remplace celle du filon précédent ; les couleurs distinguent les minerais. **Tout masquer** coupe l'affichage. Contours limités aux blocs chargés à 64 blocs,
-  au maximum 768 à la fois, pour préserver les performances.
-- **Me guider / Arrêter le guidage** : un seul bouton bascule le faisceau bleu du filon sélectionné.
-  Choisir un autre filon puis **Me guider** remplace le guidage précédent. Les doubles clics rapides sont ignorés.
-  À trois blocs ou moins d'un minerai restant, dans la bonne dimension, le guidage s'arrête et un message
-  annonce l'arrivée. Le minerai doit encore être présent dans un chunk chargé. Cela fonctionne même
-  lorsque le scan est arrêté ; aucun arrêt n'est déclenché uniquement par la proximité horizontale.
-- **Se téléporter** exige les commandes autorisées / permissions opérateur. En solo, le serveur intégré
-  vérifie la destination, y compris dans une autre dimension. Il charge au maximum 9 chunks autour
-  de la destination demandée. Sur serveur distant, seule une destination déjà chargée dans la dimension
-  courante peut être vérifiée ; la commande `/tp @s` reste soumise aux autorisations du serveur.
-  Le mod attend la position effective avant de confirmer. Les boutons indisponibles expliquent pourquoi
-  dans leur infobulle. Aucun changement automatique des permissions.
-- La destination doit avoir deux blocs d'air, un sol solide, aucune collision et aucun liquide ou danger
-  connu à proximité (lave, feu, cactus, magma, neige poudreuse, etc.). Recherche limitée à 8 blocs du minerai :
-  si rien ne convient, aucune téléportation. Les effets particuliers de blocs ajoutés par d'autres mods
-  ne peuvent pas tous être prédits.
-- Tri par proximité, minerai ou lien direct avec les matières de l'objectif. Ce dernier utilise les
-  besoins locaux déjà calculés, sans IA ; il n'infère pas toutes les chaînes chimiques possibles.
-  Les filons sans blocs restants repérés sont masqués par défaut, avec un filtre pour revoir l'historique.
+- **Scanner autour de moi** : un passage dans un cube à 16 blocs du point de départ, avec progression,
+  arrêt manuel et arrêt automatique à 100 %. Aucun scan permanent, même après redémarrage.
+  En solo, le bouton demande aussi à GregTech de prospecter les 9 chunks déjà chargés autour du joueur,
+  via son cache serveur natif. Il ne génère aucun terrain. Sur serveur distant, seuls les gisements déjà
+  connus du client sont disponibles : utiliser la prospection GregTech pour en découvrir d'autres.
+- **Quantité totale inconnue** : les métadonnées GT n'indiquent pas le nombre exact de blocs restants.
+  Le relevé local compte les blocs de composition compatible, à 64 blocs au plus du centre connu le plus
+  proche. C'est une association de proximité, pas une reconstruction des limites générées. Un zéro
+  observé ne signifie jamais que le gisement est vide. Seul l'état GregTech pilote le filtre **Épuisés**.
+- **Afficher / Masquer** : choisir les types à surligner puis valider. La composition GT permet de choisir
+  avant un scan ; seuls les blocs effectivement relevés et encore présents seront surlignés.
+  **Tout cocher / Tout décocher**, pagination, **Échap / Annuler** et mémorisation des choix sont conservés.
+  Les contours restent limités aux blocs chargés à 64 blocs du joueur, 768 au maximum.
+- **Vider les relevés** : supprimer le cache des blocs scannés du monde actif (toutes dimensions),
+  uniquement lorsque le scan est arrêté. Les fiches des gisements et les choix d'affichage sont conservés.
+  Le plafond de 20 000 positions concerne ce cache, pas le nombre de gisements connus.
+- **Me guider / Arrêter le guidage** et **Se téléporter** restent disponibles même sans relevé local.
+  Le centre GT sert alors de destination. Le guidage s'arrête près du centre ou d'un minerai relevé.
+  La téléportation exige toujours les permissions adéquates et un emplacement vérifié libre et sûr.
+  En solo, elle peut charger au plus 9 chunks autour de la destination explicitement demandée ;
+  sur serveur distant, elle n'utilise que des chunks déjà chargés. Aucune permission n'est modifiée.
 
-**Compteurs partiels, pas un inventaire du sous-sol entier.** Le scanner explore progressivement un cube
-à 16 blocs autour du joueur, en commençant près de lui. Il ne force aucun chargement de chunk pour scanner.
-Au plus 192 nouvelles positions et 32 positions connues sont examinées par tick, avec un budget de parcours
-cible de 1 ms. Les blocs connus sont revérifiés lorsqu'ils sont chargés : les minerais cassés par un collègue
-sont également retirés des quantités. Un chunk déchargé ne compte jamais comme un filon vidé.
-Les minerais voisins sont regroupés autour d'une ancre stable dans un rayon de 24 blocs : c'est un repérage
-pratique, pas une reconstruction exacte des limites des filons générés par GregTech.
-
-La mémoire est séparée par sauvegarde solo ou adresse de serveur, dans `kubejs/assistant/filons/`.
-Elle contient au plus 20 000 positions ; une saturation est signalée sans effacer silencieusement
-l'historique. Les écritures passent par des fichiers temporaires et un thread dédié, toutes les 10 secondes
-si nécessaire. `filons_mod.json` transmet le dernier relevé à l'assistant pour ses réponses et son guidage.
-Les anciens relevés `filons.json` restent conservés. Pour les récupérer explicitement dans le monde
-actuellement ouvert, exécuter `.venv/bin/python codex_setup.py import-veins` (ou ajouter `--dry-run`
-pour vérifier sans écrire), puis redémarrer Minecraft avec le mod Codex.4 ou plus récent.
-La demande d'import est liée à ce monde dans `filons/imports/<monde>.json` ; le mod la fusionne au chargement.
-Aucun doublon par coordonnées, aucune observation récente écrasée par une ancienne, historique miné conservé.
-La demande reste disponible pour reprendre après un problème d'écriture. Les anciens blocs encore signalés
-présents sont des observations historiques : leur état est revérifié lorsqu'ils sont chargés.
-L'import est explicite car l'ancien fichier ne précise pas de quelle sauvegarde proviennent ses relevés.
-Une réinitialisation du monde d'un serveur à la même adresse nécessite une nouvelle mémoire ; le client
-ne connaît pas la graine distante et ne peut pas identifier cette réinitialisation automatiquement.
-
-Tests : modèle Java du scanner, regroupement multiminéraux, disparition/réapparition, reprise des données,
-séparation des dimensions, limites de mémoire, parcours complet, recherche bornée d'une destination libre,
-et priorité du nouvel export dans l'assistant. Compilation Forge vérifiée ; les clics et téléportations
-réels doivent être essayés en partie, notamment avec les permissions de votre serveur.
+Les gisements, relevés et choix sont sauvegardés dans `kubejs/assistant/filons_gregtech/`, séparés par
+l'identité du monde fournie par GregTech. Les anciennes données `filons/` et `filons.json` restent intactes,
+mais ne sont pas importées dans cette liste : elles ne prouvent pas l'existence d'un gisement GregTech.
+Le scan consomme au plus 192 nouvelles positions et 32 vérifications par tick, avec un budget cible de 1 ms.
+Les changements sont sauvegardés en arrière-plan. Les quantités ne sont actualisées que pendant un scan.

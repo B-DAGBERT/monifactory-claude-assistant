@@ -68,6 +68,7 @@ class ParityTests(unittest.TestCase):
             "App.work_question",
             "supervise",
             "build_mod_view",
+            "describe_veins",  # distinguish GT deposits from partial local block observations
             "find_veins",  # local scanner export, tested by test_filons.py
         }
         # User-requested gameplay extension, covered by test_objective_pause.py.

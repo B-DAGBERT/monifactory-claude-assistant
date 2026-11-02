@@ -16,11 +16,12 @@ class FilonsTests(unittest.TestCase):
     def setUp(self):
         tree = ast.parse((ROOT / "assistant_mc.py").read_text())
         nodes = [n for n in tree.body if
-                 isinstance(n, ast.FunctionDef) and n.name in {"ore_material", "find_veins"}
+                 isinstance(n, ast.FunctionDef) and n.name in {"ore_material", "find_veins", "describe_veins"}
                  or isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "STONE_PREFIXES" for t in n.targets)]
         namespace = {"math": math}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "assistant_mc.py", "exec"), namespace)
         self.find = namespace["find_veins"]
+        self.describe = namespace["describe_veins"]
         self.block = {"bloc": "minecraft:iron_ore", "x": 1, "y": 20, "z": 3,
                       "dimension": "minecraft:overworld", "t": 100, "mine": False}
 
@@ -53,6 +54,26 @@ class FilonsTests(unittest.TestCase):
         files = {"filons_mod.json": [], "filons.json": {"blocs": [self.block]}}
         self.assertEqual(len(self.find(SimpleNamespace(read=files.get))), 1)
 
+    def test_gregtech_metadata_survives_empty_scan_and_preserves_deposits(self):
+        g = {"id": "gt:a", "nom": "Iron vein", "definition": "gtceu:iron_vein",
+             "dimension": "minecraft:overworld", "x": 10, "y": 20, "z": 30,
+             "composition": ["minecraft:iron_ore", "minecraft:deepslate_iron_ore"], "epuise": False}
+        data = {"v": 1, "monde": "a", "source": "gregtech", "gisements": [g], "blocs": []}
+        veins = self.find(SimpleNamespace(read=lambda name: data if name == "filons_mod.json" else None))
+        self.assertEqual(len(veins), 1)
+        self.assertEqual(veins[0]["gisement"], "Iron vein")
+        self.assertTrue(veins[0]["partiel"])
+        self.assertFalse(veins[0]["epuise"])
+        description = self.describe(veins, None)
+        self.assertIn("quantité totale restante inconnue", description)
+        self.assertNotIn("blocs encore là", description)
+        self.assertEqual((veins[0]["vus"], veins[0]["x"]), (0, 10))
+        data["blocs"] = [{**self.block, "filon": "gt:a"}]
+        veins = self.find(SimpleNamespace(read=lambda name: data if name == "filons_mod.json" else None))
+        self.assertEqual(veins[0]["vus"], 1)
+        data["gisements"] = []
+        self.assertEqual(self.find(SimpleNamespace(read=lambda name: data if name == "filons_mod.json" else None)), [])
+
     def test_java_scanner_model_and_safe_destination(self):
         java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
         if not (java_home / "bin/javac").exists():
@@ -68,7 +89,7 @@ class FilonsTests(unittest.TestCase):
                            check=True, capture_output=True, text=True)
             result = subprocess.run([java, "-ea", "-cp", directory, "fr.assistantia.FilonMemoireTest"],
                                     check=True, capture_output=True, text=True, timeout=30)
-            self.assertIn("13 scénarios filons validés", result.stdout)
+            self.assertIn("14 scénarios filons validés", result.stdout)
 
 
 if __name__ == "__main__":

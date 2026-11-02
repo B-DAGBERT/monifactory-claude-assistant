@@ -15,7 +15,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -36,13 +35,13 @@ public final class Filons {
     private static final java.util.concurrent.ExecutorService IO = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "Assistant-filons-sauvegarde"); t.setDaemon(true); return t;
     });
-    private static FilonMemoire memoire = new FilonMemoire();
+    private static FilonMemoire memoire = new FilonMemoire(true);
     private static FilonMemoire.Scan scan = new FilonMemoire.Scan();
     private static final Map<net.minecraft.world.level.block.Block, Boolean> MINERAIS = new HashMap<>();
     private static List<FilonMemoire.Bloc> controles = List.of(), contours = List.of();
     private static int controle;
     private static String monde = "", affiche = "", guide = "";
-    private static long sauvegarde, revision, listeControle, prochainAffichage, prochainScan, prochainGuidage, controleGuidage, tpDebut, contoursDate;
+    private static long sauvegarde, revision, listeControle, prochainAffichage, prochainScan, prochainGuidage, controleGuidage, lectureGregtech, tpDebut, contoursDate;
     private static boolean modifie, tpEnCours;
     private static FilonMemoire.Position tpAttendue;
     private static volatile String message = "";
@@ -53,7 +52,7 @@ public final class Filons {
     public static String monde() { return monde; }
     public static String affiche() { return affiche; }
     public static String guide() { return guide; }
-    public static String message() { return message; }
+    public static String message() { return GregTechFilons.erreur().isEmpty() ? message : GregTechFilons.erreur(); }
     public static long revision() { return revision; }
     public static int avancee() { return scan.pourcentage(); }
     public static boolean scanActif() { return scan.actif(); }
@@ -66,6 +65,7 @@ public final class Filons {
     public static void scannerAutour() {
         if (monde.isEmpty() || !boutonScanDisponible()) return;
         if (scan.ponctuel()) { reglerScan(false); return; }
+        GregTechFilons.prospecterSolo(); lectureGregtech=0; actualiserGregtech();
         scan.lancerPonctuel(position()); prochainScan = System.currentTimeMillis() + 650;
         message = "Scan ponctuel démarré : arrêt automatique après un passage, sans chargement de chunks.";
         modifie = true; sauver(true);
@@ -91,9 +91,7 @@ public final class Filons {
     }
     private static BlockPos bloc(FilonMemoire.Position p) { return new BlockPos(p.x(), p.y(), p.z()); }
     private static String identite(Minecraft mc) {
-        String origine = mc.getSingleplayerServer() != null
-                ? "solo:" + mc.getSingleplayerServer().getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize()
-                : mc.getCurrentServer() != null ? "serveur:" + mc.getCurrentServer().ip : "";
+        String origine = GregTechFilons.monde();
         if (origine.isEmpty()) return "";
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -108,7 +106,7 @@ public final class Filons {
         sauver(true);
         if (id.isEmpty()) {
             monde = affiche = guide = message = "";
-            memoire = new FilonMemoire(); scan = new FilonMemoire.Scan(); scan.activer(false);
+            memoire = new FilonMemoire(true); scan = new FilonMemoire.Scan(); scan.activer(false); scan.activer(false);
             controles = contours = List.of(); MINERAIS.clear(); controle = 0;
             tpEnCours = modifie = false; tpAttendue = null; revision++;
             return false;
@@ -116,9 +114,9 @@ public final class Filons {
         charger(id);
         return true;
     }
-    private static Path fichier(String id) { return DOSSIER.resolve("filons").resolve(id + ".json"); }
+    private static Path fichier(String id) { return DOSSIER.resolve("filons_gregtech").resolve(id + ".json"); }
     private static void charger(String id) {
-        memoire = new FilonMemoire(); scan = new FilonMemoire.Scan();
+        memoire = new FilonMemoire(true); scan = new FilonMemoire.Scan(); scan.activer(false);
         controles = contours = List.of(); controle = 0; affiche = guide = "";
         tpEnCours = false; tpAttendue = null; message = ""; monde = id;
         MINERAIS.clear(); listeControle = contoursDate = sauvegarde = 0;
@@ -126,13 +124,16 @@ public final class Filons {
             try {
                 JsonObject data = JsonParser.parseString(Files.readString(fichier(id))).getAsJsonObject();
                 if (!id.equals(Pont.texte(data, "monde"))) throw new IllegalArgumentException("Mauvais monde");
-                scan.activer(!data.has("scan_actif") || Pont.vrai(data, "scan_actif"));
+                for (JsonElement e : Pont.liste(data,"gisements")) {
+                    JsonObject g=e.getAsJsonObject(); Set<String> types=new TreeSet<>();
+                    for (JsonElement type:Pont.liste(g,"composition")) types.add(type.getAsString());
+                    memoire.gisement(Pont.texte(g,"id"),lirePosition(g),Pont.texte(g,"definition"),Pont.texte(g,"nom"),types,Pont.vrai(g,"epuise"));
+                }
                 for (JsonElement e : Pont.liste(data, "blocs")) {
                     JsonObject b = e.getAsJsonObject();
                     FilonMemoire.Position p = lirePosition(b);
-                    JsonObject ancre = b.getAsJsonObject("ancre");
-                    memoire.restaurer(p, Pont.texte(b, "bloc"), Pont.vrai(b, "mine"),
-                            (long) Pont.nombre(b, "t", 0), lirePosition(ancre));
+                    memoire.restaurerReleve(p,Pont.texte(b,"bloc"),Pont.vrai(b,"mine"),
+                            (long)Pont.nombre(b,"t",0),Pont.texte(b,"filon"));
                 }
                 if (data.has("types_affiches_par_filon") && data.get("types_affiches_par_filon").isJsonObject()) {
                     for (var entree : data.getAsJsonObject("types_affiches_par_filon").entrySet()) {
@@ -154,37 +155,26 @@ public final class Filons {
                 LogUtils.getLogger().warn("Lecture des filons", e);
             }
         }
-        importerAnciens(id);
+        lectureGregtech=0; actualiserGregtech();
         modifie = true; revision++;
     }
-    private static void importerAnciens(String id) {
-        Path demande = DOSSIER.resolve("filons/imports").resolve(id + ".json");
-        if (!Files.exists(demande)) return;
-        try {
-            JsonObject data = JsonParser.parseString(Files.readString(demande)).getAsJsonObject();
-            if (!id.equals(Pont.texte(data, "monde")) || Pont.nombre(data, "v", 0) != 1)
-                throw new IllegalArgumentException("L'import ne vise pas ce monde");
-            int importes = 0, invalides = 0;
-            for (JsonElement e : Pont.liste(data, "blocs")) {
-                try {
-                    JsonObject b = e.getAsJsonObject();
-                    String minerai = Pont.texte(b, "bloc");
-                    ResourceLocation nom = ResourceLocation.tryParse(minerai);
-                    if (nom == null || !ForgeRegistries.BLOCKS.containsKey(nom)) { invalides++; continue; }
-                    if (memoire.importer(lirePosition(b), minerai, Pont.vrai(b, "mine"),
-                            (long) Pont.nombre(b, "t", 0))) importes++;
-                } catch (RuntimeException invalide) { invalides++; }
-            }
-            if (importes > 0 || invalides > 0)
-                message = importes + " anciens blocs intégrés ; état à revérifier dans les zones chargées."
-                        + (invalides > 0 ? " " + invalides + " entrées invalides ignorées." : "");
-            // Garder la demande permet de reprendre après une erreur de sauvegarde. L'import est idempotent.
-        } catch (Exception e) {
-            message = "Import des anciens filons impossible : demande conservée pour réessayer.";
-            LogUtils.getLogger().warn("Import des anciens filons", e);
+    public static void actualiserGregtech() {
+        if (monde.isEmpty() || System.currentTimeMillis()<lectureGregtech) return;
+        lectureGregtech=System.currentTimeMillis()+2000;
+        int connus=memoire.filons().size();
+        if (GregTechFilons.lire(memoire)) {
+            if (memoire.filons().size()>connus) scan.reprendrePonctuel();
+            modifie=true; revision++;
         }
     }
-
+    public static void viderReleves() {
+        if (!synchroniserMonde() || !boutonScanDisponible() || scan.actif()) return;
+        int nombre=memoire.viderReleves();
+        controles=contours=List.of(); controle=0; listeControle=contoursDate=0;
+        prochainScan=System.currentTimeMillis()+650;
+        message=nombre+" relevés supprimés ; gisements GregTech et choix d'affichage conservés.";
+        modifie=true; revision++; sauver(true);
+    }
     private static FilonMemoire.Position lirePosition(JsonObject b) {
         String dim = Pont.texte(b, "dimension");
         int x = (int) Pont.nombre(b, "x", 0), y = (int) Pont.nombre(b, "y", 0), z = (int) Pont.nombre(b, "z", 0);
@@ -200,9 +190,17 @@ public final class Filons {
         if (monde.isEmpty() || (!force && (!modifie || System.currentTimeMillis() - sauvegarde < 10000))) return;
         JsonObject j = new JsonObject(); j.addProperty("v", 1); j.addProperty("monde", monde);
         j.addProperty("scan_actif", scan.actif() && !scan.ponctuel()); // un scan ponctuel ne reprend jamais en boucle au redémarrage
+        JsonArray gisements=new JsonArray();
+        for (var f:memoire.filons()) {
+            JsonObject g=jsonPosition(f.ancre); g.addProperty("id",f.id); g.addProperty("definition",f.definition);
+            g.addProperty("nom",f.nom); g.addProperty("epuise",f.epuise);
+            JsonArray types=new JsonArray(); f.composition.stream().sorted().forEach(types::add); g.add("composition",types); gisements.add(g);
+        }
+        j.add("gisements",gisements); j.addProperty("source","gregtech");
         j.addProperty("t", System.currentTimeMillis()); JsonArray blocs = new JsonArray();
         for (FilonMemoire.Bloc b : memoire.blocs()) {
             JsonObject o = jsonPosition(b.position); o.addProperty("bloc", b.id);
+            o.addProperty("filon",b.filon);
             o.addProperty("mine", b.retire); o.addProperty("t", b.vu); o.addProperty("cle", b.position.cle());
             o.add("ancre", jsonPosition(memoire.filon(b.filon).ancre)); blocs.add(o);
         }
@@ -251,6 +249,7 @@ public final class Filons {
         if (event.phase != TickEvent.Phase.END) return;
         Minecraft mc = Minecraft.getInstance(); long now = System.currentTimeMillis();
         if (!synchroniserMonde()) return;
+        actualiserGregtech();
         if (tpEnCours && tpAttendue != null) {
             if (position().dimension().equals(tpAttendue.dimension()) && mc.player.position().distanceToSqr(
                     tpAttendue.x()+.5, tpAttendue.y(), tpAttendue.z()+.5) < .5) finirTP(monde, "Téléportation effectuée.");
@@ -259,9 +258,9 @@ public final class Filons {
         if (!mc.isPaused() && !guide.isEmpty() && now >= controleGuidage) {
             controleGuidage = now + 250;
             var cible = memoire.filon(guide);
-            if (cible != null && cible.arrive(position())) {
+            if (cible != null && (cible.arrive(position()) || cible.ancre.distance2(position())<=9)) {
                 var destination = bloc(cible.destination(position()));
-                if (mc.level.hasChunkAt(destination) && minerai(mc.level.getBlockState(destination))) {
+                if (cible.ancre.distance2(position())<=9 || (mc.level.hasChunkAt(destination) && minerai(mc.level.getBlockState(destination)))) {
                     guide = ""; message = "Tu es arrivé au filon : guidage arrêté.";
                     mc.player.displayClientMessage(Component.literal(message), true);
                 }
@@ -299,8 +298,8 @@ public final class Filons {
         if (!synchroniserMonde() || !monde.equals(origine) || !affichageDisponible()) return false;
         var f = memoire.filon(id);
         if (f == null || !f.ancre.dimension().equals(position().dimension())) return false;
-        if (f.blocs.stream().noneMatch(b -> !b.retire && choix.getOrDefault(b.id, false))) {
-            message = "Sélectionne au moins un minerai encore repéré dans ce filon.";
+        if (f.types().keySet().stream().noneMatch(type -> choix.getOrDefault(type,false))) {
+            message = "Sélectionne au moins un type de minerai de ce gisement.";
             return false;
         }
         f.choisirTypes(f.types().keySet().stream().filter(type -> choix.getOrDefault(type, false)).toList());

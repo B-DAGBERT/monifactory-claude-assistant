@@ -54,7 +54,7 @@ public final class EcranBlocsFilon extends Screen {
         var quantites = f == null ? Map.<String,Integer>of() : f.types();
         for (int i=page*parPage; i<Math.min(types.size(),(page+1)*parPage); i++) {
             String type = types.get(i);
-            String label = quantites.getOrDefault(type,0)+" × "+Filons.nom(type);
+            String label = Filons.nom(type)+" · "+quantites.getOrDefault(type,0)+" observés proches";
             Checkbox caseType = new Checkbox(gauche,66+(i-page*parPage)*22,largeur,20,
                     Component.literal(font.plainSubstrByWidth(label,largeur-26)),choix.get(type)) {
                 @Override
@@ -89,7 +89,7 @@ public final class EcranBlocsFilon extends Screen {
         prochainLot=now+650; choix.replaceAll((type,ancien) -> valeur); erreur=""; rebuildWidgets();
     }
     private void appliquer() {
-        if (valide || System.currentTimeMillis()-ouvert<350 || !contexteValide() || selectionRestante()==0) return;
+        if (valide || System.currentTimeMillis()-ouvert<350 || !contexteValide() || choix.values().stream().noneMatch(Boolean::booleanValue)) return;
         if (Filons.afficherSelection(monde,filon,choix)) { valide=true; onClose(); }
         else erreur="Le filon a changé : vérifie les blocs sélectionnés.";
     }
@@ -100,12 +100,12 @@ public final class EcranBlocsFilon extends Screen {
         g.drawCenteredString(font,title,width/2,12,Hud.OR);
         g.drawCenteredString(font,"Coche les minerais à mettre en surbrillance",width/2,28,Hud.BLANC);
         int nombre=selectionRestante();
-        String statut=erreur.isEmpty() ? nombre==0 ? "Sélectionne au moins un minerai restant."
-                : nombre+" blocs repérés sélectionnés" : erreur;
+        String statut=erreur.isEmpty() ? choix.values().stream().noneMatch(Boolean::booleanValue) ? "Sélectionne au moins un type."
+                : nombre+" blocs compatibles observés · total inconnu" : erreur;
         g.drawCenteredString(font,font.plainSubstrByWidth(statut,largeur),width/2,46,Hud.JAUNE);
         int pages=Math.max(1,(types.size()+parPage-1)/parPage);
         g.drawCenteredString(font,(page+1)+" / "+pages,width/2,height-70,Hud.GRIS);
-        appliquer.active = !valide && nombre>0 && Filons.affichageDisponible() && System.currentTimeMillis()-ouvert>=350;
+        appliquer.active = !valide && choix.values().stream().anyMatch(Boolean::booleanValue) && Filons.affichageDisponible() && System.currentTimeMillis()-ouvert>=350;
         super.render(g,mx,my,partialTick);
     }
     @Override public void onClose() { if (minecraft != null) minecraft.setScreen(parent); }

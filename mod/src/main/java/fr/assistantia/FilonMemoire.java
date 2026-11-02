@@ -27,6 +27,12 @@ public final class FilonMemoire {
         public final String id;
         public final Position ancre;
         public final List<Bloc> blocs = new ArrayList<>();
+        public String definition="", nom="";
+        public Set<String> composition=Set.of();
+        public boolean epuise;
+        public boolean gregtech() { return !definition.isEmpty(); }
+        public boolean visible() { return gregtech() ? !epuise : restants()>0; }
+        public String quantite() { return gregtech() ? (epuise ? "Épuisé (GregTech)" : "Total inconnu · "+restants()+" observés proches") : restants()+" repérés"; }
         private Set<String> typesChoisis; // null : aucun choix validé, tous cochés par défaut
         public boolean typeAffiche(String type) { return typesChoisis == null || typesChoisis.contains(type); }
         public Set<String> typesChoisis() { return typesChoisis == null ? null : Set.copyOf(typesChoisis); }
@@ -60,6 +66,7 @@ public final class FilonMemoire {
         }
         public Map<String, Integer> types() {
             Map<String, Integer> types = new TreeMap<>();
+            for (String type:composition) types.put(type,0);
             for (Bloc b : blocs) types.merge(b.id, b.retire ? 0 : 1, Integer::sum);
             return types;
         }
@@ -68,6 +75,27 @@ public final class FilonMemoire {
                     .min(Comparator.comparingDouble(b -> b.position.distance2(depuis)))
                     .map(b -> b.position).orElse(ancre);
         }
+    }
+    private final boolean gregtechSeulement;
+    public FilonMemoire() { this(false); }
+    public FilonMemoire(boolean gregtechSeulement) { this.gregtechSeulement=gregtechSeulement; }
+    public boolean gisement(String id, Position centre, String definition, String nom, Set<String> composition, boolean epuise) {
+        Filon f=filons.get(id);
+        if (f==null) { f=new Filon(id,centre); filons.put(id,f); }
+        else if (f.definition.equals(definition) && f.nom.equals(nom) && f.composition.equals(composition) && f.epuise==epuise) return false;
+        f.definition=definition; f.nom=nom; f.composition=Set.copyOf(composition); f.epuise=epuise;
+        return true;
+    }
+    public int viderReleves() {
+        int nombre=blocs.size(); blocs.clear();
+        for (var f:filons.values()) f.blocs.clear();
+        filons.values().removeIf(f -> !f.gregtech());
+        return nombre;
+    }
+    public void restaurerReleve(Position p,String id,boolean retire,long vu,String filon) {
+        var f=filons.get(filon);
+        if (f==null || !f.ancre.dimension.equals(p.dimension) || plein() || blocs.containsKey(p.cle())) return;
+        var b=new Bloc(p,filon,id,retire,vu); blocs.put(p.cle(),b); f.blocs.add(b);
     }
     private final Map<String, Bloc> blocs = new LinkedHashMap<>();
     private final Map<String, Filon> filons = new LinkedHashMap<>();
@@ -84,6 +112,7 @@ public final class FilonMemoire {
     public boolean observer(Position p, String id, boolean minerai, long maintenant) {
         Bloc b = blocs.get(p.cle());
         if (b != null) {
+            if (gregtechSeulement && minerai && !filons.get(b.filon).composition.contains(id)) minerai=false;
             boolean change = b.retire == minerai || (minerai && !b.id.equals(id));
             if (!change && maintenant - b.vu < 60000) return false;
             b.retire = !minerai;
@@ -92,8 +121,12 @@ public final class FilonMemoire {
             return true;
         }
         if (!minerai || plein()) return false;
-        Filon f = filons.values().stream().filter(v -> v.ancre.distance2(p) <= RAYON_GROUPE * RAYON_GROUPE)
-                .min(Comparator.comparingDouble(v -> v.ancre.distance2(p))).orElse(null);
+        // Relevé de proximité, pas une preuve d'appartenance géologique au gisement.
+        Filon f = filons.values().stream().filter(v -> gregtechSeulement
+                        ? v.gregtech() && v.composition.contains(id) && v.ancre.distance2(p)<=64*64
+                        : v.ancre.distance2(p)<=RAYON_GROUPE*RAYON_GROUPE)
+                .min(Comparator.<Filon>comparingDouble(v -> v.ancre.distance2(p)).thenComparing(v -> v.id)).orElse(null);
+        if (f==null && gregtechSeulement) return false;
         if (f == null) { f = new Filon(p.cle(), p); filons.put(f.id, f); }
         b = new Bloc(p, f.id, id, false, maintenant);
         blocs.put(p.cle(), b); f.blocs.add(b);
@@ -138,6 +171,7 @@ public final class FilonMemoire {
         public boolean actif() { return actif; }
         public boolean ponctuel() { return ponctuel; }
         public boolean termine() { return termine; }
+        public void reprendrePonctuel() { if (ponctuel) index=0; }
         public void lancerPonctuel(Position joueur) {
             centre = joueur; index = 0; actif = ponctuel = true; termine = false;
         }

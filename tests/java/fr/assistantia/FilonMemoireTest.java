@@ -8,8 +8,34 @@ public final class FilonMemoireTest {
     static FilonMemoire.Position p(int x,int y,int z) { return new FilonMemoire.Position("minecraft:overworld",x,y,z); }
     static void verifier(boolean condition,String raison) { if (!condition) throw new AssertionError(raison); }
     public static void main(String[] args) {
-        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee(); mondeActif(); choixAffichage();
-        System.out.println("13 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee(); mondeActif(); choixAffichage(); gisementsGregtech();
+        System.out.println("14 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+    }
+    static void gisementsGregtech() {
+        var m=new FilonMemoire(true); var centre=p(0,20,0);
+        verifier(!m.observer(centre,"minecraft:iron_ore",true,1) && m.filons().isEmpty(), "Un bloc isolé ne crée jamais un faux gisement GT");
+        verifier(m.gisement("gt:a",centre,"gtceu:iron_vein","Iron vein",Set.of("minecraft:iron_ore"),false), "Gisement natif ajouté");
+        var f=m.filon("gt:a");
+        verifier(f.visible() && f.restants()==0 && f.types().containsKey("minecraft:iron_ore"), "Gisement visible sans scan, composition native disponible");
+        verifier(!m.gisement("gt:a",centre,"gtceu:iron_vein","Iron vein",Set.of("minecraft:iron_ore"),false), "Lecture répétée sans doublon ni écriture inutile");
+        verifier(!m.observer(centre,"minecraft:gold_ore",true,2), "Une composition incompatible n'est pas attribuée au gisement");
+        verifier(!m.observer(p(100,20,0),"minecraft:iron_ore",true,2), "Pas de relevé arbitrairement distant");
+        verifier(m.observer(centre,"minecraft:iron_ore",true,2), "Relevé compatible à proximité");
+        m.observer(centre,"minecraft:air",false,3);
+        verifier(f.visible() && !f.epuise, "Zéro observé n'épuise pas le gisement GT");
+        m.gisement("gt:b",p(1,20,0),"gtceu:gold_vein","Gold vein",Set.of("minecraft:gold_ore"),false);
+        verifier(m.filons().size()==2, "Deux gisements GT proches ne fusionnent jamais");
+        f.choisirTypes(Set.of("minecraft:iron_ore"));
+        verifier(m.viderReleves()==1 && m.blocs().isEmpty() && m.filons().size()==2 && f.typeAffiche("minecraft:iron_ore"), "Flush du cache conserve gisements et choix");
+        verifier(m.viderReleves()==0, "Flush répété sans effet");
+        m.gisement("gt:a",centre,"gtceu:iron_vein","Iron vein",Set.of("minecraft:iron_ore"),true);
+        verifier(!f.visible(), "Seul l'indicateur GT peut masquer le gisement comme épuisé");
+        m.restaurerReleve(centre,"minecraft:iron_ore",false,100,"gt:a");
+        verifier(m.blocs().iterator().next().filon.equals("gt:a"), "Restauration conserve l'identité native");
+        m.restaurerReleve(p(2,20,0),"minecraft:iron_ore",false,100,"absent");
+        verifier(m.blocs().size()==1, "Pas de restauration d'un relevé orphelin");
+        var autre=new FilonMemoire(true);
+        verifier(autre.filons().isEmpty(), "Aucun gisement hérité d'un autre monde");
     }
     static void choixAffichage() {
         var m = new FilonMemoire(); var origine=p(0,20,0);
