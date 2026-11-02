@@ -8,8 +8,62 @@ public final class FilonMemoireTest {
     static FilonMemoire.Position p(int x,int y,int z) { return new FilonMemoire.Position("minecraft:overworld",x,y,z); }
     static void verifier(boolean condition,String raison) { if (!condition) throw new AssertionError(raison); }
     public static void main(String[] args) {
-        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan();
-        System.out.println("8 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee();
+        System.out.println("11 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+    }
+    static void scanPonctuel() {
+        var scan = new FilonMemoire.Scan(); var centre = p(0,20,0);
+        scan.lancerPonctuel(centre);
+        Set<String> visites = new HashSet<>();
+        for (int i=0; i<FilonMemoire.Scan.TOTAL; i++) {
+            var position = scan.suivant(p(1000,20,0));
+            verifier(position != null && Math.abs(position.x())<=16, "Le scan ponctuel garde son point de départ malgré le déplacement");
+            visites.add(position.cle());
+        }
+        verifier(visites.size()==FilonMemoire.Scan.TOTAL, "Un passage exact, sans doublon ni boucle");
+        verifier(!scan.actif() && scan.termine() && scan.pourcentage()==100, "Arrêt automatique à 100 %");
+        verifier(scan.suivant(centre)==null, "Aucune lecture après la fin");
+        scan.lancerPonctuel(p(50,20,0));
+        verifier(scan.suivant(centre).equals(p(50,20,0)), "Relancer commence au nouveau centre");
+        scan.activer(false);
+        verifier(!scan.termine() && scan.suivant(centre)==null, "Annuler ne prétend pas avoir terminé");
+        scan.lancerPonctuel(centre);
+        verifier(scan.suivant(new FilonMemoire.Position("minecraft:the_nether",0,20,0))==null
+                && !scan.actif() && !scan.termine(), "Changement de dimension : annulation sûre");
+        scan.activer(true);
+        verifier(scan.suivant(centre)!=null && !scan.ponctuel(), "Reprise du mode automatique après annulation");
+        scan.lancerPonctuel(centre);
+        for (int i=0; i<FilonMemoire.Scan.TOTAL; i++) scan.suivant(centre);
+        scan.activer(true);
+        verifier(scan.suivant(centre)!=null && !scan.termine(), "Reprise automatique après 100 % sans dépassement du curseur");
+    }
+    static void fraicheur() {
+        var memoire = new FilonMemoire(); long maintenant=3600000;
+        memoire.observer(p(0,20,0),"minecraft:iron_ore",true,maintenant-1200000);
+        memoire.observer(p(1,20,0),"minecraft:iron_ore",true,maintenant);
+        var filon=memoire.filons().iterator().next();
+        verifier(filon.ageReleve(maintenant).equals("20 min") && filon.releveAncien(maintenant),
+                "Un bloc récent ne rajeunit pas les autres blocs du compteur");
+        memoire.observer(p(0,20,0),"minecraft:air",false,maintenant);
+        verifier(filon.ageReleve(maintenant).equals("moins de 1 min") && !filon.releveAncien(maintenant),
+                "Un bloc retiré ne rend pas périmé le compteur restant");
+        verifier(filon.ageReleve(1).equals("moins de 1 min"), "Décalage d'horloge : jamais d'âge négatif");
+        memoire.observer(p(1,20,0),"minecraft:air",false,maintenant);
+        verifier(filon.verificationAncienne()==maintenant, "Historique consultable même pour un filon vide");
+        memoire.importer(p(2,20,0),"minecraft:iron_ore",false,0);
+        verifier(filon.ageReleve(maintenant).equals("date inconnue") && filon.releveAncien(maintenant), "Date manquante signalée");
+    }
+    static void arrivee() {
+        var memoire=new FilonMemoire();
+        memoire.observer(p(0,20,0),"minecraft:iron_ore",true,100);
+        var filon=memoire.filons().iterator().next();
+        verifier(filon.arrive(p(3,20,0)), "Arrivée à trois blocs du minerai");
+        verifier(!filon.arrive(p(4,20,0)) && !filon.arrive(p(0,24,0)), "Pas d'arrivée trop loin ou à un autre étage");
+        verifier(!filon.arrive(new FilonMemoire.Position("minecraft:the_nether",0,20,0)), "Pas d'arrivée dans une autre dimension");
+        memoire.observer(p(0,20,0),"minecraft:air",false,200);
+        verifier(!filon.arrive(p(0,20,0)), "Pas d'arrivée sur un ancien bloc disparu");
+        memoire.observer(p(20,20,0),"minecraft:iron_ore",true,200);
+        verifier(filon.arrive(p(20,20,0)), "L'arrivée vise le minerai restant, pas l'ancre historique");
     }
     static void importHistorique() {
         FilonMemoire m = new FilonMemoire();

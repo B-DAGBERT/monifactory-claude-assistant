@@ -42,7 +42,7 @@ public final class Filons {
     private static List<FilonMemoire.Bloc> controles = List.of(), contours = List.of();
     private static int controle;
     private static String monde = "", affiche = "", guide = "";
-    private static long sauvegarde, revision, listeControle, prochainAffichage, prochainScan, prochainGuidage, tpDebut, contoursDate;
+    private static long sauvegarde, revision, listeControle, prochainAffichage, prochainScan, prochainGuidage, controleGuidage, tpDebut, contoursDate;
     private static boolean modifie, tpEnCours;
     private static FilonMemoire.Position tpAttendue;
     private static volatile String message = "";
@@ -57,6 +57,19 @@ public final class Filons {
     public static long revision() { return revision; }
     public static int avancee() { return scan.pourcentage(); }
     public static boolean scanActif() { return scan.actif(); }
+    public static boolean scanPonctuel() { return scan.ponctuel(); }
+    public static String etatScan() {
+        if (scan.ponctuel()) return "Scan ponctuel : " + avancee() + " %";
+        if (scan.actif()) return "Scan auto : " + avancee() + " %";
+        return scan.termine() ? "Scan terminé : 100 % · en pause" : "Scan en pause";
+    }
+    public static void scannerAutour() {
+        if (monde.isEmpty() || !boutonScanDisponible()) return;
+        if (scan.ponctuel()) { reglerScan(false); return; }
+        scan.lancerPonctuel(position()); prochainScan = System.currentTimeMillis() + 650;
+        message = "Scan ponctuel démarré : arrêt automatique après un passage, sans chargement de chunks.";
+        modifie = true; sauver(true);
+    }
     public static boolean boutonScanDisponible() { return System.currentTimeMillis() >= prochainScan; }
     public static void reglerScan(boolean actif) {
         if (monde.isEmpty() || !boutonScanDisponible() || !scan.activer(actif)) return;
@@ -157,7 +170,7 @@ public final class Filons {
     private static void sauver(boolean force) {
         if (monde.isEmpty() || (!force && (!modifie || System.currentTimeMillis() - sauvegarde < 10000))) return;
         JsonObject j = new JsonObject(); j.addProperty("v", 1); j.addProperty("monde", monde);
-        j.addProperty("scan_actif", scan.actif());
+        j.addProperty("scan_actif", scan.actif() && !scan.ponctuel()); // un scan ponctuel ne reprend jamais en boucle au redémarrage
         j.addProperty("t", System.currentTimeMillis()); JsonArray blocs = new JsonArray();
         for (FilonMemoire.Bloc b : memoire.blocs()) {
             JsonObject o = jsonPosition(b.position); o.addProperty("bloc", b.id);
@@ -212,6 +225,17 @@ public final class Filons {
                     tpAttendue.x()+.5, tpAttendue.y(), tpAttendue.z()+.5) < .5) finirTP(monde, "Téléportation effectuée.");
             else if (now - tpDebut > 6000) finirTP(monde, "Téléportation non confirmée : vérifier le message du serveur.");
         }
+        if (!mc.isPaused() && !guide.isEmpty() && now >= controleGuidage) {
+            controleGuidage = now + 250;
+            var cible = memoire.filon(guide);
+            if (cible != null && cible.arrive(position())) {
+                var destination = bloc(cible.destination(position()));
+                if (mc.level.hasChunkAt(destination) && minerai(mc.level.getBlockState(destination))) {
+                    guide = ""; message = "Tu es arrivé au filon : guidage arrêté.";
+                    mc.player.displayClientMessage(Component.literal(message), true);
+                }
+            }
+        }
         if (mc.isPaused() || !scan.actif()) { sauver(false); return; }
         if (now - listeControle > 10000) { controles = new ArrayList<>(memoire.blocs()); listeControle = now; }
         long limite = System.nanoTime() + 1_000_000; // 1 ms au plus entre deux observations, 224 blocs maximum
@@ -220,7 +244,18 @@ public final class Filons {
             observer(mc.level, controles.get(controle++).position, now);
         }
         FilonMemoire.Position joueur = position();
-        for (int n = 0; n < 192 && System.nanoTime() < limite; n++) observer(mc.level, scan.suivant(joueur), now);
+        boolean ponctuel = scan.ponctuel();
+        for (int n = 0; n < 192 && System.nanoTime() < limite; n++) {
+            var suivante = scan.suivant(joueur);
+            if (suivante == null) break;
+            observer(mc.level, suivante, now);
+        }
+        if (ponctuel && !scan.actif()) {
+            message = scan.termine() ? "Scan terminé : 100 % de la zone parcourue. Scan en pause ; relevé limité aux blocs chargés."
+                    : "Scan interrompu : changement de dimension. Données conservées, scan en pause.";
+            modifie = true; sauver(true);
+            mc.player.displayClientMessage(Component.literal(message), true);
+        }
         sauver(false);
     }
     public static void afficher(String id, boolean actif) {

@@ -168,16 +168,27 @@ Chaque ligne affiche les minerais, les **blocs repérés restants**, la distance
 **Afficher / Masquer**. Cliquer sur une ligne sélectionne son détail ; la survoler montre tous ses
 minerais avec leurs quantités. La recherche accepte les noms et identifiants des minerais.
 
-- **Scan activé / Scan en pause**, en haut de l'onglet : cliquer pour arrêter ou reprendre le scan automatique.
-  La pause coupe le parcours autour du joueur et la revérification des blocs connus. Le choix est sauvegardé
-  par monde et reste appliqué après redémarrage. Aucun filon n'est effacé : liste, recherche, guidage et
-  téléportation restent disponibles. Les quantités ne sont plus actualisées pendant la pause.
-  La surbrillance reste indépendante ; **Tout masquer** l'arrête aussi si elle est activée.
+- **Scanner autour de moi** lance un seul passage dans un cube à 16 blocs du point de départ.
+  Le bouton affiche la progression et permet d'arrêter. À **100 %**, le repérage et la revérification
+  s'arrêtent automatiquement. Seuls les blocs chargés sont examinés : 100 % signifie que le parcours
+  est terminé, pas que tout le sous-sol est connu. Se déplacer ne recentre pas ce passage ; changer de
+  dimension l'annule. Le scan ponctuel remplace le scan automatique et laisse ensuite le scan en pause.
+  Il ne se relance pas après redémarrage.
+- **Auto : activé / désactivé** permet de conserver le scan continu si souhaité. Il est indisponible
+  pendant un passage ponctuel. La pause est sauvegardée par monde ; les filons restent consultables.
+  La surbrillance reste indépendante ; **Tout masquer** l'arrête si elle est activée.
+- Chaque filon indique ses **blocs repérés**, l'âge du relevé et la pause éventuelle. L'âge correspond
+  à la vérification la plus ancienne des blocs encore comptés, pas à la dernière mise à jour d'un seul
+  bloc. Dès 10 minutes, le relevé est signalé comme ancien ; les dates inconnues sont indiquées.
+  L'infobulle détaille ces limites. Les compteurs restent partiels et sont figés lorsque le scan est arrêté.
 - **Afficher** active la surbrillance de ce filon et désactive la précédente ; les couleurs distinguent
   les minerais. **Tout masquer** coupe l'affichage. Contours limités aux blocs chargés à 64 blocs,
   au maximum 768 à la fois, pour préserver les performances.
 - **Me guider / Arrêter le guidage** : un seul bouton bascule le faisceau bleu du filon sélectionné.
   Choisir un autre filon puis **Me guider** remplace le guidage précédent. Les doubles clics rapides sont ignorés.
+  À trois blocs ou moins d'un minerai restant, dans la bonne dimension, le guidage s'arrête et un message
+  annonce l'arrivée. Le minerai doit encore être présent dans un chunk chargé. Cela fonctionne même
+  lorsque le scan est arrêté ; aucun arrêt n'est déclenché uniquement par la proximité horizontale.
 - **Se téléporter** exige les commandes autorisées / permissions opérateur. En solo, le serveur intégré
   vérifie la destination, y compris dans une autre dimension. Il charge au maximum 9 chunks autour
   de la destination demandée. Sur serveur distant, seule une destination déjà chargée dans la dimension

@@ -30,6 +30,26 @@ public final class FilonMemoire {
         Filon(String id, Position p) { this.id = id; this.ancre = p; }
         public int restants() { return (int) blocs.stream().filter(b -> !b.retire).count(); }
         public long derniereVue() { return blocs.stream().mapToLong(b -> b.vu).max().orElse(0); }
+        // Le bloc le moins récemment contrôlé borne la fraîcheur du compteur restant.
+        public long verificationAncienne() {
+            return blocs.stream().filter(b -> !b.retire).mapToLong(b -> b.vu).min()
+                    .orElseGet(() -> blocs.stream().mapToLong(b -> b.vu).min().orElse(0));
+        }
+        public String ageReleve(long maintenant) {
+            long date = verificationAncienne();
+            if (date <= 0) return "date inconnue";
+            long minutes = Math.max(0, maintenant - date) / 60000;
+            if (minutes == 0) return "moins de 1 min";
+            if (minutes < 60) return minutes + " min";
+            if (minutes < 1440) return (minutes / 60) + " h";
+            return (minutes / 1440) + " j";
+        }
+        public boolean releveAncien(long maintenant) {
+            return verificationAncienne() <= 0 || maintenant - verificationAncienne() >= 600000;
+        }
+        public boolean arrive(Position joueur) {
+            return blocs.stream().anyMatch(b -> !b.retire && b.position.distance2(joueur) <= 9);
+        }
         public Map<String, Integer> types() {
             Map<String, Integer> types = new TreeMap<>();
             for (Bloc b : blocs) types.merge(b.id, b.retire ? 0 : 1, Integer::sum);
@@ -102,20 +122,30 @@ public final class FilonMemoire {
         }
         private Position centre;
         private int index;
-        private boolean actif = true;
+        private boolean actif = true, ponctuel, termine;
         public boolean actif() { return actif; }
+        public boolean ponctuel() { return ponctuel; }
+        public boolean termine() { return termine; }
+        public void lancerPonctuel(Position joueur) {
+            centre = joueur; index = 0; actif = ponctuel = true; termine = false;
+        }
         public boolean activer(boolean valeur) {
             if (actif == valeur) return false;
-            actif = valeur;
+            actif = valeur; ponctuel = termine = false;
+            if (index == TOTAL) index = 0;
             return true;
         }
         public Position suivant(Position joueur) {
             if (!actif) return null; // aucune position visitée, curseur conservé
-            if (centre == null || centre.distance2(joueur) > 64) { centre = joueur; index = 0; }
+            if (ponctuel && !centre.dimension.equals(joueur.dimension)) { activer(false); return null; }
+            if (centre == null || (!ponctuel && centre.distance2(joueur) > 64)) { centre = joueur; index = 0; }
             int i = ORDRE[index++];
             Position resultat = new Position(centre.dimension, centre.x + i % COTE - RAYON,
                     centre.y + i / (COTE * COTE) - RAYON, centre.z + i / COTE % COTE - RAYON);
-            if (index == TOTAL) { index = 0; centre = joueur; }
+            if (index == TOTAL) {
+                if (ponctuel) { actif = ponctuel = false; termine = true; }
+                else { index = 0; centre = joueur; }
+            }
             return resultat;
         }
         public int pourcentage() { return index * 100 / TOTAL; }
