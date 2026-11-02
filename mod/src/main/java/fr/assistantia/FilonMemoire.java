@@ -27,6 +27,14 @@ public final class FilonMemoire {
         public final String id;
         public final Position ancre;
         public final List<Bloc> blocs = new ArrayList<>();
+        private Set<String> typesChoisis; // null : aucun choix validé, tous cochés par défaut
+        public boolean typeAffiche(String type) { return typesChoisis == null || typesChoisis.contains(type); }
+        public Set<String> typesChoisis() { return typesChoisis == null ? null : Set.copyOf(typesChoisis); }
+        public void choisirTypes(Collection<String> types) { typesChoisis = Set.copyOf(types); }
+        public List<Bloc> contours(Position joueur) {
+            return blocs.stream().filter(b -> !b.retire && typeAffiche(b.id) && b.position.distance2(joueur) <= 64*64)
+                    .sorted(Comparator.comparingDouble(b -> b.position.distance2(joueur))).limit(768).toList();
+        }
         Filon(String id, Position p) { this.id = id; this.ancre = p; }
         public int restants() { return (int) blocs.stream().filter(b -> !b.retire).count(); }
         public long derniereVue() { return blocs.stream().mapToLong(b -> b.vu).max().orElse(0); }

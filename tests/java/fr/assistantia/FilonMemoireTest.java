@@ -8,8 +8,38 @@ public final class FilonMemoireTest {
     static FilonMemoire.Position p(int x,int y,int z) { return new FilonMemoire.Position("minecraft:overworld",x,y,z); }
     static void verifier(boolean condition,String raison) { if (!condition) throw new AssertionError(raison); }
     public static void main(String[] args) {
-        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee(); mondeActif();
-        System.out.println("12 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee(); mondeActif(); choixAffichage();
+        System.out.println("13 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+    }
+    static void choixAffichage() {
+        var m = new FilonMemoire(); var origine=p(0,20,0);
+        m.observer(origine,"minecraft:iron_ore",true,100);
+        m.observer(p(1,20,0),"minecraft:gold_ore",true,100);
+        var f=m.filons().iterator().next();
+        verifier(f.contours(origine).size()==2 && f.typesChoisis()==null, "Sans filtre enregistré, tous les minerais sont proposés");
+        Set<String> brouillon=new HashSet<>(Set.of("minecraft:gold_ore"));
+        f.choisirTypes(brouillon); brouillon.clear();
+        verifier(f.contours(origine).size()==1 && f.contours(origine).get(0).id.equals("minecraft:gold_ore"),
+                "Seulement les blocs sélectionnés, copie indépendante du brouillon");
+        m.observer(p(2,20,0),"minecraft:diamond_ore",true,100);
+        verifier(!f.typeAffiche("minecraft:diamond_ore"), "Une nouvelle découverte ne contourne pas la sélection validée");
+        verifier(f.contours(new FilonMemoire.Position("minecraft:the_nether",0,20,0)).isEmpty()
+                && f.contours(p(1000,20,0)).isEmpty(), "Dimension et portée respectées après filtrage");
+        var apres=new FilonMemoire();
+        for (var b:m.blocs()) apres.restaurer(b.position,b.id,b.retire,b.vu,f.ancre);
+        apres.filon(f.id).choisirTypes(f.typesChoisis());
+        verifier(apres.filon(f.id).contours(origine).size()==1, "Choix restauré avec la mémoire du filon");
+        m.observer(p(1,20,0),"minecraft:air",false,200);
+        verifier(f.contours(origine).isEmpty(), "Les blocs sélectionnés mais minés ne sont plus affichés");
+        f.choisirTypes(Set.of()); verifier(f.contours(origine).isEmpty(), "Sélection vide : aucun contour");
+        verifier(new FilonMemoire().filons().isEmpty(), "Aucun choix partagé avec un autre monde");
+        var dense=new FilonMemoire();
+        for (int i=0;i<800;i++) dense.restaurer(p(i%10,20+i/100,i/10%10),"minecraft:iron_ore",false,100,origine);
+        dense.restaurer(p(15,20,0),"minecraft:gold_ore",false,100,origine);
+        var df=dense.filon(origine.cle());
+        verifier(df.contours(origine).size()==768, "Budget de rendu conservé");
+        df.choisirTypes(Set.of("minecraft:gold_ore"));
+        verifier(df.contours(origine).size()==1, "Filtrer avant de limiter : les minerais masqués ne consomment pas le budget");
     }
     static void mondeActif() {
         var partieA = new FilonMemoire(); var partieB = new FilonMemoire();

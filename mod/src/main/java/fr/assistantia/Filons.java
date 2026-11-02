@@ -134,6 +134,19 @@ public final class Filons {
                     memoire.restaurer(p, Pont.texte(b, "bloc"), Pont.vrai(b, "mine"),
                             (long) Pont.nombre(b, "t", 0), lirePosition(ancre));
                 }
+                if (data.has("types_affiches_par_filon") && data.get("types_affiches_par_filon").isJsonObject()) {
+                    for (var entree : data.getAsJsonObject("types_affiches_par_filon").entrySet()) {
+                        var filon = memoire.filon(entree.getKey());
+                        if (filon == null || !entree.getValue().isJsonArray()) continue;
+                        Set<String> choisis = new HashSet<>();
+                        for (var type : entree.getValue().getAsJsonArray()) {
+                            if (type.isJsonPrimitive() && type.getAsJsonPrimitive().isString()
+                                    && ResourceLocation.tryParse(type.getAsString()) != null)
+                                choisis.add(type.getAsString());
+                        }
+                        filon.choisirTypes(choisis);
+                    }
+                }
             } catch (Exception e) {
                 try { Files.copy(fichier(id), fichier(id).resolveSibling(id + ".illisible-" + System.currentTimeMillis())); }
                 catch (Exception copie) { LogUtils.getLogger().warn("Sauvegarde filons illisible", copie); }
@@ -193,6 +206,14 @@ public final class Filons {
             o.addProperty("mine", b.retire); o.addProperty("t", b.vu); o.addProperty("cle", b.position.cle());
             o.add("ancre", jsonPosition(memoire.filon(b.filon).ancre)); blocs.add(o);
         }
+        JsonObject filtres = new JsonObject();
+        for (var filon : memoire.filons()) {
+            if (filon.typesChoisis() == null) continue;
+            JsonArray choisis = new JsonArray();
+            filon.typesChoisis().stream().sorted().forEach(choisis::add);
+            filtres.add(filon.id, choisis);
+        }
+        j.add("types_affiches_par_filon", filtres);
         j.add("blocs", blocs); String texte = j.toString(); Path destination = fichier(monde);
         modifie = false; sauvegarde = System.currentTimeMillis();
         IO.execute(() -> {
@@ -273,6 +294,19 @@ public final class Filons {
         if (actif && memoire.filon(id) == null) return;
         affiche = actif ? id : ""; contoursDate = 0; prochainAffichage = System.currentTimeMillis() + 650;
         message = actif ? "Surbrillance activée pour ce filon." : "Surbrillance désactivée.";
+    }
+    public static boolean afficherSelection(String origine, String id, Map<String, Boolean> choix) {
+        if (!synchroniserMonde() || !monde.equals(origine) || !affichageDisponible()) return false;
+        var f = memoire.filon(id);
+        if (f == null || !f.ancre.dimension().equals(position().dimension())) return false;
+        if (f.blocs.stream().noneMatch(b -> !b.retire && choix.getOrDefault(b.id, false))) {
+            message = "Sélectionne au moins un minerai encore repéré dans ce filon.";
+            return false;
+        }
+        f.choisirTypes(f.types().keySet().stream().filter(type -> choix.getOrDefault(type, false)).toList());
+        afficher(id, true);
+        modifie = true; sauver(true);
+        return true;
     }
     public static boolean guidageDisponible() { return System.currentTimeMillis() >= prochainGuidage; }
     public static void basculerGuidage(String id) {
@@ -383,13 +417,14 @@ public final class Filons {
         FilonMemoire.Filon f = memoire.filon(affiche);
         if (f != null && f.ancre.dimension().equals(joueur.dimension())) {
             if (System.currentTimeMillis() - contoursDate > 500) {
-                contours = f.blocs.stream().filter(b -> !b.retire && b.position.distance2(joueur) <= 64*64)
-                        .sorted(Comparator.comparingDouble(b -> b.position.distance2(joueur))).limit(768).toList();
+                contours = f.contours(joueur);
                 contoursDate = System.currentTimeMillis();
             }
             VertexConsumer lignes = buffers.getBuffer(Lignes.TRAVERSANTES);
             for (var b : contours) {
-                if (!mc.level.hasChunkAt(bloc(b.position)) || !minerai(mc.level.getBlockState(bloc(b.position)))) continue;
+                if (b.retire || !f.typeAffiche(b.id) || !mc.level.hasChunkAt(bloc(b.position))) continue;
+                ResourceLocation reel = ForgeRegistries.BLOCKS.getKey(mc.level.getBlockState(bloc(b.position)).getBlock());
+                if (reel == null || !reel.toString().equals(b.id)) continue;
                 int couleur = net.minecraft.util.Mth.hsvToRgb((b.id.hashCode() & 0xffff) / 65536F, .6F, 1F);
                 AABB boite = new AABB(bloc(b.position)).inflate(.01).move(-camera.x, -camera.y, -camera.z);
                 LevelRenderer.renderLineBox(pose, lignes, boite, ((couleur>>16)&255)/255F,

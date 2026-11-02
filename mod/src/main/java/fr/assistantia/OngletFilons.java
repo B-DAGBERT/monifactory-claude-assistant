@@ -43,7 +43,8 @@ public final class OngletFilons {
                 int index = decalage + ligne;
                 if (index < liste.size()) {
                     selection = liste.get(index).id;
-                    Filons.afficher(selection, !selection.equals(Filons.affiche()));
+                    if (selection.equals(Filons.affiche())) Filons.afficher(selection, false);
+                    else mc.setScreen(new EcranBlocsFilon(mc.screen, selection));
                 }
             }), ajout));
         }
@@ -144,7 +145,8 @@ public final class OngletFilons {
                     && f.ancre.dimension().equals(Filons.position().dimension())));
             b.setTooltip(Tooltip.create(Component.literal(!f.ancre.dimension().equals(Filons.position().dimension())
                     ? "Rejoins la dimension " + f.ancre.dimension() + " pour afficher ce filon."
-                    : "Surbrillance du filon : blocs chargés à 64 blocs, au plus 768 contours")));
+                    : affiche ? "Masquer ce filon. Pour modifier les minerais, masque puis clique sur Afficher."
+                    : "Choisir les types de minerais à afficher. Contours à 64 blocs, au plus 768.")));
         }
         if (liste.isEmpty()) {
             String vide = monde.isEmpty() ? "Entre dans une partie pour voir ses filons."

@@ -184,8 +184,13 @@ minerais avec leurs quantités. La recherche accepte les noms et identifiants de
   à la vérification la plus ancienne des blocs encore comptés, pas à la dernière mise à jour d'un seul
   bloc. Dès 10 minutes, le relevé est signalé comme ancien ; les dates inconnues sont indiquées.
   L'infobulle détaille ces limites. Les compteurs restent partiels et sont figés lorsque le scan est arrêté.
-- **Afficher** active la surbrillance de ce filon et désactive la précédente ; les couleurs distinguent
-  les minerais. **Tout masquer** coupe l'affichage. Contours limités aux blocs chargés à 64 blocs,
+- **Afficher** ouvre le choix des blocs du filon : cocher les types de minerais souhaités, puis
+  **Afficher la sélection**. Les quantités et les noms complets sont disponibles ; la pagination permet
+  de parcourir tous les types, même dans une petite fenêtre. **Tout cocher / Tout décocher** accélère le choix.
+  **Échap / Annuler** revient à la liste sans appliquer les modifications. Les choix validés sont conservés
+  par filon et par monde après redémarrage. Pour les modifier, **Masquer**, puis **Afficher** de nouveau.
+  Au moins un type encore repéré doit être coché. Après validation, les nouveaux types découverts restent masqués tant que tu ne les coches pas.
+  La surbrillance remplace celle du filon précédent ; les couleurs distinguent les minerais. **Tout masquer** coupe l'affichage. Contours limités aux blocs chargés à 64 blocs,
   au maximum 768 à la fois, pour préserver les performances.
 - **Me guider / Arrêter le guidage** : un seul bouton bascule le faisceau bleu du filon sélectionné.
   Choisir un autre filon puis **Me guider** remplace le guidage précédent. Les doubles clics rapides sont ignorés.
