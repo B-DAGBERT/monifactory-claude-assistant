@@ -8,8 +8,8 @@ public final class FilonMemoireTest {
     static FilonMemoire.Position p(int x,int y,int z) { return new FilonMemoire.Position("minecraft:overworld",x,y,z); }
     static void verifier(boolean condition,String raison) { if (!condition) throw new AssertionError(raison); }
     public static void main(String[] args) {
-        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique();
-        System.out.println("7 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan();
+        System.out.println("8 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
     }
     static void importHistorique() {
         FilonMemoire m = new FilonMemoire();
@@ -23,6 +23,24 @@ public final class FilonMemoireTest {
         verifier(m.filons().iterator().next().restants()==0,"Le nouveau relevé reste prioritaire");
         verifier(m.importer(ancien,"minecraft:gold_ore",false,300),"Une observation importée réellement plus récente prévaut");
         verifier(m.blocs().size()==2,"Mêmes coordonnées, aucun nouveau bloc");
+    }
+    static void pauseScan() {
+        FilonMemoire.Scan scan = new FilonMemoire.Scan();
+        FilonMemoire.Scan reference = new FilonMemoire.Scan();
+        var joueur = p(2,30,4);
+        for (int i=0; i<1000; i++) {
+            verifier(scan.suivant(joueur).equals(reference.suivant(joueur)),"Même parcours avant la pause");
+        }
+        int progression = scan.pourcentage();
+        verifier(scan.activer(false),"Mise en pause");
+        verifier(!scan.activer(false),"Commande répétée sans inversion de l'état");
+        for (int i=0; i<1000; i++) verifier(scan.suivant(joueur)==null,"Aucune position lue en pause");
+        verifier(scan.pourcentage()==progression,"Le curseur ne bouge pas en pause");
+        verifier(scan.activer(true),"Reprise");
+        verifier(scan.suivant(joueur).equals(reference.suivant(joueur)),"Reprendre à la position suivante");
+        FilonMemoire.Scan recharge = new FilonMemoire.Scan();
+        recharge.activer(false);
+        verifier(recharge.suivant(joueur)==null,"Un scan chargé désactivé ne commence pas le parcours");
     }
     static void suivi() {
         FilonMemoire m=new FilonMemoire(); var p=p(1,20,2);

@@ -102,7 +102,15 @@ public final class FilonMemoire {
         }
         private Position centre;
         private int index;
+        private boolean actif = true;
+        public boolean actif() { return actif; }
+        public boolean activer(boolean valeur) {
+            if (actif == valeur) return false;
+            actif = valeur;
+            return true;
+        }
         public Position suivant(Position joueur) {
+            if (!actif) return null; // aucune position visitée, curseur conservé
             if (centre == null || centre.distance2(joueur) > 64) { centre = joueur; index = 0; }
             int i = ORDRE[index++];
             Position resultat = new Position(centre.dimension, centre.x + i % COTE - RAYON,

@@ -18,7 +18,7 @@ public final class OngletFilons {
     private final List<Button> affichages = new ArrayList<>();
     private List<FilonMemoire.Filon> liste = List.of();
     private EditBox filtre;
-    private Button trier, vides, eteindre, guider, teleporter, stopGuide;
+    private Button trier, vides, eteindre, guider, teleporter, scan;
     private int x, y, largeur, bas, listeY, listeBas, listeLargeur, detailX, detailY, detailLargeur, lignes;
     private long listeDate, optionsDepuis;
     private boolean actif;
@@ -32,10 +32,10 @@ public final class OngletFilons {
         filtre.setResponder(s -> { recherche = s; decalage = 0; listeDate = 0; });
         trier = ajouter(bouton("", b -> { if (System.currentTimeMillis()-optionsDepuis<650) return; optionsDepuis=System.currentTimeMillis(); tri = (tri+1)%3; decalage = 0; listeDate = 0; }), ajout);
         vides = ajouter(bouton("", b -> { if (System.currentTimeMillis()-optionsDepuis<650) return; optionsDepuis=System.currentTimeMillis(); masquerVides = !masquerVides; decalage = 0; listeDate = 0; }), ajout);
+        scan = ajouter(bouton("", b -> Filons.reglerScan(!Filons.scanActif())), ajout);
         eteindre = ajouter(bouton("Tout masquer", b -> Filons.afficher("", false)), ajout);
-        guider = ajouter(bouton("Me guider", b -> Filons.guider(selection)), ajout);
+        guider = ajouter(bouton("Me guider", b -> Filons.basculerGuidage(selection)), ajout);
         teleporter = ajouter(bouton("Se téléporter", b -> Filons.teleporter(selection)), ajout);
-        stopGuide = ajouter(bouton("Arrêter guidage", b -> Filons.arreterGuidage()), ajout);
         for (int i=0; i<Math.max(1, hauteur/30); i++) {
             final int ligne = i;
             affichages.add(ajouter(bouton("Afficher", b -> {
@@ -90,7 +90,15 @@ public final class OngletFilons {
         placer(filtre,x,y,demi); placer(trier,x+demi+6,y,largeur-demi-6);
         trier.active = vides.active = System.currentTimeMillis()-optionsDepuis>=650;
         trier.setMessage(Component.literal("Trier : " + new String[]{"proximité","objectif","minerai"}[tri]));
-        placer(vides,x,y+22,demi); placer(eteindre,x+demi+6,y+22,largeur-demi-6);
+        int tiers = (largeur-12)/3;
+        placer(scan,x,y+22,tiers);
+        placer(vides,x+tiers+6,y+22,tiers);
+        placer(eteindre,x+2*(tiers+6),y+22,largeur-2*(tiers+6));
+        scan.setMessage(Component.literal(Filons.scanActif() ? "Scan activé" : "Scan en pause"));
+        scan.active = !Filons.monde().isEmpty() && Filons.boutonScanDisponible();
+        scan.setTooltip(Tooltip.create(Component.literal(Filons.scanActif()
+                ? "Cliquer pour arrêter le repérage et la revérification des minerais."
+                : "Cliquer pour reprendre. Les filons mémorisés restent accessibles. Ce choix est conservé pour ce monde.")));
         vides.setMessage(Component.literal(masquerVides ? "Vides : masqués" : "Vides : visibles"));
         eteindre.active = !Filons.affiche().isEmpty() && Filons.affichageDisponible();
         listeY = y+46;
@@ -128,7 +136,7 @@ public final class OngletFilons {
             lignes(g,vide,x+4,listeY+5,listeLargeur-8,listeBas,Hud.GRIS);
         }
         var f = Filons.memoire().filon(selection);
-        guider.visible = teleporter.visible = stopGuide.visible = f!=null;
+        guider.visible = teleporter.visible = f!=null;
         if (f!=null) {
             int dy=detailY;
             g.enableScissor(detailX,detailY,detailX+detailLargeur,Math.max(detailY,bas-72));
@@ -146,10 +154,16 @@ public final class OngletFilons {
             }
             g.disableScissor();
             String raison = Filons.raisonTP(f);
-            placer(guider,detailX,bas-68,(detailLargeur-4)/2);
-            placer(stopGuide,detailX+(detailLargeur+4)/2,bas-68,(detailLargeur-4)/2);
-            guider.active=f.ancre.dimension().equals(Filons.position().dimension());
-            stopGuide.active=!Filons.guide().isEmpty();
+            boolean guideActif = f.id.equals(Filons.guide());
+            placer(guider,detailX,bas-68,detailLargeur);
+            guider.setMessage(Component.literal(guideActif ? "Arrêter le guidage" : "Me guider"));
+            guider.active = Filons.guidageDisponible() && (guideActif
+                    || f.ancre.dimension().equals(Filons.position().dimension()));
+            guider.setTooltip(Tooltip.create(Component.literal(guideActif
+                    ? "Retirer le faisceau bleu de ce filon."
+                    : !f.ancre.dimension().equals(Filons.position().dimension())
+                    ? "Rejoins la dimension du filon pour démarrer le guidage."
+                    : "Afficher un faisceau bleu vers ce filon ; remplace le guidage précédent.")));
             placer(teleporter,detailX,bas-46,detailLargeur);
             teleporter.active=raison.isEmpty();
             teleporter.setMessage(Component.literal(Filons.tpEnCours()?"Téléportation en cours…":"Se téléporter"));
@@ -157,10 +171,11 @@ public final class OngletFilons {
 
         }
         String info = Filons.message();
-        if (info.isEmpty()) info = "Repérage autour de toi : "+Filons.avancee()+" % · "+liste.size()+" filons";
+        if (info.isEmpty()) info = (Filons.scanActif() ? "Repérage autour de toi : "+Filons.avancee()+" %"
+                : "Scan en pause — données conservées")+" · "+liste.size()+" filons";
         if (Filons.memoire().plein()) info = "Mémoire pleine (20 000 blocs) : nouveaux blocs non enregistrés.";
         texte(g,info,x,bas-21,largeur,Hud.JAUNE);
-        texte(g,"Scan : "+Filons.avancee()+" % · quantités partielles · molette pour défiler",x,bas-10,largeur,Hud.GRIS);
+        texte(g,(Filons.scanActif() ? "Scan : "+Filons.avancee()+" %" : "Scan en pause")+" · quantités partielles · molette pour défiler",x,bas-10,largeur,Hud.GRIS);
         for (int i=0;i<lignes && decalage+i<liste.size();i++) {
             int ly=listeY+i*30;
             if (sx>=x && sx<x+listeLargeur-68 && sy>=ly && sy<ly+28) {

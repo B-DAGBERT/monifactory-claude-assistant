@@ -168,10 +168,16 @@ Chaque ligne affiche les minerais, les **blocs repérés restants**, la distance
 **Afficher / Masquer**. Cliquer sur une ligne sélectionne son détail ; la survoler montre tous ses
 minerais avec leurs quantités. La recherche accepte les noms et identifiants des minerais.
 
+- **Scan activé / Scan en pause**, en haut de l'onglet : cliquer pour arrêter ou reprendre le scan automatique.
+  La pause coupe le parcours autour du joueur et la revérification des blocs connus. Le choix est sauvegardé
+  par monde et reste appliqué après redémarrage. Aucun filon n'est effacé : liste, recherche, guidage et
+  téléportation restent disponibles. Les quantités ne sont plus actualisées pendant la pause.
+  La surbrillance reste indépendante ; **Tout masquer** l'arrête aussi si elle est activée.
 - **Afficher** active la surbrillance de ce filon et désactive la précédente ; les couleurs distinguent
   les minerais. **Tout masquer** coupe l'affichage. Contours limités aux blocs chargés à 64 blocs,
   au maximum 768 à la fois, pour préserver les performances.
-- **Me guider** affiche un faisceau bleu dans la dimension courante ; **Arrêter guidage** l'enlève.
+- **Me guider / Arrêter le guidage** : un seul bouton bascule le faisceau bleu du filon sélectionné.
+  Choisir un autre filon puis **Me guider** remplace le guidage précédent. Les doubles clics rapides sont ignorés.
 - **Se téléporter** exige les commandes autorisées / permissions opérateur. En solo, le serveur intégré
   vérifie la destination, y compris dans une autre dimension. Il charge au maximum 9 chunks autour
   de la destination demandée. Sur serveur distant, seule une destination déjà chargée dans la dimension

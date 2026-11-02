@@ -42,7 +42,7 @@ public final class Filons {
     private static List<FilonMemoire.Bloc> controles = List.of(), contours = List.of();
     private static int controle;
     private static String monde = "", affiche = "", guide = "";
-    private static long sauvegarde, revision, listeControle, prochainAffichage, tpDebut, contoursDate;
+    private static long sauvegarde, revision, listeControle, prochainAffichage, prochainScan, prochainGuidage, tpDebut, contoursDate;
     private static boolean modifie, tpEnCours;
     private static FilonMemoire.Position tpAttendue;
     private static volatile String message = "";
@@ -56,6 +56,16 @@ public final class Filons {
     public static String message() { return message; }
     public static long revision() { return revision; }
     public static int avancee() { return scan.pourcentage(); }
+    public static boolean scanActif() { return scan.actif(); }
+    public static boolean boutonScanDisponible() { return System.currentTimeMillis() >= prochainScan; }
+    public static void reglerScan(boolean actif) {
+        if (monde.isEmpty() || !boutonScanDisponible() || !scan.activer(actif)) return;
+        prochainScan = System.currentTimeMillis() + 650;
+        message = actif ? "Scan repris : repérage et vérification des minerais."
+                : "Scan en pause : aucun repérage ni revérification. Filons conservés.";
+        modifie = true;
+        sauver(true); // une sauvegarde à la bascule, aucun scan pendant la pause
+    }
     public static boolean tpEnCours() { return tpEnCours; }
     public static boolean affichageDisponible() { return System.currentTimeMillis() >= prochainAffichage; }
     public static FilonMemoire.Position position() {
@@ -87,6 +97,7 @@ public final class Filons {
             try {
                 JsonObject data = JsonParser.parseString(Files.readString(fichier(id))).getAsJsonObject();
                 if (!id.equals(Pont.texte(data, "monde"))) throw new IllegalArgumentException("Mauvais monde");
+                scan.activer(!data.has("scan_actif") || Pont.vrai(data, "scan_actif"));
                 for (JsonElement e : Pont.liste(data, "blocs")) {
                     JsonObject b = e.getAsJsonObject();
                     FilonMemoire.Position p = lirePosition(b);
@@ -146,6 +157,7 @@ public final class Filons {
     private static void sauver(boolean force) {
         if (monde.isEmpty() || (!force && (!modifie || System.currentTimeMillis() - sauvegarde < 10000))) return;
         JsonObject j = new JsonObject(); j.addProperty("v", 1); j.addProperty("monde", monde);
+        j.addProperty("scan_actif", scan.actif());
         j.addProperty("t", System.currentTimeMillis()); JsonArray blocs = new JsonArray();
         for (FilonMemoire.Bloc b : memoire.blocs()) {
             JsonObject o = jsonPosition(b.position); o.addProperty("bloc", b.id);
@@ -200,7 +212,7 @@ public final class Filons {
                     tpAttendue.x()+.5, tpAttendue.y(), tpAttendue.z()+.5) < .5) finirTP(monde, "Téléportation effectuée.");
             else if (now - tpDebut > 6000) finirTP(monde, "Téléportation non confirmée : vérifier le message du serveur.");
         }
-        if (mc.isPaused()) { sauver(false); return; }
+        if (mc.isPaused() || !scan.actif()) { sauver(false); return; }
         if (now - listeControle > 10000) { controles = new ArrayList<>(memoire.blocs()); listeControle = now; }
         long limite = System.nanoTime() + 1_000_000; // 1 ms au plus entre deux observations, 224 blocs maximum
         for (int n = 0; n < 32 && !controles.isEmpty() && System.nanoTime() < limite; n++) {
@@ -217,13 +229,19 @@ public final class Filons {
         affiche = actif ? id : ""; contoursDate = 0; prochainAffichage = System.currentTimeMillis() + 650;
         message = actif ? "Surbrillance activée pour ce filon." : "Surbrillance désactivée.";
     }
-    public static void guider(String id) {
+    public static boolean guidageDisponible() { return System.currentTimeMillis() >= prochainGuidage; }
+    public static void basculerGuidage(String id) {
+        if (!guidageDisponible()) return;
         FilonMemoire.Filon f = memoire.filon(id);
         if (f == null) return;
-        if (!f.ancre.dimension().equals(position().dimension())) { message = "Rejoins d'abord la dimension du filon."; return; }
-        guide = id; message = "Guidage activé : suis le faisceau bleu.";
+        if (id.equals(guide)) {
+            guide = ""; message = "Guidage arrêté.";
+        } else {
+            if (!f.ancre.dimension().equals(position().dimension())) { message = "Rejoins d'abord la dimension du filon."; return; }
+            guide = id; message = "Guidage activé : suis le faisceau bleu.";
+        }
+        prochainGuidage = System.currentTimeMillis() + 650;
     }
-    public static void arreterGuidage() { guide = ""; message = "Guidage arrêté."; }
     public static String nom(String bloc) { return Pont.objet(bloc).getHoverName().getString(); }
     public static boolean utile(FilonMemoire.Filon f) {
         for (String ore : f.types().keySet()) {
