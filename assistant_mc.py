@@ -681,7 +681,25 @@ def ore_material(block):
 
 def find_veins(bridge, radius=24):
     """Regroupe les minerais vus ou minés par le joueur en filons (même minerai, à moins de radius blocs)."""
-    blocks = (bridge.read("filons.json") or {}).get("blocs") or []
+    # Le mod scanne et revérifie les blocs chargés ; sa mémoire est séparée par monde.
+    scanned = bridge.read("filons_mod.json")
+    data = scanned if isinstance(scanned, dict) and scanned.get("v") == 1 and scanned.get("monde") else bridge.read("filons.json")
+    blocks = (data or {}).get("blocs") or []
+    if data is scanned and isinstance(scanned, dict):
+        # L'ancre stable du scanner évite un regroupement quadratique de 20 000 positions.
+        grouped = {}
+        for b in blocks:
+            anchor = b.get("ancre") or b
+            material = ore_material(b["bloc"])
+            key = (b["dimension"], anchor["x"], anchor["y"], anchor["z"], material)
+            vein = grouped.setdefault(key, {"minerai": material, "dimension": b["dimension"],
+                                           "x": b["x"], "y": b["y"], "z": b["z"],
+                                           "vus": 0, "mines": 0, "t": b["t"]})
+            if not b.get("mine") and not vein["vus"]:
+                vein.update(x=b["x"], y=b["y"], z=b["z"])
+            vein["mines" if b.get("mine") else "vus"] += 1
+            vein["t"] = max(vein["t"], b["t"])
+        return list(grouped.values())
     veins = []
     for b in sorted(blocks, key=lambda b: b["t"]):
         material = ore_material(b["bloc"])

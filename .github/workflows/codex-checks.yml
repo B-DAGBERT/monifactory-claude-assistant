@@ -16,13 +16,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Codex adapter and upstream parity tests (no AI account needed)
-        run: python -m unittest discover -s tests -v
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - name: Codex adapter and upstream parity tests (no AI account needed)
+        run: python -m unittest discover -s tests -v
       - name: Build Forge mod
         working-directory: mod
         run: bash gradlew build --console=plain

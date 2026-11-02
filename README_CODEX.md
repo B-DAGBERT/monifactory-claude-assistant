@@ -159,3 +159,51 @@ confirmation de l'assistant, puis permet de réessayer après cinq secondes en c
 
 Cette fonction est un ajout volontaire à la parité amont : ses méthodes sont testées
 séparément dans `tests/test_objective_pause.py`. Le reste du code de jeu garde le contrôle de parité.
+
+
+## Filons : liste, surbrillance et téléportation (Codex.3)
+
+Ouvrir **Y → Filons**. La liste fonctionne dans Minecraft même si l'assistant Python est arrêté.
+Chaque ligne affiche les minerais, les **blocs repérés restants**, la distance et son propre bouton
+**Afficher / Masquer**. Cliquer sur une ligne sélectionne son détail ; la survoler montre tous ses
+minerais avec leurs quantités. La recherche accepte les noms et identifiants des minerais.
+
+- **Afficher** active la surbrillance de ce filon et désactive la précédente ; les couleurs distinguent
+  les minerais. **Tout masquer** coupe l'affichage. Contours limités aux blocs chargés à 64 blocs,
+  au maximum 768 à la fois, pour préserver les performances.
+- **Me guider** affiche un faisceau bleu dans la dimension courante ; **Arrêter guidage** l'enlève.
+- **Se téléporter** exige les commandes autorisées / permissions opérateur. En solo, le serveur intégré
+  vérifie la destination, y compris dans une autre dimension. Il charge au maximum 9 chunks autour
+  de la destination demandée. Sur serveur distant, seule une destination déjà chargée dans la dimension
+  courante peut être vérifiée ; la commande `/tp @s` reste soumise aux autorisations du serveur.
+  Le mod attend la position effective avant de confirmer. Les boutons indisponibles expliquent pourquoi
+  dans leur infobulle. Aucun changement automatique des permissions.
+- La destination doit avoir deux blocs d'air, un sol solide, aucune collision et aucun liquide ou danger
+  connu à proximité (lave, feu, cactus, magma, neige poudreuse, etc.). Recherche limitée à 8 blocs du minerai :
+  si rien ne convient, aucune téléportation. Les effets particuliers de blocs ajoutés par d'autres mods
+  ne peuvent pas tous être prédits.
+- Tri par proximité, minerai ou lien direct avec les matières de l'objectif. Ce dernier utilise les
+  besoins locaux déjà calculés, sans IA ; il n'infère pas toutes les chaînes chimiques possibles.
+  Les filons sans blocs restants repérés sont masqués par défaut, avec un filtre pour revoir l'historique.
+
+**Compteurs partiels, pas un inventaire du sous-sol entier.** Le scanner explore progressivement un cube
+à 16 blocs autour du joueur, en commençant près de lui. Il ne force aucun chargement de chunk pour scanner.
+Au plus 192 nouvelles positions et 32 positions connues sont examinées par tick, avec un budget de parcours
+cible de 1 ms. Les blocs connus sont revérifiés lorsqu'ils sont chargés : les minerais cassés par un collègue
+sont également retirés des quantités. Un chunk déchargé ne compte jamais comme un filon vidé.
+Les minerais voisins sont regroupés autour d'une ancre stable dans un rayon de 24 blocs : c'est un repérage
+pratique, pas une reconstruction exacte des limites des filons générés par GregTech.
+
+La mémoire est séparée par sauvegarde solo ou adresse de serveur, dans `kubejs/assistant/filons/`.
+Elle contient au plus 20 000 positions ; une saturation est signalée sans effacer silencieusement
+l'historique. Les écritures passent par des fichiers temporaires et un thread dédié, toutes les 10 secondes
+si nécessaire. `filons_mod.json` transmet le dernier relevé à l'assistant pour ses réponses et son guidage.
+Les anciens relevés `filons.json` restent conservés, mais ne sont pas importés aveuglément dans un monde :
+ils n'indiquent pas de quelle sauvegarde ils proviennent. La nouvelle liste se remplit au fil de l'exploration.
+Une réinitialisation du monde d'un serveur à la même adresse nécessite une nouvelle mémoire ; le client
+ne connaît pas la graine distante et ne peut pas identifier cette réinitialisation automatiquement.
+
+Tests : modèle Java du scanner, regroupement multiminéraux, disparition/réapparition, reprise des données,
+séparation des dimensions, limites de mémoire, parcours complet, recherche bornée d'une destination libre,
+et priorité du nouvel export dans l'assistant. Compilation Forge vérifiée ; les clics et téléportations
+réels doivent être essayés en partie, notamment avec les permissions de votre serveur.

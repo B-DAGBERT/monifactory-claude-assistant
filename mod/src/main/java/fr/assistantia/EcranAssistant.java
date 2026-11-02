@@ -30,8 +30,8 @@ import java.util.Map;
  */
 public class EcranAssistant extends Screen {
     private static final int FOND = 0xD00D1013, MARGE = 10, LIGNE = 10;
-    private static final String[] ONGLETS = {"Objectif", "Plan", "Base", "Discussion", "Réglages"};
-    private static final int OBJECTIF = 0, PLAN = 1, BASE = 2, DISCUSSION = 3, REGLAGES = 4;
+    private static final String[] ONGLETS = {"Objectif", "Plan", "Base", "Discussion", "Réglages", "Filons"};
+    private static final int OBJECTIF = 0, PLAN = 1, BASE = 2, DISCUSSION = 3, REGLAGES = 4, FILONS = 5;
     private static int onglet = OBJECTIF; // gardé d'une ouverture à l'autre
 
     /** Zone cliquable : une icône d'objet (recette), une étape (la cocher) ou un réglage (le changer). */
@@ -42,6 +42,8 @@ public class EcranAssistant extends Screen {
     private final List<Button> boutonsOnglets = new ArrayList<>();
     /** Réglages changés à l'instant, affichés tout de suite sans attendre la réponse de l'assistant. */
     private static final Map<String, Boolean> REGLAGES_EN_ATTENTE = new HashMap<>();
+    private final List<Button> actionsObjectif = new ArrayList<>();
+    private OngletFilons filons;
     private EditBox saisie;
     private Button pauseObjectif;
     private static Boolean pauseDemandee;
@@ -60,13 +62,17 @@ public class EcranAssistant extends Screen {
     protected void init() {
         int x = MARGE;
         boutonsOnglets.clear();
+        actionsObjectif.clear();
+        int largeurTotale = java.util.Arrays.stream(ONGLETS).mapToInt(t -> this.font.width(t) + 20).sum();
         for (int i = 0; i < ONGLETS.length; i++) {
             int numero = i;
-            int largeur = this.font.width(ONGLETS[i]) + 16;
-            boutonsOnglets.add(addRenderableWidget(Button.builder(Component.literal(ONGLETS[i]), b -> {
+            int largeur = Math.min(this.font.width(ONGLETS[i]) + 16,
+                    Math.max(30, (this.font.width(ONGLETS[i]) + 20) * (this.width - 2 * MARGE) / largeurTotale - 4));
+            boutonsOnglets.add(addRenderableWidget(Button.builder(Component.literal(this.font.plainSubstrByWidth(ONGLETS[i], largeur - 8)), b -> {
                 onglet = numero;
                 defilement = 0;
             }).bounds(x, MARGE, largeur, 18).build()));
+            boutonsOnglets.get(i).setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(ONGLETS[i])));
             x += largeur + 4;
         }
         int bas = this.height - MARGE - 18;
@@ -81,11 +87,11 @@ public class EcranAssistant extends Screen {
         int largeur = (this.width - 2 * MARGE - actions.length * 6 - 104) / actions.length;
         for (int i = 0; i < actions.length; i++) {
             String code = actions[i][1];
-            addRenderableWidget(Button.builder(Component.literal(actions[i][0]), b -> envoyerAction(code))
-                    .bounds(MARGE + i * (largeur + 6), bas - 26, largeur, 20).build());
+            actionsObjectif.add(addRenderableWidget(Button.builder(Component.literal(actions[i][0]), b -> envoyerAction(code))
+                    .bounds(MARGE + i * (largeur + 6), bas - 26, largeur, 20).build()));
         }
-        addRenderableWidget(Button.builder(Component.literal("Arbre EMI"), b -> ouvrirArbre())
-                .bounds(this.width - MARGE - 104, bas - 26, 104, 20).build());
+        actionsObjectif.add(addRenderableWidget(Button.builder(Component.literal("Arbre EMI"), b -> ouvrirArbre())
+                .bounds(this.width - MARGE - 104, bas - 26, 104, 20).build()));
         relancer = addRenderableWidget(Button.builder(Component.literal("Relancer l'assistant"),
                 b -> lanceurInconnu = !Pont.relancer()).bounds(this.width - MARGE - 120, MARGE, 120, 18).build());
         pauseObjectif = addRenderableWidget(Button.builder(Component.literal("Mettre en pause"), b -> {
@@ -100,6 +106,8 @@ public class EcranAssistant extends Screen {
             Pont.envoyer(demande);
             b.active = false;
         }).bounds(this.width - MARGE - 120, MARGE + 26, 120, 18).build());
+        filons = new OngletFilons();
+        filons.init(w -> addRenderableWidget(w), this.height);
         setInitialFocus(saisie);
     }
 
@@ -169,6 +177,7 @@ public class EcranAssistant extends Screen {
 
     @Override
     public boolean mouseClicked(double x, double y, int bouton) {
+        if (onglet == FILONS && filons.cliquer(x, y, bouton)) return true;
         for (Zone z : zones) {
             if (x < z.x() || x >= z.x() + z.l() || y < z.y() || y >= z.y() + z.h() || this.minecraft == null
                     || this.minecraft.player == null) {
@@ -191,6 +200,7 @@ public class EcranAssistant extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double delta) {
+        if (onglet == FILONS) return filons.defiler(x, y, delta);
         // Molette vers le haut : on remonte. Les onglets comptent depuis le haut, la discussion depuis le bas.
         int pas = (delta > 0 ? 3 : -3) * (onglet == DISCUSSION ? 1 : -1);
         defilement = Math.max(0, defilement + pas);
@@ -206,15 +216,17 @@ public class EcranAssistant extends Screen {
     public void render(GuiGraphics g, int sourisX, int sourisY, float partialTick) {
         renderBackground(g);
         zones.clear();
+        filons.visible(onglet == FILONS);
+        actionsObjectif.forEach(b -> b.visible = onglet != FILONS);
         for (int i = 0; i < boutonsOnglets.size(); i++) {
             boutonsOnglets.get(i).active = i != onglet; // l'onglet ouvert est grisé
         }
         JsonObject ecran = ecran();
-        int haut = MARGE + 26, bas = this.height - MARGE - 18 - 32;
+        int haut = MARGE + 26, bas = this.height - MARGE - 18 - (onglet == FILONS ? 6 : 32);
         g.fill(MARGE - 4, haut - 4, this.width - MARGE + 4, bas, FOND);
         boolean actif = Pont.assistantActif();
-        relancer.visible = !actif && !Pont.relanceEnCours();
-        if (actif) {
+        relancer.visible = !actif && !Pont.relanceEnCours() && onglet != FILONS;
+        if (onglet != FILONS && actif) {
             lanceurInconnu = false;
             String statut = Pont.texte(ecran, "statut");
             String droite = !statut.isEmpty() ? statut : Pont.vrai(ecran, "serveur") ? "serveur ✔" : "";
@@ -222,7 +234,7 @@ public class EcranAssistant extends Screen {
                     + boutonsOnglets.get(boutonsOnglets.size() - 1).getWidth() + 8;
             droite = this.font.plainSubstrByWidth(droite, this.width - MARGE - debut);
             g.drawString(this.font, droite, this.width - MARGE - this.font.width(droite), MARGE + 5, Hud.GRIS, false);
-        } else { // l'assistant ne tourne pas : rien ne répondra tant qu'il n'est pas relancé
+        } else if (onglet != FILONS) { // l'assistant ne tourne pas : rien ne répondra tant qu'il n'est pas relancé
             String arret = Pont.relanceEnCours() ? "L'assistant démarre…" : lanceurInconnu
                     ? "Lance le lanceur de l’assistant (Mac.command ou .bat)" : "Assistant arrêté";
             int fin = relancer.visible ? relancer.getX() - 6 : this.width - MARGE;
@@ -251,6 +263,7 @@ public class EcranAssistant extends Screen {
         switch (onglet) {
             case OBJECTIF -> objectif(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
             case PLAN -> plan(g, ecran, MARGE, haut, largeur, bas - 4);
+            case FILONS -> filons.render(g, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
             case BASE -> base(g, ecran, MARGE, haut, largeur, bas - 4);
             case REGLAGES -> reglages(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
             default -> conversation(g, ecran, MARGE, haut, largeur, bas - 4);
