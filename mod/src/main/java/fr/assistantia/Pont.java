@@ -282,9 +282,12 @@ public final class Pont {
         }
     }
 
-    /** Transmet une demande du joueur à l'assistant (question écrite, action, nouveau plan...). */
-    public static void envoyer(JsonObject demande) {
-        demande.addProperty("n", System.currentTimeMillis());
+    private static long dernierEnvoi;
+
+    /** Transmet une demande et indique si son écriture atomique a réussi. */
+    public static synchronized boolean envoyer(JsonObject demande) {
+        dernierEnvoi = Math.max(System.currentTimeMillis(), dernierEnvoi + 1);
+        demande.addProperty("n", dernierEnvoi);
         try {
             Files.createDirectories(DOSSIER);
             Path temporaire = DOSSIER.resolve("demande_mod.json.tmp");
@@ -294,8 +297,10 @@ public final class Pont {
                     DEMANDE,
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
+            return true;
         } catch (IOException e) {
             LOGGER.warn("Assistant IA : demande non transmise", e);
+            return false;
         }
     }
 }

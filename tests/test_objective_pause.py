@@ -284,7 +284,11 @@ class ObjectivePauseTests(unittest.TestCase):
         a.recipe_index, a.veins = None, []
         a.settings.update(machines=False, surbrillance=True, faisceaux=True, remplir=True)
         build = a.progress.__globals__["build_mod_view"]
+        a.question_ack = {"n": 123, "etat": "acceptee"}
+        a.mod_request_n = 123
         active = build(a)
+        self.assertEqual(active["ecran"]["question_recue"], a.question_ack)
+        self.assertEqual(active["ecran"]["derniere_demande"], 123)
         self.assertTrue(active["hud"]["prochains"])
         self.assertTrue(active["besoins"])
         a.set_objective_paused(True)

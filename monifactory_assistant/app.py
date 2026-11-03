@@ -1987,6 +1987,8 @@ def build_mod_view(app):
     ]
     screen = {
         "statut": app.status,
+        "question_recue": getattr(app, "question_ack", {}),
+        "derniere_demande": getattr(app, "mod_request_n", None),
         "erreur_connexion": getattr(app, "connection_problem", ""),
         "objectif_en_pause": paused,
         "objectif_version": str(app.plan_version),
@@ -2469,6 +2471,7 @@ class App:
         self.history = recent_history(self.bridge.dir, ai_provider.label())
         self.last_mod_view = None
         self.mod_request_time, self.mod_request_n = None, None
+        self.question_ack = {}
         # journal et coach
         self.session_open = False
         self.game_lost_at = 0
@@ -3341,8 +3344,9 @@ class App:
         try:
             path = self.bridge.dir / "demande_mod.json"
             if path.exists() and path.stat().st_mtime != self.mod_request_time:
-                self.mod_request_time = path.stat().st_mtime
+                modified = path.stat().st_mtime
                 request = json.loads(path.read_text(encoding="utf-8"))
+                self.mod_request_time = modified
                 # Celle d'avant le démarrage est ignorée, sauf si elle est toute récente : posée pendant que
                 # l'assistant était arrêté, juste avant que le joueur le relance depuis le jeu
                 recent = time.time() * 1000 - float(request.get("n") or 0) < 45000
@@ -3350,6 +3354,10 @@ class App:
                     self.mod_request_n is not None or recent
                 ):
                     self.handle_mod_request(request)
+                elif (
+                    self.mod_request_n is None and not recent and request.get("type") == "question"
+                ):
+                    self.question_ack = {"n": request.get("n"), "etat": "expiree"}
                 self.mod_request_n = request.get("n")
         except (OSError, ValueError):
             pass  # fichier en cours d'écriture : on relira au prochain passage
@@ -3364,6 +3372,10 @@ class App:
         if kind == "projet":
             self.handle_project_request(request)
         elif kind == "question" and request.get("texte"):
+            self.question_ack = {
+                "n": request.get("n"),
+                "etat": "refusee" if self.busy else "acceptee",
+            }
             if self.busy:
                 self.notify("Patience, je réfléchis encore…", 4)
             else:

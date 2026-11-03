@@ -19,6 +19,20 @@ Pour les versions suivantes, fermer l’assistant et le jeu, puis ouvrir **Mettr
 - [Organisation du code et développement](docs/developpement.md)
 - [Description historique de la version Claude](docs/historique-claude.md)
 
+## Discussion dans Minecraft
+
+Dans **Y → Discussion**, les questions et les réponses sont séparées, avec un bouton **Copier**
+pour chaque message. La molette, la barre de défilement et Page précédente / Page suivante
+permettent de relire l’historique. **Derniers messages** ramène à la réponse en cours.
+
+Le brouillon reste disponible quand tu fermes le menu ou redimensionnes le jeu, pendant cette
+session Minecraft. Il est effacé uniquement après réception par l’assistant. Un second envoi
+est bloqué pendant la transmission et la réponse ; tu peux préparer la question suivante.
+Le statut indique la transmission, la recherche ou une erreur. Ces fonctions sont locales et
+ne déclenchent aucun appel IA supplémentaire.
+
+Après cette mise à jour, relancer **l’assistant et Minecraft** pour activer la nouvelle discussion.
+
 ## Organisation
 
 ```text

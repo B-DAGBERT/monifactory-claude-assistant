@@ -61,6 +61,9 @@ public class EcranAssistant extends Screen {
     private OngletBase base;
     private Button projets;
     private EditBox saisie;
+    private Button envoyer;
+    private static final EtatDiscussion ETAT_DISCUSSION = new EtatDiscussion();
+    private final OngletDiscussion discussion = new OngletDiscussion(ETAT_DISCUSSION);
     private Button pauseObjectif;
     private static Boolean pauseDemandee;
     private static String pauseVersion;
@@ -68,7 +71,6 @@ public class EcranAssistant extends Screen {
     private Button relancer; // visible seulement quand l'assistant ne tourne pas
     private boolean lanceurInconnu;
     private int defilement = 0;
-    private String enAttente = null;
 
     public EcranAssistant() {
         super(Component.literal("Assistant IA"));
@@ -120,13 +122,16 @@ public class EcranAssistant extends Screen {
                         this.width - 2 * MARGE - 70,
                         18,
                         Component.literal("Question"));
-        saisie.setMaxLength(400);
+        saisie.setMaxLength(2000);
+        saisie.setValue(ETAT_DISCUSSION.brouillon());
+        saisie.setResponder(ETAT_DISCUSSION::brouillon);
         saisie.setHint(Component.literal("Une question pour l’assistant ? Écris-la puis Entrée"));
         addRenderableWidget(saisie);
-        addRenderableWidget(
-                Button.builder(Component.literal("Envoyer"), b -> envoyerQuestion())
-                        .bounds(this.width - MARGE - 64, bas - 1, 64, 20)
-                        .build());
+        envoyer =
+                addRenderableWidget(
+                        Button.builder(Component.literal("Envoyer"), b -> envoyerQuestion())
+                                .bounds(this.width - MARGE - 64, bas - 1, 64, 20)
+                                .build());
         String[][] actions = {
             {"Objectif suivant", "objectif_suivant"},
             {"Refaire l'objectif", "refaire_objectif"},
@@ -191,22 +196,24 @@ public class EcranAssistant extends Screen {
         base.init(w -> addRenderableWidget(w));
         filons = new OngletFilons();
         filons.init(w -> addRenderableWidget(w), this.height);
+        discussion.init(this.font, w -> addRenderableWidget(w));
         setInitialFocus(saisie);
     }
 
     private void envoyerQuestion() {
-        String texte = saisie.getValue().trim();
-        if (texte.isEmpty()) {
+        JsonObject vue = ecran();
+        if (!vue.has("question_recue")
+                || !ETAT_DISCUSSION.peutEnvoyer(Pont.assistantActif(), Pont.vrai(vue, "occupe")))
             return;
-        }
         JsonObject demande = new JsonObject();
         demande.addProperty("type", "question");
-        demande.addProperty("texte", texte);
-        Pont.envoyer(demande);
-        enAttente = texte;
-        saisie.setValue("");
+        demande.addProperty("texte", saisie.getValue().trim());
+        if (!Pont.envoyer(demande)) {
+            ETAT_DISCUSSION.echecEnvoi();
+            return;
+        }
+        ETAT_DISCUSSION.envoye(demande.get("n").getAsLong());
         onglet = DISCUSSION;
-        defilement = 0;
     }
 
     private void envoyerAction(String code) {
@@ -266,11 +273,13 @@ public class EcranAssistant extends Screen {
             envoyerQuestion();
             return true;
         }
+        if (onglet == DISCUSSION && discussion.touche(touche)) return true;
         return super.keyPressed(touche, scancode, modificateurs);
     }
 
     @Override
     public boolean mouseClicked(double x, double y, int bouton) {
+        if (onglet == DISCUSSION && discussion.cliquer(x, y, bouton)) return true;
         if (onglet == FILONS && filons.cliquer(x, y, bouton)) return true;
         for (Zone z : zones) {
             if (x < z.x()
@@ -301,13 +310,25 @@ public class EcranAssistant extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double delta) {
+        if (onglet == DISCUSSION) return discussion.defiler(x, y, delta);
         if (onglet == FILONS) return filons.defiler(x, y, delta);
         if (onglet == BASE) return base.defiler(x, y, delta);
-        // Molette vers le haut : on remonte. Les onglets comptent depuis le haut, la discussion
-        // depuis le bas.
+        // Molette vers le haut : on remonte dans les autres onglets.
         int pas = (delta > 0 ? 3 : -3) * (onglet == DISCUSSION ? 1 : -1);
         defilement = Math.max(0, defilement + pas);
         return true;
+    }
+
+    @Override
+    public boolean mouseDragged(double x, double y, int bouton, double dx, double dy) {
+        if (onglet == DISCUSSION && discussion.glisser(y)) return true;
+        return super.mouseDragged(x, y, bouton, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double x, double y, int bouton) {
+        discussion.relacher();
+        return super.mouseReleased(x, y, bouton);
     }
 
     @Override
@@ -326,12 +347,23 @@ public class EcranAssistant extends Screen {
             boutonsOnglets.get(i).active = i != onglet; // l'onglet ouvert est grisé
         }
         JsonObject ecran = ecran();
+        discussion.visible(onglet == DISCUSSION);
+        discussion.actualiser(ecran);
+        if (!saisie.getValue().equals(ETAT_DISCUSSION.brouillon()))
+            saisie.setValue(ETAT_DISCUSSION.brouillon());
+        saisie.setEditable(!ETAT_DISCUSSION.enAttente());
+        envoyer.active =
+                ecran.has("question_recue")
+                        && ETAT_DISCUSSION.peutEnvoyer(
+                                Pont.assistantActif(), Pont.vrai(ecran, "occupe"));
+        envoyer.setMessage(Component.literal(ETAT_DISCUSSION.enAttente() ? "Envoi…" : "Envoyer"));
         int haut = MARGE + 26,
                 bas = this.height - MARGE - 18 - (onglet == OBJECTIF || onglet == PLAN ? 32 : 6);
         g.fill(MARGE - 4, haut - 4, this.width - MARGE + 4, bas, FOND);
         boolean actif = Pont.assistantActif();
         relancer.visible = !actif && !Pont.relanceEnCours() && onglet != FILONS;
-        if (onglet != FILONS && actif) {
+        relancer.setY(onglet == DISCUSSION ? haut + 12 : MARGE);
+        if (onglet != FILONS && onglet != DISCUSSION && actif) {
             lanceurInconnu = false;
             String statut = Pont.texte(ecran, "statut");
             String droite =
@@ -350,8 +382,9 @@ public class EcranAssistant extends Screen {
                     MARGE + 5,
                     Hud.GRIS,
                     false);
-        } else if (onglet
-                != FILONS) { // l'assistant ne tourne pas : rien ne répondra tant qu'il n'est pas
+        } else if (onglet != DISCUSSION
+                && onglet != FILONS) { // l'assistant ne tourne pas : rien ne répondra tant qu'il
+            // n'est pas
             // relancé
             String arret =
                     Pont.relanceEnCours()
@@ -428,7 +461,7 @@ public class EcranAssistant extends Screen {
             case FILONS -> filons.render(g, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
             case BASE -> base.render(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
             case REGLAGES -> reglages(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
-            default -> conversation(g, ecran, MARGE, haut, largeur, bas - 4);
+            default -> discussion.render(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
         }
         super.render(g, sourisX, sourisY, partialTick);
     }
@@ -719,53 +752,6 @@ public class EcranAssistant extends Screen {
         }
         int depassement = y + defilement * LIGNE - bas;
         defilement = Math.min(defilement, Math.max(0, (depassement + LIGNE - 1) / LIGNE));
-    }
-
-    // ---------- Onglet Discussion ----------
-
-    private void conversation(GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas) {
-        List<FormattedCharSequence> lignes = new ArrayList<>();
-        List<Integer> couleurs = new ArrayList<>();
-        boolean dejaDedans = false;
-        for (JsonElement e : Pont.liste(ecran, "conversation")) {
-            JsonObject message = e.getAsJsonObject();
-            boolean joueur = "toi".equals(Pont.texte(message, "de"));
-            String texte = Pont.texte(message, "texte");
-            dejaDedans |= joueur && texte.equals(enAttente);
-            for (FormattedCharSequence l :
-                    this.font.split(Component.literal((joueur ? "Toi : " : "") + texte), largeur)) {
-                lignes.add(l);
-                couleurs.add(joueur ? Hud.BLEU : Hud.BLANC);
-            }
-            lignes.add(FormattedCharSequence.EMPTY);
-            couleurs.add(Hud.BLANC);
-        }
-        if (enAttente != null && !dejaDedans) {
-            String suite =
-                    Pont.assistantActif() ? " (envoyé…)" : " (en attente : l'assistant est arrêté)";
-            for (FormattedCharSequence l :
-                    this.font.split(Component.literal("Toi : " + enAttente + suite), largeur)) {
-                lignes.add(l);
-                couleurs.add(Hud.GRIS);
-            }
-        }
-        if (lignes.isEmpty()) {
-            ecrire(
-                    g,
-                    "Écris une question en bas, ou maintiens F8 pour parler.",
-                    x,
-                    y,
-                    largeur,
-                    Hud.GRIS);
-            return;
-        }
-        int visibles = (bas - y) / LIGNE;
-        defilement = Math.min(defilement, Math.max(0, lignes.size() - visibles));
-        int fin = lignes.size() - defilement;
-        for (int i = Math.max(0, fin - visibles); i < fin; i++) {
-            g.drawString(this.font, lignes.get(i), x, y, couleurs.get(i), false);
-            y += LIGNE;
-        }
     }
 
     private static JsonObject partie(JsonObject objet, String cle) {

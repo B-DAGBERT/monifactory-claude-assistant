@@ -65,6 +65,7 @@ class ParityTests(unittest.TestCase):
             "parse_info",
             "parse_plan",
             "App.start_question",
+            "App.check_mod_requests",  # question acknowledgements, tested by test_discussion_menu.py
             "App.open_popup",
             "clean_env",
             "claude_command",
