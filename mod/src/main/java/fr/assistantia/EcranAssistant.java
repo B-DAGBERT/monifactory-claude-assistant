@@ -30,8 +30,9 @@ import java.util.Map;
  */
 public class EcranAssistant extends Screen {
     private static final int FOND = 0xD00D1013, MARGE = 10, LIGNE = 10;
-    private static final String[] ONGLETS = {"Objectif", "Plan", "Base", "Discussion", "Réglages", "Filons"};
-    private static final int OBJECTIF = 0, PLAN = 1, BASE = 2, DISCUSSION = 3, REGLAGES = 4, FILONS = 5;
+    // Toujours ajouter les nouveaux onglets avant Réglages, qui reste tout à droite.
+    private static final String[] ONGLETS = {"Objectif", "Plan", "Base", "Discussion", "Filons", "Réglages"};
+    private static final int OBJECTIF = 0, PLAN = 1, BASE = 2, DISCUSSION = 3, FILONS = 4, REGLAGES = 5;
     private static int onglet = OBJECTIF; // gardé d'une ouverture à l'autre
 
     /** Zone cliquable : une icône d'objet (recette), une étape (la cocher) ou un réglage (le changer). */
