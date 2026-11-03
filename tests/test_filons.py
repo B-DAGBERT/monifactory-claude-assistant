@@ -84,12 +84,13 @@ class FilonsTests(unittest.TestCase):
             self.skipTest("JDK 17 required for the Java scanner tests")
         with tempfile.TemporaryDirectory() as directory:
             sources = [ROOT / "mod/src/main/java/fr/assistantia/FilonMemoire.java",
+                       ROOT / "mod/src/main/java/fr/assistantia/DispositionFilons.java",
                        ROOT / "tests/java/fr/assistantia/FilonMemoireTest.java"]
             subprocess.run([javac, "-encoding", "UTF-8", "-d", directory, *map(str, sources)],
                            check=True, capture_output=True, text=True)
             result = subprocess.run([java, "-ea", "-cp", directory, "fr.assistantia.FilonMemoireTest"],
                                     check=True, capture_output=True, text=True, timeout=30)
-            self.assertIn("14 scénarios filons validés", result.stdout)
+            self.assertIn("15 scénarios filons validés", result.stdout)
 
 
 if __name__ == "__main__":

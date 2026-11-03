@@ -8,8 +8,22 @@ public final class FilonMemoireTest {
     static FilonMemoire.Position p(int x,int y,int z) { return new FilonMemoire.Position("minecraft:overworld",x,y,z); }
     static void verifier(boolean condition,String raison) { if (!condition) throw new AssertionError(raison); }
     public static void main(String[] args) {
-        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee(); mondeActif(); choixAffichage(); gisementsGregtech();
-        System.out.println("14 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+        suivi(); groupes(); restauration(); scan(); securite(); limite(); importHistorique(); pauseScan(); scanPonctuel(); fraicheur(); arrivee(); mondeActif(); choixAffichage(); gisementsGregtech(); disposition();
+        System.out.println("15 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+    }
+    static void disposition() {
+        for (int largeur : new int[]{300,440,460,620,1000})
+            for (int hauteur : new int[]{164,200,300,500}) for (boolean outils : new boolean[]{false,true}) {
+                int x=10,y=36,bas=y+hauteur;
+                var d=DispositionFilons.calculer(x,y,largeur,bas,outils);
+                verifier(d.lignes()>=1,"Une ligne reste accessible, même en petite fenêtre avec Outils ouvert");
+                verifier(d.listeY()+d.lignes()*DispositionFilons.LIGNE<=d.listeBas(),"Pas de ligne coupée ni de clic hors liste");
+                verifier(d.detailX()>=x && d.detailX()+d.detailLargeur()<=x+largeur,"Fiche dans la fenêtre");
+                verifier(d.actionsY()+18<d.statutY() && d.statutY()+9<=bas,"Actions et statut sans chevauchement");
+                verifier(d.detailY()+24<=d.actionsY(),"Titre et coordonnées toujours visibles");
+                if (d.colonnes()) verifier(x+d.listeLargeur()<d.detailX(),"Colonnes séparées");
+                else verifier(d.listeBas()<d.detailY(),"Fiche sous la liste en petite fenêtre");
+            }
     }
     static void gisementsGregtech() {
         var m=new FilonMemoire(true); var centre=p(0,20,0);

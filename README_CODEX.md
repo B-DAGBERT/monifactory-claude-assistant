@@ -228,3 +228,13 @@ utilisée en interne pour reconnaître les minerais. Sans relevé, la quantité 
 présentée comme un filon vide. **Afficher** devient disponible quand des blocs ont été repérés.
 Le relevé reste partiel et associe les blocs compatibles au centre connu le plus proche ; il ne
 prouve pas les limites exactes du gisement ni sa quantité totale restante.
+
+## Menu Filons compact (Codex.16)
+
+Recherche et tri en haut ; scan autour du joueur et filtre des gisements épuisés juste dessous.
+**Outils** déplie **Tout masquer** et **Vider les relevés**. Chaque filon garde son bouton
+**Afficher / Masquer**, avec deux lignes pour le nom, la distance et le nombre de blocs repérés.
+La fiche sélectionnée regroupe les coordonnées, les minerais repérés et **Scanner ce filon / Téléporter**.
+La molette fait défiler la liste ou les minerais selon la zone survolée. Sur petite fenêtre, la fiche
+passe sous la liste. L'âge du relevé, la dimension et les limites du comptage se lisent au survol.
+Une seule ligne de statut et une barre de progression rendent le scan visible ; son arrêt reste en haut.
