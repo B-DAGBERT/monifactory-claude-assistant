@@ -78,6 +78,8 @@ class ParityTests(unittest.TestCase):
             "App.start_objective", "App.on_plan_ready", "App.action_effacer_objectif",
         }
         compatibility_changes |= pause_changes
+        compatibility_changes |= {"App.on_game_connected", "App.action_nouveau_plan", "App.action_nouvel_objectif", "App.action_modifier_plan",
+                                  "App.action_objectif_suivant", "App.action_refaire_objectif", "App.action_planifier_usine"}
         checked = 0
         for name, code in before.items():
             if name in compatibility_changes:

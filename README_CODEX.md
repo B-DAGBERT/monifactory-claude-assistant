@@ -6,7 +6,7 @@ Le code est sous la licence MIT d'origine ; les auteurs et la licence sont conse
 
 ## Ce qui est conservé
 
-Les écrans **Objectif, Plan, Base, Discussion, Réglages**, les fiches avec **I**, les étapes cochables,
+Les écrans **Objectif, Plan, Base, Discussion, Filons, Réglages**, les fiches avec **I**, les étapes cochables,
 les plans et objectifs automatiques, le calcul des besoins, la mémoire des coffres et des lieux,
 la recherche et la surbrillance des objets, le guidage, les alertes et le coach, les recettes EMI,
 les boutons **Remplir / Tout**, les caractéristiques des outils et le script serveur facultatif.
@@ -74,7 +74,7 @@ Le `.jar` des Releases de la branche d'origine n'inclut pas les raccourcis Mac d
 
 | Commande | Fonction |
 | --- | --- |
-| **Y** | Tableau de bord : Objectif, Plan, Base, Discussion, Réglages |
+| **Y** | Tableau de bord : Objectif, Plan, Base, Discussion, Filons, Réglages |
 | **I** / **Maj+I** | Fiche de l'objet survolé ou du bloc regardé / de l'objet en main |
 | **F7** | Objectif suivant |
 | **F8 maintenu** | Parler ; relâcher pour envoyer |
@@ -152,7 +152,8 @@ Les étapes, compteurs et recettes sont conservés, même après fermeture de l'
 Les objets obtenus pendant la pause restent comptés pour la reprise. Les rappels de
 progression, le guidage automatique de l'objectif et l'enchaînement sont suspendus.
 Les questions, recherches manuelles et alertes de danger restent disponibles.
-Reprendre avant de changer d'objectif ; supprimer l'objectif reste possible depuis Discussion.
+Reprendre avant de remplacer l'objectif du projet actif ; choisir un autre projet conserve sa pause.
+Supprimer l'objectif reste possible depuis Discussion.
 On peut aussi demander « mets mon objectif en pause » ou « reprends mon objectif » dans Discussion.
 Un double clic envoie le même état ; il ne bascule pas deux fois. Le bouton attend la
 confirmation de l'assistant, puis permet de réessayer après cinq secondes en cas de coupure.
@@ -238,3 +239,30 @@ La fiche sélectionnée regroupe les coordonnées, les minerais repérés et **S
 La molette fait défiler la liste ou les minerais selon la zone survolée. Sur petite fenêtre, la fiche
 passe sous la liste. L'âge du relevé, la dimension et les limites du comptage se lisent au survol.
 Une seule ligne de statut et une barre de progression rendent le scan visible ; son arrêt reste en haut.
+
+
+## Plusieurs projets et onglet Base (Codex.17)
+
+Dans **Y → Objectif** ou **Plan**, cliquer sur **Projet : …** en haut du contenu.
+Le sélecteur **Mes projets** propose :
+
+- **Choisir** : retrouver un projet existant, son plan, ses étapes cochées, ses compteurs et sa pause, sans requête IA.
+- **Créer** : saisir un nom ou un but, choisir **Plan complet** ou **Objectif seul**, puis créer. Codex prépare uniquement ce nouveau projet.
+- **Renommer** : modifier le nom du projet actif avec le texte saisi, sans refaire son plan.
+
+Un seul projet est suivi à la fois. Les autres restent sauvegardés localement : leur progression
+ne s'actualise pas pendant leur inactivité. Le contenu actuel des coffres et de l'inventaire
+reste partagé et est réévalué au retour. Choisir un projet en pause ne le reprend jamais.
+La création conserve le projet précédent, même s'il était en pause. Changer de projet attend
+la fin d'une réponse en cours. Les clics répétés sont bloqués pendant l'enregistrement ;
+**Réessayer** renvoie la même demande sans créer un doublon.
+
+Le projet existant est repris automatiquement. La sauvegarde `plan_ia.json` contient le
+catalogue et le projet actif, avec écriture atomique ; sa première migration conserve aussi
+`plan_ia.json.avant-projets`. Aucun effacement de monde, coffre ou historique n'est nécessaire.
+
+**Y → Base** affiche une liste défilante de machines, avec recherche par nom et filtres
+**Toutes / À vérifier / En marche**. Les alertes sont placées en premier. Le résumé indique
+le nombre de machines, de coffres et d'alertes ; les coordonnées et la dimension sont au survol.
+Les observations anciennes sont signalées comme « Dernier relevé », sans prétendre que la
+machine tourne encore actuellement. Les actions d'objectif ne sont plus affichées sur cet onglet.

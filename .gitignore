@@ -32,3 +32,6 @@ codex.local.json.tmp
 session.json.tmp
 assistant.lock
 .DS_Store
+
+plan_ia.json.tmp
+plan_ia.json.avant-projets

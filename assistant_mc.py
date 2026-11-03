@@ -41,6 +41,8 @@ else:
 from codex_config import CONFIG, minecraft_dir, find_codex
 from codex_integration import ask as ask_codex, Conversation as CodexConversation
 from platform_support import SingleInstance
+from project_store import ProjectStore
+import copy
 import mss
 from PIL import Image
 
@@ -1380,10 +1382,12 @@ def build_mod_view(app):
     if app.message and (not app.message_until or now < app.message_until):
         bubble = {"texte": app.message, "en_cours": bool(live), "fin": int(app.message_until * 1000)}
     machines = [{"nom": m["nom"], "etat": machine_status(m), "x": m["x"], "y": m["y"], "z": m["z"],
-                 "couleur": machine_color(machine_status(m))}
-                for m in app.world.machines() if not re.search(r"hatch|_bus$", m["bloc"])][:30]
+                 "couleur": machine_color(machine_status(m)), "item": m["bloc"],
+                 "dimension": m.get("dimension", ""), "vu": m.get("t", 0)}
+                for m in app.world.machines() if not re.search(r"hatch|_bus$", m["bloc"])]
     screen = {"statut": app.status, "objectif_en_pause": paused,
               "objectif_version": str(app.plan_version), "occupe": app.busy,
+              "projets": app.project_view(),
               "plan": {"titre": app.plan_title, "pourquoi": app.plan_why,
                        "objectifs": [{"titre": o["titre"], "etat": "en_pause" if paused and o["etat"] == "en_cours"
                                      else o["etat"]} for o in app.objectives]},
@@ -1817,13 +1821,14 @@ class App:
     # étape par étape dans self.plan (son nom vient d'avant ce découpage).
 
     def load_plan(self):
-        try:
-            saved = json.loads(PLAN_FILE.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            saved = {}
+        self.projects = ProjectStore(PLAN_FILE)
+        self.project_feedback = {}
+        self.restore_project(self.projects.snapshot())
+
+    def restore_project(self, saved):
         self.plan = saved.get("plan")
         self.objective_paused = bool(self.plan and saved.get("objectif_en_pause", False))
-        self.objective_epoch = 0  # invalide les passages à la suite déjà programmés
+        self.objective_epoch = getattr(self, "objective_epoch", -1) + 1  # invalide les anciennes actions programmées
         self.plan_version = saved.get("version", 0)
         self.reached = set(saved.get("atteints", []))
         self.done_steps = set(saved.get("etapes_faites", []))
@@ -1841,14 +1846,86 @@ class App:
                 self.objectives.insert(0, objective_entry({"titre": self.plan["objectif"]}, "en_cours"))
         self.plan_done_announced = True  # pas d'enchaînement automatique sur un ancien objectif au démarrage
 
+    def project_snapshot(self):
+        return {"objectif_en_pause": self.objective_paused,
+                "plan": self.plan, "version": self.plan_version, "atteints": sorted(self.reached),
+                "etapes_faites": sorted(self.done_steps), "etapes_decochees": sorted(self.undone_steps),
+                "obtenus": self.obtained, "derniers_totaux": self.last_totals,
+                "plan_principal": {"titre": self.plan_title, "pourquoi": self.plan_why, "objectifs": self.objectives}}
+
     def save_plan(self):
-        PLAN_FILE.write_text(json.dumps({
-            "objectif_en_pause": self.objective_paused,
-            "plan": self.plan, "version": self.plan_version, "atteints": sorted(self.reached),
-            "etapes_faites": sorted(self.done_steps), "etapes_decochees": sorted(self.undone_steps),
-            "obtenus": self.obtained, "derniers_totaux": self.last_totals,
-            "plan_principal": {"titre": self.plan_title, "pourquoi": self.plan_why, "objectifs": self.objectives}},
-            ensure_ascii=False, indent=1), encoding="utf-8")
+        self.projects.save(self.project_snapshot())
+
+    def project_view(self):
+        return {"actif": self.projects.active, "nom": self.projects.current()["nom"],
+                "liste": self.projects.catalog(self.project_snapshot()), "retour": self.project_feedback}
+
+    def handle_project_request(self, request):
+        token = str(request.get("token") or "")
+        if token and token == self.project_feedback.get("token"):
+            self.refresh(force=True)
+            return
+        previous_active = self.projects.active
+        previous_projects = copy.deepcopy(self.projects.projects)
+        previous_state = self.project_snapshot()
+        try:
+            if self.busy or self.coach_busy:
+                raise ValueError("Attends la fin de la réponse avant de changer de projet.")
+            if request.get("origine") != self.projects.active:
+                raise ValueError("Le projet actif a changé. Rouvre le sélecteur.")
+            action = request.get("action")
+            ident = str(request.get("id") or "")
+            if action not in ("choisir", "creer", "renommer"):
+                raise ValueError("Action de projet inconnue.")
+            name = str(request.get("nom") or "").strip()[:100]
+            mode = request.get("mode")
+            if action == "creer" and (mode not in ("objectif", "plan") or not self.game):
+                raise ValueError("Entre dans ta partie pour préparer un objectif ou un plan.")
+            if action in ("creer", "renommer") and not name:
+                raise ValueError("Donne un nom au projet.")
+            if action == "renommer" and ident != self.projects.active:
+                raise ValueError("Rouvre le sélecteur pour renommer le projet actif.")
+            if action == "creer" and (not ident or len(ident) > 80):
+                raise ValueError("Identifiant de projet invalide.")
+            self.save_plan()  # sauvegarder entièrement celui qu'on quitte, y compris sa pause
+            if action == "renommer":
+                self.projects.current()["nom"] = name
+            elif action == "choisir" and ident == self.projects.active:
+                pass
+            else:
+                if action == "creer":
+                    if not self.projects.create(ident, name):
+                        raise ValueError("Ce projet a déjà été créé.")
+                else:
+                    self.projects.select(ident)
+                self.restore_project(self.projects.snapshot())
+                self.plan_version = time.time_ns() // 1000
+                # Aucun craft de l'autre projet ne doit être attribué rétroactivement à celui-ci.
+                self.last_totals = self.target_totals()
+                self.coach_queue = []
+                self.guide = None
+                self.last_progress = time.time()
+            self.save_plan()
+        except (ValueError, OSError) as error:
+            self.projects.active = previous_active
+            self.projects.projects = previous_projects
+            # Ne toucher à l'objectif que si une bascule a réellement commencé.
+            if self.project_snapshot() != previous_state:
+                self.restore_project(previous_state)
+            self.project_feedback = {"token": token, "ok": False, "message": str(error)}
+            self.refresh(force=True)
+            return
+        self.project_feedback = {"token": token, "ok": True}
+        self.refresh(force=True)
+        if action == "creer":
+            self.start_objective(name, new_plan=mode == "plan")
+        else:
+            self.notify("Projet : " + self.projects.current()["nom"]
+                        + (" · objectif en pause" if self.objective_paused else ""), 5)
+
+    def schedule_project_action(self, callback):
+        epoch = self.objective_epoch
+        self.root.after(300, lambda: callback() if epoch == self.objective_epoch else None)
 
     def set_objective_paused(self, paused, version=None):
         """Commande explicite et idempotente : un double clic ne reprend jamais l'objectif."""
@@ -2080,7 +2157,8 @@ class App:
             self.root.after(15000, self.start_briefing)
         if not self.plan:
             # Pas d'objectif en arrivant : l'assistant prépare le suivant du plan (ou un nouveau plan s'il n'y en a pas)
-            self.root.after(25000, lambda: self.on_next_objective(auto=True))
+            epoch = self.objective_epoch
+            self.root.after(25000, lambda: self.auto_next_objective(epoch))
 
     def check_quests(self):
         """Quêtes terminées depuis la dernière lecture (quetes.json est réécrit toutes les 10 s)."""
@@ -2334,7 +2412,11 @@ class App:
 
     def handle_mod_request(self, request):
         kind = request.get("type")
-        if kind == "question" and request.get("texte"):
+        if request.get("projet") is not None and request["projet"] != self.projects.active:
+            return  # action d'un ancien écran : ne pas la reporter sur le nouveau projet
+        if kind == "projet":
+            self.handle_project_request(request)
+        elif kind == "question" and request.get("texte"):
             if self.busy:
                 self.notify("Patience, je réfléchis encore…", 4)
             else:
@@ -2792,10 +2874,10 @@ class App:
         self.send_command("oublier_coffres", cles=keys)
 
     def action_nouveau_plan(self, action):
-        self.root.after(300, lambda: self.on_new_plan(request=str(action.get("demande") or "")))
+        self.schedule_project_action(lambda: self.on_new_plan(request=str(action.get("demande") or "")))
 
     def action_nouvel_objectif(self, action):
-        self.root.after(300, lambda: self.start_objective(str(action.get("demande") or "")))
+        self.schedule_project_action(lambda: self.start_objective(str(action.get("demande") or "")))
 
     def action_pause_objectif(self, _action):
         self.set_objective_paused(True)
@@ -2825,7 +2907,7 @@ class App:
             self.plan_title = str(action["titre"])
         self.save_plan()
         if not self.plan and self.objectives:  # aucun objectif en cours : on attaque le premier tout de suite
-            self.root.after(300, self.on_next_objective)
+            self.schedule_project_action(self.on_next_objective)
 
     action_feuille_de_route = action_modifier_plan  # ancien nom
 
@@ -2847,10 +2929,10 @@ class App:
         self.save_plan()
 
     def action_objectif_suivant(self, _action):
-        self.root.after(300, self.on_next_objective)
+        self.schedule_project_action(self.on_next_objective)
 
     def action_refaire_objectif(self, _action):
-        self.root.after(300, self.on_redo_objective)
+        self.schedule_project_action(self.on_redo_objective)
 
     def action_valider_etape(self, action):
         self.set_step(action.get("numero"), True)
@@ -2883,7 +2965,7 @@ class App:
 
     def action_planifier_usine(self, action):
         request = FACTORY_REQUEST.format(demande=str(action.get("demande") or "une usine"))
-        self.root.after(300, lambda: self.start_objective(request))
+        self.schedule_project_action(lambda: self.start_objective(request))
 
     def action_memoriser_lieu(self, action):
         if not self.game:
