@@ -33,6 +33,17 @@ ne déclenchent aucun appel IA supplémentaire.
 
 Après cette mise à jour, relancer **l’assistant et Minecraft** pour activer la nouvelle discussion.
 
+## Filons : marquage et téléportation
+
+Dans la fiche d’un filon, **Épuisé** ajoute un marquage personnel, enregistré pour le monde actif.
+Il disparaît de la liste si les épuisés sont masqués. Pour annuler, choisir **Épuisés visibles**,
+sélectionner le filon, puis **Rétablir**. Les relevés et le journal GregTech restent conservés.
+
+**TP** cherche le point libre le plus proche au-dessus du filon, dans un voisinage de 8 blocs
+horizontalement. Si aucun point libre n’est connu, la TP vise directement un bloc au-dessus
+du centre, même en zone non chargée : **l’arrivée peut être dans la roche**. Aucun bloc n’est
+creusé ou supprimé. Les commandes / permissions opérateur restent nécessaires.
+
 ## Organisation
 
 ```text

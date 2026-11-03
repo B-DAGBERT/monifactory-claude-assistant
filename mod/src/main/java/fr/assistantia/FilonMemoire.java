@@ -42,17 +42,33 @@ public final class FilonMemoire {
         public final List<Bloc> blocs = new ArrayList<>();
         public String definition = "", nom = "";
         public Set<String> composition = Set.of();
-        public boolean epuise;
+        public boolean epuise; // état du journal GregTech
+        private boolean epuiseManuel;
+
+        public boolean epuiseManuel() {
+            return epuiseManuel;
+        }
+
+        public boolean estEpuise() {
+            return epuise || epuiseManuel;
+        }
+
+        public boolean marquerEpuise(boolean valeur) {
+            if (epuiseManuel == valeur) return false;
+            epuiseManuel = valeur;
+            return true;
+        }
 
         public boolean gregtech() {
             return !definition.isEmpty();
         }
 
         public boolean visible() {
-            return gregtech() ? !epuise : restants() > 0;
+            return !estEpuise() && (gregtech() || restants() > 0);
         }
 
         public String quantite() {
+            if (epuiseManuel) return "Épuisé (marquage personnel)";
             if (!gregtech()) return restants() + " repérés";
             if (epuise) return "Épuisé (GregTech)";
             return restants() > 0
@@ -390,5 +406,43 @@ public final class FilonMemoire {
             if (libre.test(p)) return p;
         }
         return null;
+    }
+
+    public static final int RAYON_TP = 8;
+
+    /** Point sûr le plus proche dans les colonnes voisines, toujours au-dessus du filon. */
+    public static Position destinationProche(
+            Position cible, int minY, int maxY, Predicate<Position> libre) {
+        Position meilleure = destinationAuDessus(cible, minY, maxY, libre);
+        double distance = meilleure == null ? Double.POSITIVE_INFINITY : meilleure.distance2(cible);
+        for (int dy = Math.max(1, minY + 1 - cible.y); cible.y + dy < maxY - 1; dy++) {
+            if ((double) dy * dy >= distance) break;
+            for (int dx = -RAYON_TP; dx <= RAYON_TP; dx++) {
+                for (int dz = -RAYON_TP; dz <= RAYON_TP; dz++) {
+                    if (dx == 0 && dz == 0) continue;
+                    double d = (double) dx * dx + (double) dy * dy + (double) dz * dz;
+                    if (d >= distance) continue;
+                    Position p =
+                            new Position(cible.dimension, cible.x + dx, cible.y + dy, cible.z + dz);
+                    if (libre.test(p)) {
+                        meilleure = p;
+                        distance = d;
+                    }
+                }
+            }
+        }
+        return meilleure;
+    }
+
+    /**
+     * Repli explicite demandé par le joueur : coordonnées non vérifiées, sans modifier les blocs.
+     */
+    public static Position destinationDirecte(Position cible, int minY, int maxY) {
+        if (maxY - minY < 3) return null;
+        return new Position(
+                cible.dimension,
+                cible.x,
+                Math.max(minY + 1, Math.min(maxY - 2, cible.y + 1)),
+                cible.z);
     }
 }

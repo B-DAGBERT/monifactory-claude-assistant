@@ -29,8 +29,11 @@ public final class FilonMemoireTest {
         choixAffichage();
         gisementsGregtech();
         disposition();
+        epuisementManuel();
+        destinationProche();
+        teleportationDirecte();
         System.out.println(
-                "15 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+                "18 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
     }
 
     static void disposition() {
@@ -137,6 +140,115 @@ public final class FilonMemoireTest {
         verifier(m.blocs().size() == 1, "Pas de restauration d'un relevé orphelin");
         var autre = new FilonMemoire(true);
         verifier(autre.filons().isEmpty(), "Aucun gisement hérité d'un autre monde");
+    }
+
+    static void epuisementManuel() {
+        var m = new FilonMemoire(true);
+        var centre = p(0, 20, 0);
+        var types = Set.of("minecraft:iron_ore");
+        m.gisement("gt:a", centre, "gtceu:iron_vein", "Iron vein", types, false);
+        m.observer(centre, "minecraft:iron_ore", true, 1);
+        var f = m.filon("gt:a");
+        verifier(f.marquerEpuise(true), "Marquage personnel accepté");
+        verifier(
+                !f.visible() && f.estEpuise() && !f.epuise && f.epuiseManuel(),
+                "Masquer sans altérer le journal GregTech");
+        verifier(
+                f.quantite().contains("personnel") && f.restants() == 1,
+                "Source du marquage explicite, relevés conservés");
+        verifier(!f.marquerEpuise(true), "Répéter le même marquage est sans effet");
+        m.gisement("gt:a", centre, "gtceu:iron_vein", "Iron vein actualisé", types, false);
+        verifier(
+                !f.visible() && f.epuiseManuel(),
+                "Le journal actualisé n'efface pas le marquage personnel");
+        verifier(
+                f.marquerEpuise(false) && f.visible() && f.restants() == 1,
+                "Annuler retrouve le filon et ses relevés");
+        f.marquerEpuise(true);
+        m.viderReleves();
+        verifier(f.epuiseManuel() && !f.visible(), "Vider les relevés conserve le marquage");
+        var autreMonde = new FilonMemoire(true);
+        autreMonde.gisement("gt:a", centre, "gtceu:iron_vein", "Iron vein", types, false);
+        verifier(
+                autreMonde.filon("gt:a").visible(),
+                "Même identifiant dans un autre monde : aucun marquage hérité");
+        autreMonde.filon("gt:a").marquerEpuise(f.epuiseManuel());
+        verifier(
+                !autreMonde.filon("gt:a").visible(),
+                "Restaurer le champ sauvegardé rétablit le marquage");
+        m.gisement("gt:a", centre, "gtceu:iron_vein", "Iron vein", types, true);
+        f.marquerEpuise(false);
+        verifier(
+                !f.visible() && f.epuise && !f.epuiseManuel(),
+                "Annuler le marquage n'efface jamais l'épuisement GregTech");
+    }
+
+    static void destinationProche() {
+        var centre = p(0, 10, 0);
+        var lateral = p(2, 11, 0);
+        var surface = p(0, 80, 0);
+        verifier(
+                FilonMemoire.destinationProche(
+                                centre, -64, 320, q -> q.equals(lateral) || q.equals(surface))
+                        .equals(lateral),
+                "Préférer un passage voisin à la surface lointaine");
+        verifier(
+                FilonMemoire.destinationProche(centre, -64, 320, q -> q.equals(surface))
+                        .equals(surface),
+                "Conserver la surface si aucun passage voisin n'est libre");
+        var pres = p(-1, 12, -1);
+        var loin = p(-7, 11, -7);
+        verifier(
+                FilonMemoire.destinationProche(
+                                centre, -64, 320, q -> q.equals(pres) || q.equals(loin))
+                        .equals(pres),
+                "Comparer les distances réelles, pas seulement la première colonne visitée");
+        verifier(
+                FilonMemoire.destinationProche(
+                                centre,
+                                -64,
+                                320,
+                                q -> q.y() <= 10 || Math.abs(q.x()) > FilonMemoire.RAYON_TP)
+                        == null,
+                "Recherche bornée au voisinage, toujours au-dessus du filon");
+        AtomicInteger appels = new AtomicInteger();
+        verifier(
+                FilonMemoire.destinationProche(
+                                        p(0, -64, 0),
+                                        -64,
+                                        320,
+                                        q -> {
+                                            appels.incrementAndGet();
+                                            return false;
+                                        })
+                                == null
+                        && appels.get() < 120000,
+                "Aucune case libre : recherche bornée avant repli direct");
+        verifier(
+                FilonMemoire.destinationProche(p(0, 318, 0), -64, 320, q -> true) == null,
+                "Pas de point libre au-delà du plafond");
+    }
+
+    static void teleportationDirecte() {
+        verifier(
+                FilonMemoire.destinationDirecte(p(10000, 10, -20000), -64, 320)
+                        .equals(p(10000, 11, -20000)),
+                "Zone non chargée ou pleine : destination directe juste au-dessus, sans scan obligatoire");
+        verifier(
+                FilonMemoire.destinationDirecte(p(0, 400, 0), -64, 320).equals(p(0, 318, 0)),
+                "Repli borné au plafond avec place pour la tête");
+        verifier(
+                FilonMemoire.destinationDirecte(p(0, -100, 0), -64, 320).equals(p(0, -63, 0)),
+                "Repli borné au plancher");
+        var nether = new FilonMemoire.Position("minecraft:the_nether", 5, 10, 7);
+        verifier(
+                FilonMemoire.destinationDirecte(nether, 0, 256)
+                        .dimension()
+                        .equals(nether.dimension()),
+                "Dimension conservée");
+        verifier(
+                FilonMemoire.destinationDirecte(nether, 0, 2) == null,
+                "Refuser un monde sans hauteur utilisable");
     }
 
     static void choixAffichage() {

@@ -114,6 +114,31 @@ class FilonsTests(unittest.TestCase):
             [],
         )
 
+    def test_manual_exhaustion_is_visible_to_assistant_without_claiming_gregtech_reported_it(self):
+        deposit = {
+            "id": "gt:a",
+            "nom": "Iron vein",
+            "definition": "gtceu:iron_vein",
+            "dimension": "minecraft:overworld",
+            "x": 10,
+            "y": 20,
+            "z": 30,
+            "composition": ["minecraft:iron_ore"],
+            "epuise": False,
+            "epuise_manuel": True,
+        }
+        data = {"v": 1, "monde": "a", "source": "gregtech", "gisements": [deposit], "blocs": []}
+        bridge = SimpleNamespace(read=lambda name: data if name == "filons_mod.json" else None)
+        veins = self.find(bridge)
+        self.assertTrue(veins[0]["epuise"])
+        self.assertTrue(veins[0]["epuise_manuel"])
+        self.assertIn("marqué épuisé par le joueur", self.describe(veins, None))
+        self.assertNotIn("épuisé selon GregTech", self.describe(veins, None))
+        deposit["epuise_manuel"] = False
+        self.assertFalse(self.find(bridge)[0]["epuise"])
+        deposit["epuise"] = True
+        self.assertIn("épuisé selon GregTech", self.describe(self.find(bridge), None))
+
     def test_java_scanner_model_and_safe_destination(self):
         java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
         if not (java_home / "bin/javac").exists():
@@ -152,7 +177,7 @@ class FilonsTests(unittest.TestCase):
                 text=True,
                 timeout=30,
             )
-            self.assertIn("15 scénarios filons validés", result.stdout)
+            self.assertIn("18 scénarios filons validés", result.stdout)
 
 
 if __name__ == "__main__":

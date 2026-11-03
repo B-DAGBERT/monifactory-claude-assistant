@@ -910,7 +910,8 @@ def find_veins(bridge, radius=24):
                         "mines": mined,
                         "t": scanned.get("t", 0),
                         "partiel": True,
-                        "epuise": g.get("epuise", False),
+                        "epuise": bool(g.get("epuise") or g.get("epuise_manuel")),
+                        "epuise_manuel": bool(g.get("epuise_manuel")),
                     }
                 )
         return veins
@@ -985,7 +986,11 @@ def describe_veins(veins, state, limit=25):
         position = f"{int(v['x'])} {int(v['y'])} {int(v['z'])} ({v['dimension']})"
         if v.get("partiel"):
             etat = (
-                "épuisé selon GregTech" if v.get("epuise") else "quantité totale restante inconnue"
+                "marqué épuisé par le joueur"
+                if v.get("epuise_manuel")
+                else "épuisé selon GregTech"
+                if v.get("epuise")
+                else "quantité totale restante inconnue"
             )
             parts.append(
                 f"{v.get('gisement', '')} : {v['minerai']} en {position}, {etat}, "

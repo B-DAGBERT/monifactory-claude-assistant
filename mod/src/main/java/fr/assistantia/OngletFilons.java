@@ -54,7 +54,15 @@ public final class OngletFilons {
     }
 
     private EditBox filtre;
-    private Button trier, vides, eteindre, teleporter, scannerFilon, scan, ponctuel, outils;
+    private Button trier,
+            vides,
+            eteindre,
+            teleporter,
+            scannerFilon,
+            epuiser,
+            scan,
+            ponctuel,
+            outils;
     private int x,
             y,
             largeur,
@@ -134,6 +142,17 @@ public final class OngletFilons {
         scannerFilon =
                 ajouter(bouton("Scanner ce filon", b -> Filons.scannerSelection(selection)), ajout);
         teleporter = ajouter(bouton("Se téléporter", b -> Filons.teleporter(selection)), ajout);
+        epuiser =
+                ajouter(
+                        bouton(
+                                "Épuisé",
+                                b -> {
+                                    var f = Filons.memoire().filon(selection);
+                                    if (f != null
+                                            && Filons.marquerEpuise(monde, f.id, !f.epuiseManuel()))
+                                        listeDate = 0;
+                                }),
+                        ajout);
         for (int i = 0; i < Math.max(1, hauteur / DispositionFilons.LIGNE); i++) {
             final int ligne = i;
             affichages.add(
@@ -280,7 +299,7 @@ public final class OngletFilons {
         vides.setTooltip(
                 Tooltip.create(
                         Component.literal(
-                                "Afficher ou masquer les gisements déclarés épuisés par GregTech.")));
+                                "Afficher ou masquer les gisements épuisés selon GregTech ou ton marquage personnel.")));
         int demi = (largeur - 6) / 2;
         placer(eteindre, x, y + 44, demi);
         placer(scan, x + demi + 6, y + 44, largeur - demi - 6);
@@ -336,7 +355,7 @@ public final class OngletFilons {
                     listeLargeur - 96,
                     Filons.utile(f) ? Hud.JAUNE : Hud.BLANC);
             String quantite =
-                    f.epuise
+                    f.estEpuise()
                             ? "épuisé"
                             : resume(f).nombre() > 0
                                     ? resume(f).nombre() + " repérés"
@@ -382,7 +401,7 @@ public final class OngletFilons {
             g.fill(x + listeLargeur - 2, cy, x + listeLargeur, cy + curseur, 0xFF91A1AE);
         }
         var f = Filons.memoire().filon(selection);
-        scannerFilon.visible = teleporter.visible = f != null;
+        epuiser.visible = scannerFilon.visible = teleporter.visible = f != null;
         if (!selection.equals(fichePrecedente)) {
             fichePrecedente = selection;
             decalageMinerais = 0;
@@ -404,7 +423,9 @@ public final class OngletFilons {
                     detailLargeur,
                     Hud.GRIS);
             dy += 16;
-            if (resume(f).nombre() == 0) {
+            if (f.estEpuise()) {
+                lignes(g, f.quantite(), detailX, dy, detailLargeur, fin, Hud.JAUNE);
+            } else if (resume(f).nombre() == 0) {
                 lignes(
                         g,
                         "Aucun bloc repéré. Scanne ce filon pour connaître les minerais présents.",
@@ -453,20 +474,31 @@ public final class OngletFilons {
             }
             g.disableScissor();
             String raison = Filons.raisonTP(f), raisonScan = Filons.raisonScan(selection);
-            int bouton = (detailLargeur - 6) / 2;
+            int bouton = (detailLargeur - 12) / 3;
             placer(scannerFilon, detailX, disposition.actionsY(), bouton);
+            placer(teleporter, detailX + bouton + 6, disposition.actionsY(), bouton);
             placer(
-                    teleporter,
-                    detailX + bouton + 6,
+                    epuiser,
+                    detailX + 2 * (bouton + 6),
                     disposition.actionsY(),
-                    detailLargeur - bouton - 6);
+                    detailLargeur - 2 * (bouton + 6));
+            epuiser.active = Filons.marquageDisponible() && (!f.epuise || f.epuiseManuel());
+            epuiser.setMessage(
+                    Component.literal(
+                            f.epuiseManuel() ? "Rétablir" : f.epuise ? "Épuisé ✔" : "Épuisé"));
+            epuiser.setTooltip(
+                    Tooltip.create(
+                            Component.literal(
+                                    f.epuiseManuel()
+                                            ? "Annuler ton marquage épuisé. Les relevés et le journal GregTech sont conservés."
+                                            : f.epuise
+                                                    ? "Déjà déclaré épuisé par le journal GregTech."
+                                                    : "Marquer ce filon comme épuisé pour ce monde. Pour annuler : Épuisés visibles → Rétablir.")));
             scannerFilon.active =
                     !Filons.scanActif() && Filons.boutonScanDisponible() && raisonScan.isEmpty();
             scannerFilon.setMessage(
                     Component.literal(
-                            Filons.scanDuFilon(selection)
-                                    ? "Scan : " + Filons.avancee() + " %"
-                                    : "Scanner ce filon"));
+                            Filons.scanDuFilon(selection) ? Filons.avancee() + " %" : "Scanner"));
             scannerFilon.setTooltip(
                     Tooltip.create(
                             Component.literal(
@@ -476,13 +508,12 @@ public final class OngletFilons {
                                                     ? raisonScan
                                                     : "Scanner les blocs chargés à 16 blocs du centre de ce filon.")));
             teleporter.active = raison.isEmpty();
-            teleporter.setMessage(
-                    Component.literal(Filons.tpEnCours() ? "En cours…" : "Téléporter"));
+            teleporter.setMessage(Component.literal(Filons.tpEnCours() ? "TP…" : "TP"));
             teleporter.setTooltip(
                     Tooltip.create(
                             Component.literal(
                                     raison.isEmpty()
-                                            ? "Rejoindre le premier emplacement sûr à la verticale au-dessus du filon."
+                                            ? "Rejoindre le point libre le plus proche au-dessus ou à 8 blocs autour du filon. Sinon, TP directe juste au-dessus, même si la zone est non chargée ou dans la roche."
                                             : raison)));
         }
         String info = Filons.message();

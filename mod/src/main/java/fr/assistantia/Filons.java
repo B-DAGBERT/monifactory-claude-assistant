@@ -50,6 +50,7 @@ public final class Filons {
             revision,
             listeControle,
             prochainAffichage,
+            prochainMarquage,
             prochainScan,
             lectureGregtech,
             tpDebut,
@@ -280,6 +281,7 @@ public final class Filons {
                             Pont.texte(g, "nom"),
                             types,
                             Pont.vrai(g, "epuise"));
+                    memoire.filon(Pont.texte(g, "id")).marquerEpuise(Pont.vrai(g, "epuise_manuel"));
                 }
                 for (JsonElement e : Pont.liste(data, "blocs")) {
                     JsonObject b = e.getAsJsonObject();
@@ -396,6 +398,7 @@ public final class Filons {
             g.addProperty("definition", f.definition);
             g.addProperty("nom", f.nom);
             g.addProperty("epuise", f.epuise);
+            g.addProperty("epuise_manuel", f.epuiseManuel());
             JsonArray types = new JsonArray();
             f.composition.stream().sorted().forEach(types::add);
             g.add("composition", types);
@@ -559,9 +562,35 @@ public final class Filons {
         sauver(false);
     }
 
+    public static boolean marquageDisponible() {
+        return System.currentTimeMillis() >= prochainMarquage;
+    }
+
+    public static boolean marquerEpuise(String origine, String id, boolean valeur) {
+        if (!synchroniserMonde() || !monde.equals(origine) || !marquageDisponible()) return false;
+        var f = memoire.filon(id);
+        if (f == null
+                || !f.ancre.dimension().equals(position().dimension())
+                || !f.marquerEpuise(valeur)) return false;
+        prochainMarquage = System.currentTimeMillis() + 650;
+        if (valeur && id.equals(affiche)) {
+            affiche = "";
+            contours = List.of();
+            contoursDate = 0;
+        }
+        message =
+                valeur
+                        ? "Filon marqué épuisé. Pour annuler : Épuisés visibles → Rétablir."
+                        : "Marquage personnel retiré ; journal GregTech conservé.";
+        modifie = true;
+        revision++;
+        sauver(true);
+        return true;
+    }
+
     public static void afficher(String id, boolean actif) {
         if (!affichageDisponible()) return;
-        if (actif && memoire.filon(id) == null) return;
+        if (actif && (memoire.filon(id) == null || !memoire.filon(id).visible())) return;
         affiche = actif ? id : "";
         contoursDate = 0;
         prochainAffichage = System.currentTimeMillis() + 650;
@@ -620,8 +649,6 @@ public final class Filons {
         if (mc.getSingleplayerServer() == null) {
             if (!f.ancre.dimension().equals(position().dimension()))
                 return "Sur serveur, rejoins d'abord cette dimension.";
-            if (!mc.level.hasChunkAt(bloc(f.ancre)))
-                return "Sur serveur, approche-toi : zone non chargée, sécurité invérifiable.";
         }
         return "";
     }
@@ -631,6 +658,12 @@ public final class Filons {
         if (p.y() <= niveau.getMinBuildHeight()
                 || p.y() + 1 >= niveau.getMaxBuildHeight()
                 || !niveau.getWorldBorder().isWithinBounds(pieds)) return false;
+        // Rejeter la roche / les chunks absents avant les vérifications du voisinage.
+        if (!niveau.hasChunkAt(pieds)
+                || !niveau.getBlockState(pieds).isAir()
+                || !niveau.getBlockState(pieds.above()).isAir()
+                || !niveau.getBlockState(pieds.below())
+                        .isFaceSturdy(niveau, pieds.below(), Direction.UP)) return false;
         for (int dx = -1; dx <= 1; dx++)
             for (int dz = -1; dz <= 1; dz++) {
                 if (!niveau.hasChunkAt(pieds.offset(dx, 0, dz))) return false;
@@ -641,21 +674,12 @@ public final class Filons {
                             || (id != null && DANGERS.contains(id.getPath()))) return false;
                 }
             }
-        return niveau.getBlockState(pieds).isAir()
-                && niveau.getBlockState(pieds.above()).isAir()
-                && niveau.getBlockState(pieds.below())
-                        .isFaceSturdy(niveau, pieds.below(), Direction.UP)
-                && niveau.noCollision(
-                        new AABB(
-                                p.x() + .2,
-                                p.y(),
-                                p.z() + .2,
-                                p.x() + .8,
-                                p.y() + 1.8,
-                                p.z() + .8));
+        return niveau.noCollision(
+                new AABB(p.x() + .2, p.y(), p.z() + .2, p.x() + .8, p.y() + 1.8, p.z() + .8));
     }
 
     public static void teleporter(String id) {
+        if (!synchroniserMonde()) return;
         Minecraft mc = Minecraft.getInstance();
         FilonMemoire.Filon f = memoire.filon(id);
         String raison = raisonTP(f);
@@ -667,7 +691,7 @@ public final class Filons {
         String origine = monde;
         tpEnCours = true;
         tpDebut = System.currentTimeMillis();
-        message = "Recherche du premier emplacement sûr au-dessus du filon…";
+        message = "Recherche du point libre le plus proche du filon…";
         var serveur = mc.getSingleplayerServer();
         if (serveur != null) {
             UUID joueur = mc.player.getUUID();
@@ -686,24 +710,31 @@ public final class Filons {
                                         "Téléportation refusée : joueur, dimension ou permission indisponible.");
                                 return;
                             }
-                            // Solo : colonne cible et voisinage de sécurité uniquement (au plus 4
+                            // Solo : voisinage borné à 8 blocs plus la marge de sécurité (au plus 9
                             // chunks).
-                            for (int x = Math.floorDiv(cible.x() - 1, 16);
-                                    x <= Math.floorDiv(cible.x() + 1, 16);
+                            int rayon = FilonMemoire.RAYON_TP + 1;
+                            for (int x = Math.floorDiv(cible.x() - rayon, 16);
+                                    x <= Math.floorDiv(cible.x() + rayon, 16);
                                     x++)
-                                for (int z = Math.floorDiv(cible.z() - 1, 16);
-                                        z <= Math.floorDiv(cible.z() + 1, 16);
+                                for (int z = Math.floorDiv(cible.z() - rayon, 16);
+                                        z <= Math.floorDiv(cible.z() + rayon, 16);
                                         z++) niveau.getChunk(x, z);
                             var libre =
-                                    FilonMemoire.destinationAuDessus(
+                                    FilonMemoire.destinationProche(
                                             cible,
                                             niveau.getMinBuildHeight(),
                                             niveau.getMaxBuildHeight(),
                                             pos -> sur(niveau, pos));
-                            if (libre == null) {
-                                finirTP(
-                                        origine,
-                                        "Aucun emplacement sûr au-dessus du filon. Téléportation annulée.");
+                            boolean directe = libre == null;
+                            if (directe)
+                                libre =
+                                        FilonMemoire.destinationDirecte(
+                                                cible,
+                                                niveau.getMinBuildHeight(),
+                                                niveau.getMaxBuildHeight());
+                            if (libre == null
+                                    || !niveau.getWorldBorder().isWithinBounds(bloc(libre))) {
+                                finirTP(origine, "Destination hors des limites du monde.");
                                 return;
                             }
                             p.teleportTo(
@@ -713,7 +744,11 @@ public final class Filons {
                                     libre.z() + .5,
                                     p.getYRot(),
                                     p.getXRot());
-                            finirTP(origine, "Téléportation effectuée au-dessus du filon.");
+                            finirTP(
+                                    origine,
+                                    directe
+                                            ? "TP directe au-dessus du filon : emplacement non vérifié."
+                                            : "Téléportation effectuée près du filon.");
                         } catch (Exception e) {
                             LogUtils.getLogger().warn("Téléportation filon", e);
                             finirTP(origine, "Téléportation impossible : voir le journal du jeu.");
@@ -721,26 +756,32 @@ public final class Filons {
                     });
         } else {
             var libre =
-                    FilonMemoire.destinationAuDessus(
+                    FilonMemoire.destinationProche(
                             cible,
                             mc.level.getMinBuildHeight(),
                             mc.level.getMaxBuildHeight(),
                             p -> sur(mc.level, p));
-            if (libre == null) {
-                finirTP(
-                        origine,
-                        "Aucun emplacement sûr et chargé au-dessus du filon. Téléportation annulée.");
+            boolean directe = libre == null;
+            if (directe)
+                libre =
+                        FilonMemoire.destinationDirecte(
+                                cible, mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight());
+            if (libre == null || !mc.level.getWorldBorder().isWithinBounds(bloc(libre))) {
+                finirTP(origine, "Destination hors des limites du monde.");
                 return;
             }
             if (mc.player.position().distanceToSqr(libre.x() + .5, libre.y(), libre.z() + .5)
                     < .5) {
-                finirTP(origine, "Tu es déjà à cet emplacement au-dessus du filon.");
+                finirTP(origine, "Tu es déjà à cet emplacement près du filon.");
                 return;
             }
             tpAttendue = libre;
             mc.player.connection.sendCommand(
                     "tp @s " + (libre.x() + .5) + " " + libre.y() + " " + (libre.z() + .5));
-            message = "Commande envoyée : attente de la position confirmée…";
+            message =
+                    directe
+                            ? "TP directe demandée au-dessus du filon : emplacement non vérifié…"
+                            : "Commande envoyée : attente de la position confirmée…";
         }
     }
 
