@@ -1,3 +1,8 @@
 @echo off
-rem Lance l'assistant Minecraft sans fenetre de console.
-start "" pythonw "%~dp0assistant_mc.py"
+cd /d "%~dp0"
+if not exist .venv\Scripts\pythonw.exe (
+  echo Lance Installer.bat avant de demarrer l'assistant.
+  pause
+  exit /b 1
+)
+start "" .venv\Scripts\pythonw.exe assistant_mc.py

@@ -39,7 +39,7 @@ else:
     import keyboard
 
 from codex_config import CONFIG, minecraft_dir, find_codex
-from codex_integration import ask as ask_codex, Conversation as CodexConversation
+import ai_provider
 from platform_support import SingleInstance
 from project_store import ProjectStore
 import copy
@@ -54,9 +54,9 @@ HOTKEY_TYPE = "shift+f8"
 HOTKEY_NEW = "ctrl+f8"
 HOTKEY_HIDE = "f9"
 HOTKEY_VOICE = "f10"
-MODEL_PLAN = CONFIG.get("model_plan", "gpt-6.1-sol")
-MODEL_QUESTION = CONFIG.get("model_question", "gpt-5.6-sol")
-MODEL_QUICK = CONFIG.get("model_quick", "gpt-5.6-sol")
+MODEL_PLAN = ai_provider.model("plan")
+MODEL_QUESTION = ai_provider.model("question")
+MODEL_QUICK = ai_provider.model("quick")
 EFFORT_QUESTION = "low"     # réflexion avant de répondre : "low" (rapide), "medium", "high"
 EFFORT_PLAN = "medium"
 COACH = "normal"            # "calme" : seulement les dangers ; "normal" ; "bavard" : il commente tout
@@ -845,7 +845,7 @@ def parse_info(text):
     """La fiche « à quoi ça sert » renvoyée par Codex, nettoyée et bornée pour tenir dans l'écran du jeu."""
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:
-        raise RuntimeError("Codex n'a pas renvoyé de fiche lisible : " + text[:200])
+        raise RuntimeError("L'assistant n'a pas renvoyé de fiche lisible : " + text[:200])
     data = json.loads(text[start:end + 1])
     chains = []
     for chain in data.get("schema") or []:
@@ -861,7 +861,7 @@ def parse_info(text):
 def parse_plan(text):
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:
-        raise RuntimeError("Codex n'a pas renvoyé de plan lisible : " + text[:200])
+        raise RuntimeError("L'assistant n'a pas renvoyé de plan lisible : " + text[:200])
     data = json.loads(text[start:end + 1])
 
     def entry(e):
@@ -1415,7 +1415,7 @@ def build_mod_view(app):
     # vie : le fichier est réécrit au moins toutes les 5 s, le mod sait ainsi que l'assistant tourne ;
     # lanceur : de quoi le relancer depuis le jeu s'il s'arrête
     on = app.settings
-    return {"v": 2, "vie": int(now // 5), "lanceur": str(HERE / ("Lancer Mac.command" if sys.platform == "darwin" else "Lancer assistant.bat")),
+    return {"v": 2, "moteur": ai_provider.label(), "vie": int(now // 5), "lanceur": str(HERE / ("Lancer Mac.command" if sys.platform == "darwin" else "Lancer assistant.bat")),
             "hud": hud, "bulle": bubble, "besoins": sorted(needed) if on["surbrillance"] else [],
             "guidage": beams if on["faisceaux"] else [], "marqueurs": markers, "ecran": screen,
             "recette": recipe_now if on["remplir"] else None, "fabrications": crafts if on["remplir"] else [],
@@ -1427,18 +1427,27 @@ def build_mod_view(app):
 
 # Keep the upstream call signature so future gameplay changes merge easily.
 def ask_claude(prompt, data_dir, model, on_text=None, on_tool=None, effort=None):
-    return ask_codex(prompt, data_dir, model, SYSTEM_PROMPT, on_text, on_tool, effort, TIMEOUT)
+    return ai_provider.ask(prompt, data_dir, model, SYSTEM_PROMPT, on_text, on_tool, effort, TIMEOUT)
 
 
-class Conversation(CodexConversation):
+class Conversation:
     def __init__(self, data_dir):
-        super().__init__(data_dir, SYSTEM_PROMPT, MODEL_QUESTION, EFFORT_QUESTION, TIMEOUT)
+        self.impl = ai_provider.conversation(data_dir, SYSTEM_PROMPT, MODEL_QUESTION, EFFORT_QUESTION, TIMEOUT)
+
+    def ask(self, *args, **kwargs):
+        return self.impl.ask(*args, **kwargs)
+
+    def restart(self):
+        return self.impl.restart()
+
+    def stop(self):
+        return self.impl.stop()
 
 
 def tool_status(name, data):
     detail = (data.get("pattern") or data.get("query") or data.get("url")
               or Path(data.get("file_path") or data.get("path") or "").name)
-    return (f"Codex cherche : {detail}" if detail else f"Codex utilise {name}…")[:90]
+    return (f"{ai_provider.label()} cherche : {detail}" if detail else f"{ai_provider.label()} utilise {name}…")[:90]
 
 
 # ---------------- Écran ----------------
@@ -1782,7 +1791,7 @@ class App:
                           f"{HOTKEY_HIDE.upper()} : cacher   {HOTKEY_VOICE.upper()} : voix on/off\n"
                           f"{HOTKEY_NEW.title()} : nouvelle conversation{hint}",
                           hide_after=25000 if script_changed else 8000)
-        log(f"Démarrage, Codex : {find_codex()}, script du jeu {'mis à jour' if script_changed else 'à jour'}")
+        log(f"Démarrage, {ai_provider.label()} : {ai_provider.executable()}, script du jeu {'mis à jour' if script_changed else 'à jour'}")
 
     def run(self):
         self.root.mainloop()
@@ -2621,7 +2630,7 @@ class App:
         self.busy = True
         self.objective_epoch += 1
         self.plan_done_announced = True
-        self.set_status("Codex prépare ton nouveau plan…" if new_plan else "Codex prépare ton objectif…")
+        self.set_status(f"{ai_provider.label()} prépare ton nouveau plan…" if new_plan else f"{ai_provider.label()} prépare ton objectif…")
         shot = None if auto or request else self.safe_screenshot()
         threading.Thread(target=self.work_plan, args=(shot, request, index, new_plan), daemon=True).start()
 
@@ -2722,7 +2731,7 @@ class App:
 
     def start_question(self, text, audio):
         self.busy = True
-        self.set_status("Je transcris ta question…" if audio is not None else "Codex réfléchit…")
+        self.set_status("Je transcris ta question…" if audio is not None else f"{ai_provider.label()} réfléchit…")
         threading.Thread(target=self.work_question, args=(text, audio, self.shot), daemon=True).start()
 
     def work_question(self, text, audio, shot):
@@ -2734,7 +2743,7 @@ class App:
                 timing["transcrite"] = time.time()
                 if not text:
                     raise RuntimeError("Je n'ai rien entendu : parle plus près du micro en tenant F8.")
-            self.events.put(("status", f"« {text} » : Codex réfléchit…"))
+            self.events.put(("status", f"« {text} » : {ai_provider.label()} réfléchit…"))
             self.events.put(("history", "toi", text))
             spoken = [0]
 
@@ -3018,7 +3027,7 @@ class App:
 
     def open_popup(self):
         self.popup = popup = tk.Toplevel(self.root, bg=BG, padx=14, pady=10)
-        popup.title("Question pour Codex")
+        popup.title("Question pour " + ai_provider.label())
         popup.attributes("-topmost", True)
         popup.resizable(False, False)
         tk.Label(popup, text="Tape ta question puis Entrée. Échap : annuler.", bg=BG, fg=FG_DIM,

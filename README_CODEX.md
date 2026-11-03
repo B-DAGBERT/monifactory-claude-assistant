@@ -1,3 +1,6 @@
+> La version commune est maintenant sur **shared-assistant**. Voir [README_SHARED.md](README_SHARED.md).
+> Ce document conserve les détails techniques et l’historique des fonctionnalités. Les anciennes instructions de mise à jour ci-dessous concernent la branche Codex historique.
+
 # Variante Codex — Mac et suivi des mises à jour
 
 Cette branche `codex-compat` porte le dépôt de B-DAGBERT vers Codex, à partir du commit

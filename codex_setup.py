@@ -1,4 +1,4 @@
-"""Build/install the Codex variant. Never downloads or replaces the modpack itself."""
+"""Build/install the shared assistant. Never downloads or replaces the modpack itself."""
 
 import argparse
 import os
@@ -9,7 +9,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from codex_config import CONFIG, HERE, find_codex, minecraft_dir, write_json
+from codex_config import CONFIG, HERE, minecraft_dir, write_json
+import ai_provider
 
 
 def check_instance(instance):
@@ -36,8 +37,13 @@ def java_home(instance):
             key=lambda path: platform.machine() == "arm64" and "arm64" not in str(path),
         )
     )
+    if os.name == "nt":
+        candidates.extend(p.parent.parent for p in (instance.parent.parent / "Install/runtime").glob("**/bin/java.exe"))
+        on_path = shutil.which("java")
+        if on_path:
+            candidates.append(Path(on_path).resolve().parent.parent)
     for candidate in candidates:
-        exe = candidate / "bin/java"
+        exe = candidate / ("bin/java.exe" if os.name == "nt" else "bin/java")
         if not exe.is_file():
             continue
         result = subprocess.run([str(exe), "-version"], capture_output=True, text=True)
@@ -50,9 +56,9 @@ def java_home(instance):
 
 def build(instance):
     env = dict(os.environ, JAVA_HOME=str(java_home(instance)))
-    env.setdefault("GRADLE_USER_HOME", str(HERE / ".runtime/gradle"))
+    env.setdefault("GRADLE_USER_HOME", str(HERE / ".runtime/gradle" if (HERE / ".runtime/gradle").is_dir() else Path.home() / ".gradle"))
     subprocess.run(
-        ["bash", "gradlew", "build", "--console=plain"],
+        (["cmd", "/c", "gradlew.bat"] if os.name == "nt" else ["bash", "gradlew"]) + ["build", "--console=plain"],
         cwd=HERE / "mod",
         env=env,
         check=True,
@@ -117,7 +123,7 @@ def main():
         return
     if args.command == "check":
         print(
-            f"Instance : {instance}\nCodex : {find_codex() or 'introuvable'}\nJava : {java_home(instance)}"
+            f"Instance : {instance}\n{ai_provider.label()} : {ai_provider.executable() or 'introuvable'}\nJava : {java_home(instance)}"
         )
         return
     if args.dry_run:
@@ -126,11 +132,11 @@ def main():
         install(instance, dry_run=True)
         return
     if args.command == "setup":
-        if not find_codex():
+        if not ai_provider.executable():
             raise RuntimeError(
-                "Codex introuvable. Installe Codex CLI et connecte ton compte avec codex login."
+                f"{ai_provider.label()} introuvable. Installe son CLI et connecte ton compte, ou ouvre Choisir IA."
             )
-        write_json(HERE / "codex.local.json", dict(CONFIG, minecraft_dir=str(instance)))
+        write_json(HERE / "assistant.local.json", dict(CONFIG, provider=ai_provider.provider(), minecraft_dir=str(instance)))
     if args.command in ("build", "setup"):
         build(instance)
     if args.command in ("install", "setup"):

@@ -19,13 +19,17 @@ def find_codex():
 
 
 def load_config():
-    path = HERE / "codex.local.json"
-    if not path.exists():
-        return {}
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("codex.local.json doit contenir un objet JSON.")
-    return value
+    # The old Codex configuration remains valid; common settings override it.
+    config = {}
+    for name in ("codex.local.json", "assistant.local.json"):
+        path = HERE / name
+        if not path.exists():
+            continue
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError(f"{name} doit contenir un objet JSON.")
+        config.update(value)
+    return config
 
 
 CONFIG = load_config()

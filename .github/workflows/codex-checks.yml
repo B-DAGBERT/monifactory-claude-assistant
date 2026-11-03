@@ -1,9 +1,9 @@
-name: Codex compatibility
+name: Shared assistant checks
 on:
   push:
-    branches: [codex-compat]
+    branches: [shared-assistant, codex-compat, main]
   pull_request:
-    branches: [codex-compat]
+    branches: [shared-assistant, codex-compat, main]
 permissions:
   contents: read
 jobs:
@@ -21,7 +21,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      - name: Codex adapter and upstream parity tests (no AI account needed)
+      - name: Claude and Codex adapters, shared gameplay and update tests (no AI account needed)
         run: python -m unittest discover -s tests -v
       - name: Build Forge mod
         working-directory: mod

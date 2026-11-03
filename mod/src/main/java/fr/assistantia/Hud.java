@@ -188,7 +188,7 @@ public final class Hud {
         g.pose().scale(echelle, echelle, 1);
         g.fill(0, 0, BULLE, h, (int) (0xC8 * opacite) << 24 | 0x0D1013);
         g.fill(0, 0, 2, h, alpha | 0xFFC94A);
-        g.drawString(font, "Codex", 6, 3, alpha | OR, false);
+        g.drawString(font, Pont.texte(Pont.vue(), "moteur").isEmpty() ? "Assistant" : Pont.texte(Pont.vue(), "moteur"), 6, 3, alpha | OR, false);
         int y = 14;
         for (int i = lignes.size() - visibles; i < lignes.size(); i++) { // les dernières lignes si c'est long
             g.drawString(font, lignes.get(i), 6, y, alpha | BLANC, false);

@@ -35,3 +35,8 @@ assistant.lock
 
 plan_ia.json.tmp
 plan_ia.json.avant-projets
+
+assistant.local.json
+assistant.local.json.tmp
+session_claude.json
+session_claude.json.tmp

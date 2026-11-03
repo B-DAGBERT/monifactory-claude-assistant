@@ -81,7 +81,7 @@ public class EcranAssistant extends Screen {
         int bas = this.height - MARGE - 18;
         saisie = new EditBox(this.font, MARGE, bas, this.width - 2 * MARGE - 70, 18, Component.literal("Question"));
         saisie.setMaxLength(400);
-        saisie.setHint(Component.literal("Une question pour Codex ? Écris-la puis Entrée"));
+        saisie.setHint(Component.literal("Une question pour l’assistant ? Écris-la puis Entrée"));
         addRenderableWidget(saisie);
         addRenderableWidget(Button.builder(Component.literal("Envoyer"), b -> envoyerQuestion())
                 .bounds(this.width - MARGE - 64, bas - 1, 64, 20).build());

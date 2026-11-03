@@ -20,6 +20,7 @@ from unittest.mock import Mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from project_store import ProjectStore
+import ai_provider
 METHODS = {
     "load_plan", "save_plan", "restore_project", "project_snapshot", "project_view", "handle_project_request", "schedule_project_action", "current_objective", "set_objective_paused", "auto_next_objective",
     "update_objective_progress", "progress", "have", "target_totals", "track_targets",
@@ -36,7 +37,7 @@ def load_logic(path):
                                 "step_count", "step_text", "needed_machines", "craft_suggestions", "block_name"}]
     app = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "App")
     app.body = [n for n in app.body if isinstance(n, ast.FunctionDef) and n.name in METHODS]
-    namespace = dict(copy=copy, ProjectStore=ProjectStore, json=json, time=time, math=math, defaultdict=defaultdict, PLAN_FILE=path,
+    namespace = dict(ai_provider=ai_provider, copy=copy, ProjectStore=ProjectStore, json=json, time=time, math=math, defaultdict=defaultdict, PLAN_FILE=path,
                      USEFUL=1, COACH_LEVELS={"normal": 1}, COACH="normal", HOTKEY_PLAN="f7",
                      STUCK_MINUTES=15, BRIEFING_PAUSE=30, TOOL_TYPES=[], sys=sys, re=re, HERE=ROOT, SETTINGS={})
     exec(compile(ast.Module(body=functions + [app], type_ignores=[]), "assistant_mc.py", "exec"), namespace)

@@ -50,7 +50,7 @@ public final class EcranProjets extends Screen {
         });
         creer=bouton("Créer",gauche+tiers+6,height-52,tiers,b -> envoyer("creer",UUID.randomUUID().toString()));
         renommer=bouton("Renommer",gauche+2*(tiers+6),height-52,largeur-2*(tiers+6),b -> envoyer("renommer",Pont.texte(projets(),"actif")));
-        creer.setTooltip(Tooltip.create(Component.literal("Créer un projet distinct et faire préparer son objectif ou son plan par Codex. Le projet actuel est conservé.")));
+        creer.setTooltip(Tooltip.create(Component.literal("Créer un projet distinct et faire préparer son objectif ou son plan par ton assistant. Le projet actuel est conservé.")));
         renommer.setTooltip(Tooltip.create(Component.literal("Renommer le projet actif avec le texte saisi, sans appel IA.")));
         retry=bouton("Réessayer",gauche,height-28,(largeur-6)/2,b -> {
             if (demande!=null && System.currentTimeMillis()-envoye>12000) { Pont.envoyer(demande); envoye=System.currentTimeMillis(); }
@@ -83,7 +83,7 @@ public final class EcranProjets extends Screen {
         g.drawCenteredString(font,title,width/2,12,Hud.OR);
         String etat=demande!=null?"Enregistrement…":!erreur.isEmpty()?erreur
                 :!Pont.assistantActif()?"Lance l'assistant pour gérer tes projets."
-                :Pont.vrai(vue(),"occupe")?"Codex travaille ; sélection disponible ensuite.":"Un projet actif · les autres restent sauvegardés";
+                :Pont.vrai(vue(),"occupe")?"L’assistant travaille ; sélection disponible ensuite.":"Un projet actif · les autres restent sauvegardés";
         g.drawCenteredString(font,font.plainSubstrByWidth(etat,largeur),width/2,30,Hud.GRIS);
         var liste=Pont.liste(p,"liste"); int pages=Math.max(1,(liste.size()+parPage-1)/parPage); page=Math.min(page,pages-1);
         boolean disponible=clicDisponible() && Pont.assistantActif() && !Pont.vrai(vue(),"occupe") && !Pont.texte(p,"actif").isEmpty();

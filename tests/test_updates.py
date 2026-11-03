@@ -33,26 +33,29 @@ class UpdateTests(unittest.TestCase):
         self.remote = self.root / "remote.git"
         self.client = self.root / "client"
         self.git("init", "--bare", str(self.remote))
-        self.git("init", "-b", "codex-compat")
+        self.git("init", "-b", "shared-assistant")
         self.git("config", "user.name", "Update Test")
         self.git("config", "user.email", "update@example.invalid")
         shutil.copy2(ROOT / "Mettre à jour.command", self.source)
+        shutil.copy2(ROOT / "update_assistant.py", self.source)
         (self.source / "Installer Mac.command").write_text(
             "#!/bin/bash\necho INSTALLER_CALLED\n"
         )
         (self.source / "tracked.txt").write_text("before\n")
-        (self.source / ".gitignore").write_text("codex.local.json\n")
+        (self.source / ".gitignore").write_text("codex.local.json\nassistant.local.json\nsession_claude.json\n")
         self.git("add", ".")
         self.git("commit", "-m", "Initial")
         self.git("remote", "add", "origin", str(self.remote))
-        self.git("push", "-u", "origin", "codex-compat")
+        self.git("push", "-u", "origin", "shared-assistant")
         self.git(
-            "clone", "--branch", "codex-compat", str(self.remote), str(self.client)
+            "clone", "--branch", "shared-assistant", str(self.remote), str(self.client)
         )
         (self.client / "codex.local.json").write_text('{"private":true}\n')
+        (self.client / "assistant.local.json").write_text('{"provider":"claude"}\n')
+        (self.client / "session_claude.json").write_text('{"session_id":"private"}\n')
         (self.source / "tracked.txt").write_text("after\n")
         self.git("commit", "-am", "Published update")
-        self.git("push", "origin", "codex-compat")
+        self.git("push", "origin", "shared-assistant")
 
     def update(self):
         return subprocess.run(
@@ -67,10 +70,25 @@ class UpdateTests(unittest.TestCase):
         result = self.update()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("INSTALLER_CALLED", result.stdout)
+        self.assertEqual((self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n')
+        self.assertEqual((self.client / "session_claude.json").read_text(), '{"session_id":"private"}\n')
         self.assertEqual((self.client / "tracked.txt").read_text(), "after\n")
         self.assertEqual(
             (self.client / "codex.local.json").read_text(), '{"private":true}\n'
         )
+
+    def test_old_branch_can_receive_shared_update_without_overwriting_preferences(self):
+        self.git("branch", "-m", "codex-compat", cwd=self.client)
+        result = self.update()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("INSTALLER_CALLED", result.stdout)
+        self.assertEqual((self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n')
+
+    def test_main_is_never_updated_by_the_launcher(self):
+        self.git("branch", "-m", "main", cwd=self.client)
+        result = self.update()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("INSTALLER_CALLED", result.stdout)
 
     def test_uncommitted_changes_are_never_overwritten(self):
         (self.client / "tracked.txt").write_text("my edit\n")

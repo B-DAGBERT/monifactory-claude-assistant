@@ -48,7 +48,7 @@ class ParityTests(unittest.TestCase):
         before = methods(upstream("assistant_mc.py"))
         after = methods((ROOT / "assistant_mc.py").read_text())
         compatibility_changes = {
-            "find_claude",
+            "find_claude", "tool_status", "parse_info", "parse_plan", "App.start_question", "App.open_popup",
             "clean_env",
             "claude_command",
             "start_claude",
@@ -100,6 +100,7 @@ class ParityTests(unittest.TestCase):
                 "Lance « Lancer assistant.bat »",
                 "Lance le lanceur de l’assistant (Mac.command ou .bat)",
             )
+            before = before.replace('"Codex prépare la fiche"', '"L’assistant prépare la fiche"')
             self.assertEqual(before, (ROOT / path).read_text(), name)
 
 

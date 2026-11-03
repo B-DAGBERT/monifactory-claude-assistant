@@ -235,7 +235,7 @@ public class EcranInfo extends Screen {
                     : "L'assistant est arrêté : relance-le depuis l'écran Y.", x, y, l, Hud.ROUGE) - debut;
         }
         if (!"pret".equals(etat)) {
-            y = ecrire(g, "Codex prépare la fiche" + ".".repeat((int) (System.currentTimeMillis() / 400 % 4)), x, y, l, Hud.BLANC);
+            y = ecrire(g, "L’assistant prépare la fiche" + ".".repeat((int) (System.currentTimeMillis() / 400 % 4)), x, y, l, Hud.BLANC);
             return ecrire(g, "Quelques secondes la première fois, instantané ensuite.", x, y + 2, l, Hud.GRIS) - debut;
         }
         y = section(g, "À QUOI ÇA SERT", x, y);
