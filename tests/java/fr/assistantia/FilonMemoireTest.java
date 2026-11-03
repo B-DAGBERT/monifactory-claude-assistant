@@ -17,11 +17,14 @@ public final class FilonMemoireTest {
         verifier(m.gisement("gt:a",centre,"gtceu:iron_vein","Iron vein",Set.of("minecraft:iron_ore"),false), "Gisement natif ajouté");
         var f=m.filon("gt:a");
         verifier(f.visible() && f.restants()==0 && f.types().containsKey("minecraft:iron_ore"), "Gisement visible sans scan, composition native disponible");
+        verifier(f.typesReperes().isEmpty() && !f.quantite().contains("0 "), "Composition théorique sans faux compteurs à zéro");
         verifier(!m.gisement("gt:a",centre,"gtceu:iron_vein","Iron vein",Set.of("minecraft:iron_ore"),false), "Lecture répétée sans doublon ni écriture inutile");
         verifier(!m.observer(centre,"minecraft:gold_ore",true,2), "Une composition incompatible n'est pas attribuée au gisement");
         verifier(!m.observer(p(100,20,0),"minecraft:iron_ore",true,2), "Pas de relevé arbitrairement distant");
         verifier(m.observer(centre,"minecraft:iron_ore",true,2), "Relevé compatible à proximité");
+        verifier(f.typesReperes().equals(Map.of("minecraft:iron_ore",1)), "Afficher seulement le minerai réellement observé");
         m.observer(centre,"minecraft:air",false,3);
+        verifier(f.typesReperes().isEmpty(), "Un minerai retiré ne reste pas sous forme de ligne à zéro");
         verifier(f.visible() && !f.epuise, "Zéro observé n'épuise pas le gisement GT");
         m.gisement("gt:b",p(1,20,0),"gtceu:gold_vein","Gold vein",Set.of("minecraft:gold_ore"),false);
         verifier(m.filons().size()==2, "Deux gisements GT proches ne fusionnent jamais");
@@ -94,6 +97,9 @@ public final class FilonMemoireTest {
         verifier(visites.size()==FilonMemoire.Scan.TOTAL, "Un passage exact, sans doublon ni boucle");
         verifier(!scan.actif() && scan.termine() && scan.pourcentage()==100, "Arrêt automatique à 100 %");
         verifier(scan.suivant(centre)==null, "Aucune lecture après la fin");
+        scan.lancerPonctuel(p(100,-59,-86));
+        verifier(scan.suivant(p(100,42,-86)).equals(p(100,-59,-86)),
+                "Un scan ciblé commence au filon à 101 blocs sous le joueur, pas à ses pieds");
         scan.lancerPonctuel(p(50,20,0));
         verifier(scan.suivant(centre).equals(p(50,20,0)), "Relancer commence au nouveau centre");
         scan.activer(false);

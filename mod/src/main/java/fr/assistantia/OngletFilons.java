@@ -18,7 +18,7 @@ public final class OngletFilons {
     private final List<Button> affichages = new ArrayList<>();
     private List<FilonMemoire.Filon> liste = List.of();
     private EditBox filtre;
-    private Button trier, vides, eteindre, teleporter, scan, ponctuel;
+    private Button trier, vides, eteindre, teleporter, scannerFilon, scan, ponctuel;
     private int x, y, largeur, bas, listeY, listeBas, listeLargeur, detailX, detailY, detailLargeur, lignes;
     private long listeDate, optionsDepuis;
     private boolean actif;
@@ -35,6 +35,7 @@ public final class OngletFilons {
         scan = ajouter(bouton("", b -> Filons.viderReleves()), ajout);
         ponctuel = ajouter(bouton("Scanner autour de moi", b -> Filons.scannerAutour()), ajout);
         eteindre = ajouter(bouton("Tout masquer", b -> Filons.afficher("", false)), ajout);
+        scannerFilon = ajouter(bouton("Scanner ce filon", b -> Filons.scannerSelection(selection)), ajout);
         teleporter = ajouter(bouton("Se téléporter", b -> Filons.teleporter(selection)), ajout);
         for (int i=0; i<Math.max(1, hauteur/40); i++) {
             final int ligne = i;
@@ -104,8 +105,8 @@ public final class OngletFilons {
                 ? "Arrêter le scan : " + Filons.avancee() + " %" : "Scanner autour de moi"));
         ponctuel.active = !Filons.monde().isEmpty() && Filons.boutonScanDisponible();
         ponctuel.setTooltip(Tooltip.create(Component.literal(Filons.scanPonctuel()
-                ? "Arrêter ce passage et conserver les observations déjà faites."
-                : "Parcourir une fois le cube à 16 blocs du point de départ, puis arrêter tout scan. En solo, consulte aussi les gisements GT des chunks chargés ; sur serveur, seulement ceux connus du client.")));
+                ? "Arrêter le scan en cours et conserver les observations déjà faites."
+                : "Parcourir une fois le cube à 16 blocs autour de toi. Pour scanner un filon en profondeur, sélectionne-le puis utilise Scanner ce filon.")));
         scan.setMessage(Component.literal("Vider les relevés"));
         scan.active = !Filons.monde().isEmpty() && !Filons.scanActif() && Filons.boutonScanDisponible() && !Filons.memoire().blocs().isEmpty();
         scan.setTooltip(Tooltip.create(Component.literal("Supprimer les "+Filons.memoire().blocs().size()
@@ -132,18 +133,19 @@ public final class OngletFilons {
             String item = f.types().keySet().stream().findFirst().orElse("");
             g.renderItem(Pont.objet(item),x+3,ly+4);
             texte(g,titre(f),x+23,ly+3,listeLargeur-94,Filons.utile(f)?Hud.JAUNE:Hud.BLANC);
-            texte(g,(f.epuise ? "Épuisé (GT)" : f.restants()+" observés proches")+" · "+distance(f),x+23,ly+15,listeLargeur-94,Hud.GRIS);
+            texte(g,(f.epuise ? "Épuisé (GT)" : f.restants()>0 ? f.restants()+" blocs repérés" : "Quantité inconnue")+" · "+distance(f),x+23,ly+15,listeLargeur-94,Hud.GRIS);
             texte(g,(f.blocs.isEmpty() ? "Aucun relevé local" : "Relevé : " + f.ageReleve(System.currentTimeMillis()))
                     + (!Filons.scanActif() ? " · pause" : f.releveAncien(System.currentTimeMillis()) ? " · ancien" : ""),
                     x+23,ly+27,listeLargeur-26,f.releveAncien(System.currentTimeMillis())?Hud.JAUNE:Hud.GRIS);
             placer(b,x+listeLargeur-66,ly+5,64);
             b.setMessage(Component.literal(affiche?"Masquer":"Afficher"));
-            b.active = Filons.affichageDisponible() && (affiche || (f.visible() && !f.types().isEmpty()
+            b.active = Filons.affichageDisponible() && (affiche || (f.visible() && f.restants()>0
                     && f.ancre.dimension().equals(Filons.position().dimension())));
             b.setTooltip(Tooltip.create(Component.literal(!f.ancre.dimension().equals(Filons.position().dimension())
                     ? "Rejoins la dimension " + f.ancre.dimension() + " pour afficher ce filon."
                     : affiche ? "Masquer ce filon. Pour modifier les minerais, masque puis clique sur Afficher."
-                    : "Choisir les types de minerais à afficher. Contours à 64 blocs, au plus 768.")));
+                    : f.restants()==0 ? "Aucun bloc repéré : sélectionne cette ligne puis utilise Scanner ce filon."
+                    : "Choisir uniquement les minerais réellement repérés. Contours à 64 blocs, au plus 768.")));
         }
         if (liste.isEmpty()) {
             String vide = monde.isEmpty() ? "En attente de l’identité du monde GregTech."
@@ -153,28 +155,44 @@ public final class OngletFilons {
             lignes(g,vide,x+4,listeY+5,listeLargeur-8,listeBas,Hud.GRIS);
         }
         var f = Filons.memoire().filon(selection);
-        teleporter.visible = f!=null;
+        scannerFilon.visible = teleporter.visible = f!=null;
         if (f!=null) {
             if (!compact) {
             int dy=detailY;
-            g.enableScissor(detailX,detailY,detailX+detailLargeur,Math.max(detailY,bas-50));
+            g.enableScissor(detailX,detailY,detailX+detailLargeur,Math.max(detailY,bas-72));
             texte(g,"Gisement GregTech",detailX,dy,detailLargeur,Hud.OR); dy+=12;
             texte(g,f.ancre.x()+" / "+f.ancre.y()+" / "+f.ancre.z()+" · "+distance(f),detailX,dy,detailLargeur,Hud.BLANC);dy+=11;
             texte(g,f.ancre.dimension(),detailX,dy,detailLargeur,Hud.GRIS);dy+=11;
             if (large) {
                 texte(g,f.quantite(),detailX,dy,detailLargeur,Hud.VERT);dy+=11;
                 texte(g,(f.blocs.isEmpty() ? "Aucun relevé local" : "Relevé : " + f.ageReleve(System.currentTimeMillis())),detailX,dy,detailLargeur,Hud.GRIS);dy+=11;
-                texte(g,(f.blocs.size()-f.restants())+" blocs disparus · total inconnu",detailX,dy,detailLargeur,Hud.GRIS);dy+=12;
-                for (var type:f.types().entrySet()) {
-                    if (dy+12>bas-53) break;
+                int disparus = f.blocs.size()-f.restants();
+                if (disparus>0) { texte(g,disparus+" blocs disparus depuis le relevé",detailX,dy,detailLargeur,Hud.GRIS);dy+=12; }
+                if (f.restants()==0) {
+                    lignes(g,"Aucun minerai relevé ici. Utilise Scanner ce filon ; les zones non chargées restent inconnues.",
+                            detailX,dy,detailLargeur,bas-75,Hud.JAUNE);
+                    dy+=40;
+                }
+                for (var type:f.typesReperes().entrySet()) {
+                    if (dy+12>bas-75) break;
                     texte(g,type.getValue()+" × "+Filons.nom(type.getKey()),detailX,dy,detailLargeur,Hud.BLANC);dy+=11;
                 }
-                if (Filons.utile(f) && dy<bas-53) texte(g,"Lié à l'objectif (par matière)",detailX,dy,detailLargeur,Hud.JAUNE);
+                if (Filons.utile(f) && dy<bas-75) texte(g,"Lié à l'objectif (par matière)",detailX,dy,detailLargeur,Hud.JAUNE);
             }
             g.disableScissor();
             }
             String raison = Filons.raisonTP(f);
-            placer(teleporter,detailX,bas-46,detailLargeur);
+            String raisonScan = Filons.raisonScan(selection);
+            placer(scannerFilon,detailX,compact ? bas-46 : bas-68,compact ? (detailLargeur-6)/2 : detailLargeur);
+            scannerFilon.active = !Filons.scanActif() && Filons.boutonScanDisponible() && raisonScan.isEmpty();
+            scannerFilon.setMessage(Component.literal(Filons.scanDuFilon(selection)
+                    ? "Scan : " + Filons.avancee() + " %" : "Scanner ce filon"));
+            scannerFilon.setTooltip(Tooltip.create(Component.literal(Filons.scanActif()
+                    ? "Un scan est en cours. Utilise Arrêter le scan en haut pour l'interrompre."
+                    : !raisonScan.isEmpty() ? raisonScan
+                    : "Scanner à 16 blocs autour du centre du filon, même en profondeur. Uniquement les chunks chargés ; total inconnu.")));
+            placer(teleporter,compact ? detailX+(detailLargeur-6)/2+6 : detailX,bas-46,
+                    compact ? detailLargeur-(detailLargeur-6)/2-6 : detailLargeur);
             teleporter.active=raison.isEmpty();
             teleporter.setMessage(Component.literal(Filons.tpEnCours()?"Téléportation en cours…":"Se téléporter"));
             teleporter.setTooltip(Tooltip.create(Component.literal(raison.isEmpty()?"Remonter à la verticale du centre du filon jusqu’au premier emplacement sûr : sol solide et deux blocs libres":raison)));
@@ -195,8 +213,7 @@ public final class OngletFilons {
                         + (survole.releveAncien(System.currentTimeMillis()) ? " (relevé ancien, à revérifier)." : ".")
                         + (!Filons.scanActif() ? "\nScan en pause : quantités figées." : "")
                         + "\nRelevé local : blocs compatibles proches du centre, sans garantie des limites du gisement."
-                        +"\n"+String.join("\n",survole.types().entrySet().stream()
-                        .filter(e -> e.getValue() > 0)
+                        +"\n"+String.join("\n",survole.typesReperes().entrySet().stream()
                         .map(e -> e.getValue()+" × "+Filons.nom(e.getKey())).toList());
                 g.renderTooltip(mc.font,mc.font.split(Component.literal(detail),Math.min(largeur,300)),sx,sy);
             }

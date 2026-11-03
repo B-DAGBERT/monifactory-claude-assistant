@@ -32,7 +32,11 @@ public final class FilonMemoire {
         public boolean epuise;
         public boolean gregtech() { return !definition.isEmpty(); }
         public boolean visible() { return gregtech() ? !epuise : restants()>0; }
-        public String quantite() { return gregtech() ? (epuise ? "Épuisé (GregTech)" : "Total inconnu · "+restants()+" observés proches") : restants()+" repérés"; }
+        public String quantite() {
+            if (!gregtech()) return restants()+" repérés";
+            if (epuise) return "Épuisé (GregTech)";
+            return restants()>0 ? restants()+" blocs repérés · total inconnu" : "Aucun bloc repéré · total inconnu";
+        }
         private Set<String> typesChoisis; // null : aucun choix validé, tous cochés par défaut
         public boolean typeAffiche(String type) { return typesChoisis == null || typesChoisis.contains(type); }
         public Set<String> typesChoisis() { return typesChoisis == null ? null : Set.copyOf(typesChoisis); }
@@ -69,6 +73,12 @@ public final class FilonMemoire {
             for (String type:composition) types.put(type,0);
             for (Bloc b : blocs) types.merge(b.id, b.retire ? 0 : 1, Integer::sum);
             return types;
+        }
+        /** Uniquement les blocs observés encore présents ; la composition GT sert au repérage, pas aux compteurs. */
+        public Map<String, Integer> typesReperes() {
+            Map<String, Integer> presents = new TreeMap<>();
+            for (Bloc b : blocs) if (!b.retire) presents.merge(b.id, 1, Integer::sum);
+            return presents;
         }
         public Position destination(Position depuis) {
             return blocs.stream().filter(b -> !b.retire)

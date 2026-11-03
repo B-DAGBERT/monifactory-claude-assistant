@@ -34,7 +34,7 @@ public final class EcranBlocsFilon extends Screen {
     private boolean actualiserTypes() {
         var f = Filons.memoire().filon(filon);
         Map<String,Integer> presents = new TreeMap<>();
-        if (f != null) f.types().forEach((type,nombre) -> { if (nombre > 0) presents.put(type,nombre); });
+        if (f != null) presents.putAll(f.typesReperes());
         prochaineActualisation = System.currentTimeMillis()+500;
         if (presents.equals(quantites)) return false;
         quantites = presents; types = List.copyOf(presents.keySet());
@@ -111,7 +111,7 @@ public final class EcranBlocsFilon extends Screen {
         g.drawCenteredString(font,title,width/2,12,Hud.OR);
         g.drawCenteredString(font,"Coche les minerais à mettre en surbrillance",width/2,28,Hud.BLANC);
         int nombre=selectionRestante();
-        String statut=types.isEmpty() ? "Aucun bloc repéré : lance un scan."
+        String statut=types.isEmpty() ? "Aucun bloc repéré : utilise Scanner ce filon."
                 : erreur.isEmpty() ? nombre==0 ? "Sélectionne au moins un type."
                 : nombre+" blocs compatibles observés · total inconnu" : erreur;
         g.drawCenteredString(font,font.plainSubstrByWidth(statut,largeur),width/2,46,Hud.JAUNE);

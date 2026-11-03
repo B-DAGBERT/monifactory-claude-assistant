@@ -169,7 +169,10 @@ Les données proviennent du cache de prospection de GTCEu 7 (intégration vérif
 Les gisements déjà découverts sont récupérés, sans IA et sans nouveau scan de blocs.
 Seule la dimension active du monde identifié par GregTech est affichée.
 
-- **Scanner autour de moi** : un passage dans un cube à 16 blocs du point de départ, avec progression,
+- **Scanner ce filon** (dans sa fiche) : un passage à 16 blocs autour du centre du gisement sélectionné,
+  même si le joueur se trouve au-dessus. Le centre doit être chargé côté client. Le bilan distingue les
+  positions vérifiées et celles non chargées, et ne garantit pas la totalité du gisement.
+- **Scanner autour de moi** (en haut) : un passage dans un cube à 16 blocs du point de départ, avec progression,
   arrêt manuel et arrêt automatique à 100 %. Aucun scan permanent, même après redémarrage.
   En solo, le bouton demande aussi à GregTech de prospecter les 9 chunks déjà chargés autour du joueur,
   via son cache serveur natif. Il ne génère aucun terrain. Sur serveur distant, seuls les gisements déjà
@@ -179,8 +182,8 @@ Seule la dimension active du monde identifié par GregTech est affichée.
   proche. C'est une association de proximité, pas une reconstruction des limites générées. Un zéro
   observé ne signifie jamais que le gisement est vide. Seul l'état GregTech pilote le filtre **Épuisés**.
 - **Afficher / Masquer** : choisir les types à surligner puis valider. Le sélecteur montre uniquement les
-  types avec au moins un bloc observé ; les lignes à zéro sont masquées dans le sélecteur et au survol du filon, même si le relevé change pendant
-  que le menu est ouvert. Sans relevé, un message invite à lancer un scan. Seuls les blocs effectivement
+  types avec au moins un bloc observé ; les lignes à zéro sont masquées dans la fiche, le sélecteur et au survol du filon, même si le relevé change pendant
+  que le menu est ouvert. Sans relevé, Afficher est désactivé et son infobulle invite à scanner le filon. Seuls les blocs effectivement
   relevés et encore présents seront surlignés.
   **Tout cocher / Tout décocher**, pagination, **Échap / Annuler** et mémorisation des choix sont conservés.
   Les contours restent limités aux blocs chargés à 64 blocs du joueur, 768 au maximum.
@@ -211,3 +214,17 @@ inchangé et revient dès la désactivation. Aucun effet de potion, commande ser
 Le choix est conservé dans `config/assistantia-visuel.json`, même après redémarrage et sans assistant
 Python lancé. Les doubles clics rapprochés sont ignorés. Les shaders qui remplacent l'éclairage
 vanilla peuvent empêcher l'effet ; leur compatibilité n'est pas garantie.
+
+## Relevés du filon sélectionné (Codex.14)
+
+**Scanner ce filon** parcourt une fois un cube de rayon 16 autour du centre GregTech sélectionné,
+plutôt qu'autour du joueur. Le bouton **Scanner autour de moi** reste disponible en haut pour la
+prospection locale ; il devient **Arrêter le scan** pendant l'un ou l'autre scan. Aucune zone n'est chargée de force : un centre non chargé bloque le scan
+avec une explication, et le bilan distingue les positions vérifiées de celles non chargées.
+
+La fiche, le survol et les cases à cocher affichent uniquement les types de minerais réellement
+repérés avec une quantité positive. La composition théorique (toutes les variantes de roche) reste
+utilisée en interne pour reconnaître les minerais. Sans relevé, la quantité est **inconnue**, jamais
+présentée comme un filon vide. **Afficher** devient disponible quand des blocs ont été repérés.
+Le relevé reste partiel et associe les blocs compatibles au centre connu le plus proche ; il ne
+prouve pas les limites exactes du gisement ni sa quantité totale restante.

@@ -39,7 +39,8 @@ public final class Filons {
     private static final Map<net.minecraft.world.level.block.Block, Boolean> MINERAIS = new HashMap<>();
     private static List<FilonMemoire.Bloc> controles = List.of(), contours = List.of();
     private static int controle;
-    private static String monde = "", affiche = "";
+    private static String monde = "", affiche = "", cibleScan = "";
+    private static int positionsLues, positionsNonChargees;
     private static long sauvegarde, revision, listeControle, prochainAffichage, prochainScan, lectureGregtech, tpDebut, contoursDate;
     private static boolean modifie, tpEnCours;
     private static FilonMemoire.Position tpAttendue;
@@ -60,10 +61,32 @@ public final class Filons {
         if (scan.actif()) return "Scan auto : " + avancee() + " %";
         return scan.termine() ? "Scan terminé : 100 % · en pause" : "Scan en pause";
     }
+    public static String raisonScan(String id) {
+        Minecraft mc = Minecraft.getInstance();
+        var f = memoire.filon(id);
+        if (mc.level == null || mc.player == null || monde.isEmpty()) return "Entre dans ta partie pour scanner.";
+        if (f == null) return ""; // sans sélection : prospection autour du joueur
+        if (!f.ancre.dimension().equals(position().dimension())) return "Rejoins d'abord la dimension du filon.";
+        if (!mc.level.hasChunkAt(bloc(f.ancre))) return "Filon non chargé : rapproche-toi de ses coordonnées pour scanner.";
+        return "";
+    }
+    public static boolean scanDuFilon(String id) { return scan.ponctuel() && cibleScan.equals(id); }
+    public static void scannerSelection(String id) {
+        if (!synchroniserMonde() || !boutonScanDisponible() || scan.actif()) return;
+        var f = memoire.filon(id);
+        if (f == null) return;
+        String raison = raisonScan(id);
+        if (!raison.isEmpty()) { message = raison; return; }
+        cibleScan = id; positionsLues = positionsNonChargees = 0;
+        scan.lancerPonctuel(f.ancre); prochainScan = System.currentTimeMillis()+650;
+        message = "Scan du filon sélectionné : 16 blocs autour de son centre, uniquement dans les chunks chargés.";
+        modifie = true; sauver(true);
+    }
     public static void scannerAutour() {
         if (monde.isEmpty() || !boutonScanDisponible()) return;
         if (scan.ponctuel()) { reglerScan(false); return; }
         GregTechFilons.prospecterSolo(); lectureGregtech=0; actualiserGregtech();
+        cibleScan = ""; positionsLues = positionsNonChargees = 0;
         scan.lancerPonctuel(position()); prochainScan = System.currentTimeMillis() + 650;
         message = "Scan ponctuel démarré : arrêt automatique après un passage, sans chargement de chunks.";
         modifie = true; sauver(true);
@@ -101,6 +124,7 @@ public final class Filons {
         Minecraft mc = Minecraft.getInstance();
         String id = mc.level == null || mc.player == null ? "" : identite(mc);
         if (id.equals(monde)) return !id.isEmpty();
+        cibleScan = ""; positionsLues = positionsNonChargees = 0;
         sauver(true);
         if (id.isEmpty()) {
             monde = affiche = message = "";
@@ -161,7 +185,9 @@ public final class Filons {
         lectureGregtech=System.currentTimeMillis()+2000;
         int connus=memoire.filons().size();
         if (GregTechFilons.lire(memoire)) {
-            if (memoire.filons().size()>connus) scan.reprendrePonctuel();
+            if (memoire.filons().size()>connus && scan.ponctuel()) {
+                scan.reprendrePonctuel(); positionsLues = positionsNonChargees = 0;
+            }
             modifie=true; revision++;
         }
     }
@@ -265,11 +291,20 @@ public final class Filons {
         for (int n = 0; n < 192 && System.nanoTime() < limite; n++) {
             var suivante = scan.suivant(joueur);
             if (suivante == null) break;
-            observer(mc.level, suivante, now);
+            if (!mc.level.isOutsideBuildHeight(bloc(suivante))) {
+                if (mc.level.hasChunkAt(bloc(suivante))) { observer(mc.level, suivante, now); positionsLues++; }
+                else positionsNonChargees++;
+            }
         }
         if (ponctuel && !scan.actif()) {
-            message = scan.termine() ? "Scan terminé : 100 % de la zone parcourue. Scan en pause ; relevé limité aux blocs chargés."
-                    : "Scan interrompu : changement de dimension. Données conservées, scan en pause.";
+            var f = memoire.filon(cibleScan);
+            message = !scan.termine() ? "Scan interrompu : changement de dimension. Données conservées, scan en pause."
+                    : positionsLues == 0 ? "Scan sans données : zone non chargée. Rapproche-toi du filon ; quantité inconnue."
+                    : "Scan " + (positionsNonChargees > 0 ? "partiel" : "terminé")
+                    + (f == null ? " autour de toi" : " du filon : " + f.restants() + " blocs repérés")
+                    + " · " + positionsLues + " positions vérifiées"
+                    + (positionsNonChargees > 0 ? " · " + positionsNonChargees + " non chargées" : "")
+                    + ". Total du gisement inconnu ; scan en pause.";
             modifie = true; sauver(true);
             mc.player.displayClientMessage(Component.literal(message), true);
         }
@@ -285,7 +320,7 @@ public final class Filons {
         if (!synchroniserMonde() || !monde.equals(origine) || !affichageDisponible()) return false;
         var f = memoire.filon(id);
         if (f == null || !f.ancre.dimension().equals(position().dimension())) return false;
-        var selection = f.types().entrySet().stream()
+        var selection = f.typesReperes().entrySet().stream()
                 .filter(e -> e.getValue()>0 && choix.getOrDefault(e.getKey(),false)).map(Map.Entry::getKey).toList();
         if (selection.isEmpty()) {
             message = "Aucun bloc sélectionné encore repéré : lance un scan.";
