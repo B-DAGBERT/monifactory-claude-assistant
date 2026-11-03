@@ -28,6 +28,7 @@ import time
 import tkinter as tk
 import traceback
 from collections import defaultdict
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
@@ -43,6 +44,7 @@ import mss
 from PIL import Image
 
 import monifactory_assistant.providers as ai_provider
+from monifactory_assistant.commands.auto_update import notice as update_notice
 from monifactory_assistant.config import minecraft_dir
 from monifactory_assistant.game.projects import ProjectStore
 from monifactory_assistant.paths import PACKAGE_ROOT
@@ -1725,6 +1727,7 @@ def build_mod_view(app):
         "visible": app.visible,
         "recharger": app.bridge.script_outdated(state),
         "statut": app.status,
+        "mise_a_jour": getattr(app, "update_notice", ""),
         "alertes": app.world.alerts()[:2] if machine_alerts else [],
         "prochains": [],
         "direction": None,
@@ -1992,6 +1995,7 @@ def build_mod_view(app):
     ]
     screen = {
         "statut": app.status,
+        "mise_a_jour": getattr(app, "update_notice", ""),
         "question_recue": getattr(app, "question_ack", {}),
         "derniere_demande": getattr(app, "mod_request_n", None),
         "erreur_connexion": getattr(app, "connection_problem", ""),
@@ -2477,6 +2481,7 @@ class App:
         self.last_mod_view = None
         self.mod_request_time, self.mod_request_n = None, None
         self.question_ack = {}
+        self.update_notice = update_notice()
         # journal et coach
         self.session_open = False
         self.game_lost_at = 0
@@ -4238,10 +4243,10 @@ class App:
             )
 
 
-def supervise():
+def supervise(already_locked=False):
     """Lance l'assistant dans un processus à part et le relance s'il plante : un module en C (micro, voix,
     reconnaissance vocale) peut faire tomber tout le processus sans prévenir. Une seule instance à la fois."""
-    with SingleInstance() as acquired:
+    with nullcontext(True) if already_locked else SingleInstance() as acquired:
         if not acquired:
             messagebox.showinfo("Assistant Minecraft", "L'assistant est déjà lancé.")
             return

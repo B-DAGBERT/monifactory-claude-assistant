@@ -12,7 +12,10 @@ Claude ou Codex se choisit localement ; tes réglages, conversations, objectifs 
 4. Lancer **Lancer Mac.command** ou **Lancer assistant.bat**, puis Minecraft.
 5. Dans le jeu : **Y** ouvre l’assistant, **I** explique le bloc ou l’objet.
 
-Pour les versions suivantes, fermer l’assistant et le jeu, puis ouvrir **Mettre à jour**.
+Pour les versions suivantes, lancer **l’assistant avant Minecraft** : il vérifie `main` et installe
+les nouveautés automatiquement, avec sauvegarde. S’il détecte le jeu ouvert, il reporte
+l’installation et affiche un message dans le menu. Sans réseau, la version locale démarre.
+Une installation existante doit utiliser **Mettre à jour** une première fois pour activer ce mécanisme.
 
 - [Installation, configuration et mises à jour](docs/installation.md)
 - [Fonctionnement de Codex et suivi en lecture seule](docs/codex.md)

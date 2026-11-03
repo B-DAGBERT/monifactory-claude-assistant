@@ -359,6 +359,19 @@ public class EcranAssistant extends Screen {
         envoyer.setMessage(Component.literal(ETAT_DISCUSSION.enAttente() ? "Envoi…" : "Envoyer"));
         int haut = MARGE + 26,
                 bas = this.height - MARGE - 18 - (onglet == OBJECTIF || onglet == PLAN ? 32 : 6);
+        int hautMiseAJour = haut;
+        String miseAJour = Pont.texte(ecran, "mise_a_jour");
+        if (!miseAJour.isEmpty()) {
+            g.fill(MARGE - 4, haut - 4, this.width - MARGE + 4, haut + 12, 0xD0353020);
+            g.drawString(
+                    this.font,
+                    this.font.plainSubstrByWidth(miseAJour, this.width - 2 * MARGE - 4),
+                    MARGE,
+                    haut,
+                    Hud.JAUNE,
+                    false);
+            haut += 18;
+        }
         g.fill(MARGE - 4, haut - 4, this.width - MARGE + 4, bas, FOND);
         boolean actif = Pont.assistantActif();
         relancer.visible = !actif && !Pont.relanceEnCours() && onglet != FILONS;
@@ -464,6 +477,12 @@ public class EcranAssistant extends Screen {
             default -> discussion.render(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
         }
         super.render(g, sourisX, sourisY, partialTick);
+        if (!miseAJour.isEmpty() && sourisY >= hautMiseAJour - 4 && sourisY < hautMiseAJour + 12)
+            g.renderTooltip(
+                    this.font,
+                    this.font.split(Component.literal(miseAJour), Math.min(320, this.width - 30)),
+                    sourisX,
+                    sourisY);
     }
 
     // ---------- Onglet Objectif ----------

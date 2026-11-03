@@ -94,6 +94,29 @@ et le script client sont sauvegardés par l’installateur.
 
 ## Mises à jour pour les deux utilisateurs
 
+La mise à jour automatique est activée par défaut. Ouvrir **Lancer Mac.command** ou
+**Lancer assistant.bat** avant de lancer Minecraft. Une vérification de `origin/main` est faite
+au démarrage du superviseur ; les redémarrages automatiques après un plantage ne la répètent pas.
+Le contrôle réseau attend au maximum 12 secondes avant de démarrer la version locale.
+
+Si une nouveauté existe et Minecraft est fermé, le lanceur compile dans un dossier temporaire,
+installe le mod et le script avec sauvegarde, puis avance le dépôt sur `main`. Les dépendances
+Python sont installées seulement si `requirements.txt` a changé. Un changement limité au Python
+ou à la documentation ne recompile pas un mod déjà installé et vérifié.
+
+Si le jeu est ouvert, ou si son état ne peut pas être vérifié, l’installation est reportée.
+Le menu **Y** affiche la mise à jour en attente : fermer Minecraft et relancer l’assistant pour
+l’appliquer. Il n’y a pas de surveillance permanente ni de remplacement à chaud du mod.
+Sur Windows, la fenêtre de lancement affiche la préparation ; les détails sont dans
+`.runtime/update.log`. Une erreur réseau ou de compilation laisse la version installée en place.
+
+La branche doit être `main`, sans fichiers locaux non enregistrés ni commits absents du serveur.
+Le lanceur ne supprime aucun travail local. Pour désactiver l’automatisme, ajouter
+`"auto_update": false` à l’objet JSON existant dans `assistant.local.json`.
+
+Pour activer cette nouveauté sur une ancienne installation, effectuer une fois la mise à jour
+manuelle ci-dessous. Elle reste également disponible en dépannage.
+
 Fermer l’assistant et Minecraft, puis lancer **Mettre à jour.command** ou **Mettre à jour.bat**.
 Le lanceur récupère `origin/main`, vérifie l’absence de modifications locales et accepte uniquement
 une avance rapide. Les installations sur `shared-assistant` ou `codex-compat` passent sur `main`

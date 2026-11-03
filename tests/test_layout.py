@@ -22,7 +22,7 @@ class LayoutTests(unittest.TestCase):
 
     def test_existing_launchers_delegate_without_loading_a_second_application(self):
         entries = {
-            "assistant_mc.py": ("app", "main"),
+            "assistant_mc.py": ("startup", "main"),
             "choose_ai.py": ("commands.choose_ai", "main"),
             "codex_setup.py": ("commands.setup", "cli"),
             "update_assistant.py": ("commands.update", "cli"),

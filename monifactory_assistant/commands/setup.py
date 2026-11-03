@@ -1,6 +1,7 @@
 """Build/install the shared assistant. Never downloads or replaces the modpack itself."""
 
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -76,21 +77,46 @@ def build(instance):
     )
 
 
-def artifact():
+def artifact(root=None):
+    root = HERE if root is None else Path(root)
     version = next(
         line.split("=", 1)[1]
-        for line in (HERE / "mod/gradle.properties").read_text().splitlines()
+        for line in (root / "mod/gradle.properties").read_text().splitlines()
         if line.startswith("mod_version=")
     )
-    path = HERE / "mod/build/libs" / f"assistantia-{version}.jar"
+    path = root / "mod/build/libs" / f"assistantia-{version}.jar"
     if not path.is_file():
         raise RuntimeError("Mod non compilé : relance Installer Mac.command.")
     return path
 
 
-def install(instance, dry_run=False):
+def restore_install(instance, backup):
+    """Restore only this mod and its client script from a completed installation backup."""
+    instance, backup = Path(instance), Path(backup)
+    manifest = json.loads((backup / "installation.json").read_text())
+    for name in manifest["mods"]:
+        target = instance / "mods" / name
+        temporary = target.with_suffix(".jar.tmp")
+        shutil.copy2(backup / name, temporary)
+        temporary.replace(target)
+    for target in (instance / "mods").glob("assistantia-*.jar"):
+        if target.name not in manifest["mods"]:
+            target.unlink()
+    script = instance / "kubejs/client_scripts/assistant_ia.js"
+    if manifest["script"]:
+        temporary = script.with_suffix(".js.tmp")
+        shutil.copy2(backup / script.name, temporary)
+        temporary.replace(script)
+    else:
+        script.unlink(missing_ok=True)
+
+
+def install(instance, dry_run=False, *, jar=None, client_script=None):
     check_instance(instance)
-    jar = artifact()
+    jar = artifact() if jar is None else Path(jar)
+    client_script = HERE / "jeu/assistant_ia.js" if client_script is None else Path(client_script)
+    if not jar.is_file() or not client_script.is_file():
+        raise RuntimeError("Compilation ou script client manquant : aucun fichier installé.")
     target = instance / "mods" / jar.name
     script = instance / "kubejs/client_scripts/assistant_ia.js"
     replaced = sorted((instance / "mods").glob("assistantia-*.jar"))
@@ -103,19 +129,28 @@ def install(instance, dry_run=False):
     for path in [*replaced, script]:
         if path.is_file():
             shutil.copy2(path, backup / path.name)
-    temporary = target.with_suffix(".jar.tmp")
-    shutil.copy2(jar, temporary)
-    temporary.replace(target)
-    for path in replaced:
-        if path != target:
-            path.unlink()  # already backed up, avoid duplicate mod IDs in Forge
-    script.parent.mkdir(parents=True, exist_ok=True)
-    temporary = script.with_suffix(".js.tmp")
-    shutil.copy2(HERE / "jeu/assistant_ia.js", temporary)
-    temporary.replace(script)
+    write_json(
+        backup / "installation.json",
+        {"mods": [p.name for p in replaced], "script": script.is_file()},
+    )
+    try:
+        temporary = target.with_suffix(".jar.tmp")
+        shutil.copy2(jar, temporary)
+        temporary.replace(target)
+        for path in replaced:
+            if path != target:
+                path.unlink()  # already backed up, avoid duplicate mod IDs in Forge
+        script.parent.mkdir(parents=True, exist_ok=True)
+        temporary = script.with_suffix(".js.tmp")
+        shutil.copy2(client_script, temporary)
+        temporary.replace(script)
+    except Exception:
+        restore_install(instance, backup)
+        raise
     print(
         f"Installé. Sauvegarde de la version précédente : {backup}\nRedémarre Minecraft pour charger le nouveau .jar."
     )
+    return backup
 
 
 def main():
