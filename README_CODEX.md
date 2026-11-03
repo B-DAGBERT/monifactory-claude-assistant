@@ -178,8 +178,10 @@ Seule la dimension active du monde identifié par GregTech est affichée.
   Le relevé local compte les blocs de composition compatible, à 64 blocs au plus du centre connu le plus
   proche. C'est une association de proximité, pas une reconstruction des limites générées. Un zéro
   observé ne signifie jamais que le gisement est vide. Seul l'état GregTech pilote le filtre **Épuisés**.
-- **Afficher / Masquer** : choisir les types à surligner puis valider. La composition GT permet de choisir
-  avant un scan ; seuls les blocs effectivement relevés et encore présents seront surlignés.
+- **Afficher / Masquer** : choisir les types à surligner puis valider. Le sélecteur montre uniquement les
+  types avec au moins un bloc observé ; les lignes à zéro sont masquées, même si le relevé change pendant
+  que le menu est ouvert. Sans relevé, un message invite à lancer un scan. Seuls les blocs effectivement
+  relevés et encore présents seront surlignés.
   **Tout cocher / Tout décocher**, pagination, **Échap / Annuler** et mémorisation des choix sont conservés.
   Les contours restent limités aux blocs chargés à 64 blocs du joueur, 768 au maximum.
 - **Vider les relevés** : supprimer le cache des blocs scannés du monde actif (toutes dimensions),

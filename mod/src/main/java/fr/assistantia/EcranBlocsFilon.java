@@ -13,7 +13,9 @@ import java.util.*;
 public final class EcranBlocsFilon extends Screen {
     private final Screen parent;
     private final String monde, filon, dimension;
-    private final List<String> types;
+    private List<String> types = List.of();
+    private Map<String,Integer> quantites = Map.of();
+    private long prochaineActualisation;
     private final Map<String, Boolean> choix = new LinkedHashMap<>();
     private final Map<String, Long> clics = new HashMap<>();
     private final long ouvert = System.currentTimeMillis();
@@ -26,11 +28,20 @@ public final class EcranBlocsFilon extends Screen {
     public EcranBlocsFilon(Screen parent, String id) {
         super(Component.literal("Blocs à afficher"));
         this.parent = parent; filon = id; monde = Filons.monde(); dimension = Filons.position().dimension();
-        var f = Filons.memoire().filon(id);
-        types = f == null ? List.of() : List.copyOf(f.types().keySet());
-        for (String type : types) choix.put(type, f.typeAffiche(type));
+        actualiserTypes();
     }
 
+    private boolean actualiserTypes() {
+        var f = Filons.memoire().filon(filon);
+        Map<String,Integer> presents = new TreeMap<>();
+        if (f != null) f.types().forEach((type,nombre) -> { if (nombre > 0) presents.put(type,nombre); });
+        prochaineActualisation = System.currentTimeMillis()+500;
+        if (presents.equals(quantites)) return false;
+        quantites = presents; types = List.copyOf(presents.keySet());
+        choix.keySet().retainAll(presents.keySet());
+        for (String type : types) choix.putIfAbsent(type,f.typeAffiche(type));
+        return true;
+    }
     private boolean contexteValide() {
         return Filons.synchroniserMonde() && monde.equals(Filons.monde())
                 && dimension.equals(Filons.position().dimension()) && Filons.memoire().filon(filon) != null;
@@ -48,10 +59,9 @@ public final class EcranBlocsFilon extends Screen {
     protected void init() {
         largeur = Math.min(440, width-20); gauche = (width-largeur)/2;
         parPage = Math.max(1,(height-148)/22);
+        actualiserTypes();
         int pages = Math.max(1,(types.size()+parPage-1)/parPage);
         page = Math.min(page,pages-1);
-        var f = Filons.memoire().filon(filon);
-        var quantites = f == null ? Map.<String,Integer>of() : f.types();
         for (int i=page*parPage; i<Math.min(types.size(),(page+1)*parPage); i++) {
             String type = types.get(i);
             String label = Filons.nom(type)+" · "+quantites.getOrDefault(type,0)+" observés proches";
@@ -72,8 +82,8 @@ public final class EcranBlocsFilon extends Screen {
         var suivant = bouton("Suivant",gauche+largeur-90,height-76,90,b -> changerPage(1));
         precedent.active = page>0; suivant.active = page+1<pages;
         int demi = (largeur-6)/2;
-        bouton("Tout cocher",gauche,height-52,demi,b -> tout(true));
-        bouton("Tout décocher",gauche+demi+6,height-52,largeur-demi-6,b -> tout(false));
+        bouton("Tout cocher",gauche,height-52,demi,b -> tout(true)).active = !types.isEmpty();
+        bouton("Tout décocher",gauche+demi+6,height-52,largeur-demi-6,b -> tout(false)).active = !types.isEmpty();
         // Davantage de place pour le libellé principal dans les petites fenêtres.
         appliquer = bouton("Afficher la sélection",gauche,height-28,largeur-86,b -> appliquer());
         bouton("Annuler",gauche+largeur-80,height-28,80,b -> onClose());
@@ -89,23 +99,25 @@ public final class EcranBlocsFilon extends Screen {
         prochainLot=now+650; choix.replaceAll((type,ancien) -> valeur); erreur=""; rebuildWidgets();
     }
     private void appliquer() {
-        if (valide || System.currentTimeMillis()-ouvert<350 || !contexteValide() || choix.values().stream().noneMatch(Boolean::booleanValue)) return;
+        if (valide || System.currentTimeMillis()-ouvert<350 || !contexteValide() || selectionRestante()==0) return;
         if (Filons.afficherSelection(monde,filon,choix)) { valide=true; onClose(); }
         else erreur="Le filon a changé : vérifie les blocs sélectionnés.";
     }
     @Override
     public void render(GuiGraphics g, int mx, int my, float partialTick) {
         if (!contexteValide()) { onClose(); return; }
+        if (System.currentTimeMillis()>=prochaineActualisation && actualiserTypes()) rebuildWidgets();
         renderBackground(g);
         g.drawCenteredString(font,title,width/2,12,Hud.OR);
         g.drawCenteredString(font,"Coche les minerais à mettre en surbrillance",width/2,28,Hud.BLANC);
         int nombre=selectionRestante();
-        String statut=erreur.isEmpty() ? choix.values().stream().noneMatch(Boolean::booleanValue) ? "Sélectionne au moins un type."
+        String statut=types.isEmpty() ? "Aucun bloc repéré : lance un scan."
+                : erreur.isEmpty() ? nombre==0 ? "Sélectionne au moins un type."
                 : nombre+" blocs compatibles observés · total inconnu" : erreur;
         g.drawCenteredString(font,font.plainSubstrByWidth(statut,largeur),width/2,46,Hud.JAUNE);
         int pages=Math.max(1,(types.size()+parPage-1)/parPage);
         g.drawCenteredString(font,(page+1)+" / "+pages,width/2,height-70,Hud.GRIS);
-        appliquer.active = !valide && choix.values().stream().anyMatch(Boolean::booleanValue) && Filons.affichageDisponible() && System.currentTimeMillis()-ouvert>=350;
+        appliquer.active = !valide && nombre>0 && Filons.affichageDisponible() && System.currentTimeMillis()-ouvert>=350;
         super.render(g,mx,my,partialTick);
     }
     @Override public void onClose() { if (minecraft != null) minecraft.setScreen(parent); }

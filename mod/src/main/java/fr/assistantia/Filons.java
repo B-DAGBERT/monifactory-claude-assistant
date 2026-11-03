@@ -298,11 +298,13 @@ public final class Filons {
         if (!synchroniserMonde() || !monde.equals(origine) || !affichageDisponible()) return false;
         var f = memoire.filon(id);
         if (f == null || !f.ancre.dimension().equals(position().dimension())) return false;
-        if (f.types().keySet().stream().noneMatch(type -> choix.getOrDefault(type,false))) {
-            message = "Sélectionne au moins un type de minerai de ce gisement.";
+        var selection = f.types().entrySet().stream()
+                .filter(e -> e.getValue()>0 && choix.getOrDefault(e.getKey(),false)).map(Map.Entry::getKey).toList();
+        if (selection.isEmpty()) {
+            message = "Aucun bloc sélectionné encore repéré : lance un scan.";
             return false;
         }
-        f.choisirTypes(f.types().keySet().stream().filter(type -> choix.getOrDefault(type, false)).toList());
+        f.choisirTypes(selection);
         afficher(id, true);
         modifie = true; sauver(true);
         return true;
