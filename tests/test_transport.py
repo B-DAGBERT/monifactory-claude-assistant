@@ -31,6 +31,8 @@ for raw in sys.stdin:
   assert p['baseInstructions']=='rules'
   if p.get('threadId')=='missing':
    emit({'id':ident,'error':{'code':-1,'message':'session introuvable'}});continue
+  if p.get('threadId')=='desktop-owned':
+   emit({'id':ident,'error':{'code':-1,'message':'thread desktop-owned already has an active writer'}});continue
   count+=1
   result={'thread':{'id':p.get('threadId') or 'thread-'+str(count)},'sandbox':{'type':'readOnly'},'approvalPolicy':'never'}
  elif method=='turn/start':
@@ -136,6 +138,14 @@ class PersistentTests(unittest.TestCase):
                 for r in self.requests()
             )
         )
+
+    def test_desktop_writer_keeps_session_without_fork_or_submitting_question(self):
+        with self.assertRaisesRegex(RpcError, "panneau de suivi en lecture seule"):
+            self.call(session="desktop-owned")
+        methods = [r.get("method") for r in self.requests()]
+        self.assertEqual(methods.count("thread/resume"), 1)
+        for method in ("thread/fork", "thread/start", "turn/start"):
+            self.assertNotIn(method, methods)
 
     def test_timeout_kills_process_without_duplicate(self):
         with self.assertRaises(TimeoutError):

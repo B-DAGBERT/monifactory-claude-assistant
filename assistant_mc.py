@@ -42,6 +42,7 @@ from codex_config import CONFIG, minecraft_dir, find_codex
 import ai_provider
 from platform_support import SingleInstance
 from project_store import ProjectStore
+from discussion_viewer import DiscussionViewer, recent_history
 import copy
 import mss
 from PIL import Image
@@ -1385,7 +1386,7 @@ def build_mod_view(app):
                  "couleur": machine_color(machine_status(m)), "item": m["bloc"],
                  "dimension": m.get("dimension", ""), "vu": m.get("t", 0)}
                 for m in app.world.machines() if not re.search(r"hatch|_bus$", m["bloc"])]
-    screen = {"statut": app.status, "objectif_en_pause": paused,
+    screen = {"statut": app.status, "erreur_connexion": getattr(app, "connection_problem", ""), "objectif_en_pause": paused,
               "objectif_version": str(app.plan_version), "occupe": app.busy,
               "projets": app.project_view(),
               "plan": {"titre": app.plan_title, "pourquoi": app.plan_why,
@@ -1442,6 +1443,11 @@ class Conversation:
 
     def stop(self):
         return self.impl.stop()
+
+    def prepare(self):
+        prepare = getattr(self.impl, "prepare", None)
+        if prepare:
+            prepare()
 
 
 def tool_status(name, data):
@@ -1732,6 +1738,7 @@ class App:
         self.storage_text = None
         self.logged_errors = set()
         self.status = ""
+        self.connection_problem = ""
         self.message, self.message_until = "", 0
         self.last_view = None
         self.last_write = 0
@@ -1750,7 +1757,7 @@ class App:
         self.world = World()         # ce que voit le script serveur
         self.client_storage = Storage([])
         # mod Minecraft : écran de l'assistant, surbrillance, faisceaux
-        self.history = []            # conversation affichée dans l'écran de l'assistant
+        self.history = recent_history(self.bridge.dir, ai_provider.label())
         self.last_mod_view = None
         self.mod_request_time, self.mod_request_n = None, None
         # journal et coach
@@ -1765,6 +1772,13 @@ class App:
         self.forgotten_keys = set()  # coffres que l'on vient de demander au jeu d'oublier
         self.load_plan()
         self.load_places()
+
+        self.discussion_viewer = None
+        try:
+            self.discussion_viewer = DiscussionViewer(self.bridge.dir, HERE / ".runtime")
+            log("Suivi de Discussion en lecture seule disponible (.runtime/suivi.json)")
+        except OSError:
+            log("Suivi de Discussion indisponible : " + traceback.format_exc())
 
         try:
             script_changed = self.bridge.install()
@@ -1792,9 +1806,28 @@ class App:
                           f"{HOTKEY_NEW.title()} : nouvelle conversation{hint}",
                           hide_after=25000 if script_changed else 8000)
         log(f"Démarrage, {ai_provider.label()} : {ai_provider.executable()}, script du jeu {'mis à jour' if script_changed else 'à jour'}")
+        threading.Thread(target=self.prepare_conversation, daemon=True).start()
 
     def run(self):
         self.root.mainloop()
+
+    def prepare_conversation(self):
+        try:
+            self.conversation.prepare()
+            log("Discussion prête pour le mod (aucune question envoyée).")
+            self.events.put(("connection_ready",))
+        except Exception as error:
+            log("Discussion non disponible : " + str(error))
+            self.events.put(("connection_problem", str(error)))
+
+    def on_connection_problem(self, message):
+        self.connection_problem = message
+        if not self.busy:
+            self.notify(message, 30)
+
+    def on_connection_ready(self):
+        self.connection_problem = ""
+        self.refresh()
 
     # --- réglages (écran Y > Réglages, à la voix, F9 et F10) ---
 
@@ -2837,6 +2870,7 @@ class App:
 
     def on_answer(self, question, answer):
         self.busy = False
+        self.connection_problem = ""
         log(f"Q : {question}\nR : {answer}")
         answer, actions = split_actions(answer)
         answer = readable(answer)
@@ -3020,6 +3054,8 @@ class App:
 
     def on_error(self, message):
         self.busy = False
+        if "panneau de suivi en lecture seule" in message:
+            self.connection_problem = message
         self.status = ""
         self.notify(f"Erreur : {message[:300]}", 30)
 

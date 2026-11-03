@@ -245,9 +245,19 @@ class PersistentCodex:
                 params["ephemeral"] = ephemeral
             if session_id:
                 params.update(threadId=session_id, excludeTurns=True)
-            result = self.request(
-                "thread/resume" if session_id else "thread/start", params
-            )
+            try:
+                result = self.request(
+                    "thread/resume" if session_id else "thread/start", params
+                )
+            except RpcError as error:
+                if session_id and "already has an active writer" in str(error):
+                    raise RpcError(
+                        "Cette discussion est déjà ouverte en écriture dans Codex. "
+                        "Ferme son onglet natif et utilise le panneau de suivi en lecture seule. "
+                        "Si le verrou reste présent, il faudra relancer Codex. "
+                        "Conversation conservée ; question non envoyée."
+                    ) from error
+                raise
             if (
                 result.get("approvalPolicy") != "never"
                 or result.get("sandbox", {}).get("type") != "readOnly"

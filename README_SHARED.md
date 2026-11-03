@@ -49,6 +49,25 @@ sauvegardée après redémarrage. Une erreur ou un délai dépassé ne renvoie j
 une question. Ctrl+F8 remet à zéro uniquement la conversation du moteur actif.
 Projets, objectifs, pause, fiches et mémoire des coffres restent communs sur chaque installation.
 
+## Suivre la discussion dans Codex en lecture seule
+
+Le mod garde sa conversation et envoie les questions. Pour la consulter depuis Codex,
+ouvrir son **panneau navigateur** avec l’URL locale enregistrée dans `.runtime/suivi.json`
+après le lancement de l’assistant. Ce panneau reflète les 30 derniers messages de Discussion,
+les réponses en cours et les erreurs. Il ne lance aucune requête IA, ne reprend aucun fil
+et n’a aucun champ d’envoi. Ce n’est pas une deuxième conversation ni une copie du fil Codex.
+Les messages sont affichés tels que le mod les voit, sans l’historique complet des outils du CLI.
+
+Fermer l’onglet natif de cette conversation dans Codex avant de l’utiliser depuis Minecraft :
+deux services Codex ne peuvent pas en être simultanément propriétaires en écriture.
+Si le verrou persiste après fermeture de l’onglet, quitter puis rouvrir Codex, sans rouvrir ce
+fil natif. Le mod conserve son identifiant de session ; aucune duplication ni nouvelle tentative
+automatique d’une question échouée. Utiliser ensuite le panneau de suivi pour la lecture.
+
+Le serveur écoute uniquement sur `127.0.0.1`, avec une URL privée locale. Le port habituel est
+18764 ; s’il est occupé, un port libre est choisi et l’URL est mise à jour. Au redémarrage sur
+le même port, le panneau se reconnecte automatiquement. Cette fonction fonctionne aussi avec Claude.
+
 ## Migrer une installation existante
 
 Fermer l’assistant et Minecraft. Conserver son dossier actuel : les données personnelles y restent.

@@ -47,7 +47,7 @@ def ask(
 
 
 class Conversation:
-    """One saved thread per instance, loaded only when a question is sent."""
+    """One saved thread per instance; resuming it does not start an inference."""
 
     def __init__(self, data_dir, system_prompt, model, effort="low", timeout=420):
         self.data_dir = data_dir
@@ -62,6 +62,12 @@ class Conversation:
                 self.session_id = saved.get("thread_id")
         except (OSError, ValueError, AttributeError):
             pass
+
+    def prepare(self):
+        """Claim the saved thread for the mod, without creating a thread or sending a turn."""
+        with self.lock:
+            if self.session_id:
+                CLIENT.load_thread(self.session_id, self.data_dir, self.model, self.instructions)
 
     def restart(self):
         with self.lock:

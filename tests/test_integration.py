@@ -11,6 +11,19 @@ import mac_keys
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_prepare_only_resumes_saved_thread_without_new_thread_or_turn(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(codex_integration, "HERE", Path(directory)):
+            with patch.object(codex_integration, "CLIENT") as client:
+                chat = codex_integration.Conversation(Path(directory), "rules", "model")
+                chat.prepare()
+                client.load_thread.assert_not_called()
+                chat._save_thread("original-thread")
+                original = chat.path.read_bytes()
+                chat.prepare()
+                client.load_thread.assert_called_once_with("original-thread", Path(directory), "model", chat.instructions)
+                client.run.assert_not_called()
+                self.assertEqual(chat.path.read_bytes(), original)
+
     def test_session_saved_before_turn_and_reused_after_restart(self):
         with (
             tempfile.TemporaryDirectory() as directory,

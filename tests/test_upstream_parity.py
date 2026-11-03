@@ -66,6 +66,8 @@ class ParityTests(unittest.TestCase):
             "App.on_type",
             "App.context",
             "App.work_question",
+            "App.on_answer",  # clear the read-only viewer's connection error on success
+            "App.on_error",  # retain the writer conflict until a successful reconnect
             "supervise",
             "build_mod_view",
             "describe_veins",  # distinguish GT deposits from partial local block observations
