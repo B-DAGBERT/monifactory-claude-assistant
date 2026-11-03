@@ -54,15 +54,7 @@ public final class OngletFilons {
     }
 
     private EditBox filtre;
-    private Button trier,
-            vides,
-            eteindre,
-            teleporter,
-            scannerFilon,
-            epuiser,
-            scan,
-            ponctuel,
-            outils;
+    private Button trier, vides, eteindre, teleporter, scannerFilon, epuiser, scan, arreter, outils;
     private int x,
             y,
             largeur,
@@ -137,7 +129,7 @@ public final class OngletFilons {
                                 }),
                         ajout);
         scan = ajouter(bouton("", b -> Filons.viderReleves()), ajout);
-        ponctuel = ajouter(bouton("Scanner autour de moi", b -> Filons.scannerAutour()), ajout);
+        arreter = ajouter(bouton("Arrêter", b -> Filons.reglerScan(false)), ajout);
         eteindre = ajouter(bouton("Tout masquer", b -> Filons.afficher("", false)), ajout);
         scannerFilon =
                 ajouter(bouton("Scanner ce filon", b -> Filons.scannerSelection(selection)), ajout);
@@ -275,26 +267,28 @@ public final class OngletFilons {
                 Tooltip.create(
                         Component.literal(
                                 "Trier les filons par distance, utilité pour l'objectif ou nom.")));
-        int outilsLargeur = 58, filtreLargeur = Math.min(116, largeur / 3);
-        int scanLargeur = largeur - outilsLargeur - filtreLargeur - 12;
-        placer(ponctuel, x, y + 22, scanLargeur);
-        placer(vides, x + scanLargeur + 6, y + 22, filtreLargeur);
+        int outilsLargeur = 58;
+        boolean enScan = Filons.scanActif();
+        int filtreLargeur = enScan ? Math.min(116, largeur / 3) : largeur - outilsLargeur - 6;
+        placer(vides, x, y + 22, filtreLargeur);
+        placer(
+                arreter,
+                x + filtreLargeur + 6,
+                y + 22,
+                largeur - filtreLargeur - outilsLargeur - 12);
         placer(outils, x + largeur - outilsLargeur, y + 22, outilsLargeur);
         outils.setMessage(Component.literal(outilsOuverts ? "Outils −" : "Outils +"));
         outils.setTooltip(
-                Tooltip.create(Component.literal("Tout masquer et vider le cache des relevés.")));
-        ponctuel.setMessage(
-                Component.literal(
-                        Filons.scanPonctuel()
-                                ? "Arrêter · " + Filons.avancee() + " %"
-                                : "Scanner autour"));
-        ponctuel.active = !Filons.monde().isEmpty() && Filons.boutonScanDisponible();
-        ponctuel.setTooltip(
                 Tooltip.create(
                         Component.literal(
-                                Filons.scanPonctuel()
-                                        ? "Arrêter le scan en cours ; conserver les blocs déjà repérés."
-                                        : "Scanner à 16 blocs autour de toi. Pour un filon précis, utilise Scanner ce filon dans sa fiche.")));
+                                "Tout masquer et gérer le cache des relevés (100 000 blocs, rotation automatique).")));
+        arreter.visible = enScan;
+        arreter.setMessage(Component.literal("Arrêter · " + Filons.avancee() + " %"));
+        arreter.active = Filons.boutonScanDisponible();
+        arreter.setTooltip(
+                Tooltip.create(
+                        Component.literal(
+                                "Arrêter le scan en cours ; conserver les blocs déjà repérés.")));
         vides.setMessage(Component.literal(masquerVides ? "Épuisés masqués" : "Épuisés visibles"));
         vides.setTooltip(
                 Tooltip.create(
@@ -315,7 +309,7 @@ public final class OngletFilons {
                         Component.literal(
                                 "Libérer le cache : "
                                         + Filons.memoire().blocs().size()
-                                        + " blocs relevés. Gisements et choix conservés. Arrête le scan avant de vider.")));
+                                        + " / 100 000 blocs relevés. Rotation automatique au plafond : minés, puis anciens hors zone scannée. Gisements et choix conservés. Arrête le scan avant de vider.")));
         eteindre.active = !Filons.affiche().isEmpty() && Filons.affichageDisponible();
         eteindre.setTooltip(
                 Tooltip.create(Component.literal("Masquer la surbrillance du filon affiché.")));
@@ -518,7 +512,8 @@ public final class OngletFilons {
         }
         String info = Filons.message();
         if (Filons.memoire().plein())
-            info = "Cache plein : Outils → Vider les relevés après l'arrêt du scan.";
+            info =
+                    "100 000 relevés : les nouveaux blocs remplaceront les anciens au prochain scan.";
         String statut =
                 Filons.scanActif()
                         ? "Scan en cours · " + Filons.avancee() + " %"

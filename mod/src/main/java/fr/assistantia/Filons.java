@@ -46,6 +46,7 @@ public final class Filons {
     private static int controle;
     private static String monde = "", affiche = "", cibleScan = "";
     private static int positionsLues, positionsNonChargees;
+    private static long rotationDebut;
     private static long sauvegarde,
             revision,
             listeControle,
@@ -141,28 +142,11 @@ public final class Filons {
         cibleScan = id;
         positionsLues = positionsNonChargees = 0;
         scan.lancerPonctuel(f.ancre);
+        memoire.protegerScan(f.ancre);
+        rotationDebut = memoire.remplaces();
         prochainScan = System.currentTimeMillis() + 650;
         message =
                 "Scan du filon sélectionné : 16 blocs autour de son centre, uniquement dans les chunks chargés.";
-        modifie = true;
-        sauver(true);
-    }
-
-    public static void scannerAutour() {
-        if (monde.isEmpty() || !boutonScanDisponible()) return;
-        if (scan.ponctuel()) {
-            reglerScan(false);
-            return;
-        }
-        GregTechFilons.prospecterSolo();
-        lectureGregtech = 0;
-        actualiserGregtech();
-        cibleScan = "";
-        positionsLues = positionsNonChargees = 0;
-        scan.lancerPonctuel(position());
-        prochainScan = System.currentTimeMillis() + 650;
-        message =
-                "Scan ponctuel démarré : arrêt automatique après un passage, sans chargement de chunks.";
         modifie = true;
         sauver(true);
     }
@@ -173,6 +157,10 @@ public final class Filons {
 
     public static void reglerScan(boolean actif) {
         if (monde.isEmpty() || !boutonScanDisponible() || !scan.activer(actif)) return;
+        if (actif) {
+            memoire.protegerScan(position());
+            rotationDebut = memoire.remplaces();
+        }
         prochainScan = System.currentTimeMillis() + 650;
         message =
                 actif
@@ -406,6 +394,8 @@ public final class Filons {
         }
         j.add("gisements", gisements);
         j.addProperty("source", "gregtech");
+        j.addProperty("capacite_blocs", FilonMemoire.MAX_BLOCS);
+        j.addProperty("rotation_auto", true);
         j.addProperty("t", System.currentTimeMillis());
         JsonArray blocs = new JsonArray();
         for (FilonMemoire.Bloc b : memoire.blocs()) {
@@ -482,7 +472,13 @@ public final class Filons {
                 || !niveau.hasChunkAt(bloc(p))) return;
         BlockState s = niveau.getBlockState(bloc(p));
         ResourceLocation id = ForgeRegistries.BLOCKS.getKey(s.getBlock());
+        long avant = memoire.remplaces();
         if (id != null && memoire.observer(p, id.toString(), minerai(s), now)) {
+            if (memoire.remplaces() != avant) {
+                controles = contours = List.of();
+                controle = 0;
+                listeControle = contoursDate = 0;
+            }
             modifie = true;
             revision++;
         }
@@ -527,6 +523,7 @@ public final class Filons {
         for (int n = 0; n < 192 && System.nanoTime() < limite; n++) {
             var suivante = scan.suivant(joueur);
             if (suivante == null) break;
+            memoire.protegerScan(scan.centre());
             if (!mc.level.isOutsideBuildHeight(bloc(suivante))) {
                 if (mc.level.hasChunkAt(bloc(suivante))) {
                     observer(mc.level, suivante, now);
@@ -553,6 +550,11 @@ public final class Filons {
                                             + " positions vérifiées"
                                             + (positionsNonChargees > 0
                                                     ? " · " + positionsNonChargees + " non chargées"
+                                                    : "")
+                                            + (memoire.remplaces() > rotationDebut
+                                                    ? " · "
+                                                            + (memoire.remplaces() - rotationDebut)
+                                                            + " anciens relevés remplacés"
                                                     : "")
                                             + ". Total du gisement inconnu ; scan en pause.";
             modifie = true;

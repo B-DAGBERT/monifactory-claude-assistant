@@ -32,8 +32,9 @@ public final class FilonMemoireTest {
         epuisementManuel();
         destinationProche();
         teleportationDirecte();
+        rotationCache();
         System.out.println(
-                "18 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+                "19 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
     }
 
     static void disposition() {
@@ -616,6 +617,71 @@ public final class FilonMemoireTest {
                 "Respecter le plancher, la dimension et les coordonnées du centre");
     }
 
+    static void rotationCache() {
+        var m = new FilonMemoire(true);
+        var centre = p(0, 20, 0);
+        var types = Set.of("gtceu:garnet_sand_ore");
+        m.gisement("ancien", p(1000, 20, 0), "gtceu:garnet_tin_vein", "Ancien", types, false);
+        m.gisement("nouveau", centre, "gtceu:garnet_tin_vein", "Nouveau", types, false);
+        m.filon("ancien").marquerEpuise(true);
+        m.filon("ancien").choisirTypes(types);
+        m.restaurerReleve(centre, "gtceu:garnet_sand_ore", false, 1, "nouveau");
+        for (int i = 0; i < FilonMemoire.MAX_BLOCS - 1; i++)
+            m.restaurerReleve(
+                    p(1000 + i, 20, 0),
+                    "gtceu:garnet_sand_ore",
+                    i == FilonMemoire.MAX_BLOCS - 2,
+                    i + 2,
+                    "ancien");
+        verifier(
+                m.plein() && m.blocs().size() == 100000, "Capacité réelle de 100 000 observations");
+        m.protegerScan(centre);
+        m.observer(p(1000, 20, 0), "gtceu:garnet_sand_ore", true, 1000000);
+        long debut = System.nanoTime();
+        verifier(
+                m.observer(p(1, 20, 0), "gtceu:garnet_sand_ore", true, 1000001),
+                "Cache saturé : le nouveau filon est quand même détecté");
+        long ms = (System.nanoTime() - debut) / 1000000;
+        verifier(
+                m.remplaces() == FilonMemoire.LOT_ROTATION
+                        && m.blocs().size()
+                                == FilonMemoire.MAX_BLOCS - FilonMemoire.LOT_ROTATION + 1,
+                "Rotation par lot sans dépasser le plafond");
+        var restants = new HashSet<FilonMemoire.Position>();
+        for (var b : m.blocs()) restants.add(b.position);
+        verifier(
+                restants.contains(centre) && restants.contains(p(1, 20, 0)),
+                "Conserver les blocs encore présents dans la zone scannée");
+        verifier(
+                restants.contains(p(1000, 20, 0)) && !restants.contains(p(1001, 20, 0)),
+                "Conserver le relevé revu récemment, retirer le plus ancien hors zone");
+        verifier(
+                !restants.contains(p(1000 + FilonMemoire.MAX_BLOCS - 2, 20, 0)),
+                "Retirer en priorité le bloc miné, même récent");
+        verifier(
+                m.filon("ancien").epuiseManuel()
+                        && m.filon("ancien").typesChoisis().equals(types)
+                        && m.filons().size() == 2,
+                "Conserver gisements, marquages et filtres");
+        verifier(
+                m.filons().stream().mapToInt(f -> f.blocs.size()).sum() == m.blocs().size(),
+                "Aucune référence de bloc évincé dans les filons");
+        var recharge = new FilonMemoire(true);
+        recharge.gisement(
+                "ancien", p(1000, 20, 0), "gtceu:garnet_tin_vein", "Ancien", types, false);
+        recharge.gisement("nouveau", centre, "gtceu:garnet_tin_vein", "Nouveau", types, false);
+        for (var b : m.blocs()) recharge.restaurerReleve(b.position, b.id, b.retire, b.vu, b.filon);
+        verifier(
+                recharge.blocs().size() == m.blocs().size() && recharge.blocs().size() > 20000,
+                "Restaurer un cache dépassant l'ancienne limite sans le tronquer");
+        long evinces = m.remplaces();
+        verifier(
+                m.observer(p(2, 20, 0), "gtceu:garnet_sand_ore", true, 1000002)
+                        && m.remplaces() == evinces,
+                "Pas de parcours de rotation tant qu'il reste de la place");
+        System.out.println("Rotation d'un cache de 100 000 blocs : " + ms + " ms");
+    }
+
     static void limite() {
         FilonMemoire m = new FilonMemoire();
         for (int i = 0; i < FilonMemoire.MAX_BLOCS + 20; i++)
@@ -625,7 +691,7 @@ public final class FilonMemoireTest {
                 "Mémoire bornée sans éviction silencieuse");
         m.observer(p(0, 0, 0), "minecraft:air", false, 30000);
         verifier(
-                m.blocs().iterator().next().retire,
+                m.blocs().stream().anyMatch(b -> b.position.equals(p(0, 0, 0)) && b.retire),
                 "Continuer à corriger les blocs connus quand la mémoire est pleine");
     }
 }

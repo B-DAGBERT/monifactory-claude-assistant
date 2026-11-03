@@ -81,6 +81,14 @@ class ImportFilonsTests(unittest.TestCase):
             prepare_import(self.instance)
         self.assertFalse((self.folder / "filons/imports").exists())
 
+    def test_import_accepts_more_than_the_old_twenty_thousand_limit(self):
+        self.source.write_text(
+            json.dumps({"blocs": [{**self.block, "x": i} for i in range(20001)]})
+        )
+        result = prepare_import(self.instance, dry_run=True)
+        self.assertEqual(result["blocs"], 20001)
+        self.assertFalse(Path(result["fichier"]).exists())
+
     def test_dry_run_does_not_write(self):
         result = prepare_import(self.instance, dry_run=True)
         self.assertEqual(result["blocs"], 1)

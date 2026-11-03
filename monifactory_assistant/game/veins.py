@@ -45,7 +45,7 @@ def prepare_import(instance, dry_run=False):
     data = json.loads(active.read_text(encoding="utf-8"))
     if data.get("source") == "gregtech":
         raise RuntimeError(
-            "Les anciens blocs ne sont pas des gisements GregTech. Utilise la prospection GregTech ou Scanner autour de moi en solo."
+            "Les anciens blocs ne sont pas des gisements GregTech. Utilise le journal de prospection GregTech puis Scanner dans la fiche du filon."
         )
     world = data.get("monde", "")
     if data.get("v") != 1 or not re.fullmatch(r"[0-9a-f]{24}", world):
@@ -68,8 +68,8 @@ def prepare_import(instance, dry_run=False):
         if key not in merged or b["t"] > merged[key]["t"]:
             merged[key] = b
     blocks = sorted(merged.values(), key=lambda b: (b["t"], b["dimension"], b["x"], b["y"], b["z"]))
-    if len(blocks) > 20_000:
-        raise RuntimeError("Import trop grand pour la mémoire du mod (20 000 positions).")
+    if len(blocks) > 100_000:
+        raise RuntimeError("Import trop grand pour la mémoire du mod (100 000 positions).")
     result = {
         "v": 1,
         "monde": world,

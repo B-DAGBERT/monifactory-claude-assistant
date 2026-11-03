@@ -5,7 +5,7 @@ import java.util.function.Predicate;
 
 /** Modèle local sans dépendance Minecraft : groupes approximatifs, stables après minage. */
 public final class FilonMemoire {
-    public static final int MAX_BLOCS = 20000, RAYON_GROUPE = 24;
+    public static final int MAX_BLOCS = 100000, RAYON_GROUPE = 24, LOT_ROTATION = 8192;
 
     public record Position(String dimension, int x, int y, int z) {
         public String cle() {
@@ -219,7 +219,46 @@ public final class FilonMemoire {
         f.blocs.add(b);
     }
 
-    private final Map<String, Bloc> blocs = new LinkedHashMap<>();
+    // Les accès d'observation placent les blocs revus en fin de liste (LRU).
+    private final Map<String, Bloc> blocs = new LinkedHashMap<>(16, .75f, true);
+    private Position zoneScan;
+    private long remplaces;
+
+    public void protegerScan(Position centre) {
+        zoneScan = centre;
+    }
+
+    public long remplaces() {
+        return remplaces;
+    }
+
+    private static boolean dansZone(Position p, Position centre) {
+        return p.dimension.equals(centre.dimension)
+                && Math.abs(p.x - centre.x) <= Scan.RAYON
+                && Math.abs(p.y - centre.y) <= Scan.RAYON
+                && Math.abs(p.z - centre.z) <= Scan.RAYON;
+    }
+
+    /** Rotation par lots, seulement à saturation : minés d'abord, puis anciens hors zone. */
+    private int rotation() {
+        if (zoneScan == null || !plein()) return 0;
+        Set<Bloc> retires = new HashSet<>();
+        for (int passe = 0; passe < 2 && retires.size() < LOT_ROTATION; passe++) {
+            var it = blocs.values().iterator();
+            while (it.hasNext() && retires.size() < LOT_ROTATION) {
+                Bloc b = it.next();
+                if (passe == 0 ? b.retire : !dansZone(b.position, zoneScan)) {
+                    retires.add(b);
+                    it.remove();
+                }
+            }
+        }
+        // Un seul passage par groupe, pas de retrait quadratique dans les listes.
+        if (!retires.isEmpty()) for (Filon f : filons.values()) f.blocs.removeIf(retires::contains);
+        remplaces += retires.size();
+        return retires.size();
+    }
+
     private final Map<String, Filon> filons = new LinkedHashMap<>();
 
     public Collection<Bloc> blocs() {
@@ -258,7 +297,7 @@ public final class FilonMemoire {
             b.vu = maintenant;
             return true;
         }
-        if (!minerai || plein()) return false;
+        if (!minerai) return false;
         // Relevé de proximité, pas une preuve d'appartenance géologique au gisement.
         Filon f =
                 filons.values().stream()
@@ -275,6 +314,7 @@ public final class FilonMemoire {
                                         .thenComparing(v -> v.id))
                         .orElse(null);
         if (f == null && gregtechSeulement) return false;
+        if (plein() && rotation() == 0) return false;
         if (f == null) {
             f = new Filon(p.cle(), p);
             filons.put(f.id, f);
@@ -359,6 +399,10 @@ public final class FilonMemoire {
             ponctuel = termine = false;
             if (index == TOTAL) index = 0;
             return true;
+        }
+
+        public Position centre() {
+            return centre;
         }
 
         public Position suivant(Position joueur) {

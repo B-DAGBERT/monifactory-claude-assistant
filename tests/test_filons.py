@@ -172,12 +172,13 @@ class FilonsTests(unittest.TestCase):
             )
             result = subprocess.run(
                 [java, "-ea", "-cp", directory, "fr.assistantia.FilonMemoireTest"],
-                check=True,
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=30,
             )
-            self.assertIn("18 scénarios filons validés", result.stdout)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("19 scénarios filons validés", result.stdout)
 
 
 if __name__ == "__main__":

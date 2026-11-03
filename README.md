@@ -33,7 +33,16 @@ ne déclenchent aucun appel IA supplémentaire.
 
 Après cette mise à jour, relancer **l’assistant et Minecraft** pour activer la nouvelle discussion.
 
-## Filons : marquage et téléportation
+## Filons : scan, marquage et téléportation
+
+Sélectionner un filon puis **Scanner** : le scan vise son centre GregTech, même si tu es
+à la surface. **Arrêter** apparaît pendant le scan. Le scan autour du joueur a été retiré.
+
+Le cache garde jusqu’à **100 000 blocs par monde**. Au plafond, les nouvelles observations
+remplacent par lots les relevés de blocs minés, puis les blocs les moins récemment revus hors
+de la zone scannée. Les blocs présents dans cette zone sont protégés. Les filons GregTech,
+les choix d’affichage et les marquages « épuisé » restent conservés ; un ancien filon peut
+être rescanné pour retrouver ses blocs. Il s’agit toujours de relevés partiels, pas du total du gisement.
 
 Dans la fiche d’un filon, **Épuisé** ajoute un marquage personnel, enregistré pour le monde actif.
 Il disparaît de la liste si les épuisés sont masqués. Pour annuler, choisir **Épuisés visibles**,
