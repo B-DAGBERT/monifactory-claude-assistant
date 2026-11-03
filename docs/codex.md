@@ -52,7 +52,8 @@ passent par les mêmes actions JSON que dans l'original. Le compte doit disposer
 
 Python 3.12 avec Tk est recommandé. Le lanceur reconnaît notamment Python installé par python.org,
 Homebrew et le runtime Python local de Codex. Au besoin : `PYTHON_BIN=/chemin/python3.12 bash "Installer Mac.command"`.
-Java 17 est recherché dans `JAVA_HOME`, les installations macOS et le runtime CurseForge.
+Un JDK 17 (avec `javac`) est recherché dans `JAVA_HOME`, `java_home` de `assistant.local.json`,
+les installations macOS et le runtime CurseForge.
 
 L'instance est recherchée dans `~/Documents/curseforge/minecraft/Instances/Monifactory`, puis
 `~/curseforge/minecraft/Instances/Monifactory`. Pour une autre instance, créer `codex.local.json` :

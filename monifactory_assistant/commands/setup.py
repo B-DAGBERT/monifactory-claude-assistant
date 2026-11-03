@@ -23,8 +23,9 @@ def check_instance(instance):
 
 def java_home(instance):
     candidates = []
-    if os.environ.get("JAVA_HOME"):
-        candidates.append(Path(os.environ["JAVA_HOME"]))
+    for configured in (os.environ.get("JAVA_HOME"), CONFIG.get("java_home")):
+        if configured:
+            candidates.append(Path(configured).expanduser())
     if sys.platform == "darwin":
         result = subprocess.run(
             ["/usr/libexec/java_home", "-v", "17"], capture_output=True, text=True
@@ -46,15 +47,18 @@ def java_home(instance):
         on_path = shutil.which("java")
         if on_path:
             candidates.append(Path(on_path).resolve().parent.parent)
+    suffix = ".exe" if os.name == "nt" else ""
     for candidate in candidates:
-        exe = candidate / ("bin/java.exe" if os.name == "nt" else "bin/java")
-        if not exe.is_file():
+        exe = candidate / f"bin/java{suffix}"
+        # Gradle compiles with this Java: a runtime without javac (CurseForge on Windows) fails.
+        if not exe.is_file() or not (candidate / f"bin/javac{suffix}").is_file():
             continue
         result = subprocess.run([str(exe), "-version"], capture_output=True, text=True)
         if result.returncode == 0 and 'version "17.' in result.stderr + result.stdout:
             return candidate
     raise RuntimeError(
-        "Java 17 introuvable. Lance une fois Monifactory dans CurseForge, ou définis JAVA_HOME."
+        "JDK 17 introuvable. Indique son dossier dans java_home de assistant.local.json, "
+        "ou définis JAVA_HOME."
     )
 
 
