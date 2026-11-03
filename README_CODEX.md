@@ -202,3 +202,12 @@ l'identité du monde fournie par GregTech. Les anciennes données `filons/` et `
 mais ne sont pas importées dans cette liste : elles ne prouvent pas l'existence d'un gisement GregTech.
 Le scan consomme au plus 192 nouvelles positions et 32 vérifications par tick, avec un budget cible de 1 ms.
 Les changements sont sauvegardés en arrière-plan. Les quantités ne sont actualisées que pendant un scan.
+
+## Luminosité maximale (Codex.13)
+
+Dans **Y → Réglages**, **Luminosité maximale (Fullbright)** affiche son état **Activé / Désactivé**.
+L'effet s'applique immédiatement à l'éclairage côté client ; le gamma habituel de Minecraft reste
+inchangé et revient dès la désactivation. Aucun effet de potion, commande serveur ou appel IA.
+Le choix est conservé dans `config/assistantia-visuel.json`, même après redémarrage et sans assistant
+Python lancé. Les doubles clics rapprochés sont ignorés. Les shaders qui remplacent l'éclairage
+vanilla peuvent empêcher l'effet ; leur compatibilité n'est pas garantie.

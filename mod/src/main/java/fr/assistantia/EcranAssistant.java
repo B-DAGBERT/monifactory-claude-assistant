@@ -142,6 +142,7 @@ public class EcranAssistant extends Screen {
     }
 
     private void changerReglage(String cle, boolean valeur) {
+        if (Fullbright.CLE.equals(cle)) { Fullbright.regler(valeur); return; }
         JsonObject demande = new JsonObject();
         demande.addProperty("type", "reglage");
         demande.addProperty("cle", cle);
@@ -184,6 +185,7 @@ public class EcranAssistant extends Screen {
                 continue;
             }
             if (z.reglage() != null) {
+                if (bouton != GLFW.GLFW_MOUSE_BUTTON_LEFT) return true;
                 changerReglage(z.reglage(), !valeurReglage(z.reglage(), false));
             } else if (z.etape() >= 0) {
                 cocherEtape(z.etape());
@@ -421,6 +423,7 @@ public class EcranAssistant extends Screen {
 
     /** La valeur affichée d'un réglage : celle qu'on vient de choisir, en attendant que l'assistant la confirme. */
     private boolean valeurReglage(String cle, boolean parDefaut) {
+        if (Fullbright.CLE.equals(cle)) return Fullbright.actif();
         for (JsonElement e : Pont.liste(ecran(), "reglages")) {
             JsonObject r = e.getAsJsonObject();
             if (cle.equals(Pont.texte(r, "cle"))) {
@@ -436,11 +439,13 @@ public class EcranAssistant extends Screen {
     }
 
     private void reglages(GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas, int sx, int sy) {
-        JsonArray reglages = Pont.liste(ecran, "reglages");
-        if (reglages.isEmpty()) {
-            ecrire(g, "Les réglages s'affichent quand l'assistant tourne.", x, y, largeur, Hud.GRIS);
-            return;
-        }
+        JsonArray reglages = new JsonArray();
+        JsonObject lumiere = new JsonObject();
+        lumiere.addProperty("cle", Fullbright.CLE);
+        lumiere.addProperty("nom", "Luminosité maximale (Fullbright)");
+        lumiere.addProperty("description", Fullbright.description());
+        reglages.add(lumiere);
+        for (JsonElement reglage : Pont.liste(ecran, "reglages")) reglages.add(reglage);
         int bouton = 96, texte = largeur - bouton - 12, debut = y;
         y -= defilement * LIGNE;
         for (JsonElement e : reglages) {
