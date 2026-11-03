@@ -1,14 +1,14 @@
 # Assistant Monifactory — Claude et Codex
 
-La branche **shared-assistant** réunit les mêmes menus, filons GregTech, scan manuel, luminosité,
+La branche **main**, source de référence, réunit les mêmes menus, filons GregTech, scan manuel, luminosité,
 coffres, objectifs en pause et projets multiples pour les deux moteurs. Le choix de l’IA est local :
 aucun compte, modèle personnel, plan, coffre ou conversation n’est publié sur Git.
 
 ## Installer pour la première fois
 
-1. Télécharger la branche `shared-assistant`, ou cloner :
+1. Télécharger la branche `main`, ou cloner :
    ```sh
-   git clone --branch shared-assistant https://github.com/B-DAGBERT/monifactory-claude-assistant.git
+   git clone --branch main https://github.com/B-DAGBERT/monifactory-claude-assistant.git
    ```
    Préférer Git au ZIP pour disposer du bouton de mise à jour.
 2. Installer Python 3.12 avec Tk, Git et Java 17 (le Java de CurseForge est détecté si disponible).
@@ -71,32 +71,43 @@ le même port, le panneau se reconnecte automatiquement. Cette fonction fonction
 ## Migrer une installation existante
 
 Fermer l’assistant et Minecraft. Conserver son dossier actuel : les données personnelles y restent.
-Depuis un dépôt propre (sans modifications de code non enregistrées) :
+Depuis un dépôt propre (sans modifications de code non enregistrées), migrer une seule fois :
 
 ```sh
-git fetch origin
-git switch --track origin/shared-assistant
+git fetch origin main:refs/remotes/origin/main
+git switch main
+git merge --ff-only origin/main
 ```
 
-Si la branche locale existe déjà : `git switch shared-assistant`, puis utiliser **Mettre à jour**.
-Ne pas forcer un changement de branche si Git signale des modifications : les conserver d’abord.
-Le collègue qui utilisait Claude doit ensuite ouvrir **Choisir IA**, choisir Claude, puis lancer
-l’installateur. L’utilisateur Codex peut conserver son choix. Un seul mod `assistantia` est installé,
-et l’ancien jar et le script client sont sauvegardés par l’installateur.
+Avec un clone limité à l’ancienne branche, ajouter d’abord main aux branches suivies :
+`git remote set-branches --add origin main`, puis reprendre les commandes ci-dessus.
+Si Git signale des modifications ou une divergence, les conserver et les faire intégrer avant
+la migration ; ne pas utiliser de reset forcé. Lancer ensuite **Mettre à jour**.
+
+Le collègue qui utilisait Claude doit conserver ou choisir Claude dans **Choisir IA**.
+L’utilisateur Codex conserve son choix. Un seul mod `assistantia` est installé ; l’ancien jar
+et le script client sont sauvegardés par l’installateur.
 
 ## Mises à jour pour les deux utilisateurs
 
 Fermer l’assistant et Minecraft, puis lancer **Mettre à jour.command** ou **Mettre à jour.bat**.
-Le lanceur récupère `origin/shared-assistant`, vérifie l’absence de modifications locales et accepte
-uniquement une avance rapide. Une divergence arrête l’opération ; aucun reset ni écrasement forcé.
-Le choix d’IA, les modèles et les données locales sont conservés. Relancer ensuite le jeu et l’assistant.
-Le nouveau lanceur accepte aussi un checkout historique `codex-compat`, mais la branche recommandée
-pour tout le monde est `shared-assistant`. Un ancien lanceur doit d’abord être migré comme ci-dessus.
+Le lanceur récupère `origin/main`, vérifie l’absence de modifications locales et accepte uniquement
+une avance rapide. Les installations sur `shared-assistant` ou `codex-compat` passent sur `main`
+si tous leurs commits y sont déjà intégrés. Une branche de développement, un HEAD détaché ou
+un commit local absent de main arrête la mise à jour. Une branche locale main contenant des
+commits non publiés est également conservée, sans changer de branche ni lancer l’installation.
+Le choix d’IA, les modèles, les objectifs, les coffres et les conversations locales sont conservés.
+Relancer ensuite le jeu et l’assistant.
+
+La branche distante `shared-assistant` est supprimée après cette migration. Les anciens lanceurs
+qui la recherchent encore doivent être remplacés en effectuant **une fois la migration manuelle
+ci-dessus**. Après ce passage sur `main`, le bouton de mise à jour fonctionne normalement et
+ne dépend plus d’aucune ancienne branche.
 
 ## Développer ensemble
 
-Partir de `shared-assistant`, créer une branche de fonctionnalité, puis ouvrir une pull request vers
-`shared-assistant`. Tester les adaptations des deux moteurs et les fonctions communes avant fusion :
+Partir de `main`, créer une branche de fonctionnalité, puis ouvrir une pull request vers
+`main`. Tester les adaptations des deux moteurs et les fonctions communes avant fusion :
 
 ```sh
 python -m unittest discover -s tests -v
@@ -106,7 +117,8 @@ python codex_setup.py build
 Les noms `codex_config.py` et `codex_setup.py` sont conservés pour compatibilité des lanceurs ;
 l’installation utilise bien l’IA sélectionnée. `ai_provider.py` est le point d’entrée commun,
 `claude_integration.py` et `codex_integration.py` isolent les protocoles de chaque moteur.
-La synchronisation avec la branche d’origine `main` reste une intégration examinée via pull request.
+`main` est la seule branche de référence et la cible des pull requests. Les adaptations Claude et
+Codex évoluent ensemble ; ne plus développer sur `shared-assistant` ou `codex-compat`.
 
 ## Validation et limites
 

@@ -1,4 +1,4 @@
-"""Update only a clean shared checkout, using fast-forward, before running its installer."""
+"""Update from main; migrate clean legacy checkouts without discarding any commits."""
 import os
 from pathlib import Path
 import shutil
@@ -6,7 +6,8 @@ import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent
-BRANCH = "shared-assistant"
+BRANCH = "main"
+LEGACY_BRANCHES = ("shared-assistant", "codex-compat")
 
 
 def main():
@@ -17,12 +18,40 @@ def main():
     def run(*args):
         return subprocess.check_output([git, *args], cwd=HERE, text=True).strip()
 
-    if run("branch", "--show-current") not in (BRANCH, "codex-compat"):
-        raise RuntimeError("Mise à jour annulée : utilise la branche shared-assistant.")
+    current = run("branch", "--show-current")
+    if current not in (BRANCH, *LEGACY_BRANCHES):
+        raise RuntimeError("Mise à jour annulée : utilise la branche main, pas une branche de développement.")
     if run("status", "--porcelain"):
         raise RuntimeError("Mise à jour annulée : conserve d'abord tes modifications dans Git.")
-    run("fetch", "origin", BRANCH)
-    run("merge", "--ff-only", "origin/" + BRANCH)
+    # Explicit destination also works for old --single-branch clones.
+    target = "origin/" + BRANCH
+    run("fetch", "origin", f"refs/heads/{BRANCH}:refs/remotes/{target}")
+
+    def require_published(ref):
+        try:
+            run("merge-base", "--is-ancestor", ref, target)
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError(
+                f"Mise à jour annulée : {ref} contient des commits absents de main. "
+                "Fais-les intégrer avant de mettre à jour ; aucun commit n’a été supprimé."
+            ) from error
+
+    require_published("HEAD")
+    if current != BRANCH and run("branch", "--list", BRANCH):
+        require_published(BRANCH)
+    if current != BRANCH:
+        if run("branch", "--list", BRANCH):
+            run("switch", BRANCH)
+        else:
+            run("switch", "--no-track", "-c", BRANCH, target)
+    run("merge", "--ff-only", target)
+    # Register main for future plain git pull commands, including single-branch clones.
+    refspecs = run("config", "--get-all", "remote.origin.fetch").splitlines()
+    main_refspec = f"refs/heads/{BRANCH}:refs/remotes/origin/{BRANCH}"
+    if not any(ref.lstrip("+") in (main_refspec, "refs/heads/*:refs/remotes/origin/*") for ref in refspecs):
+        run("config", "--add", "remote.origin.fetch", "+" + main_refspec)
+    run("branch", "--set-upstream-to=" + target, BRANCH)
+    print("Source des mises à jour : main (Claude et Codex).", flush=True)
     installer = ["cmd", "/c", "Installer.bat"] if os.name == "nt" else ["bash", "Installer Mac.command"]
     subprocess.run(installer, cwd=HERE, check=True)
 

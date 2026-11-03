@@ -1,9 +1,9 @@
 name: Shared assistant checks
 on:
   push:
-    branches: [shared-assistant, codex-compat, main]
+    branches: [main]
   pull_request:
-    branches: [shared-assistant, codex-compat, main]
+    branches: [main]
 permissions:
   contents: read
 jobs:

@@ -1,4 +1,4 @@
-> **Version commune Claude / Codex (`shared-assistant`)** : toutes les nouveautés sont partagées.
+> **Version commune Claude / Codex (`main`)** : toutes les nouveautés sont partagées.
 > Lire [Installation, choix de l’IA et mises à jour](README_SHARED.md). Les instructions historiques ci-dessous décrivent la version Claude d’origine.
 
 # Monifactory Claude Assistant

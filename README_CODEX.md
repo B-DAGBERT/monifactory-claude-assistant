@@ -1,9 +1,10 @@
-> La version commune est maintenant sur **shared-assistant**. Voir [README_SHARED.md](README_SHARED.md).
-> Ce document conserve les détails techniques et l’historique des fonctionnalités. Les anciennes instructions de mise à jour ci-dessous concernent la branche Codex historique.
+> La version commune est maintenant sur **main**. Voir [README_SHARED.md](README_SHARED.md).
+> Ce document décrit le fonctionnement Codex. Pour installer ou migrer, suivre le guide commun ci-dessus.
 
 # Variante Codex — Mac et suivi des mises à jour
 
-Cette branche `codex-compat` porte le dépôt de B-DAGBERT vers Codex, à partir du commit
+Le portage Codex, initialement développé sur `codex-compat` et désormais intégré à `main`,
+a été réalisé à partir du commit
 `1a6a514160d772e4846e453fe3755bab8dbcc133`. Le dépôt et son historique restent communs avec `main`.
 Le code est sous la licence MIT d'origine ; les auteurs et la licence sont conservés.
 
@@ -42,7 +43,7 @@ passent par les mêmes actions JSON que dans l'original. Le compte doit disposer
 1. Avoir Monifactory installé avec CurseForge, lancé au moins une fois, et Codex connecté.
    Si le CLI n'est pas trouvé automatiquement, installer Codex CLI et exécuter `codex login`,
    ou définir `CODEX_BIN` vers son exécutable.
-2. Utiliser ce dossier sur la branche `codex-compat`.
+2. Utiliser ce dossier sur la branche `main`, puis choisir Codex avec **Choisir IA.command**.
 3. Arrêter l'ancien assistant. Fermer Minecraft pour passer à cette variante.
 4. Double-cliquer sur **Installer Mac.command**. Il prépare `.venv`, installe les dépendances,
    compile avec Java 17 et installe le `.jar` et le script client dans l'instance.
@@ -94,39 +95,20 @@ d'enregistrement de l'écran. Les questions écrites et données exportées du j
 Whisper reconnaît la parole localement ; son modèle est téléchargé au premier usage.
 La voix neuronale utilise le service en ligne Edge ; la voix Mac sert de secours si celui-ci échoue.
 
-## Recevoir les mises à jour Codex
+## Recevoir les mises à jour
 
-Arrêter l'assistant et Minecraft, puis ouvrir **Mettre à jour.command**.
-Le script récupère `origin/codex-compat` en avance rapide, réinstalle les dépendances,
-recompile et installe les nouveaux fichiers. Relancer ensuite l'assistant et Minecraft.
-Il s'arrête si la branche n'est pas la bonne, si des fichiers suivis ont été modifiés ou si les
-historiques ont divergé. Il ne fait ni `reset --hard`, ni écrasement des changements personnels.
-`codex.local.json`, les fiches, la mémoire, les plans et les conversations locales sont préservés.
+`main` est la branche commune Claude/Codex et la source de toutes les mises à jour.
+Suivre [le guide commun](README_SHARED.md#mises-à-jour-pour-les-deux-utilisateurs) pour migrer
+une ancienne installation puis lancer **Mettre à jour.command**. Le lanceur conserve les réglages,
+les fiches, la mémoire, les plans et les conversations locales ; il refuse les modifications
+non enregistrées et les commits absents de main.
 
-**Les nouveautés de `main` doivent d'abord être intégrées et testées dans `codex-compat`.**
-Le script récupère les mises à jour publiées de cette variante ; il ne fusionne pas automatiquement
-du code amont non vérifié pendant une partie.
+### Intégrer une nouveauté (mainteneur)
 
-### Intégrer une nouvelle version du dépôt d'origine (mainteneur)
-
-Depuis une branche `codex-compat` propre et à jour :
-
-```sh
-git fetch origin
-git switch codex-compat
-git merge --ff-only origin/codex-compat
-git merge origin/main
-# Résoudre les conflits éventuels, examiner les nouvelles fonctions et leur adaptation Codex.
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python codex_setup.py build
-git push origin codex-compat
-```
-
-Le test de parité compare les fonctions de jeu et les écrans à une révision amont précise.
-Lors d'une intégration, mettre à jour `UPSTREAM_REVISION` dans `tests/test_upstream_parity.py`
-après avoir examiné les changements ; mettre également à jour la révision en tête de ce document.
-En cas de conflit, résoudre et tester avant de publier. `git merge --abort` annule une fusion en cours.
-Ne jamais publier cette adaptation directement sur `main` sans accord du mainteneur.
+Créer une branche de fonctionnalité depuis `main`, tester les deux adaptateurs et le mod,
+puis ouvrir une pull request vers `main`. Les tests de parité conservent la révision d’origine
+comme référence pour les fonctions de jeu inchangées ; ne modifier cette référence qu’après
+examen des changements concernés.
 
 ## Vérifications et limites
 
