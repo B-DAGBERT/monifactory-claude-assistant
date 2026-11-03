@@ -197,18 +197,11 @@ public final class FilonMemoire {
         public int pourcentage() { return index * 100 / TOTAL; }
     }
 
-    /** Ordre stable du plus proche au plus loin ; au plus 17³ positions sont vérifiées. */
-    private static final List<int[]> EMPLACEMENTS;
-    static {
-        List<int[]> positions = new ArrayList<>();
-        for (int x = -8; x <= 8; x++) for (int y = -8; y <= 8; y++) for (int z = -8; z <= 8; z++)
-            positions.add(new int[]{x, y, z});
-        positions.sort(Comparator.comparingInt(p -> p[0]*p[0] + p[1]*p[1] + p[2]*p[2]));
-        EMPLACEMENTS = List.copyOf(positions);
-    }
-    public static Position destinationSure(Position cible, Predicate<Position> libre) {
-        for (int[] d : EMPLACEMENTS) {
-            Position p = new Position(cible.dimension, cible.x + d[0], cible.y + d[1], cible.z + d[2]);
+    /** Première position sûre strictement au-dessus du centre, sans déplacement horizontal.
+     * maxY est exclusif ; les pieds et la tête doivent rester dans les limites du monde. */
+    public static Position destinationAuDessus(Position cible, int minY, int maxY, Predicate<Position> libre) {
+        for (int y = Math.max(cible.y + 1, minY + 1); y < maxY - 1; y++) {
+            Position p = new Position(cible.dimension, cible.x, y, cible.z);
             if (libre.test(p)) return p;
         }
         return null;

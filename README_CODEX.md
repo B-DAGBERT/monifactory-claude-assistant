@@ -187,10 +187,14 @@ Seule la dimension active du monde identifié par GregTech est affichée.
 - **Vider les relevés** : supprimer le cache des blocs scannés du monde actif (toutes dimensions),
   uniquement lorsque le scan est arrêté. Les fiches des gisements et les choix d'affichage sont conservés.
   Le plafond de 20 000 positions concerne ce cache, pas le nombre de gisements connus.
-- **Me guider / Arrêter le guidage** et **Se téléporter** restent disponibles même sans relevé local.
-  Le centre GT sert alors de destination. Le guidage s'arrête près du centre ou d'un minerai relevé.
-  La téléportation exige toujours les permissions adéquates et un emplacement vérifié libre et sûr.
-  En solo, elle peut charger au plus 9 chunks autour de la destination explicitement demandée ;
+- **Se téléporter** remonte strictement à la verticale du centre GregTech et choisit le premier
+  emplacement sûr au-dessus : sol solide, deux blocs libres, sans liquide ni danger immédiat.
+  Une cavité sûre est choisie avant la surface si elle est rencontrée en premier. La recherche va
+  jusqu'au plafond de la dimension ; sans emplacement sûr, la téléportation est annulée.
+  Aucun relevé local n'est nécessaire. Sur serveur, la zone doit déjà être chargée côté client et
+  les permissions de téléportation restent nécessaires. Le bouton et le faisceau de guidage des
+  filons ont été retirés ; la surbrillance des minerais reste disponible.
+  En solo, elle peut charger au plus 4 chunks autour de la destination explicitement demandée ;
   sur serveur distant, elle n'utilise que des chunks déjà chargés. Aucune permission n'est modifiée.
 
 Les gisements, relevés et choix sont sauvegardés dans `kubejs/assistant/filons_gregtech/`, séparés par

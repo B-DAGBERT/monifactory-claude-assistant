@@ -221,11 +221,21 @@ public final class FilonMemoireTest {
     }
     static void securite() {
         var cible=p(0,10,0);AtomicInteger appels=new AtomicInteger();
-        var aucun=FilonMemoire.destinationSure(cible,q->{appels.incrementAndGet();return false;});
-        verifier(aucun==null && appels.get()==4913,"Aucun endroit sûr : refus après une recherche bornée");
-        var proche=FilonMemoire.destinationSure(cible,q->q.equals(p(1,10,0)) || q.equals(p(5,10,0)));
-        verifier(proche.equals(p(1,10,0)),"Choisir l'endroit sûr le plus proche");
-        verifier(FilonMemoire.destinationSure(cible,q->q.equals(p(9,10,0)))==null,"Ne pas dépasser le rayon de sécurité");
+        var aucun=FilonMemoire.destinationAuDessus(cible,-64,320,q->{appels.incrementAndGet();return false;});
+        verifier(aucun==null && appels.get()==308,"Refuser sans position sûre, recherche bornée par le plafond");
+        var proche=FilonMemoire.destinationAuDessus(cible,-64,320,q->q.equals(p(0,12,0)) || q.equals(p(0,80,0)));
+        verifier(proche.equals(p(0,12,0)),"Première cavité sûre au-dessus, avant la surface");
+        verifier(FilonMemoire.destinationAuDessus(cible,-64,320,q->q.equals(p(0,80,0))).equals(p(0,80,0)),
+                "Atteindre la surface même à plus de huit blocs au-dessus");
+        verifier(FilonMemoire.destinationAuDessus(cible,-64,320,q->q.y()<=10 || q.x()!=0 || q.z()!=0)==null,
+                "Ne jamais viser sous le filon, à sa hauteur ou sur le côté");
+        verifier(FilonMemoire.destinationAuDessus(p(0,317,0),-64,320,q->true).equals(p(0,318,0)),
+                "Dernière position avec assez de place pour la tête");
+        verifier(FilonMemoire.destinationAuDessus(p(0,318,0),-64,320,q->true)==null,"Respecter le plafond");
+        var nether=new FilonMemoire.Position("minecraft:the_nether",5,-100,7);
+        var bas=FilonMemoire.destinationAuDessus(nether,0,256,q->true);
+        verifier(bas.equals(new FilonMemoire.Position("minecraft:the_nether",5,1,7)),
+                "Respecter le plancher, la dimension et les coordonnées du centre");
     }
     static void limite() {
         FilonMemoire m=new FilonMemoire();

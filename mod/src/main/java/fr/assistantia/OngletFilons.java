@@ -18,7 +18,7 @@ public final class OngletFilons {
     private final List<Button> affichages = new ArrayList<>();
     private List<FilonMemoire.Filon> liste = List.of();
     private EditBox filtre;
-    private Button trier, vides, eteindre, guider, teleporter, scan, ponctuel;
+    private Button trier, vides, eteindre, teleporter, scan, ponctuel;
     private int x, y, largeur, bas, listeY, listeBas, listeLargeur, detailX, detailY, detailLargeur, lignes;
     private long listeDate, optionsDepuis;
     private boolean actif;
@@ -35,7 +35,6 @@ public final class OngletFilons {
         scan = ajouter(bouton("", b -> Filons.viderReleves()), ajout);
         ponctuel = ajouter(bouton("Scanner autour de moi", b -> Filons.scannerAutour()), ajout);
         eteindre = ajouter(bouton("Tout masquer", b -> Filons.afficher("", false)), ajout);
-        guider = ajouter(bouton("Me guider", b -> Filons.basculerGuidage(selection)), ajout);
         teleporter = ajouter(bouton("Se téléporter", b -> Filons.teleporter(selection)), ajout);
         for (int i=0; i<Math.max(1, hauteur/40); i++) {
             final int ligne = i;
@@ -154,11 +153,11 @@ public final class OngletFilons {
             lignes(g,vide,x+4,listeY+5,listeLargeur-8,listeBas,Hud.GRIS);
         }
         var f = Filons.memoire().filon(selection);
-        guider.visible = teleporter.visible = f!=null;
+        teleporter.visible = f!=null;
         if (f!=null) {
             if (!compact) {
             int dy=detailY;
-            g.enableScissor(detailX,detailY,detailX+detailLargeur,Math.max(detailY,bas-72));
+            g.enableScissor(detailX,detailY,detailX+detailLargeur,Math.max(detailY,bas-50));
             texte(g,"Gisement GregTech",detailX,dy,detailLargeur,Hud.OR); dy+=12;
             texte(g,f.ancre.x()+" / "+f.ancre.y()+" / "+f.ancre.z()+" · "+distance(f),detailX,dy,detailLargeur,Hud.BLANC);dy+=11;
             texte(g,f.ancre.dimension(),detailX,dy,detailLargeur,Hud.GRIS);dy+=11;
@@ -167,29 +166,18 @@ public final class OngletFilons {
                 texte(g,(f.blocs.isEmpty() ? "Aucun relevé local" : "Relevé : " + f.ageReleve(System.currentTimeMillis())),detailX,dy,detailLargeur,Hud.GRIS);dy+=11;
                 texte(g,(f.blocs.size()-f.restants())+" blocs disparus · total inconnu",detailX,dy,detailLargeur,Hud.GRIS);dy+=12;
                 for (var type:f.types().entrySet()) {
-                    if (dy+12>bas-95) break;
+                    if (dy+12>bas-53) break;
                     texte(g,type.getValue()+" × "+Filons.nom(type.getKey()),detailX,dy,detailLargeur,Hud.BLANC);dy+=11;
                 }
-                if (Filons.utile(f) && dy<bas-95) texte(g,"Lié à l'objectif (par matière)",detailX,dy,detailLargeur,Hud.JAUNE);
+                if (Filons.utile(f) && dy<bas-53) texte(g,"Lié à l'objectif (par matière)",detailX,dy,detailLargeur,Hud.JAUNE);
             }
             g.disableScissor();
             }
             String raison = Filons.raisonTP(f);
-            boolean guideActif = f.id.equals(Filons.guide());
-            placer(guider,detailX,compact ? bas-46 : bas-68,compact ? (detailLargeur-6)/2 : detailLargeur);
-            guider.setMessage(Component.literal(guideActif ? "Arrêter le guidage" : "Me guider"));
-            guider.active = Filons.guidageDisponible() && (guideActif
-                    || f.ancre.dimension().equals(Filons.position().dimension()));
-            guider.setTooltip(Tooltip.create(Component.literal(guideActif
-                    ? "Retirer le faisceau bleu de ce filon."
-                    : !f.ancre.dimension().equals(Filons.position().dimension())
-                    ? "Rejoins la dimension du filon pour démarrer le guidage."
-                    : "Afficher un faisceau bleu vers ce filon ; remplace le guidage précédent.")));
-            placer(teleporter,compact ? detailX+(detailLargeur-6)/2+6 : detailX,bas-46,
-                    compact ? detailLargeur-(detailLargeur-6)/2-6 : detailLargeur);
+            placer(teleporter,detailX,bas-46,detailLargeur);
             teleporter.active=raison.isEmpty();
             teleporter.setMessage(Component.literal(Filons.tpEnCours()?"Téléportation en cours…":"Se téléporter"));
-            teleporter.setTooltip(Tooltip.create(Component.literal(raison.isEmpty()?"Chercher un emplacement libre près du filon":raison)));
+            teleporter.setTooltip(Tooltip.create(Component.literal(raison.isEmpty()?"Remonter à la verticale du centre du filon jusqu’au premier emplacement sûr : sol solide et deux blocs libres":raison)));
 
         }
         String info = Filons.message();

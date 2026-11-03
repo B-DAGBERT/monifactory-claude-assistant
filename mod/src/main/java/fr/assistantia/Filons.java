@@ -5,7 +5,6 @@ import com.mojang.blaze3d.vertex.*;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.*;
-import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
@@ -40,8 +39,8 @@ public final class Filons {
     private static final Map<net.minecraft.world.level.block.Block, Boolean> MINERAIS = new HashMap<>();
     private static List<FilonMemoire.Bloc> controles = List.of(), contours = List.of();
     private static int controle;
-    private static String monde = "", affiche = "", guide = "";
-    private static long sauvegarde, revision, listeControle, prochainAffichage, prochainScan, prochainGuidage, controleGuidage, lectureGregtech, tpDebut, contoursDate;
+    private static String monde = "", affiche = "";
+    private static long sauvegarde, revision, listeControle, prochainAffichage, prochainScan, lectureGregtech, tpDebut, contoursDate;
     private static boolean modifie, tpEnCours;
     private static FilonMemoire.Position tpAttendue;
     private static volatile String message = "";
@@ -51,7 +50,6 @@ public final class Filons {
     public static FilonMemoire memoire() { return memoire; }
     public static String monde() { return monde; }
     public static String affiche() { return affiche; }
-    public static String guide() { return guide; }
     public static String message() { return GregTechFilons.erreur().isEmpty() ? message : GregTechFilons.erreur(); }
     public static long revision() { return revision; }
     public static int avancee() { return scan.pourcentage(); }
@@ -105,7 +103,7 @@ public final class Filons {
         if (id.equals(monde)) return !id.isEmpty();
         sauver(true);
         if (id.isEmpty()) {
-            monde = affiche = guide = message = "";
+            monde = affiche = message = "";
             memoire = new FilonMemoire(true); scan = new FilonMemoire.Scan(); scan.activer(false); scan.activer(false);
             controles = contours = List.of(); MINERAIS.clear(); controle = 0;
             tpEnCours = modifie = false; tpAttendue = null; revision++;
@@ -117,7 +115,7 @@ public final class Filons {
     private static Path fichier(String id) { return DOSSIER.resolve("filons_gregtech").resolve(id + ".json"); }
     private static void charger(String id) {
         memoire = new FilonMemoire(true); scan = new FilonMemoire.Scan(); scan.activer(false);
-        controles = contours = List.of(); controle = 0; affiche = guide = "";
+        controles = contours = List.of(); controle = 0; affiche = "";
         tpEnCours = false; tpAttendue = null; message = ""; monde = id;
         MINERAIS.clear(); listeControle = contoursDate = sauvegarde = 0;
         if (Files.exists(fichier(id))) {
@@ -255,17 +253,6 @@ public final class Filons {
                     tpAttendue.x()+.5, tpAttendue.y(), tpAttendue.z()+.5) < .5) finirTP(monde, "Téléportation effectuée.");
             else if (now - tpDebut > 6000) finirTP(monde, "Téléportation non confirmée : vérifier le message du serveur.");
         }
-        if (!mc.isPaused() && !guide.isEmpty() && now >= controleGuidage) {
-            controleGuidage = now + 250;
-            var cible = memoire.filon(guide);
-            if (cible != null && (cible.arrive(position()) || cible.ancre.distance2(position())<=9)) {
-                var destination = bloc(cible.destination(position()));
-                if (cible.ancre.distance2(position())<=9 || (mc.level.hasChunkAt(destination) && minerai(mc.level.getBlockState(destination)))) {
-                    guide = ""; message = "Tu es arrivé au filon : guidage arrêté.";
-                    mc.player.displayClientMessage(Component.literal(message), true);
-                }
-            }
-        }
         if (mc.isPaused() || !scan.actif()) { sauver(false); return; }
         if (now - listeControle > 10000) { controles = new ArrayList<>(memoire.blocs()); listeControle = now; }
         long limite = System.nanoTime() + 1_000_000; // 1 ms au plus entre deux observations, 224 blocs maximum
@@ -309,19 +296,6 @@ public final class Filons {
         modifie = true; sauver(true);
         return true;
     }
-    public static boolean guidageDisponible() { return System.currentTimeMillis() >= prochainGuidage; }
-    public static void basculerGuidage(String id) {
-        if (!guidageDisponible()) return;
-        FilonMemoire.Filon f = memoire.filon(id);
-        if (f == null) return;
-        if (id.equals(guide)) {
-            guide = ""; message = "Guidage arrêté.";
-        } else {
-            if (!f.ancre.dimension().equals(position().dimension())) { message = "Rejoins d'abord la dimension du filon."; return; }
-            guide = id; message = "Guidage activé : suis le faisceau bleu.";
-        }
-        prochainGuidage = System.currentTimeMillis() + 650;
-    }
     public static String nom(String bloc) { return Pont.objet(bloc).getHoverName().getString(); }
     public static boolean utile(FilonMemoire.Filon f) {
         for (String ore : f.types().keySet()) {
@@ -343,7 +317,7 @@ public final class Filons {
         if (System.currentTimeMillis() - tpDebut < 1000) return "Patiente un instant.";
         if (mc.getSingleplayerServer() == null) {
             if (!f.ancre.dimension().equals(position().dimension())) return "Sur serveur, rejoins d'abord cette dimension.";
-            if (!mc.level.hasChunkAt(bloc(f.destination(position())))) return "Sur serveur, approche-toi : zone non chargée, sécurité invérifiable.";
+            if (!mc.level.hasChunkAt(bloc(f.ancre))) return "Sur serveur, approche-toi : zone non chargée, sécurité invérifiable.";
         }
         return "";
     }
@@ -367,8 +341,8 @@ public final class Filons {
         Minecraft mc = Minecraft.getInstance(); FilonMemoire.Filon f = memoire.filon(id);
         String raison = raisonTP(f);
         if (!raison.isEmpty()) { message = raison; return; }
-        FilonMemoire.Position cible = f.destination(position()); String origine = monde;
-        tpEnCours = true; tpDebut = System.currentTimeMillis(); message = "Recherche d'un emplacement libre…";
+        FilonMemoire.Position cible = f.ancre; String origine = monde;
+        tpEnCours = true; tpDebut = System.currentTimeMillis(); message = "Recherche du premier emplacement sûr au-dessus du filon…";
         var serveur = mc.getSingleplayerServer();
         if (serveur != null) {
             UUID joueur = mc.player.getUUID();
@@ -379,22 +353,22 @@ public final class Filons {
                     if (p == null || !p.hasPermissions(2) || niveau == null) {
                         finirTP(origine, "Téléportation refusée : joueur, dimension ou permission indisponible."); return;
                     }
-                    // Solo : seulement les chunks autour de la destination explicitement demandée (au plus 9).
-                    for (int x = Math.floorDiv(cible.x()-9,16); x <= Math.floorDiv(cible.x()+9,16); x++)
-                        for (int z = Math.floorDiv(cible.z()-9,16); z <= Math.floorDiv(cible.z()+9,16); z++) niveau.getChunk(x,z);
-                    var libre = FilonMemoire.destinationSure(cible, pos -> sur(niveau, pos));
-                    if (libre == null) { finirTP(origine, "Aucun emplacement sûr à 8 blocs du filon. Téléportation annulée."); return; }
+                    // Solo : colonne cible et voisinage de sécurité uniquement (au plus 4 chunks).
+                    for (int x = Math.floorDiv(cible.x()-1,16); x <= Math.floorDiv(cible.x()+1,16); x++)
+                        for (int z = Math.floorDiv(cible.z()-1,16); z <= Math.floorDiv(cible.z()+1,16); z++) niveau.getChunk(x,z);
+                    var libre = FilonMemoire.destinationAuDessus(cible, niveau.getMinBuildHeight(), niveau.getMaxBuildHeight(), pos -> sur(niveau, pos));
+                    if (libre == null) { finirTP(origine, "Aucun emplacement sûr au-dessus du filon. Téléportation annulée."); return; }
                     p.teleportTo(niveau, libre.x()+.5, libre.y(), libre.z()+.5, p.getYRot(), p.getXRot());
-                    finirTP(origine, "Téléportation effectuée près du filon.");
+                    finirTP(origine, "Téléportation effectuée au-dessus du filon.");
                 } catch (Exception e) {
                     LogUtils.getLogger().warn("Téléportation filon", e); finirTP(origine, "Téléportation impossible : voir le journal du jeu.");
                 }
             });
         } else {
-            var libre = FilonMemoire.destinationSure(cible, p -> sur(mc.level, p));
-            if (libre == null) { finirTP(origine, "Aucun emplacement sûr et chargé près du filon. Téléportation annulée."); return; }
+            var libre = FilonMemoire.destinationAuDessus(cible, mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight(), p -> sur(mc.level, p));
+            if (libre == null) { finirTP(origine, "Aucun emplacement sûr et chargé au-dessus du filon. Téléportation annulée."); return; }
             if (mc.player.position().distanceToSqr(libre.x()+.5,libre.y(),libre.z()+.5)<.5) {
-                finirTP(origine,"Tu es déjà à cet emplacement près du filon."); return;
+                finirTP(origine,"Tu es déjà à cet emplacement au-dessus du filon."); return;
             }
             tpAttendue = libre;
             mc.player.connection.sendCommand("tp @s " + (libre.x()+.5) + " " + libre.y() + " " + (libre.z()+.5));
@@ -432,15 +406,6 @@ public final class Filons {
                         ((couleur>>8)&255)/255F, (couleur&255)/255F, .9F);
             }
             buffers.endBatch(Lignes.TRAVERSANTES);
-        }
-        FilonMemoire.Filon destination = memoire.filon(guide);
-        if (destination != null && destination.ancre.dimension().equals(joueur.dimension())) {
-            var p = destination.destination(joueur);
-            if (p.distance2(joueur) < 9) return;
-            pose.pushPose(); pose.translate(p.x()-camera.x, p.y()+1-camera.y, p.z()-camera.z);
-            BeaconRenderer.renderBeaconBeam(pose, buffers, BeaconRenderer.BEAM_LOCATION, event.getPartialTick(), 1F,
-                    mc.level.getGameTime(), 0, 96, new float[]{.3F,.7F,1F}, .12F,.18F);
-            pose.popPose(); buffers.endBatch();
         }
     }
 }
