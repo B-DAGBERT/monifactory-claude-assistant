@@ -179,7 +179,7 @@ Seule la dimension active du monde identifié par GregTech est affichée.
   proche. C'est une association de proximité, pas une reconstruction des limites générées. Un zéro
   observé ne signifie jamais que le gisement est vide. Seul l'état GregTech pilote le filtre **Épuisés**.
 - **Afficher / Masquer** : choisir les types à surligner puis valider. Le sélecteur montre uniquement les
-  types avec au moins un bloc observé ; les lignes à zéro sont masquées, même si le relevé change pendant
+  types avec au moins un bloc observé ; les lignes à zéro sont masquées dans le sélecteur et au survol du filon, même si le relevé change pendant
   que le menu est ouvert. Sans relevé, un message invite à lancer un scan. Seuls les blocs effectivement
   relevés et encore présents seront surlignés.
   **Tout cocher / Tout décocher**, pagination, **Échap / Annuler** et mémorisation des choix sont conservés.

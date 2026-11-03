@@ -208,6 +208,7 @@ public final class OngletFilons {
                         + (!Filons.scanActif() ? "\nScan en pause : quantités figées." : "")
                         + "\nRelevé local : blocs compatibles proches du centre, sans garantie des limites du gisement."
                         +"\n"+String.join("\n",survole.types().entrySet().stream()
+                        .filter(e -> e.getValue() > 0)
                         .map(e -> e.getValue()+" × "+Filons.nom(e.getKey())).toList());
                 g.renderTooltip(mc.font,mc.font.split(Component.literal(detail),Math.min(largeur,300)),sx,sy);
             }
