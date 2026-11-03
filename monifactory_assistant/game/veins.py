@@ -3,6 +3,7 @@
 Le fichier préparé est lu par le mod au chargement du monde. Il reste disponible
 pour reprendre un import interrompu ; les observations récentes ont priorité.
 """
+
 import hashlib
 import json
 import math
@@ -10,7 +11,7 @@ import re
 import time
 from pathlib import Path
 
-from codex_config import write_json
+from monifactory_assistant.config import write_json
 
 
 def validated_block(block):
@@ -23,7 +24,11 @@ def validated_block(block):
     result = {k: block[k] for k in ("bloc", "dimension")}
     for key, limit in (("x", 30_000_000), ("y", 4096), ("z", 30_000_000), ("t", 10**16)):
         value = block.get(key)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
             raise ValueError("Coordonnée ou date invalide.")
         if value != int(value) or abs(value) > limit or (key == "t" and value < 0):
             raise ValueError("Coordonnée ou date hors limites.")
@@ -39,7 +44,9 @@ def prepare_import(instance, dry_run=False):
     active = folder / "filons_mod.json"
     data = json.loads(active.read_text(encoding="utf-8"))
     if data.get("source") == "gregtech":
-        raise RuntimeError("Les anciens blocs ne sont pas des gisements GregTech. Utilise la prospection GregTech ou Scanner autour de moi en solo.")
+        raise RuntimeError(
+            "Les anciens blocs ne sont pas des gisements GregTech. Utilise la prospection GregTech ou Scanner autour de moi en solo."
+        )
     world = data.get("monde", "")
     if data.get("v") != 1 or not re.fullmatch(r"[0-9a-f]{24}", world):
         raise RuntimeError("Le mod doit avoir identifié le monde actuel.")
@@ -63,10 +70,20 @@ def prepare_import(instance, dry_run=False):
     blocks = sorted(merged.values(), key=lambda b: (b["t"], b["dimension"], b["x"], b["y"], b["z"]))
     if len(blocks) > 20_000:
         raise RuntimeError("Import trop grand pour la mémoire du mod (20 000 positions).")
-    result = {"v": 1, "monde": world, "source": "filons.json",
-              "source_sha256": hashlib.sha256(original).hexdigest(), "blocs": blocks}
+    result = {
+        "v": 1,
+        "monde": world,
+        "source": "filons.json",
+        "source_sha256": hashlib.sha256(original).hexdigest(),
+        "blocs": blocks,
+    }
     if not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
         write_json(target, result)
-    return {"monde": world, "blocs": len(blocks), "restants_historiques": sum(not b["mine"] for b in blocks),
-            "fichier": str(target), "simulation": dry_run}
+    return {
+        "monde": world,
+        "blocs": len(blocks),
+        "restants_historiques": sum(not b["mine"] for b in blocks),
+        "fichier": str(target),
+        "simulation": dry_run,
+    }

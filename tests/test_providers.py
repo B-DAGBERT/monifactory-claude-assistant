@@ -1,18 +1,18 @@
 """Provider isolation plus real subprocess round trips against a fake Claude CLI."""
+
 import json
-import os
-from pathlib import Path
 import queue
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
-import ai_provider
-import choose_ai
-import claude_integration as claude
-import codex_config
-import codex_setup
+import monifactory_assistant.commands.choose_ai as choose_ai
+import monifactory_assistant.commands.setup as codex_setup
+import monifactory_assistant.config as codex_config
+import monifactory_assistant.providers as ai_provider
+import monifactory_assistant.providers.claude as claude
 
 
 class SelectionTests(unittest.TestCase):
@@ -21,16 +21,22 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(ai_provider.model("plan", legacy), "gpt-custom")
         self.assertEqual(ai_provider.model("plan", dict(legacy, provider="claude")), "sonnet")
         self.assertEqual(ai_provider.model("quick", {"provider": "claude"}), "haiku")
-        self.assertEqual(ai_provider.model("plan", {"provider": "claude", "providers": {
-            "claude": {"model_plan": "opus"}}}), "opus")
+        self.assertEqual(
+            ai_provider.model(
+                "plan", {"provider": "claude", "providers": {"claude": {"model_plan": "opus"}}}
+            ),
+            "opus",
+        )
         with self.assertRaises(ValueError):
             ai_provider.provider({"provider": "invalid"})
 
     def test_claude_selection_imports_only_claude_backend(self):
-        with patch.object(ai_provider, "CONFIG", {"provider": "claude"}), \
-             patch.object(ai_provider.importlib, "import_module") as load:
+        with (
+            patch.object(ai_provider, "CONFIG", {"provider": "claude"}),
+            patch.object(ai_provider.importlib, "import_module") as load,
+        ):
             ai_provider.ask("question")
-            load.assert_called_once_with("claude_integration")
+            load.assert_called_once_with("monifactory_assistant.providers.claude")
             load.return_value.ask.assert_called_once_with("question")
 
     def test_switch_preserves_settings_sessions_and_plans(self):
@@ -48,7 +54,9 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(settings["minecraft_dir"], "world")
                 self.assertEqual(ai_provider.model("plan", settings), "opus")
                 choose_ai.select("codex")
-                self.assertEqual(ai_provider.model("plan", codex_config.load_config()), "gpt-custom")
+                self.assertEqual(
+                    ai_provider.model("plan", codex_config.load_config()), "gpt-custom"
+                )
                 with self.assertRaises(ValueError):
                     choose_ai.select("invalid")
                 self.assertEqual(codex_config.load_config()["provider"], "codex")
@@ -57,17 +65,26 @@ class SelectionTests(unittest.TestCase):
             self.assertEqual(json.loads((root / "codex.local.json").read_text()), legacy)
 
     def test_setup_claude_does_not_require_codex(self):
-        with tempfile.TemporaryDirectory() as directory, \
-             patch.object(codex_setup, "HERE", Path(directory)), \
-             patch.object(codex_setup, "CONFIG", {"provider": "claude"}), \
-             patch.object(codex_setup, "minecraft_dir", return_value=Path(directory)), \
-             patch.object(codex_setup, "check_instance"), patch.object(codex_setup, "build"), \
-             patch.object(codex_setup, "install"), patch.object(ai_provider, "CONFIG", {"provider": "claude"}), \
-             patch.object(ai_provider, "find_claude", return_value="/fake/claude"), \
-             patch.object(ai_provider, "find_codex", side_effect=AssertionError("must not use Codex")), \
-             patch.object(sys, "argv", ["setup", "setup"]):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(codex_setup, "HERE", Path(directory)),
+            patch.object(codex_setup, "CONFIG", {"provider": "claude"}),
+            patch.object(codex_setup, "minecraft_dir", return_value=Path(directory)),
+            patch.object(codex_setup, "check_instance"),
+            patch.object(codex_setup, "build"),
+            patch.object(codex_setup, "install"),
+            patch.object(ai_provider, "CONFIG", {"provider": "claude"}),
+            patch.object(ai_provider, "find_claude", return_value="/fake/claude"),
+            patch.object(
+                ai_provider, "find_codex", side_effect=AssertionError("must not use Codex")
+            ),
+            patch.object(sys, "argv", ["setup", "setup"]),
+        ):
             codex_setup.main()
-            self.assertEqual(json.loads((Path(directory) / "assistant.local.json").read_text())["provider"], "claude")
+            self.assertEqual(
+                json.loads((Path(directory) / "assistant.local.json").read_text())["provider"],
+                "claude",
+            )
 
 
 class ClaudeTests(unittest.TestCase):
@@ -76,7 +93,7 @@ class ClaudeTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
         self.script = self.root / "fake_cli.py"
-        self.script.write_text('''import sys,json,time
+        self.script.write_text("""import sys,json,time
 from pathlib import Path
 args=sys.argv[1:]
 session=args[args.index('--resume')+1] if '--resume' in args else args[args.index('--session-id')+1] if '--session-id' in args else 'isolated'
@@ -97,12 +114,14 @@ if '--input-format' in args:
         reply(json.loads(line)['message']['content'])
 else:
     reply(sys.stdin.read())
-''')
+""")
         self.addCleanup(patch.stopall)
         patch.object(claude, "HERE", self.root).start()
         patch.object(claude, "find_claude", return_value=str(self.script)).start()
         actual_start = claude.start
-        self.starter = patch.object(claude, "start", side_effect=lambda args: actual_start([sys.executable, *args])).start()
+        self.starter = patch.object(
+            claude, "start", side_effect=lambda args: actual_start([sys.executable, *args])
+        ).start()
         self.data_dir = self.root / "game"
         self.data_dir.mkdir()
 
@@ -112,7 +131,9 @@ else:
         return chat
 
     def sent(self):
-        return [json.loads(line) for line in (self.root / "requests.jsonl").read_text().splitlines()]
+        return [
+            json.loads(line) for line in (self.root / "requests.jsonl").read_text().splitlines()
+        ]
 
     def test_two_questions_keep_one_process_and_resume_after_restart(self):
         chat = self.chat()
@@ -131,7 +152,7 @@ else:
         self.assertEqual(restored.session_id, session)
         self.assertEqual(restored.ask("retour"), "Réponse : retour")
         args = self.starter.call_args.args[0]
-        self.assertEqual(args[args.index("--resume")+1], session)
+        self.assertEqual(args[args.index("--resume") + 1], session)
         restored.restart()
         self.assertIsNone(restored.session_id)
         self.assertIsNone(json.loads(restored.path.read_text())["session_id"])
@@ -152,7 +173,7 @@ else:
                 before = self.starter.call_count
                 with self.assertRaises(RuntimeError):
                     chat.ask(prompt)
-                self.assertEqual(self.starter.call_count, before+1)
+                self.assertEqual(self.starter.call_count, before + 1)
                 self.assertIsNone(chat.proc)
                 self.assertEqual(self.sent().count(prompt), 1)
 
@@ -166,13 +187,14 @@ else:
         args = claude.command("sonnet", self.data_dir, "rules", "medium", True)
         self.assertIn("--strict-mcp-config", args)
         self.assertNotIn("--dangerously-skip-permissions", args)
-        self.assertEqual(args[args.index("--tools")+1], "Read,Grep,Glob,WebSearch,WebFetch")
+        self.assertEqual(args[args.index("--tools") + 1], "Read,Grep,Glob,WebSearch,WebFetch")
         self.assertNotIn("--bare", args)  # bare mode skips the user's subscription login
 
     def test_invalid_lines_cannot_extend_deadline_forever(self):
         class Noise:
             def get(self, timeout):
                 return "not-json"
+
         with self.assertRaisesRegex(RuntimeError, "délai"):
             claude.read_reply(Noise(), timeout=0.01)
         lines = queue.Queue()

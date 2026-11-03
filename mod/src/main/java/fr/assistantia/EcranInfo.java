@@ -20,18 +20,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * La fiche « à quoi ça sert » (touche I) d'un objet, d'un bloc ou d'une machine : à quoi il sert, comment s'en
- * servir, et un schéma de branchement en icônes quand c'est utile. Codex la rédige la première fois (quelques
- * secondes), l'assistant la garde ensuite : elle s'affiche alors tout de suite. Pour une machine posée, son état
- * en direct (vu par le serveur) s'ajoute sous le nom. « Refaire » si la fiche ne convient pas. Échap ou I : retour
- * à l'écran d'avant.
+ * La fiche « à quoi ça sert » (touche I) d'un objet, d'un bloc ou d'une machine : à quoi il sert,
+ * comment s'en servir, et un schéma de branchement en icônes quand c'est utile. Codex la rédige la
+ * première fois (quelques secondes), l'assistant la garde ensuite : elle s'affiche alors tout de
+ * suite. Pour une machine posée, son état en direct (vu par le serveur) s'ajoute sous le nom. «
+ * Refaire » si la fiche ne convient pas. Échap ou I : retour à l'écran d'avant.
  */
 public class EcranInfo extends Screen {
-    private static final int LARGEUR_MAX = 330, NOEUD = 56, ECART = 14, ENTETE = 30, FOND = 0xF00D1013;
+    private static final int LARGEUR_MAX = 330,
+            NOEUD = 56,
+            ECART = 14,
+            ENTETE = 30,
+            FOND = 0xF00D1013;
 
     /** Une icône du schéma : survol = son nom, clic = sa propre fiche. */
-    private record Zone(int x, int y, ItemStack objet) {
-    }
+    private record Zone(int x, int y, ItemStack objet) {}
 
     private final Screen parent;
     private final ItemStack objet;
@@ -52,12 +55,14 @@ public class EcranInfo extends Screen {
 
     /** Ouvre la fiche par-dessus l'écran actuel et la demande à l'assistant. */
     static void ouvrir(ItemStack stack, String origine, BlockPos pos) {
-        ResourceLocation cle = stack.isEmpty() ? null : ForgeRegistries.ITEMS.getKey(stack.getItem());
+        ResourceLocation cle =
+                stack.isEmpty() ? null : ForgeRegistries.ITEMS.getKey(stack.getItem());
         if (cle == null) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        EcranInfo fiche = new EcranInfo(mc.screen, stack.copyWithCount(1), cle.toString(), origine, pos);
+        EcranInfo fiche =
+                new EcranInfo(mc.screen, stack.copyWithCount(1), cle.toString(), origine, pos);
         fiche.demander(false);
         mc.setScreen(fiche);
     }
@@ -86,19 +91,31 @@ public class EcranInfo extends Screen {
     protected void init() {
         boutons.clear();
         String[] noms = {"Recettes", "Utilisations", "Refaire", "Fermer"};
-        Button.OnPress[] actions = {b -> emi(false), b -> emi(true), b -> demander(true), b -> onClose()};
+        Button.OnPress[] actions = {
+            b -> emi(false), b -> emi(true), b -> demander(true), b -> onClose()
+        };
         for (int i = 0; i < noms.length; i++) {
-            boutons.add(addRenderableWidget(Button.builder(Component.literal(noms[i]), actions[i]).bounds(0, 0, 60, 20).build()));
+            boutons.add(
+                    addRenderableWidget(
+                            Button.builder(Component.literal(noms[i]), actions[i])
+                                    .bounds(0, 0, 60, 20)
+                                    .build()));
         }
     }
 
-    /** Les recettes ou les utilisations dans EMI (pour un contrôleur GregTech : la structure du multibloc). */
+    /**
+     * Les recettes ou les utilisations dans EMI (pour un contrôleur GregTech : la structure du
+     * multibloc).
+     */
     private void emi(boolean usages) {
         if (this.minecraft == null || this.minecraft.player == null) {
             return;
         }
-        this.minecraft.setScreen(parent instanceof AbstractContainerScreen<?> && parentOuvert()
-                ? parent : new InventoryScreen(this.minecraft.player)); // EMI s'ouvre depuis un inventaire
+        this.minecraft.setScreen(
+                parent instanceof AbstractContainerScreen<?> && parentOuvert()
+                        ? parent
+                        : new InventoryScreen(
+                                this.minecraft.player)); // EMI s'ouvre depuis un inventaire
         if (usages) {
             Emi.afficherUtilisations(objet);
         } else {
@@ -108,8 +125,9 @@ public class EcranInfo extends Screen {
 
     /** Le coffre ou la machine d'où l'on vient est-il encore ouvert côté serveur ? */
     private boolean parentOuvert() {
-        return !(parent instanceof AbstractContainerScreen<?> conteneur) || this.minecraft.player != null
-                && conteneur.getMenu() == this.minecraft.player.containerMenu;
+        return !(parent instanceof AbstractContainerScreen<?> conteneur)
+                || this.minecraft.player != null
+                        && conteneur.getMenu() == this.minecraft.player.containerMenu;
     }
 
     @Override
@@ -135,14 +153,20 @@ public class EcranInfo extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double delta) {
-        defilement = Math.max(0, defilement - (int) (delta * 12)); // molette vers le haut : on remonte
+        defilement =
+                Math.max(0, defilement - (int) (delta * 12)); // molette vers le haut : on remonte
         return true;
     }
 
     @Override
     public boolean mouseClicked(double x, double y, int bouton) {
         for (Zone z : zones) {
-            if (x >= z.x() && x < z.x() + 20 && y >= z.y() && y < z.y() + 20 && y >= hautContenu && y < basContenu) {
+            if (x >= z.x()
+                    && x < z.x() + 20
+                    && y >= z.y()
+                    && y < z.y() + 20
+                    && y >= hautContenu
+                    && y < basContenu) {
                 ouvrir(z.objet(), "schema", null);
                 return true;
             }
@@ -153,7 +177,10 @@ public class EcranInfo extends Screen {
     @Override
     public void render(GuiGraphics g, int sx, int sy, float partialTick) {
         Screen fond = parent;
-        while (fond instanceof EcranInfo info) { // fiche ouverte depuis une fiche : on montre l'écran de départ
+        while (fond
+                instanceof
+                EcranInfo
+                info) { // fiche ouverte depuis une fiche : on montre l'écran de départ
             fond = info.parent;
         }
         if (fond != null) {
@@ -174,23 +201,37 @@ public class EcranInfo extends Screen {
         g.fill(x - 10, haut, x + l + 10, bas, FOND);
         g.fill(x - 10, haut, x - 8, bas, 0xFFFFC94A);
 
-        // En-tête : l'objet en grand, son nom, d'où il vient et, pour une machine posée, son état en direct
+        // En-tête : l'objet en grand, son nom, d'où il vient et, pour une machine posée, son état
+        // en direct
         g.pose().pushPose();
         g.pose().translate(x, haut + 6, 0);
         g.pose().scale(1.5F, 1.5F, 1);
         g.renderItem(objet, 0, 0);
         g.pose().popPose();
-        g.drawString(this.font, this.font.plainSubstrByWidth(this.title.getString(), l - 34), x + 32, haut + 7, Hud.OR, true);
+        g.drawString(
+                this.font,
+                this.font.plainSubstrByWidth(this.title.getString(), l - 34),
+                x + 32,
+                haut + 7,
+                Hud.OR,
+                true);
         String machine = memeObjet ? Pont.texte(info, "machine") : "";
-        String sousTitre = switch (origine) {
-            case "bloc" -> "Bloc posé";
-            case "main" -> "En main";
-            case "plan" -> "Dans ton plan";
-            case "schema" -> "Dans un schéma";
-            default -> "Inventaire";
-        };
-        g.drawString(this.font, this.font.plainSubstrByWidth(sousTitre + (machine.isEmpty() ? "" : " · " + machine), l - 34),
-                x + 32, haut + 18, machine.isEmpty() ? Hud.GRIS : Hud.couleur(Pont.texte(info, "machine_couleur")), false);
+        String sousTitre =
+                switch (origine) {
+                    case "bloc" -> "Bloc posé";
+                    case "main" -> "En main";
+                    case "plan" -> "Dans ton plan";
+                    case "schema" -> "Dans un schéma";
+                    default -> "Inventaire";
+                };
+        g.drawString(
+                this.font,
+                this.font.plainSubstrByWidth(
+                        sousTitre + (machine.isEmpty() ? "" : " · " + machine), l - 34),
+                x + 32,
+                haut + 18,
+                machine.isEmpty() ? Hud.GRIS : Hud.couleur(Pont.texte(info, "machine_couleur")),
+                false);
         g.fill(x, haut + ENTETE, x + l, haut + ENTETE + 1, 0x40FFFFFF);
 
         // Contenu, qui défile s'il est plus haut que l'écran
@@ -204,19 +245,30 @@ public class EcranInfo extends Screen {
         g.disableScissor();
         if (hauteurContenu > visible) { // barre de défilement
             int barre = Math.max(12, visible * visible / hauteurContenu);
-            int position = hautContenu + (visible - barre) * defilement / Math.max(1, hauteurContenu - visible);
+            int position =
+                    hautContenu
+                            + (visible - barre)
+                                    * defilement
+                                    / Math.max(1, hauteurContenu - visible);
             g.fill(x + l + 5, hautContenu, x + l + 7, basContenu, 0x20FFFFFF);
             g.fill(x + l + 5, position, x + l + 7, position + barre, 0x90FFC94A);
         }
 
         int largeurBouton = (l - 4 * (boutons.size() - 1)) / boutons.size();
-        for (int i = 0; i < boutons.size(); i++) { // collés sous la fiche, quelle que soit sa hauteur
+        for (int i = 0;
+                i < boutons.size();
+                i++) { // collés sous la fiche, quelle que soit sa hauteur
             boutons.get(i).setWidth(largeurBouton);
             boutons.get(i).setPosition(x + i * (largeurBouton + 4), bas + 6);
         }
         super.render(g, sx, sy, partialTick);
         for (Zone z : zones) {
-            if (sx >= z.x() && sx < z.x() + 20 && sy >= z.y() && sy < z.y() + 20 && sy >= hautContenu && sy < basContenu) {
+            if (sx >= z.x()
+                    && sx < z.x() + 20
+                    && sy >= z.y()
+                    && sy < z.y() + 20
+                    && sy >= hautContenu
+                    && sy < basContenu) {
                 g.renderTooltip(this.font, z.objet(), sx, sy);
             }
         }
@@ -228,15 +280,45 @@ public class EcranInfo extends Screen {
         int debut = y;
         String etat = memeObjet ? Pont.texte(info, "etat") : "";
         if ("erreur".equals(etat)) {
-            return ecrire(g, "Pas de réponse pour l'instant : " + Pont.texte(info, "erreur"), x, y, l, Hud.ROUGE) - debut;
+            return ecrire(
+                            g,
+                            "Pas de réponse pour l'instant : " + Pont.texte(info, "erreur"),
+                            x,
+                            y,
+                            l,
+                            Hud.ROUGE)
+                    - debut;
         }
         if (!"pret".equals(etat) && !Pont.assistantActif()) {
-            return ecrire(g, Pont.relanceEnCours() ? "L'assistant démarre, la fiche arrive juste après…"
-                    : "L'assistant est arrêté : relance-le depuis l'écran Y.", x, y, l, Hud.ROUGE) - debut;
+            return ecrire(
+                            g,
+                            Pont.relanceEnCours()
+                                    ? "L'assistant démarre, la fiche arrive juste après…"
+                                    : "L'assistant est arrêté : relance-le depuis l'écran Y.",
+                            x,
+                            y,
+                            l,
+                            Hud.ROUGE)
+                    - debut;
         }
         if (!"pret".equals(etat)) {
-            y = ecrire(g, "L’assistant prépare la fiche" + ".".repeat((int) (System.currentTimeMillis() / 400 % 4)), x, y, l, Hud.BLANC);
-            return ecrire(g, "Quelques secondes la première fois, instantané ensuite.", x, y + 2, l, Hud.GRIS) - debut;
+            y =
+                    ecrire(
+                            g,
+                            "L’assistant prépare la fiche"
+                                    + ".".repeat((int) (System.currentTimeMillis() / 400 % 4)),
+                            x,
+                            y,
+                            l,
+                            Hud.BLANC);
+            return ecrire(
+                            g,
+                            "Quelques secondes la première fois, instantané ensuite.",
+                            x,
+                            y + 2,
+                            l,
+                            Hud.GRIS)
+                    - debut;
         }
         y = section(g, "À QUOI ÇA SERT", x, y);
         y = ecrire(g, Pont.texte(info, "sert"), x, y, l, Hud.BLANC) + 8;
@@ -267,8 +349,9 @@ public class EcranInfo extends Screen {
     }
 
     /**
-     * Une chaîne de branchement de gauche à droite (source d'eau → pompe → chaudière → machine) : chaque bloc en
-     * icône avec son rôle dessous, reliés par des flèches, centrés, sur plusieurs lignes si besoin.
+     * Une chaîne de branchement de gauche à droite (source d'eau → pompe → chaudière → machine) :
+     * chaque bloc en icône avec son rôle dessous, reliés par des flèches, centrés, sur plusieurs
+     * lignes si besoin.
      */
     private int chaine(GuiGraphics g, JsonArray noeuds, int x, int y, int l) {
         int parLigne = Math.max(1, (l + ECART) / (NOEUD + ECART));
@@ -279,7 +362,10 @@ public class EcranInfo extends Screen {
                 if (i > 0) {
                     g.drawString(this.font, "→", cx - ECART / 2 - 3, y + 6, Hud.OR, false);
                 }
-                JsonObject noeud = noeuds.get(i).isJsonObject() ? noeuds.get(i).getAsJsonObject() : new JsonObject();
+                JsonObject noeud =
+                        noeuds.get(i).isJsonObject()
+                                ? noeuds.get(i).getAsJsonObject()
+                                : new JsonObject();
                 ItemStack stack = Pont.objet(Pont.texte(noeud, "item"));
                 int bx = cx + (NOEUD - 20) / 2;
                 g.fill(bx, y, bx + 20, y + 20, 0x30FFFFFF);
@@ -292,10 +378,18 @@ public class EcranInfo extends Screen {
                 g.pose().pushPose();
                 g.pose().translate(cx + NOEUD / 2F, y + 23, 0);
                 g.pose().scale(0.75F, 0.75F, 1);
-                List<FormattedCharSequence> lignes = this.font.split(Component.literal(Pont.texte(noeud, "texte")),
-                        (int) ((NOEUD + ECART - 4) / 0.75F));
+                List<FormattedCharSequence> lignes =
+                        this.font.split(
+                                Component.literal(Pont.texte(noeud, "texte")),
+                                (int) ((NOEUD + ECART - 4) / 0.75F));
                 for (int k = 0; k < Math.min(2, lignes.size()); k++) {
-                    g.drawString(this.font, lignes.get(k), -this.font.width(lignes.get(k)) / 2, k * 10, Hud.GRIS, false);
+                    g.drawString(
+                            this.font,
+                            lignes.get(k),
+                            -this.font.width(lignes.get(k)) / 2,
+                            k * 10,
+                            Hud.GRIS,
+                            false);
                 }
                 g.pose().popPose();
                 cx += NOEUD + ECART;

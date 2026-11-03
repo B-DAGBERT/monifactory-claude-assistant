@@ -21,8 +21,21 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install development formatters
+        run: |
+          python -m pip install -r requirements-dev.txt
+          npm ci
+      - name: Check formatting and Python imports
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+          npm run format:check
       - name: Claude and Codex adapters, shared gameplay and update tests (no AI account needed)
         run: python -m unittest discover -s tests -v
       - name: Build Forge mod
         working-directory: mod
-        run: bash gradlew build --console=plain
+        run: bash gradlew checkJavaFormat build --console=plain

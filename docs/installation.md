@@ -33,8 +33,12 @@ Les valeurs de `assistant.local.json` ont priorité. Exemple :
 {
   "provider": "claude",
   "providers": {
-    "claude": {"model_plan": "sonnet", "model_question": "sonnet", "model_quick": "haiku"},
-    "codex": {"model_plan": "gpt-6.1-sol", "model_question": "gpt-5.6-sol", "model_quick": "gpt-5.6-sol"}
+    "claude": { "model_plan": "sonnet", "model_question": "sonnet", "model_quick": "haiku" },
+    "codex": {
+      "model_plan": "gpt-6.1-sol",
+      "model_question": "gpt-5.6-sol",
+      "model_quick": "gpt-5.6-sol"
+    }
   }
 }
 ```
@@ -114,9 +118,9 @@ python -m unittest discover -s tests -v
 python codex_setup.py build
 ```
 
-Les noms `codex_config.py` et `codex_setup.py` sont conservés pour compatibilité des lanceurs ;
-l’installation utilise bien l’IA sélectionnée. `ai_provider.py` est le point d’entrée commun,
-`claude_integration.py` et `codex_integration.py` isolent les protocoles de chaque moteur.
+Les points d’entrée à la racine sont conservés pour les anciens lanceurs. Le code est rangé dans
+`monifactory_assistant/` : `config.py` lit les réglages, `commands/` contient les commandes et
+`providers/` isole les protocoles Claude et Codex. Voir le [guide de développement](developpement.md).
 `main` est la seule branche de référence et la cible des pull requests. Les adaptations Claude et
 Codex évoluent ensemble ; ne plus développer sur `shared-assistant` ou `codex-compat`.
 

@@ -11,16 +11,15 @@ import net.minecraftforge.registries.ForgeRegistries;
 import java.util.Set;
 
 /**
- * Dans un coffre, une machine ou l'inventaire : ce que tu as demandé à chercher pulse en cyan (« trouve-moi mes
- * torches »), et les objets dont le plan a besoin brillent en vert.
+ * Dans un coffre, une machine ou l'inventaire : ce que tu as demandé à chercher pulse en cyan («
+ * trouve-moi mes torches »), et les objets dont le plan a besoin brillent en vert.
  */
 public final class Surbrillance {
     private static final int FOND = 0x5530FF50;
     private static final int CADRE = 0xFF40FF60;
     private static final int CADRE_RECHERCHE = 0xFF40E0FF;
 
-    private Surbrillance() {
-    }
+    private Surbrillance() {}
 
     @SubscribeEvent
     public static void apresRendu(ScreenEvent.Render.Post event) {

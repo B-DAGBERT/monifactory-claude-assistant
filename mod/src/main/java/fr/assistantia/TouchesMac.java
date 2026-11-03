@@ -28,16 +28,20 @@ public final class TouchesMac {
         key("objectif", GLFW.GLFW_KEY_F7), key("parler", GLFW.GLFW_KEY_F8),
         key("panneau", GLFW.GLFW_KEY_F9), key("voix", GLFW.GLFW_KEY_F10)
     };
-    private static final Path PATH = FMLPaths.GAMEDIR.get().resolve("kubejs/assistant/codex_touches.json");
+    private static final Path PATH =
+            FMLPaths.GAMEDIR.get().resolve("kubejs/assistant/codex_touches.json");
     private static final String SESSION = UUID.randomUUID().toString();
     private static final ArrayDeque<JsonObject> EVENTS = new ArrayDeque<>();
     private static Set<String> previous = Set.of();
     private static long sequence, lastWrite, lastError;
 
-    private TouchesMac() { }
+    private TouchesMac() {}
 
     private static KeyMapping key(String name, int code) {
-        return new KeyMapping("key.assistantia." + name, InputConstants.Type.KEYSYM, code,
+        return new KeyMapping(
+                "key.assistantia." + name,
+                InputConstants.Type.KEYSYM,
+                code,
                 "key.categories.assistantia");
     }
 
@@ -54,17 +58,23 @@ public final class TouchesMac {
             long handle = mc.getWindow().getWindow();
             for (int i = 0; i < KEYS.length; i++) {
                 InputConstants.Key key = KEYS[i].getKey();
-                boolean down = key.getType() == InputConstants.Type.MOUSE
-                        ? GLFW.glfwGetMouseButton(handle, key.getValue()) == GLFW.GLFW_PRESS
-                        : key.getType() == InputConstants.Type.KEYSYM && key.getValue() >= 0
-                            && InputConstants.isKeyDown(handle, key.getValue());
+                boolean down =
+                        key.getType() == InputConstants.Type.MOUSE
+                                ? GLFW.glfwGetMouseButton(handle, key.getValue()) == GLFW.GLFW_PRESS
+                                : key.getType() == InputConstants.Type.KEYSYM
+                                        && key.getValue() >= 0
+                                        && InputConstants.isKeyDown(handle, key.getValue());
                 if (down) pressed.add(NAMES[i]);
-                while (KEYS[i].consumeClick()) { /* transitions below handle repeats */ }
+                while (KEYS[i].consumeClick()) {
+                    /* transitions below handle repeats */
+                }
             }
             if (InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_LEFT_SHIFT)
-                    || InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_RIGHT_SHIFT)) pressed.add("shift");
+                    || InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_RIGHT_SHIFT))
+                pressed.add("shift");
             if (InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_LEFT_CONTROL)
-                    || InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_RIGHT_CONTROL)) pressed.add("ctrl");
+                    || InputConstants.isKeyDown(handle, GLFW.GLFW_KEY_RIGHT_CONTROL))
+                pressed.add("ctrl");
         }
         if (!pressed.equals(previous)) {
             JsonObject event = new JsonObject();
@@ -89,7 +99,11 @@ public final class TouchesMac {
             Files.createDirectories(PATH.getParent());
             Path temporary = PATH.resolveSibling("codex_touches.json.tmp");
             Files.writeString(temporary, state.toString(), StandardCharsets.UTF_8);
-            Files.move(temporary, PATH, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Files.move(
+                    temporary,
+                    PATH,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             if (now - lastError > 30_000) {
                 lastError = now;

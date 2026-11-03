@@ -1,4 +1,4 @@
-> La version commune est maintenant sur **main**. Voir [README_SHARED.md](README_SHARED.md).
+> La version commune est maintenant sur **main**. Voir [installation.md](installation.md).
 > Ce document décrit le fonctionnement Codex. Pour installer ou migrer, suivre le guide commun ci-dessus.
 
 # Variante Codex — Mac et suivi des mises à jour
@@ -76,16 +76,16 @@ Le `.jar` des Releases de la branche d'origine n'inclut pas les raccourcis Mac d
 
 ## Commandes en jeu
 
-| Commande | Fonction |
-| --- | --- |
-| **Y** | Tableau de bord : Objectif, Plan, Base, Discussion, Filons, Réglages |
-| **I** / **Maj+I** | Fiche de l'objet survolé ou du bloc regardé / de l'objet en main |
-| **F7** | Objectif suivant |
-| **F8 maintenu** | Parler ; relâcher pour envoyer |
-| **Maj+F8** | Saisie d'une question écrite |
-| **Ctrl+F8** | Nouvelle conversation |
-| **F9** | Afficher / masquer le panneau et arrêter la lecture |
-| **F10** | Activer / désactiver la lecture à voix haute |
+| Commande          | Fonction                                                             |
+| ----------------- | -------------------------------------------------------------------- |
+| **Y**             | Tableau de bord : Objectif, Plan, Base, Discussion, Filons, Réglages |
+| **I** / **Maj+I** | Fiche de l'objet survolé ou du bloc regardé / de l'objet en main     |
+| **F7**            | Objectif suivant                                                     |
+| **F8 maintenu**   | Parler ; relâcher pour envoyer                                       |
+| **Maj+F8**        | Saisie d'une question écrite                                         |
+| **Ctrl+F8**       | Nouvelle conversation                                                |
+| **F9**            | Afficher / masquer le panneau et arrêter la lecture                  |
+| **F10**           | Activer / désactiver la lecture à voix haute                         |
 
 Selon le réglage du clavier Mac, utiliser **Fn+F8**, ou modifier les touches dans
 **Options → Contrôles → Assistant IA**. Les raccourcis ne sont captés que lorsque Minecraft
@@ -98,7 +98,7 @@ La voix neuronale utilise le service en ligne Edge ; la voix Mac sert de secours
 ## Recevoir les mises à jour
 
 `main` est la branche commune Claude/Codex et la source de toutes les mises à jour.
-Suivre [le guide commun](README_SHARED.md#mises-à-jour-pour-les-deux-utilisateurs) pour migrer
+Suivre [le guide commun](installation.md#mises-à-jour-pour-les-deux-utilisateurs) pour migrer
 une ancienne installation puis lancer **Mettre à jour.command**. Le lanceur conserve les réglages,
 les fiches, la mémoire, les plans et les conversations locales ; il refuse les modifications
 non enregistrées et les commits absents de main.
@@ -128,7 +128,6 @@ La compatibilité Windows reste prévue par le code, mais n'a pas été testée 
 Protocole utilisé : [documentation officielle OpenAI du Codex app-server](https://learn.chatgpt.com/docs/app-server).
 Les règles de progression et détails des fonctions du jeu restent décrits dans le [README d'origine](README.md).
 
-
 ## Mettre l'objectif en pause
 
 Dans **Y → Objectif** (ou **Plan**), cliquer sur **Mettre en pause**. Le bouton devient
@@ -145,7 +144,6 @@ confirmation de l'assistant, puis permet de réessayer après cinq secondes en c
 
 Cette fonction est un ajout volontaire à la parité amont : ses méthodes sont testées
 séparément dans `tests/test_objective_pause.py`. Le reste du code de jeu garde le contrôle de parité.
-
 
 ## Filons : liste, surbrillance et téléportation (Codex.3)
 
@@ -224,7 +222,6 @@ La fiche sélectionnée regroupe les coordonnées, les minerais repérés et **S
 La molette fait défiler la liste ou les minerais selon la zone survolée. Sur petite fenêtre, la fiche
 passe sous la liste. L'âge du relevé, la dimension et les limites du comptage se lisent au survol.
 Une seule ligne de statut et une barre de progression rendent le scan visible ; son arrêt reste en haut.
-
 
 ## Plusieurs projets et onglet Base (Codex.17)
 

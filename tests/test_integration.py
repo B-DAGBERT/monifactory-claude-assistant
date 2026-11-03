@@ -5,14 +5,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import codex_integration
-import codex_setup
-import mac_keys
+import monifactory_assistant.commands.setup as codex_setup
+import monifactory_assistant.platform.mac_keys as mac_keys
+import monifactory_assistant.providers.codex as codex_integration
 
 
 class IntegrationTests(unittest.TestCase):
     def test_prepare_only_resumes_saved_thread_without_new_thread_or_turn(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(codex_integration, "HERE", Path(directory)):
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(codex_integration, "HERE", Path(directory)),
+        ):
             with patch.object(codex_integration, "CLIENT") as client:
                 chat = codex_integration.Conversation(Path(directory), "rules", "model")
                 chat.prepare()
@@ -20,7 +23,9 @@ class IntegrationTests(unittest.TestCase):
                 chat._save_thread("original-thread")
                 original = chat.path.read_bytes()
                 chat.prepare()
-                client.load_thread.assert_called_once_with("original-thread", Path(directory), "model", chat.instructions)
+                client.load_thread.assert_called_once_with(
+                    "original-thread", Path(directory), "model", chat.instructions
+                )
                 client.run.assert_not_called()
                 self.assertEqual(chat.path.read_bytes(), original)
 
@@ -34,18 +39,14 @@ class IntegrationTests(unittest.TestCase):
             def run(*args, **kwargs):
                 kwargs["on_thread"]("kept-thread")
                 self.assertEqual(
-                    json.loads((Path(directory) / "session.json").read_text())[
-                        "thread_id"
-                    ],
+                    json.loads((Path(directory) / "session.json").read_text())["thread_id"],
                     "kept-thread",
                 )
                 return "réponse", "kept-thread"
 
             client.run.side_effect = run
             with patch.object(codex_integration, "CLIENT", client):
-                chat = codex_integration.Conversation(
-                    Path(directory), "data {data_dir}", "model"
-                )
+                chat = codex_integration.Conversation(Path(directory), "data {data_dir}", "model")
                 self.assertEqual(chat.ask("question"), "réponse")
                 restored = codex_integration.Conversation(
                     Path(directory), "data {data_dir}", "model"
@@ -54,9 +55,7 @@ class IntegrationTests(unittest.TestCase):
                 restored.restart()
                 self.assertIsNone(restored.session_id)
                 self.assertIsNone(
-                    json.loads((Path(directory) / "session.json").read_text())[
-                        "thread_id"
-                    ]
+                    json.loads((Path(directory) / "session.json").read_text())["thread_id"]
                 )
 
     def test_failed_turn_is_not_replayed(self):
@@ -84,11 +83,7 @@ class IntegrationTests(unittest.TestCase):
             ):
                 mac_keys.on_press_key(
                     "f8",
-                    lambda _: (
-                        calls.append("start")
-                        if not mac_keys.is_pressed("shift")
-                        else None
-                    ),
+                    lambda _: (calls.append("start") if not mac_keys.is_pressed("shift") else None),
                 )
                 mac_keys.on_release_key("f8", lambda _: calls.append("end"))
                 mac_keys.add_hotkey("shift+f8", lambda: calls.append("type"))
@@ -96,20 +91,14 @@ class IntegrationTests(unittest.TestCase):
                 now = time.time() * 1000 + 1
                 events = [
                     {"n": n, "t": now, "keys": keys}
-                    for n, keys in enumerate(
-                        [["f8"], [], ["shift"], ["shift", "f8"], []], 1
-                    )
+                    for n, keys in enumerate([["f8"], [], ["shift"], ["shift", "f8"], []], 1)
                 ]
-                path.write_text(
-                    json.dumps({"session": "one", "t": now, "events": events})
-                )
+                path.write_text(json.dumps({"session": "one", "t": now, "events": events}))
                 reader.poll()
                 reader.poll()
                 self.assertEqual(calls, ["start", "end", "type", "end"])
                 events.append({"n": 6, "t": now, "keys": ["f8"]})
-                path.write_text(
-                    json.dumps({"session": "one", "t": now, "events": events})
-                )
+                path.write_text(json.dumps({"session": "one", "t": now, "events": events}))
                 reader.poll()
                 path.write_text("{}")
                 reader.poll()
@@ -132,9 +121,7 @@ class IntegrationTests(unittest.TestCase):
                         {
                             "session": "a",
                             "t": time.time() * 1000,
-                            "events": [
-                                {"n": 1, "t": reader.started - 10000, "keys": ["f7"]}
-                            ],
+                            "events": [{"n": 1, "t": reader.started - 10000, "keys": ["f7"]}],
                         }
                     )
                 )
@@ -171,9 +158,7 @@ class IntegrationTests(unittest.TestCase):
             self.assertFalse(old.exists())
             self.assertEqual(unrelated.read_bytes(), b"keep")
             self.assertEqual(script.read_text(), "new script")
-            self.assertEqual(
-                (instance / "mods/assistantia-new.jar").read_bytes(), b"new mod"
-            )
+            self.assertEqual((instance / "mods/assistantia-new.jar").read_bytes(), b"new mod")
             self.assertEqual(
                 next((root / "backups").glob("*/assistantia-old.jar")).read_bytes(),
                 b"old mod",

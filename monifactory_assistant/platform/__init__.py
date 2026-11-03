@@ -1,0 +1,1 @@
+"""Monifactory assistant: platform."""

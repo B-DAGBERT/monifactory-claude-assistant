@@ -24,10 +24,12 @@ public final class Fullbright {
     private static boolean actif, applique;
     private static long prochainClic;
     private static String erreur = "";
+
     static {
         try {
             if (Files.exists(FICHIER)) {
-                JsonObject donnees = JsonParser.parseString(Files.readString(FICHIER)).getAsJsonObject();
+                JsonObject donnees =
+                        JsonParser.parseString(Files.readString(FICHIER)).getAsJsonObject();
                 actif = donnees.has("fullbright") && donnees.get("fullbright").getAsBoolean();
             }
         } catch (Exception e) {
@@ -35,12 +37,18 @@ public final class Fullbright {
             LogUtils.getLogger().warn("Lecture des préférences de luminosité", e);
         }
     }
-    private Fullbright() { }
-    public static boolean actif() { return actif; }
+
+    private Fullbright() {}
+
+    public static boolean actif() {
+        return actif;
+    }
+
     public static String description() {
         return "Éclaire les grottes au maximum, sans torche. Désactiver rétablit l’éclairage normal. Réglage local mémorisé."
                 + (erreur.isEmpty() ? "" : " " + erreur);
     }
+
     public static void regler(boolean valeur) {
         long maintenant = System.nanoTime();
         if (maintenant < prochainClic || actif == valeur) return;
@@ -50,11 +58,14 @@ public final class Fullbright {
         if (!actif) restaurer();
         sauver();
     }
+
     private static void sauver() {
         try {
             // Conserver les autres préférences visuelles, y compris celles des anciennes versions.
-            JsonObject donnees = Files.exists(FICHIER)
-                    ? JsonParser.parseString(Files.readString(FICHIER)).getAsJsonObject() : new JsonObject();
+            JsonObject donnees =
+                    Files.exists(FICHIER)
+                            ? JsonParser.parseString(Files.readString(FICHIER)).getAsJsonObject()
+                            : new JsonObject();
             donnees.addProperty("fullbright", actif);
             Files.createDirectories(FICHIER.getParent());
             Path temporaire = FICHIER.resolveSibling(FICHIER.getFileName() + ".tmp");
@@ -65,6 +76,7 @@ public final class Fullbright {
             LogUtils.getLogger().warn("Sauvegarde de la luminosité", e);
         }
     }
+
     private static void restaurer() {
         Minecraft mc = Minecraft.getInstance();
         try {
@@ -75,8 +87,11 @@ public final class Fullbright {
         } catch (Exception e) {
             erreur = "L’éclairage normal sera rétabli au prochain rafraîchissement.";
             LogUtils.getLogger().warn("Restauration de la lumière", e);
-        } finally { applique = false; }
+        } finally {
+            applique = false;
+        }
     }
+
     @SubscribeEvent
     public static void rendu(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_SKY || !actif) return;
@@ -86,21 +101,27 @@ public final class Fullbright {
             if (textureField == null) {
                 // Recherche par type : fonctionne aussi avec les noms obfusqués du jeu installé.
                 for (Field field : LightTexture.class.getDeclaredFields()) {
-                    if (field.getType() == DynamicTexture.class) { textureField = field; break; }
+                    if (field.getType() == DynamicTexture.class) {
+                        textureField = field;
+                        break;
+                    }
                 }
                 if (textureField == null) throw new IllegalStateException("Lightmap inaccessible");
                 textureField.setAccessible(true);
             }
-            DynamicTexture texture = (DynamicTexture) textureField.get(mc.gameRenderer.lightTexture());
+            DynamicTexture texture =
+                    (DynamicTexture) textureField.get(mc.gameRenderer.lightTexture());
             NativeImage image = texture.getPixels();
             if (image == null) throw new IllegalStateException("Lightmap absente");
             boolean change = false;
             // Lightmap vanilla de 16 × 16 ; envoyer à la carte graphique seulement si nécessaire.
-            for (int y = 0; y < image.getHeight(); y++) for (int x = 0; x < image.getWidth(); x++) {
-                if (image.getPixelRGBA(x, y) != 0xFFFFFFFF) {
-                    image.setPixelRGBA(x, y, 0xFFFFFFFF); change = true;
+            for (int y = 0; y < image.getHeight(); y++)
+                for (int x = 0; x < image.getWidth(); x++) {
+                    if (image.getPixelRGBA(x, y) != 0xFFFFFFFF) {
+                        image.setPixelRGBA(x, y, 0xFFFFFFFF);
+                        change = true;
+                    }
                 }
-            }
             applique = true;
             if (change) texture.upload();
         } catch (Exception e) {

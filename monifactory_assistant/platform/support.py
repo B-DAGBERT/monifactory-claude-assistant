@@ -3,7 +3,7 @@
 import ctypes
 import os
 
-from codex_config import HERE
+from monifactory_assistant.config import HERE
 
 
 class SingleInstance:

@@ -5,7 +5,7 @@ import os
 import shutil
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+from monifactory_assistant.paths import ROOT as HERE
 
 
 def find_codex():
@@ -49,7 +49,5 @@ def minecraft_dir():
 def write_json(path, value):
     path = Path(path)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(path)

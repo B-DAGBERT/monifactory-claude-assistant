@@ -206,3 +206,23 @@ publishing {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }
+
+// Development-only formatter: not part of the mod or its runtime dependencies.
+configurations { javaFormatter }
+dependencies { javaFormatter 'com.google.googlejavaformat:google-java-format:1.17.0' }
+
+def formattedJavaSources = files(fileTree('src/main/java') { include '**/*.java' },
+                                 fileTree('../tests/java') { include '**/*.java' })
+['formatJava': ['--replace'], 'checkJavaFormat': ['--dry-run', '--set-exit-if-changed']].each { taskName, mode ->
+    tasks.register(taskName, JavaExec) {
+        group = 'formatting'
+        description = taskName == 'formatJava' ? 'Format Java sources with the pinned formatter.' : 'Check Java formatting without modifying sources.'
+        classpath = configurations.javaFormatter
+        mainClass = 'com.google.googlejavaformat.java.Main'
+        jvmArgs(['api', 'file', 'parser', 'tree', 'util', 'code'].collect {
+            "--add-exports=jdk.compiler/com.sun.tools.javac.${it}=ALL-UNNAMED"
+        })
+        args(mode + ['--aosp', '--skip-sorting-imports', '--skip-removing-unused-imports',
+                     '--skip-reflowing-long-strings'] + formattedJavaSources.files.sort().collect { it.absolutePath })
+    }
+}

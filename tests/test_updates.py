@@ -38,24 +38,29 @@ class UpdateTests(unittest.TestCase):
         self.git("config", "user.email", "update@example.invalid")
         shutil.copy2(ROOT / "Mettre à jour.command", self.source)
         shutil.copy2(ROOT / "update_assistant.py", self.source)
-        (self.source / "Installer Mac.command").write_text(
-            "#!/bin/bash\necho INSTALLER_CALLED\n"
+        shutil.copytree(
+            ROOT / "monifactory_assistant",
+            self.source / "monifactory_assistant",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
+        (self.source / "Installer Mac.command").write_text("#!/bin/bash\necho INSTALLER_CALLED\n")
         (self.source / "tracked.txt").write_text("before\n")
-        (self.source / ".gitignore").write_text("codex.local.json\nassistant.local.json\nsession_claude.json\nsession.json\nplan_ia.json\nmonde_memoire.json\n")
+        (self.source / ".gitignore").write_text(
+            "__pycache__/\ncodex.local.json\nassistant.local.json\nsession_claude.json\nsession.json\nplan_ia.json\nmonde_memoire.json\n"
+        )
         self.git("add", ".")
         self.git("commit", "-m", "Initial")
         self.git("remote", "add", "origin", str(self.remote))
         self.git("push", "-u", "origin", "main")
-        self.git(
-            "clone", "--branch", "main", str(self.remote), str(self.client)
-        )
+        self.git("clone", "--branch", "main", str(self.remote), str(self.client))
         (self.client / "codex.local.json").write_text('{"private":true}\n')
         (self.client / "assistant.local.json").write_text('{"provider":"claude"}\n')
         (self.client / "session_claude.json").write_text('{"session_id":"private"}\n')
-        self.personal = {"session.json": '{"thread_id":"original"}\n',
-                         "plan_ia.json": '{"objectif_en_pause":true}\n',
-                         "monde_memoire.json": '{"coffres":["private"]}\n'}
+        self.personal = {
+            "session.json": '{"thread_id":"original"}\n',
+            "plan_ia.json": '{"objectif_en_pause":true}\n',
+            "monde_memoire.json": '{"coffres":["private"]}\n',
+        }
         for name, text in self.personal.items():
             (self.client / name).write_text(text)
         (self.source / "tracked.txt").write_text("after\n")
@@ -75,17 +80,21 @@ class UpdateTests(unittest.TestCase):
         result = self.update()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("INSTALLER_CALLED", result.stdout)
-        self.assertEqual((self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n')
-        self.assertEqual((self.client / "session_claude.json").read_text(), '{"session_id":"private"}\n')
+        self.assertEqual(
+            (self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n'
+        )
+        self.assertEqual(
+            (self.client / "session_claude.json").read_text(), '{"session_id":"private"}\n'
+        )
         self.assertEqual((self.client / "tracked.txt").read_text(), "after\n")
         for name, text in self.personal.items():
             self.assertEqual((self.client / name).read_text(), text)
-        self.assertEqual(
-            (self.client / "codex.local.json").read_text(), '{"private":true}\n'
-        )
+        self.assertEqual((self.client / "codex.local.json").read_text(), '{"private":true}\n')
 
     def test_legacy_branches_migrate_to_main_and_preserve_preferences(self):
-        self.assertEqual(self.git("ls-remote", "--heads", "origin", "shared-assistant", "codex-compat"), "")
+        self.assertEqual(
+            self.git("ls-remote", "--heads", "origin", "shared-assistant", "codex-compat"), ""
+        )
         for branch in ("shared-assistant", "codex-compat"):
             with self.subTest(branch=branch):
                 self.git("branch", "-m", branch, cwd=self.client)
@@ -93,8 +102,13 @@ class UpdateTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("INSTALLER_CALLED", result.stdout)
                 self.assertEqual(self.git("branch", "--show-current", cwd=self.client), "main")
-                self.assertEqual(self.git("rev-parse", "--abbrev-ref", "@{upstream}", cwd=self.client), "origin/main")
-                self.assertEqual((self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n')
+                self.assertEqual(
+                    self.git("rev-parse", "--abbrev-ref", "@{upstream}", cwd=self.client),
+                    "origin/main",
+                )
+                self.assertEqual(
+                    (self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n'
+                )
 
     def test_development_branch_and_detached_head_are_never_changed(self):
         self.git("branch", "-m", "feature/work", cwd=self.client)
@@ -132,7 +146,14 @@ class UpdateTests(unittest.TestCase):
     def test_single_branch_legacy_clone_migrates_and_future_plain_pull_works(self):
         self.git("push", "origin", "HEAD:shared-assistant")
         self.client = self.root / "single-branch"
-        self.git("clone", "--single-branch", "--branch", "shared-assistant", str(self.remote), str(self.client))
+        self.git(
+            "clone",
+            "--single-branch",
+            "--branch",
+            "shared-assistant",
+            str(self.remote),
+            str(self.client),
+        )
         result = self.update()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.git("branch", "--show-current", cwd=self.client), "main")
@@ -156,6 +177,33 @@ class UpdateTests(unittest.TestCase):
         self.assertNotIn("INSTALLER_CALLED", result.stdout)
         self.assertEqual(self.git("branch", "--show-current", cwd=self.client), "shared-assistant")
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), before)
+
+    def test_old_root_updater_can_install_package_layout_then_update_again(self):
+        old_updater = self.git("show", "4a6bba3:update_assistant.py", cwd=ROOT)
+        self.git("rm", "-r", "monifactory_assistant")
+        (self.source / "update_assistant.py").write_text(old_updater + "\n")
+        self.git("commit", "-am", "Old flat installation")
+        self.git("push", "origin", "main")
+        self.client = self.root / "old-layout"
+        self.git("clone", "--branch", "main", str(self.remote), str(self.client))
+        (self.client / "assistant.local.json").write_text('{"provider":"claude"}\n')
+        shutil.copy2(ROOT / "update_assistant.py", self.source)
+        shutil.copytree(
+            ROOT / "monifactory_assistant",
+            self.source / "monifactory_assistant",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        self.git("add", ".")
+        self.git("commit", "-m", "Organized package layout")
+        self.git("push", "origin", "main")
+        for _ in range(2):
+            result = self.update()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("INSTALLER_CALLED", result.stdout)
+        self.assertTrue((self.client / "monifactory_assistant/commands/update.py").is_file())
+        self.assertEqual(
+            (self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n'
+        )
 
     def test_untracked_file_blocks_update_without_changing_branch(self):
         self.git("branch", "-m", "shared-assistant", cwd=self.client)

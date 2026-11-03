@@ -5,7 +5,7 @@ import time
 import unittest
 from pathlib import Path
 
-from filons_import import prepare_import
+from monifactory_assistant.game.veins import prepare_import
 
 
 class ImportFilonsTests(unittest.TestCase):
@@ -19,8 +19,15 @@ class ImportFilonsTests(unittest.TestCase):
         self.active = self.folder / "filons_mod.json"
         self.active.write_text(json.dumps({"v": 1, "monde": self.world, "blocs": []}))
         self.source = self.folder / "filons.json"
-        self.block = {"dimension": "minecraft:overworld", "bloc": "minecraft:iron_ore",
-                      "x": 1, "y": 20, "z": 3, "t": 100, "mine": False}
+        self.block = {
+            "dimension": "minecraft:overworld",
+            "bloc": "minecraft:iron_ore",
+            "x": 1,
+            "y": 20,
+            "z": 3,
+            "t": 100,
+            "mine": False,
+        }
         self.source.write_text(json.dumps({"blocs": [self.block]}))
 
     def test_import_bound_to_current_world_preserves_sources(self):
@@ -35,7 +42,9 @@ class ImportFilonsTests(unittest.TestCase):
 
     def test_repeated_import_merges_without_duplicates_or_losing_pending_data(self):
         first = prepare_import(self.instance)
-        self.source.write_text(json.dumps({"blocs": [{**self.block, "x": 2}, {**self.block, "t": 200, "mine": True}]}))
+        self.source.write_text(
+            json.dumps({"blocs": [{**self.block, "x": 2}, {**self.block, "t": 200, "mine": True}]})
+        )
         result = prepare_import(self.instance)
         self.assertEqual(result["blocs"], 2)
         self.assertEqual(result["restants_historiques"], 1)
@@ -59,13 +68,15 @@ class ImportFilonsTests(unittest.TestCase):
         result = prepare_import(self.instance)
         path = Path(result["fichier"])
         before = path.read_bytes()
-        self.source.write_text(json.dumps({"blocs": [{**self.block, "x": float("nan")}] }))
+        self.source.write_text(json.dumps({"blocs": [{**self.block, "x": float("nan")}]}))
         with self.assertRaises(ValueError):
             prepare_import(self.instance)
         self.assertEqual(path.read_bytes(), before)
 
     def test_legacy_blocks_cannot_be_imported_as_gregtech_deposits(self):
-        self.active.write_text(json.dumps({"v": 1, "monde": self.world, "source": "gregtech", "gisements": []}))
+        self.active.write_text(
+            json.dumps({"v": 1, "monde": self.world, "source": "gregtech", "gisements": []})
+        )
         with self.assertRaisesRegex(RuntimeError, "GregTech"):
             prepare_import(self.instance)
         self.assertFalse((self.folder / "filons/imports").exists())

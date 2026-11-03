@@ -3,12 +3,13 @@
 Only UI/process initialization is omitted: method bodies and the inventory evaluator
 are compiled directly from assistant_mc.py, including the real JSON request handler.
 """
+
 import ast
 import copy
 import json
 import math
-import sys
 import re
+import sys
 import tempfile
 import time
 import unittest
@@ -17,30 +18,91 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import monifactory_assistant.providers as ai_provider
+from monifactory_assistant.game.projects import ProjectStore
+
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-from project_store import ProjectStore
-import ai_provider
+
 METHODS = {
-    "load_plan", "save_plan", "restore_project", "project_snapshot", "project_view", "handle_project_request", "schedule_project_action", "current_objective", "set_objective_paused", "auto_next_objective",
-    "update_objective_progress", "progress", "have", "target_totals", "track_targets",
-    "on_game_connected", "on_next_objective", "start_objective", "action_effacer_objectif", "action_effacer_plan",
-    "action_pause_objectif", "action_reprendre_objectif", "handle_mod_request", "set_step",
-    "coach", "flush_coach", "check_stuck", "start_briefing", "on_coach_message",
+    "load_plan",
+    "save_plan",
+    "restore_project",
+    "project_snapshot",
+    "project_view",
+    "handle_project_request",
+    "schedule_project_action",
+    "current_objective",
+    "set_objective_paused",
+    "auto_next_objective",
+    "update_objective_progress",
+    "progress",
+    "have",
+    "target_totals",
+    "track_targets",
+    "on_game_connected",
+    "on_next_objective",
+    "start_objective",
+    "action_effacer_objectif",
+    "action_effacer_plan",
+    "action_pause_objectif",
+    "action_reprendre_objectif",
+    "handle_mod_request",
+    "set_step",
+    "coach",
+    "flush_coach",
+    "check_stuck",
+    "start_briefing",
+    "on_coach_message",
 }
 
 
 def load_logic(path):
-    source = ast.parse((ROOT / "assistant_mc.py").read_text())
-    functions = [n for n in source.body if isinstance(n, ast.FunctionDef)
-                 and n.name in {"objective_entry", "evaluate", "has_tool", "build_mod_view", "item_names",
-                                "step_count", "step_text", "needed_machines", "craft_suggestions", "block_name"}]
+    source = ast.parse((ROOT / "monifactory_assistant/app.py").read_text())
+    functions = [
+        n
+        for n in source.body
+        if isinstance(n, ast.FunctionDef)
+        and n.name
+        in {
+            "objective_entry",
+            "evaluate",
+            "has_tool",
+            "build_mod_view",
+            "item_names",
+            "step_count",
+            "step_text",
+            "needed_machines",
+            "craft_suggestions",
+            "block_name",
+        }
+    ]
     app = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "App")
     app.body = [n for n in app.body if isinstance(n, ast.FunctionDef) and n.name in METHODS]
-    namespace = dict(ai_provider=ai_provider, copy=copy, ProjectStore=ProjectStore, json=json, time=time, math=math, defaultdict=defaultdict, PLAN_FILE=path,
-                     USEFUL=1, COACH_LEVELS={"normal": 1}, COACH="normal", HOTKEY_PLAN="f7",
-                     STUCK_MINUTES=15, BRIEFING_PAUSE=30, TOOL_TYPES=[], sys=sys, re=re, HERE=ROOT, SETTINGS={})
-    exec(compile(ast.Module(body=functions + [app], type_ignores=[]), "assistant_mc.py", "exec"), namespace)
+    namespace = dict(
+        ai_provider=ai_provider,
+        copy=copy,
+        ProjectStore=ProjectStore,
+        json=json,
+        time=time,
+        math=math,
+        defaultdict=defaultdict,
+        PLAN_FILE=path,
+        USEFUL=1,
+        COACH_LEVELS={"normal": 1},
+        COACH="normal",
+        HOTKEY_PLAN="f7",
+        STUCK_MINUTES=15,
+        BRIEFING_PAUSE=30,
+        TOOL_TYPES=[],
+        sys=sys,
+        re=re,
+        HERE=ROOT,
+        SETTINGS={},
+    )
+    exec(
+        compile(ast.Module(body=functions + [app], type_ignores=[]), "assistant_mc.py", "exec"),
+        namespace,
+    )
     return namespace["App"]
 
 
@@ -53,12 +115,23 @@ class ObjectivePauseTests(unittest.TestCase):
         self.app = self.App.__new__(self.App)
         a = self.app
         a.load_plan()
-        a.plan = {"objectif": "Deux pioches", "recettes": [],
-                  "cibles": [{"item": "minecraft:stone_pickaxe", "nom": "Pioche", "quantite": 2}],
-                  "etapes": [{"texte": "Fabriquer deux pioches", "item": "minecraft:stone_pickaxe", "quantite": 2}]}
+        a.plan = {
+            "objectif": "Deux pioches",
+            "recettes": [],
+            "cibles": [{"item": "minecraft:stone_pickaxe", "nom": "Pioche", "quantite": 2}],
+            "etapes": [
+                {
+                    "texte": "Fabriquer deux pioches",
+                    "item": "minecraft:stone_pickaxe",
+                    "quantite": 2,
+                }
+            ],
+        }
         a.plan_version = 42
-        a.objectives = [{"titre": "Deux pioches", "demande": "Pioches", "etat": "en_cours"},
-                        {"titre": "Miner", "demande": "Miner", "etat": "a_faire"}]
+        a.objectives = [
+            {"titre": "Deux pioches", "demande": "Pioches", "etat": "en_cours"},
+            {"titre": "Miner", "demande": "Miner", "etat": "a_faire"},
+        ]
         a.busy = a.coach_busy = False
         a.last_progress = a.last_moved = 0
         a.plan_done_announced = False
@@ -174,8 +247,11 @@ class ObjectivePauseTests(unittest.TestCase):
 
     def test_pause_keeps_safety_alerts_but_drops_progress_and_briefing(self):
         a = self.app
-        a.coach_queue = [("Ancienne étape", True, "progression"),
-                         ("Reprise", True, "briefing"), ("Danger", True, "coach")]
+        a.coach_queue = [
+            ("Ancienne étape", True, "progression"),
+            ("Reprise", True, "briefing"),
+            ("Danger", True, "coach"),
+        ]
         a.set_objective_paused(True)
         self.assertEqual(a.coach_queue, [("Danger", True, "coach")])
         a.flush_coach()

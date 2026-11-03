@@ -21,28 +21,41 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Le tableau de bord de l'assistant (touche Y), en onglets :
- * - Objectif : l'objectif en cours, son pourquoi, ses étapes (clic : cocher ou décocher) et tous les objets avec leur
- *   icône (clic : recette dans EMI, clic droit : fiche « à quoi ça sert ») ;
- * - Plan : l'objectif principal et la liste de ses objectifs (faits, en cours, à venir) ;
- * - Base : les machines vues par le serveur ; Discussion ; Réglages : chaque option avec son état.
- * Une question s'écrit en bas, quel que soit l'onglet.
+ * Le tableau de bord de l'assistant (touche Y), en onglets : - Objectif : l'objectif en cours, son
+ * pourquoi, ses étapes (clic : cocher ou décocher) et tous les objets avec leur icône (clic :
+ * recette dans EMI, clic droit : fiche « à quoi ça sert ») ; - Plan : l'objectif principal et la
+ * liste de ses objectifs (faits, en cours, à venir) ; - Base : les machines vues par le serveur ;
+ * Discussion ; Réglages : chaque option avec son état. Une question s'écrit en bas, quel que soit
+ * l'onglet.
  */
 public class EcranAssistant extends Screen {
     private static final int FOND = 0xD00D1013, MARGE = 10, LIGNE = 10;
     // Toujours ajouter les nouveaux onglets avant Réglages, qui reste tout à droite.
-    private static final String[] ONGLETS = {"Objectif", "Plan", "Base", "Discussion", "Filons", "Réglages"};
-    private static final int OBJECTIF = 0, PLAN = 1, BASE = 2, DISCUSSION = 3, FILONS = 4, REGLAGES = 5;
+    private static final String[] ONGLETS = {
+        "Objectif", "Plan", "Base", "Discussion", "Filons", "Réglages"
+    };
+    private static final int OBJECTIF = 0,
+            PLAN = 1,
+            BASE = 2,
+            DISCUSSION = 3,
+            FILONS = 4,
+            REGLAGES = 5;
     private static int onglet = OBJECTIF; // gardé d'une ouverture à l'autre
 
-    /** Zone cliquable : une icône d'objet (recette), une étape (la cocher) ou un réglage (le changer). */
-    private record Zone(int x, int y, int l, int h, String item, int etape, String reglage) {
-    }
+    /**
+     * Zone cliquable : une icône d'objet (recette), une étape (la cocher) ou un réglage (le
+     * changer).
+     */
+    private record Zone(int x, int y, int l, int h, String item, int etape, String reglage) {}
 
     private final List<Zone> zones = new ArrayList<>();
     private final List<Button> boutonsOnglets = new ArrayList<>();
-    /** Réglages changés à l'instant, affichés tout de suite sans attendre la réponse de l'assistant. */
+
+    /**
+     * Réglages changés à l'instant, affichés tout de suite sans attendre la réponse de l'assistant.
+     */
     private static final Map<String, Boolean> REGLAGES_EN_ATTENTE = new HashMap<>();
+
     private final List<Button> actionsObjectif = new ArrayList<>();
     private OngletFilons filons;
     private OngletBase base;
@@ -52,7 +65,7 @@ public class EcranAssistant extends Screen {
     private static Boolean pauseDemandee;
     private static String pauseVersion;
     private static long pauseEnvoyee;
-    private Button relancer;          // visible seulement quand l'assistant ne tourne pas
+    private Button relancer; // visible seulement quand l'assistant ne tourne pas
     private boolean lanceurInconnu;
     private int defilement = 0;
     private String enAttente = null;
@@ -66,53 +79,116 @@ public class EcranAssistant extends Screen {
         int x = MARGE;
         boutonsOnglets.clear();
         actionsObjectif.clear();
-        int largeurTotale = java.util.Arrays.stream(ONGLETS).mapToInt(t -> this.font.width(t) + 20).sum();
+        int largeurTotale =
+                java.util.Arrays.stream(ONGLETS).mapToInt(t -> this.font.width(t) + 20).sum();
         for (int i = 0; i < ONGLETS.length; i++) {
             int numero = i;
-            int largeur = Math.min(this.font.width(ONGLETS[i]) + 16,
-                    Math.max(30, (this.font.width(ONGLETS[i]) + 20) * (this.width - 2 * MARGE) / largeurTotale - 4));
-            boutonsOnglets.add(addRenderableWidget(Button.builder(Component.literal(this.font.plainSubstrByWidth(ONGLETS[i], largeur - 8)), b -> {
-                onglet = numero;
-                defilement = 0;
-            }).bounds(x, MARGE, largeur, 18).build()));
-            boutonsOnglets.get(i).setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(ONGLETS[i])));
+            int largeur =
+                    Math.min(
+                            this.font.width(ONGLETS[i]) + 16,
+                            Math.max(
+                                    30,
+                                    (this.font.width(ONGLETS[i]) + 20)
+                                                    * (this.width - 2 * MARGE)
+                                                    / largeurTotale
+                                            - 4));
+            boutonsOnglets.add(
+                    addRenderableWidget(
+                            Button.builder(
+                                            Component.literal(
+                                                    this.font.plainSubstrByWidth(
+                                                            ONGLETS[i], largeur - 8)),
+                                            b -> {
+                                                onglet = numero;
+                                                defilement = 0;
+                                            })
+                                    .bounds(x, MARGE, largeur, 18)
+                                    .build()));
+            boutonsOnglets
+                    .get(i)
+                    .setTooltip(
+                            net.minecraft.client.gui.components.Tooltip.create(
+                                    Component.literal(ONGLETS[i])));
             x += largeur + 4;
         }
         int bas = this.height - MARGE - 18;
-        saisie = new EditBox(this.font, MARGE, bas, this.width - 2 * MARGE - 70, 18, Component.literal("Question"));
+        saisie =
+                new EditBox(
+                        this.font,
+                        MARGE,
+                        bas,
+                        this.width - 2 * MARGE - 70,
+                        18,
+                        Component.literal("Question"));
         saisie.setMaxLength(400);
         saisie.setHint(Component.literal("Une question pour l’assistant ? Écris-la puis Entrée"));
         addRenderableWidget(saisie);
-        addRenderableWidget(Button.builder(Component.literal("Envoyer"), b -> envoyerQuestion())
-                .bounds(this.width - MARGE - 64, bas - 1, 64, 20).build());
-        String[][] actions = {{"Objectif suivant", "objectif_suivant"}, {"Refaire l'objectif", "refaire_objectif"},
-                {"Valider l'étape", "valider_etape"}};
+        addRenderableWidget(
+                Button.builder(Component.literal("Envoyer"), b -> envoyerQuestion())
+                        .bounds(this.width - MARGE - 64, bas - 1, 64, 20)
+                        .build());
+        String[][] actions = {
+            {"Objectif suivant", "objectif_suivant"},
+            {"Refaire l'objectif", "refaire_objectif"},
+            {"Valider l'étape", "valider_etape"}
+        };
         int largeur = (this.width - 2 * MARGE - actions.length * 6 - 104) / actions.length;
         for (int i = 0; i < actions.length; i++) {
             String code = actions[i][1];
-            actionsObjectif.add(addRenderableWidget(Button.builder(Component.literal(actions[i][0]), b -> envoyerAction(code))
-                    .bounds(MARGE + i * (largeur + 6), bas - 26, largeur, 20).build()));
+            actionsObjectif.add(
+                    addRenderableWidget(
+                            Button.builder(
+                                            Component.literal(actions[i][0]),
+                                            b -> envoyerAction(code))
+                                    .bounds(MARGE + i * (largeur + 6), bas - 26, largeur, 20)
+                                    .build()));
         }
-        actionsObjectif.add(addRenderableWidget(Button.builder(Component.literal("Arbre EMI"), b -> ouvrirArbre())
-                .bounds(this.width - MARGE - 104, bas - 26, 104, 20).build()));
-        relancer = addRenderableWidget(Button.builder(Component.literal("Relancer l'assistant"),
-                b -> lanceurInconnu = !Pont.relancer()).bounds(this.width - MARGE - 120, MARGE, 120, 18).build());
-        pauseObjectif = addRenderableWidget(Button.builder(Component.literal("Mettre en pause"), b -> {
-            JsonObject vue = ecran();
-            pauseDemandee = !Pont.vrai(vue, "objectif_en_pause");
-            pauseVersion = Pont.texte(vue, "objectif_version");
-            pauseEnvoyee = System.currentTimeMillis();
-            JsonObject demande = new JsonObject();
-            demande.addProperty("type", "action");
-            demande.addProperty("action", pauseDemandee ? "pause_objectif" : "reprendre_objectif");
-            demande.addProperty("version", pauseVersion);
-            demande.addProperty("projet", Pont.texte(partie(vue,"projets"),"actif"));
-            Pont.envoyer(demande);
-            b.active = false;
-        }).bounds(this.width - MARGE - 120, MARGE + 26, 120, 18).build());
-        projets = addRenderableWidget(Button.builder(Component.literal("Mes projets"),
-                b -> this.minecraft.setScreen(new EcranProjets(this))).bounds(MARGE,MARGE+26,120,18).build());
-        base = new OngletBase(); base.init(w -> addRenderableWidget(w));
+        actionsObjectif.add(
+                addRenderableWidget(
+                        Button.builder(Component.literal("Arbre EMI"), b -> ouvrirArbre())
+                                .bounds(this.width - MARGE - 104, bas - 26, 104, 20)
+                                .build()));
+        relancer =
+                addRenderableWidget(
+                        Button.builder(
+                                        Component.literal("Relancer l'assistant"),
+                                        b -> lanceurInconnu = !Pont.relancer())
+                                .bounds(this.width - MARGE - 120, MARGE, 120, 18)
+                                .build());
+        pauseObjectif =
+                addRenderableWidget(
+                        Button.builder(
+                                        Component.literal("Mettre en pause"),
+                                        b -> {
+                                            JsonObject vue = ecran();
+                                            pauseDemandee = !Pont.vrai(vue, "objectif_en_pause");
+                                            pauseVersion = Pont.texte(vue, "objectif_version");
+                                            pauseEnvoyee = System.currentTimeMillis();
+                                            JsonObject demande = new JsonObject();
+                                            demande.addProperty("type", "action");
+                                            demande.addProperty(
+                                                    "action",
+                                                    pauseDemandee
+                                                            ? "pause_objectif"
+                                                            : "reprendre_objectif");
+                                            demande.addProperty("version", pauseVersion);
+                                            demande.addProperty(
+                                                    "projet",
+                                                    Pont.texte(partie(vue, "projets"), "actif"));
+                                            Pont.envoyer(demande);
+                                            b.active = false;
+                                        })
+                                .bounds(this.width - MARGE - 120, MARGE + 26, 120, 18)
+                                .build());
+        projets =
+                addRenderableWidget(
+                        Button.builder(
+                                        Component.literal("Mes projets"),
+                                        b -> this.minecraft.setScreen(new EcranProjets(this)))
+                                .bounds(MARGE, MARGE + 26, 120, 18)
+                                .build());
+        base = new OngletBase();
+        base.init(w -> addRenderableWidget(w));
         filons = new OngletFilons();
         filons.init(w -> addRenderableWidget(w), this.height);
         setInitialFocus(saisie);
@@ -137,7 +213,7 @@ public class EcranAssistant extends Screen {
         JsonObject demande = new JsonObject();
         demande.addProperty("type", "action");
         demande.addProperty("action", code);
-        demande.addProperty("projet", Pont.texte(partie(ecran(),"projets"),"actif"));
+        demande.addProperty("projet", Pont.texte(partie(ecran(), "projets"), "actif"));
         Pont.envoyer(demande);
     }
 
@@ -145,13 +221,16 @@ public class EcranAssistant extends Screen {
         JsonObject demande = new JsonObject();
         demande.addProperty("type", "action");
         demande.addProperty("action", "etape");
-        demande.addProperty("projet", Pont.texte(partie(ecran(),"projets"),"actif"));
+        demande.addProperty("projet", Pont.texte(partie(ecran(), "projets"), "actif"));
         demande.addProperty("index", index);
         Pont.envoyer(demande);
     }
 
     private void changerReglage(String cle, boolean valeur) {
-        if (Fullbright.CLE.equals(cle)) { Fullbright.regler(valeur); return; }
+        if (Fullbright.CLE.equals(cle)) {
+            Fullbright.regler(valeur);
+            return;
+        }
         JsonObject demande = new JsonObject();
         demande.addProperty("type", "reglage");
         demande.addProperty("cle", cle);
@@ -162,13 +241,17 @@ public class EcranAssistant extends Screen {
 
     /** L'arbre de fabrication d'EMI, avec l'objectif en cours : EMI y suit ce que tu as déjà. */
     private void ouvrirArbre() {
-        JsonObject arbre = ecran().has("arbre") && ecran().get("arbre").isJsonObject()
-                ? ecran().getAsJsonObject("arbre") : new JsonObject();
+        JsonObject arbre =
+                ecran().has("arbre") && ecran().get("arbre").isJsonObject()
+                        ? ecran().getAsJsonObject("arbre")
+                        : new JsonObject();
         String item = Pont.texte(arbre, "item");
         if (item.isEmpty() || this.minecraft == null || this.minecraft.player == null) {
             return;
         }
-        this.minecraft.setScreen(new InventoryScreen(this.minecraft.player)); // EMI ouvre son arbre depuis un inventaire
+        this.minecraft.setScreen(
+                new InventoryScreen(
+                        this.minecraft.player)); // EMI ouvre son arbre depuis un inventaire
         Emi.ouvrirArbre(Pont.texte(arbre, "id"), Pont.objet(item));
     }
 
@@ -178,7 +261,8 @@ public class EcranAssistant extends Screen {
 
     @Override
     public boolean keyPressed(int touche, int scancode, int modificateurs) {
-        if ((touche == GLFW.GLFW_KEY_ENTER || touche == GLFW.GLFW_KEY_KP_ENTER) && saisie.isFocused()) {
+        if ((touche == GLFW.GLFW_KEY_ENTER || touche == GLFW.GLFW_KEY_KP_ENTER)
+                && saisie.isFocused()) {
             envoyerQuestion();
             return true;
         }
@@ -189,7 +273,11 @@ public class EcranAssistant extends Screen {
     public boolean mouseClicked(double x, double y, int bouton) {
         if (onglet == FILONS && filons.cliquer(x, y, bouton)) return true;
         for (Zone z : zones) {
-            if (x < z.x() || x >= z.x() + z.l() || y < z.y() || y >= z.y() + z.h() || this.minecraft == null
+            if (x < z.x()
+                    || x >= z.x() + z.l()
+                    || y < z.y()
+                    || y >= z.y() + z.h()
+                    || this.minecraft == null
                     || this.minecraft.player == null) {
                 continue;
             }
@@ -201,7 +289,9 @@ public class EcranAssistant extends Screen {
             } else if (bouton == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
                 EcranInfo.ouvrir(Pont.objet(z.item()), "plan", null);
             } else {
-                this.minecraft.setScreen(new InventoryScreen(this.minecraft.player)); // EMI s'ouvre depuis un inventaire
+                this.minecraft.setScreen(
+                        new InventoryScreen(
+                                this.minecraft.player)); // EMI s'ouvre depuis un inventaire
                 Emi.afficherRecettes(Pont.objet(z.item()));
             }
             return true;
@@ -213,7 +303,8 @@ public class EcranAssistant extends Screen {
     public boolean mouseScrolled(double x, double y, double delta) {
         if (onglet == FILONS) return filons.defiler(x, y, delta);
         if (onglet == BASE) return base.defiler(x, y, delta);
-        // Molette vers le haut : on remonte. Les onglets comptent depuis le haut, la discussion depuis le bas.
+        // Molette vers le haut : on remonte. Les onglets comptent depuis le haut, la discussion
+        // depuis le bas.
         int pas = (delta > 0 ? 3 : -3) * (onglet == DISCUSSION ? 1 : -1);
         defilement = Math.max(0, defilement + pas);
         return true;
@@ -235,50 +326,99 @@ public class EcranAssistant extends Screen {
             boutonsOnglets.get(i).active = i != onglet; // l'onglet ouvert est grisé
         }
         JsonObject ecran = ecran();
-        int haut = MARGE + 26, bas = this.height - MARGE - 18 - (onglet == OBJECTIF || onglet == PLAN ? 32 : 6);
+        int haut = MARGE + 26,
+                bas = this.height - MARGE - 18 - (onglet == OBJECTIF || onglet == PLAN ? 32 : 6);
         g.fill(MARGE - 4, haut - 4, this.width - MARGE + 4, bas, FOND);
         boolean actif = Pont.assistantActif();
         relancer.visible = !actif && !Pont.relanceEnCours() && onglet != FILONS;
         if (onglet != FILONS && actif) {
             lanceurInconnu = false;
             String statut = Pont.texte(ecran, "statut");
-            String droite = !statut.isEmpty() ? statut : Pont.vrai(ecran, "serveur") ? "serveur ✔" : "";
-            int debut = boutonsOnglets.isEmpty() ? MARGE : boutonsOnglets.get(boutonsOnglets.size() - 1).getX()
-                    + boutonsOnglets.get(boutonsOnglets.size() - 1).getWidth() + 8;
+            String droite =
+                    !statut.isEmpty() ? statut : Pont.vrai(ecran, "serveur") ? "serveur ✔" : "";
+            int debut =
+                    boutonsOnglets.isEmpty()
+                            ? MARGE
+                            : boutonsOnglets.get(boutonsOnglets.size() - 1).getX()
+                                    + boutonsOnglets.get(boutonsOnglets.size() - 1).getWidth()
+                                    + 8;
             droite = this.font.plainSubstrByWidth(droite, this.width - MARGE - debut);
-            g.drawString(this.font, droite, this.width - MARGE - this.font.width(droite), MARGE + 5, Hud.GRIS, false);
-        } else if (onglet != FILONS) { // l'assistant ne tourne pas : rien ne répondra tant qu'il n'est pas relancé
-            String arret = Pont.relanceEnCours() ? "L'assistant démarre…" : lanceurInconnu
-                    ? "Lance le lanceur de l’assistant (Mac.command ou .bat)" : "Assistant arrêté";
+            g.drawString(
+                    this.font,
+                    droite,
+                    this.width - MARGE - this.font.width(droite),
+                    MARGE + 5,
+                    Hud.GRIS,
+                    false);
+        } else if (onglet
+                != FILONS) { // l'assistant ne tourne pas : rien ne répondra tant qu'il n'est pas
+            // relancé
+            String arret =
+                    Pont.relanceEnCours()
+                            ? "L'assistant démarre…"
+                            : lanceurInconnu
+                                    ? "Lance le lanceur de l’assistant (Mac.command ou .bat)"
+                                    : "Assistant arrêté";
             int fin = relancer.visible ? relancer.getX() - 6 : this.width - MARGE;
-            g.drawString(this.font, arret, fin - this.font.width(arret), MARGE + 5,
-                    Pont.relanceEnCours() ? Hud.GRIS : Hud.ROUGE, false);
+            g.drawString(
+                    this.font,
+                    arret,
+                    fin - this.font.width(arret),
+                    MARGE + 5,
+                    Pont.relanceEnCours() ? Hud.GRIS : Hud.ROUGE,
+                    false);
         }
         projets.visible = onglet == OBJECTIF || onglet == PLAN;
         if (projets.visible) {
-            String nomProjet = Pont.texte(partie(ecran,"projets"),"nom");
-            projets.setX(MARGE); projets.setY(haut); projets.setWidth(this.width-2*MARGE);
-            projets.setMessage(Component.literal(this.font.plainSubstrByWidth("Projet : "+(nomProjet.isEmpty()?"Mes projets":nomProjet)+"  ▾",this.width-2*MARGE-16)));
-            projets.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Choisir, créer ou renommer un projet. Les autres objectifs et plans sont conservés.")));
+            String nomProjet = Pont.texte(partie(ecran, "projets"), "nom");
+            projets.setX(MARGE);
+            projets.setY(haut);
+            projets.setWidth(this.width - 2 * MARGE);
+            projets.setMessage(
+                    Component.literal(
+                            this.font.plainSubstrByWidth(
+                                    "Projet : "
+                                            + (nomProjet.isEmpty() ? "Mes projets" : nomProjet)
+                                            + "  ▾",
+                                    this.width - 2 * MARGE - 16)));
+            projets.setTooltip(
+                    net.minecraft.client.gui.components.Tooltip.create(
+                            Component.literal(
+                                    "Choisir, créer ou renommer un projet. Les autres objectifs et plans sont conservés.")));
             haut += 24;
         }
         boolean enPause = Pont.vrai(ecran, "objectif_en_pause");
-        if (pauseDemandee != null && (pauseDemandee == enPause
-                || !Pont.texte(ecran, "objectif_version").equals(pauseVersion)
-                || System.currentTimeMillis() - pauseEnvoyee > 5000)) {
+        if (pauseDemandee != null
+                && (pauseDemandee == enPause
+                        || !Pont.texte(ecran, "objectif_version").equals(pauseVersion)
+                        || System.currentTimeMillis() - pauseEnvoyee > 5000)) {
             pauseDemandee = null;
         }
-        pauseObjectif.visible = (onglet == OBJECTIF || onglet == PLAN)
-                && !Pont.texte(ecran, "objectif").isEmpty();
-        pauseObjectif.active = actif && !Pont.vrai(ecran, "occupe") && pauseDemandee == null
-                && System.currentTimeMillis() - pauseEnvoyee > 650;
-        pauseObjectif.setMessage(Component.literal(pauseDemandee != null ? "En cours…"
-                : enPause ? "Reprendre" : "Mettre en pause"));
+        pauseObjectif.visible =
+                (onglet == OBJECTIF || onglet == PLAN) && !Pont.texte(ecran, "objectif").isEmpty();
+        pauseObjectif.active =
+                actif
+                        && !Pont.vrai(ecran, "occupe")
+                        && pauseDemandee == null
+                        && System.currentTimeMillis() - pauseEnvoyee > 650;
+        pauseObjectif.setMessage(
+                Component.literal(
+                        pauseDemandee != null
+                                ? "En cours…"
+                                : enPause ? "Reprendre" : "Mettre en pause"));
         if (pauseObjectif.visible) {
             pauseObjectif.setY(haut);
-            g.drawString(this.font, this.font.plainSubstrByWidth(enPause ? "Objectif en pause · progression conservée"
-                    : "Objectif actif", this.width - 2 * MARGE - 128),
-                    MARGE, haut + 5, enPause ? Hud.JAUNE : Hud.GRIS, false);
+            g.drawString(
+                    this.font,
+                    this.font.plainSubstrByWidth(
+                            enPause
+                                    ? "Objectif en pause · progression conservée"
+                                    : "Objectif actif",
+                            this.width - 2 * MARGE - 128),
+                    MARGE,
+                    haut + 5,
+                    enPause ? Hud.JAUNE : Hud.GRIS,
+                    false);
             haut += 24;
         }
         int largeur = this.width - 2 * MARGE;
@@ -295,17 +435,30 @@ public class EcranAssistant extends Screen {
 
     // ---------- Onglet Objectif ----------
 
-    private void objectif(GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas, int sx, int sy) {
+    private void objectif(
+            GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas, int sx, int sy) {
         JsonObject plan = partie(ecran, "plan");
         String objectif = Pont.texte(ecran, "objectif");
         if (objectif.isEmpty()) {
-            ecrire(g, "Pas d'objectif en cours : « Objectif suivant » prend le prochain objectif de ton plan, "
-                    + "le sélecteur « Projet » permet d’en créer un autre.", x, y, largeur, Hud.GRIS);
+            ecrire(
+                    g,
+                    "Pas d'objectif en cours : « Objectif suivant » prend le prochain objectif de ton plan, "
+                            + "le sélecteur « Projet » permet d’en créer un autre.",
+                    x,
+                    y,
+                    largeur,
+                    Hud.GRIS);
             return;
         }
         String titrePlan = Pont.texte(plan, "titre");
         if (!titrePlan.isEmpty()) {
-            g.drawString(this.font, this.font.plainSubstrByWidth("Plan : " + titrePlan, largeur), x, y, Hud.GRIS, false);
+            g.drawString(
+                    this.font,
+                    this.font.plainSubstrByWidth("Plan : " + titrePlan, largeur),
+                    x,
+                    y,
+                    Hud.GRIS,
+                    false);
             y += 11;
         }
         g.drawString(this.font, "✦ " + objectif, x, y, Hud.OR, true);
@@ -319,30 +472,46 @@ public class EcranAssistant extends Screen {
             y = ecrire(g, "Pourquoi : " + pourquoi, x, y, largeur, Hud.GRIS) + 4;
         }
         int colonne = largeur / 2 - 6;
-        // Colonne de gauche : les étapes, à cocher ou décocher d'un clic (elles défilent avec la molette, elles aussi)
+        // Colonne de gauche : les étapes, à cocher ou décocher d'un clic (elles défilent avec la
+        // molette, elles aussi)
         int yEtapes = y - defilement * LIGNE, numero = 0;
         for (JsonElement e : Pont.liste(ecran, "etapes")) {
             JsonObject etape = e.getAsJsonObject();
             boolean fait = Pont.vrai(etape, "fait"), courant = Pont.vrai(etape, "courant");
             String texte = (fait ? "☑ " : "☐ ") + Pont.texte(etape, "texte");
-            int hauteur = Math.max(1, this.font.split(Component.literal(texte), colonne).size()) * LIGNE;
+            int hauteur =
+                    Math.max(1, this.font.split(Component.literal(texte), colonne).size()) * LIGNE;
             if (yEtapes >= y && yEtapes + hauteur <= bas - 14) {
-                boolean survol = sx >= x && sx < x + colonne && sy >= yEtapes && sy < yEtapes + hauteur;
+                boolean survol =
+                        sx >= x && sx < x + colonne && sy >= yEtapes && sy < yEtapes + hauteur;
                 if (survol) {
                     g.fill(x - 2, yEtapes - 1, x + colonne, yEtapes + hauteur - 1, 0x20FFFFFF);
                 }
                 zones.add(new Zone(x, yEtapes, colonne, hauteur, null, numero, null));
-                ecrire(g, texte, x, yEtapes, colonne, survol ? Hud.BLEU : fait ? Hud.VERT : courant ? Hud.JAUNE : Hud.BLANC);
+                ecrire(
+                        g,
+                        texte,
+                        x,
+                        yEtapes,
+                        colonne,
+                        survol ? Hud.BLEU : fait ? Hud.VERT : courant ? Hud.JAUNE : Hud.BLANC);
             }
             numero++;
             yEtapes += hauteur + 2;
         }
-        // Colonne de droite : tous les objets de l'objectif, avec leur icône (clic = recette dans EMI)
+        // Colonne de droite : tous les objets de l'objectif, avec leur icône (clic = recette dans
+        // EMI)
         int xd = x + colonne + 12, yd = y - defilement * LIGNE;
         for (JsonElement s : Pont.liste(ecran, "sections")) {
             JsonObject section = s.getAsJsonObject();
             if (yd >= y - LIGNE && yd < bas) {
-                g.drawString(this.font, Pont.texte(section, "titre"), xd, yd, Hud.couleur(Pont.texte(section, "couleur")), false);
+                g.drawString(
+                        this.font,
+                        Pont.texte(section, "titre"),
+                        xd,
+                        yd,
+                        Hud.couleur(Pont.texte(section, "couleur")),
+                        false);
             }
             yd += 12;
             for (JsonElement o : Pont.liste(section, "objets")) {
@@ -353,19 +522,33 @@ public class EcranAssistant extends Screen {
                     g.renderItem(stack, xd, yd);
                     boolean survol = sx >= xd && sx < xd + colonne && sy >= yd && sy < yd + 17;
                     String ligne = Pont.texte(objet, "nom") + "  " + Pont.texte(objet, "texte");
-                    g.drawString(this.font, this.font.plainSubstrByWidth(ligne, colonne - 22), xd + 20, yd + 4,
-                            survol ? Hud.BLEU : Hud.BLANC, false);
+                    g.drawString(
+                            this.font,
+                            this.font.plainSubstrByWidth(ligne, colonne - 22),
+                            xd + 20,
+                            yd + 4,
+                            survol ? Hud.BLEU : Hud.BLANC,
+                            false);
                     zones.add(new Zone(xd, yd, colonne, 17, item, -1, null));
                 }
                 yd += 18;
             }
             yd += 4;
         }
-        // Pas plus bas que la fin de la plus longue des deux colonnes (pris en compte à l'image suivante)
+        // Pas plus bas que la fin de la plus longue des deux colonnes (pris en compte à l'image
+        // suivante)
         int depassement = Math.max(yd, yEtapes) + defilement * LIGNE - (bas - 16);
         defilement = Math.min(defilement, Math.max(0, (depassement + LIGNE - 1) / LIGNE));
-        g.drawString(this.font, this.font.plainSubstrByWidth("Clic sur une étape : la cocher · sur un objet : sa "
-                + "recette (clic droit : à quoi ça sert) · molette : défiler", largeur), x, bas - 10, Hud.GRIS, false);
+        g.drawString(
+                this.font,
+                this.font.plainSubstrByWidth(
+                        "Clic sur une étape : la cocher · sur un objet : sa "
+                                + "recette (clic droit : à quoi ça sert) · molette : défiler",
+                        largeur),
+                x,
+                bas - 10,
+                Hud.GRIS,
+                false);
     }
 
     // ---------- Onglet Plan ----------
@@ -374,12 +557,24 @@ public class EcranAssistant extends Screen {
         JsonObject plan = partie(ecran, "plan");
         JsonArray objectifs = Pont.liste(plan, "objectifs");
         if (objectifs.isEmpty()) {
-            ecrire(g, "Pas encore de plan. Sélecteur « Projet » → Créer : l'assistant choisit ton prochain grand objectif "
-                    + "dans un projet séparé, sans perdre tes autres objectifs.", x, y, largeur, Hud.GRIS);
+            ecrire(
+                    g,
+                    "Pas encore de plan. Sélecteur « Projet » → Créer : l'assistant choisit ton prochain grand objectif "
+                            + "dans un projet séparé, sans perdre tes autres objectifs.",
+                    x,
+                    y,
+                    largeur,
+                    Hud.GRIS);
             return;
         }
         String titre = Pont.texte(plan, "titre");
-        g.drawString(this.font, "✦ Plan : " + (titre.isEmpty() ? "en cours" : titre), x, y, Hud.OR, true);
+        g.drawString(
+                this.font,
+                "✦ Plan : " + (titre.isEmpty() ? "en cours" : titre),
+                x,
+                y,
+                Hud.OR,
+                true);
         y += 12;
         int faits = 0;
         for (JsonElement e : objectifs) {
@@ -392,16 +587,42 @@ public class EcranAssistant extends Screen {
         if (!pourquoi.isEmpty()) {
             y = ecrire(g, "Pourquoi : " + pourquoi, x, y, largeur, Hud.GRIS) + 4;
         }
-        y = ecrire(g, faits + " objectif" + (faits > 1 ? "s" : "") + " fait" + (faits > 1 ? "s" : "") + " sur "
-                + objectifs.size(), x, y, largeur, Hud.GRIS) + 4;
+        y =
+                ecrire(
+                                g,
+                                faits
+                                        + " objectif"
+                                        + (faits > 1 ? "s" : "")
+                                        + " fait"
+                                        + (faits > 1 ? "s" : "")
+                                        + " sur "
+                                        + objectifs.size(),
+                                x,
+                                y,
+                                largeur,
+                                Hud.GRIS)
+                        + 4;
         int numero = 1, debut = y;
         y -= defilement * LIGNE;
         for (JsonElement e : objectifs) {
             JsonObject o = e.getAsJsonObject();
             String etat = Pont.texte(o, "etat");
-            String marque = "en_pause".equals(etat) ? "Ⅱ " : "fait".equals(etat) ? "✔ " : "en_cours".equals(etat) ? "▶ " : numero + ". ";
-            int couleur = "fait".equals(etat) ? Hud.VERT : "en_cours".equals(etat) ? Hud.JAUNE : Hud.BLANC;
-            String texte = marque + Pont.texte(o, "titre") + ("en_pause".equals(etat) ? "  (en pause)" : "en_cours".equals(etat) ? "  (en cours)" : "");
+            String marque =
+                    "en_pause".equals(etat)
+                            ? "Ⅱ "
+                            : "fait".equals(etat)
+                                    ? "✔ "
+                                    : "en_cours".equals(etat) ? "▶ " : numero + ". ";
+            int couleur =
+                    "fait".equals(etat)
+                            ? Hud.VERT
+                            : "en_cours".equals(etat) ? Hud.JAUNE : Hud.BLANC;
+            String texte =
+                    marque
+                            + Pont.texte(o, "titre")
+                            + ("en_pause".equals(etat)
+                                    ? "  (en pause)"
+                                    : "en_cours".equals(etat) ? "  (en cours)" : "");
             if (y >= debut && y < bas - 12) {
                 ecrire(g, texte, x, y, largeur, couleur);
             }
@@ -410,15 +631,26 @@ public class EcranAssistant extends Screen {
         }
         int depassement = y + defilement * LIGNE - (bas - 12);
         defilement = Math.min(defilement, Math.max(0, (depassement + LIGNE - 1) / LIGNE));
-        g.drawString(this.font, this.font.plainSubstrByWidth("« Objectif suivant » : passer au prochain objectif "
-                + "du plan · « Mes projets » : en choisir un autre", largeur), x, bas - 10, Hud.GRIS, false);
+        g.drawString(
+                this.font,
+                this.font.plainSubstrByWidth(
+                        "« Objectif suivant » : passer au prochain objectif "
+                                + "du plan · « Mes projets » : en choisir un autre",
+                        largeur),
+                x,
+                bas - 10,
+                Hud.GRIS,
+                false);
     }
 
     // ---------- Onglet Base ----------
 
     // ---------- Onglet Réglages ----------
 
-    /** La valeur affichée d'un réglage : celle qu'on vient de choisir, en attendant que l'assistant la confirme. */
+    /**
+     * La valeur affichée d'un réglage : celle qu'on vient de choisir, en attendant que l'assistant
+     * la confirme.
+     */
     private boolean valeurReglage(String cle, boolean parDefaut) {
         if (Fullbright.CLE.equals(cle)) return Fullbright.actif();
         for (JsonElement e : Pont.liste(ecran(), "reglages")) {
@@ -435,7 +667,8 @@ public class EcranAssistant extends Screen {
         return parDefaut;
     }
 
-    private void reglages(GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas, int sx, int sy) {
+    private void reglages(
+            GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas, int sx, int sy) {
         JsonArray reglages = new JsonArray();
         JsonObject lumiere = new JsonObject();
         lumiere.addProperty("cle", Fullbright.CLE);
@@ -449,7 +682,8 @@ public class EcranAssistant extends Screen {
             JsonObject r = e.getAsJsonObject();
             String cle = Pont.texte(r, "cle");
             boolean active = valeurReglage(cle, false);
-            List<FormattedCharSequence> description = this.font.split(Component.literal(Pont.texte(r, "description")), texte);
+            List<FormattedCharSequence> description =
+                    this.font.split(Component.literal(Pont.texte(r, "description")), texte);
             int hauteur = Math.max(22, 12 + description.size() * LIGNE) + 4;
             if (y >= debut - 2 && y + hauteur <= bas) {
                 g.drawString(this.font, Pont.texte(r, "nom"), x, y, Hud.BLANC, false);
@@ -461,12 +695,23 @@ public class EcranAssistant extends Screen {
                 // L'interrupteur dit l'état : « ✔ Activé » en vert, « ✘ Désactivé » en gris
                 int bx = x + largeur - bouton, by = y + (hauteur - 4 - 18) / 2;
                 boolean survol = sx >= bx && sx < bx + bouton && sy >= by && sy < by + 18;
-                g.fill(bx, by, bx + bouton, by + 18, active ? (survol ? 0xFF3FA845 : 0xFF2E8B36)
-                        : (survol ? 0xFF5A5A5A : 0xFF3C3C3C));
+                g.fill(
+                        bx,
+                        by,
+                        bx + bouton,
+                        by + 18,
+                        active
+                                ? (survol ? 0xFF3FA845 : 0xFF2E8B36)
+                                : (survol ? 0xFF5A5A5A : 0xFF3C3C3C));
                 g.renderOutline(bx, by, bouton, 18, survol ? 0xFFFFFFFF : 0x60FFFFFF);
                 String etat = active ? "✔ Activé" : "✘ Désactivé";
-                g.drawString(this.font, etat, bx + (bouton - this.font.width(etat)) / 2, by + 5,
-                        active ? 0xFFFFFF : 0xBBBBBB, false);
+                g.drawString(
+                        this.font,
+                        etat,
+                        bx + (bouton - this.font.width(etat)) / 2,
+                        by + 5,
+                        active ? 0xFFFFFF : 0xBBBBBB,
+                        false);
                 zones.add(new Zone(bx, by, bouton, 18, null, -1, cle));
                 g.fill(x, y + hauteur - 3, x + largeur, y + hauteur - 2, 0x18FFFFFF);
             }
@@ -487,7 +732,8 @@ public class EcranAssistant extends Screen {
             boolean joueur = "toi".equals(Pont.texte(message, "de"));
             String texte = Pont.texte(message, "texte");
             dejaDedans |= joueur && texte.equals(enAttente);
-            for (FormattedCharSequence l : this.font.split(Component.literal((joueur ? "Toi : " : "") + texte), largeur)) {
+            for (FormattedCharSequence l :
+                    this.font.split(Component.literal((joueur ? "Toi : " : "") + texte), largeur)) {
                 lignes.add(l);
                 couleurs.add(joueur ? Hud.BLEU : Hud.BLANC);
             }
@@ -495,14 +741,22 @@ public class EcranAssistant extends Screen {
             couleurs.add(Hud.BLANC);
         }
         if (enAttente != null && !dejaDedans) {
-            String suite = Pont.assistantActif() ? " (envoyé…)" : " (en attente : l'assistant est arrêté)";
-            for (FormattedCharSequence l : this.font.split(Component.literal("Toi : " + enAttente + suite), largeur)) {
+            String suite =
+                    Pont.assistantActif() ? " (envoyé…)" : " (en attente : l'assistant est arrêté)";
+            for (FormattedCharSequence l :
+                    this.font.split(Component.literal("Toi : " + enAttente + suite), largeur)) {
                 lignes.add(l);
                 couleurs.add(Hud.GRIS);
             }
         }
         if (lignes.isEmpty()) {
-            ecrire(g, "Écris une question en bas, ou maintiens F8 pour parler.", x, y, largeur, Hud.GRIS);
+            ecrire(
+                    g,
+                    "Écris une question en bas, ou maintiens F8 pour parler.",
+                    x,
+                    y,
+                    largeur,
+                    Hud.GRIS);
             return;
         }
         int visibles = (bas - y) / LIGNE;
@@ -515,7 +769,9 @@ public class EcranAssistant extends Screen {
     }
 
     private static JsonObject partie(JsonObject objet, String cle) {
-        return objet.has(cle) && objet.get(cle).isJsonObject() ? objet.getAsJsonObject(cle) : new JsonObject();
+        return objet.has(cle) && objet.get(cle).isJsonObject()
+                ? objet.getAsJsonObject(cle)
+                : new JsonObject();
     }
 
     private int ecrire(GuiGraphics g, String texte, int x, int y, int largeur, int couleur) {

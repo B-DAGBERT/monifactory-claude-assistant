@@ -40,3 +40,7 @@ assistant.local.json
 assistant.local.json.tmp
 session_claude.json
 session_claude.json.tmp
+
+# Development formatters
+.ruff_cache/
+node_modules/

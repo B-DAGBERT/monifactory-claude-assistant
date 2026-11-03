@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monifactory · Discussion en direct</title>
+  <link rel="stylesheet" href="./style.css" />
+  <header>
+    <div class="wrap">
+      <h1>Discussion du mod</h1>
+      <p>Lecture seule · Pose tes questions dans Minecraft.</p>
+      <span id="status" role="status">Connexion au suivi local…</span>
+    </div>
+  </header>
+  <main class="wrap">
+    <p id="notice" hidden></p>
+    <p id="empty">Les échanges récents de Discussion apparaîtront ici.</p>
+    <div id="messages" role="log" aria-label="Discussion du mod"></div>
+  </main>
+  <footer class="wrap">
+    Même discussion que dans le jeu · Actualisation locale, sans requête IA.<br />Ce panneau montre
+    les échanges récents, pas l’historique complet du fil Codex.
+  </footer>
+  <button id="latest" hidden>Derniers messages ↓</button>
+  <script src="./app.js"></script>
+</html>

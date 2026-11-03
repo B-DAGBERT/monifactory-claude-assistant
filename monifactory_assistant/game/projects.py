@@ -1,12 +1,23 @@
 """Local project snapshots, atomically stored alongside the legacy active-plan fields."""
+
 import copy
 import json
 import os
 import shutil
 from pathlib import Path
 
-FIELDS = ("objectif_en_pause", "plan", "version", "atteints", "etapes_faites", "etapes_decochees",
-          "obtenus", "derniers_totaux", "plan_principal", "feuille_de_route")
+FIELDS = (
+    "objectif_en_pause",
+    "plan",
+    "version",
+    "atteints",
+    "etapes_faites",
+    "etapes_decochees",
+    "obtenus",
+    "derniers_totaux",
+    "plan_principal",
+    "feuille_de_route",
+)
 
 
 class ProjectStore:
@@ -20,12 +31,24 @@ class ProjectStore:
         self.active = data.get("projet_actif", "principal")
         self.projects = copy.deepcopy(data.get("projets", []))
         if self.legacy:
-            name = (state.get("plan_principal") or {}).get("titre") or (state.get("plan") or {}).get("objectif") or "Mon projet"
+            name = (
+                (state.get("plan_principal") or {}).get("titre")
+                or (state.get("plan") or {}).get("objectif")
+                or "Mon projet"
+            )
             self.projects = [{"id": self.active, "nom": name, "etat": state}]
-        if (not self.projects or any(not isinstance(p, dict) or not isinstance(p.get("id"), str)
-                                    or not isinstance(p.get("nom"), str) or not isinstance(p.get("etat"), dict) for p in self.projects)
-                or len({p["id"] for p in self.projects}) != len(self.projects)
-                or not any(p["id"] == self.active for p in self.projects)):
+        if (
+            not self.projects
+            or any(
+                not isinstance(p, dict)
+                or not isinstance(p.get("id"), str)
+                or not isinstance(p.get("nom"), str)
+                or not isinstance(p.get("etat"), dict)
+                for p in self.projects
+            )
+            or len({p["id"] for p in self.projects}) != len(self.projects)
+            or not any(p["id"] == self.active for p in self.projects)
+        ):
             raise ValueError("Catalogue de projets invalide : sauvegarde conservée.")
         # Active fields remain readable by older versions and existing local workflows.
         self.current()["etat"] = state
@@ -70,8 +93,15 @@ class ProjectStore:
         for p in self.projects:
             state = current_state if p["id"] == self.active else p["etat"]
             objectives = (state.get("plan_principal") or {}).get("objectifs", [])
-            entries.append({"id": p["id"], "nom": p["nom"], "actif": p["id"] == self.active,
-                            "pause": bool(state.get("objectif_en_pause")),
-                            "objectif": (state.get("plan") or {}).get("objectif", "À préparer"),
-                            "faits": sum(o.get("etat") == "fait" for o in objectives), "total": len(objectives)})
+            entries.append(
+                {
+                    "id": p["id"],
+                    "nom": p["nom"],
+                    "actif": p["id"] == self.active,
+                    "pause": bool(state.get("objectif_en_pause")),
+                    "objectif": (state.get("plan") or {}).get("objectif", "À préparer"),
+                    "faits": sum(o.get("etat") == "fait" for o in objectives),
+                    "total": len(objectives),
+                }
+            )
         return entries

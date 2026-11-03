@@ -1,10 +1,11 @@
 """Select the local AI engine without importing or starting the other provider."""
+
 import importlib
 import os
-from pathlib import Path
 import shutil
+from pathlib import Path
 
-from codex_config import CONFIG, find_codex
+from monifactory_assistant.config import CONFIG, find_codex
 
 DEFAULTS = {
     "codex": {"plan": "gpt-6.1-sol", "question": "gpt-5.6-sol", "quick": "gpt-5.6-sol"},
@@ -33,13 +34,24 @@ def model(kind, config=None):
 
 
 def find_claude():
-    candidates = [os.environ.get("CLAUDE_BIN"), shutil.which("claude"),
-                  str(Path.home() / ".local/bin/claude"), "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+    candidates = [
+        os.environ.get("CLAUDE_BIN"),
+        shutil.which("claude"),
+        str(Path.home() / ".local/bin/claude"),
+        "/opt/homebrew/bin/claude",
+        "/usr/local/bin/claude",
+    ]
     if os.name == "nt":
         candidates.append(str(Path.home() / ".local/bin/claude.exe"))
         base = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Claude-Data"
-        candidates.extend(str(p) for p in sorted(base.glob("*/claude-code/*/*/claude.exe"),
-                                               key=lambda p: p.stat().st_mtime, reverse=True))
+        candidates.extend(
+            str(p)
+            for p in sorted(
+                base.glob("*/claude-code/*/*/claude.exe"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+        )
     return next((p for p in candidates if p and Path(p).is_file()), None)
 
 
@@ -48,7 +60,7 @@ def executable():
 
 
 def backend():
-    return importlib.import_module(provider() + "_integration")
+    return importlib.import_module("monifactory_assistant.providers." + provider())
 
 
 def ask(*args, **kwargs):

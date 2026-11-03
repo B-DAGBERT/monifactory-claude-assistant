@@ -4,6 +4,7 @@ Update UPSTREAM_REVISION only when deliberately integrating and reviewing upstre
 
 import ast
 import os
+import re
 import shutil
 import subprocess
 import unittest
@@ -15,11 +16,7 @@ UPSTREAM_REVISION = "1a6a514160d772e4846e453fe3755bab8dbcc133"
 
 def upstream(path):
     git = os.environ.get("GIT_BIN") or next(
-        (
-            p
-            for p in ("/opt/homebrew/bin/git", "/usr/local/bin/git")
-            if Path(p).is_file()
-        ),
+        (p for p in ("/opt/homebrew/bin/git", "/usr/local/bin/git") if Path(p).is_file()),
         shutil.which("git"),
     )
     return subprocess.check_output(
@@ -43,12 +40,32 @@ def methods(tree):
     return result
 
 
+def java_tokens(source):
+    """Compare Java tokens, preserving literals and operators while allowing formatting."""
+    pattern = r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|//[^\n]*|/\*.*?\*/|[\w$]+|>>>=|>>>|>>=|<<=|>>|<<|==|!=|<=|>=|\+\+|--|&&|\|\||\+=|-=|\*=|/=|%=|&=|\|=|\^=|->|::|\S"
+    return [
+        token
+        for token in re.findall(pattern, source, re.DOTALL)
+        if not token.startswith(("//", "/*"))
+    ]
+
+
 class ParityTests(unittest.TestCase):
+    def test_java_comparison_ignores_formatting_but_preserves_literals_and_operators(self):
+        self.assertEqual(java_tokens("x++; // comment"), java_tokens("x ++ ;"))
+        self.assertNotEqual(java_tokens("x++;"), java_tokens("x + + y;"))
+        self.assertNotEqual(java_tokens('"a b"'), java_tokens('"ab"'))
+
     def test_gameplay_functions_preserved(self):
         before = methods(upstream("assistant_mc.py"))
-        after = methods((ROOT / "assistant_mc.py").read_text())
+        after = methods((ROOT / "monifactory_assistant/app.py").read_text())
         compatibility_changes = {
-            "find_claude", "tool_status", "parse_info", "parse_plan", "App.start_question", "App.open_popup",
+            "find_claude",
+            "tool_status",
+            "parse_info",
+            "parse_plan",
+            "App.start_question",
+            "App.open_popup",
             "clean_env",
             "claude_command",
             "start_claude",
@@ -75,13 +92,30 @@ class ParityTests(unittest.TestCase):
         }
         # User-requested gameplay extension, covered by test_objective_pause.py.
         pause_changes = {
-            "App.load_plan", "App.save_plan", "App.refresh", "App.check_game", "App.coach", "App.flush_coach",
-            "App.check_stuck", "App.start_briefing", "App.handle_mod_request", "App.on_next_objective",
-            "App.start_objective", "App.on_plan_ready", "App.action_effacer_objectif",
+            "App.load_plan",
+            "App.save_plan",
+            "App.refresh",
+            "App.check_game",
+            "App.coach",
+            "App.flush_coach",
+            "App.check_stuck",
+            "App.start_briefing",
+            "App.handle_mod_request",
+            "App.on_next_objective",
+            "App.start_objective",
+            "App.on_plan_ready",
+            "App.action_effacer_objectif",
         }
         compatibility_changes |= pause_changes
-        compatibility_changes |= {"App.on_game_connected", "App.action_nouveau_plan", "App.action_nouvel_objectif", "App.action_modifier_plan",
-                                  "App.action_objectif_suivant", "App.action_refaire_objectif", "App.action_planifier_usine"}
+        compatibility_changes |= {
+            "App.on_game_connected",
+            "App.action_nouveau_plan",
+            "App.action_nouvel_objectif",
+            "App.action_modifier_plan",
+            "App.action_objectif_suivant",
+            "App.action_refaire_objectif",
+            "App.action_planifier_usine",
+        }
         checked = 0
         for name, code in before.items():
             if name in compatibility_changes:
@@ -103,7 +137,7 @@ class ParityTests(unittest.TestCase):
                 "Lance le lanceur de l’assistant (Mac.command ou .bat)",
             )
             before = before.replace('"Codex prépare la fiche"', '"L’assistant prépare la fiche"')
-            self.assertEqual(before, (ROOT / path).read_text(), name)
+            self.assertEqual(java_tokens(before), java_tokens((ROOT / path).read_text()), name)
 
 
 if __name__ == "__main__":

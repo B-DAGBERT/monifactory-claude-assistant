@@ -1,4 +1,5 @@
 """Migration, independent progress and idempotent project requests, using real App methods."""
+
 import copy
 import json
 import tempfile
@@ -6,8 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from project_store import ProjectStore
 import test_objective_pause
+
+from monifactory_assistant.game.projects import ProjectStore
 
 
 class ProjectStorageTests(unittest.TestCase):
@@ -17,8 +19,13 @@ class ProjectStorageTests(unittest.TestCase):
         self.path = Path(directory.name) / "plan_ia.json"
 
     def test_legacy_backup_and_multiple_projects_survive_restart(self):
-        legacy = {"plan": {"objectif": "Préparer le LV"}, "objectif_en_pause": True,
-                  "etapes_faites": [0, 2], "obtenus": {"minecraft:iron_ingot": 3}, "version": 42}
+        legacy = {
+            "plan": {"objectif": "Préparer le LV"},
+            "objectif_en_pause": True,
+            "etapes_faites": [0, 2],
+            "obtenus": {"minecraft:iron_ingot": 3},
+            "version": 42,
+        }
         original = json.dumps(legacy).encode()
         self.path.write_bytes(original)
         store = ProjectStore(self.path)
@@ -48,8 +55,11 @@ class ProjectStorageTests(unittest.TestCase):
         self.assertEqual(ProjectStore(self.path).snapshot(), {"version": 7})
 
     def test_corrupt_catalog_is_not_overwritten(self):
-        for data in ([], {"projets": []}, {"projet_actif": "absent", "projets": [
-                {"id": "a", "nom": "A", "etat": {}}]}):
+        for data in (
+            [],
+            {"projets": []},
+            {"projet_actif": "absent", "projets": [{"id": "a", "nom": "A", "etat": {}}]},
+        ):
             original = json.dumps(data).encode()
             self.path.write_bytes(original)
             with self.assertRaises(ValueError):
@@ -63,9 +73,24 @@ class ProjectRequestTests(unittest.TestCase):
         self.app.start_objective = Mock()
         self.app.save_plan()
 
-    def request(self, action="creer", ident="ferme", name="Une ferme", token="request-1", origin=None, mode="plan"):
-        request = {"type": "projet", "action": action, "id": ident, "nom": name, "mode": mode,
-                   "token": token, "origine": self.app.projects.active if origin is None else origin}
+    def request(
+        self,
+        action="creer",
+        ident="ferme",
+        name="Une ferme",
+        token="request-1",
+        origin=None,
+        mode="plan",
+    ):
+        request = {
+            "type": "projet",
+            "action": action,
+            "id": ident,
+            "nom": name,
+            "mode": mode,
+            "token": token,
+            "origine": self.app.projects.active if origin is None else origin,
+        }
         self.app.handle_mod_request(request)
         return request
 
@@ -103,7 +128,14 @@ class ProjectRequestTests(unittest.TestCase):
         a.start_objective.reset_mock()
         self.request("choisir", "principal", token="choose-original")
         self.assertTrue(a.project_feedback["ok"])
-        for key in ("plan", "etapes_faites", "etapes_decochees", "obtenus", "plan_principal", "objectif_en_pause"):
+        for key in (
+            "plan",
+            "etapes_faites",
+            "etapes_decochees",
+            "obtenus",
+            "plan_principal",
+            "objectif_en_pause",
+        ):
             self.assertEqual(a.project_snapshot()[key], previous[key], key)
         self.assertTrue(a.objective_paused)
         a.start_objective.assert_not_called()
@@ -128,8 +160,11 @@ class ProjectRequestTests(unittest.TestCase):
             a.busy = condition == "busy"
             a.coach_busy = condition == "coach_busy"
             a.game = None if condition == "disconnected" else {"inventaire": {}}
-            self.request(action="choisir" if condition == "unknown-id" else "creer", token=condition,
-                         origin="wrong-project" if condition == "stale" else "principal")
+            self.request(
+                action="choisir" if condition == "unknown-id" else "creer",
+                token=condition,
+                origin="wrong-project" if condition == "stale" else "principal",
+            )
             self.assertFalse(a.project_feedback["ok"], condition)
             self.assertEqual(a.projects.active, "principal")
             self.assertEqual(a.project_snapshot(), before)
@@ -141,7 +176,9 @@ class ProjectRequestTests(unittest.TestCase):
         self.app.plan = {"objectif": "Ferme", "etapes": ["Planter"]}
         self.app.on_next_objective = Mock()
         for action in ("objectif_suivant", "pause_objectif", "etape"):
-            self.app.handle_mod_request({"type": "action", "action": action, "projet": "principal", "index": 0})
+            self.app.handle_mod_request(
+                {"type": "action", "action": action, "projet": "principal", "index": 0}
+            )
         self.assertFalse(self.app.objective_paused)
         self.assertEqual(self.app.done_steps, set())
         self.app.on_next_objective.assert_not_called()
@@ -176,12 +213,14 @@ class ProjectRequestTests(unittest.TestCase):
         before = copy.deepcopy(a.project_snapshot())
         original = a.save_plan
         calls = 0
+
         def save():
             nonlocal calls
             calls += 1
             if calls == 2:
                 raise OSError("Disque indisponible")
             original()
+
         a.save_plan = save
         self.request()
         self.assertFalse(a.project_feedback["ok"])

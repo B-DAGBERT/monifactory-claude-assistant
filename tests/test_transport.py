@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from codex_transport import PersistentCodex, RpcError
+from monifactory_assistant.providers.codex_transport import PersistentCodex, RpcError
 
 FAKE = r"""
 import json,sys,os,time
@@ -76,8 +76,7 @@ class PersistentTests(unittest.TestCase):
 
     def requests(self):
         return [
-            json.loads(line)
-            for line in (self.root / "requests.jsonl").read_text().splitlines()
+            json.loads(line) for line in (self.root / "requests.jsonl").read_text().splitlines()
         ]
 
     def test_same_process_same_loaded_thread_and_no_repeated_instructions(self):
@@ -100,9 +99,7 @@ class PersistentTests(unittest.TestCase):
         self.client.close()
         self.assertEqual(self.call(session=session), ("hello", session))
         self.assertEqual(self.client.starts, 2)
-        self.assertEqual(
-            sum(r.get("method") == "thread/resume" for r in self.requests()), 1
-        )
+        self.assertEqual(sum(r.get("method") == "thread/resume" for r in self.requests()), 1)
 
     def test_failure_preview_is_not_spoken_or_reported_as_success(self):
         preview = []
@@ -124,19 +121,14 @@ class PersistentTests(unittest.TestCase):
     def test_disconnect_does_not_replay_request(self):
         with self.assertRaisesRegex(RuntimeError, "interrompue"):
             self.call("disconnect")
-        self.assertEqual(
-            sum(r.get("method") == "turn/start" for r in self.requests()), 1
-        )
+        self.assertEqual(sum(r.get("method") == "turn/start" for r in self.requests()), 1)
         self.assertEqual(self.client.starts, 1)
 
     def test_missing_session_is_not_silently_replaced(self):
         with self.assertRaisesRegex(RpcError, "introuvable"):
             self.call(session="missing")
         self.assertFalse(
-            any(
-                r.get("method") in ("thread/start", "turn/start")
-                for r in self.requests()
-            )
+            any(r.get("method") in ("thread/start", "turn/start") for r in self.requests())
         )
 
     def test_desktop_writer_keeps_session_without_fork_or_submitting_question(self):
@@ -151,17 +143,13 @@ class PersistentTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             self.call("timeout", timeout=0.2)
         self.assertIsNone(self.client.proc)
-        self.assertEqual(
-            sum(r.get("method") == "turn/start" for r in self.requests()), 1
-        )
+        self.assertEqual(sum(r.get("method") == "turn/start" for r in self.requests()), 1)
 
     def test_ephemeral_card_thread_is_unloaded(self):
         self.call(ephemeral=True)
         rows = self.requests()
         self.assertTrue(
-            next(r for r in rows if r.get("method") == "thread/start")["params"][
-                "ephemeral"
-            ]
+            next(r for r in rows if r.get("method") == "thread/start")["params"]["ephemeral"]
         )
         self.assertTrue(any(r.get("method") == "thread/unsubscribe" for r in rows))
         self.assertEqual(self.client.loaded, {})

@@ -8,22 +8,37 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from discussion_viewer import DiscussionViewer, recent_history
+from monifactory_assistant.ui.discussion import DiscussionViewer, recent_history
 
 
 class ConnectionDisplayTests(unittest.TestCase):
     def test_answer_clears_writer_warning_and_applies_actions_only_once(self):
-        source = ast.parse(Path(__file__).resolve().parents[1].joinpath("assistant_mc.py").read_text())
+        source = ast.parse(
+            Path(__file__).resolve().parents[1].joinpath("monifactory_assistant/app.py").read_text()
+        )
         app = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "App")
-        app.body = [n for n in app.body if isinstance(n, ast.FunctionDef) and n.name in
-                    {"on_answer", "on_error", "on_connection_ready", "on_connection_problem"}]
+        app.body = [
+            n
+            for n in app.body
+            if isinstance(n, ast.FunctionDef)
+            and n.name in {"on_answer", "on_error", "on_connection_ready", "on_connection_problem"}
+        ]
         actions = [{"type": "test"}]
-        namespace = {"log": Mock(), "split_actions": lambda answer: (answer, actions),
-                     "readable": lambda answer: answer, "time": time}
+        namespace = {
+            "log": Mock(),
+            "split_actions": lambda answer: (answer, actions),
+            "readable": lambda answer: answer,
+            "time": time,
+        }
         exec(compile(ast.Module(body=[app], type_ignores=[]), "assistant_mc.py", "exec"), namespace)
         instance = namespace["App"]()
         instance.game = object()
-        instance.notify, instance.add_history, instance.refresh, instance.run_actions = Mock(), Mock(), Mock(), Mock()
+        instance.notify, instance.add_history, instance.refresh, instance.run_actions = (
+            Mock(),
+            Mock(),
+            Mock(),
+            Mock(),
+        )
         instance.busy = True
         instance.on_error("Utilise le panneau de suivi en lecture seule")
         self.assertIn("lecture seule", instance.connection_problem)
@@ -45,9 +60,20 @@ class ViewerTests(unittest.TestCase):
         self.addCleanup(self.viewer.close)
 
     def write_view(self, text="bonjour", **extra):
-        self.path.write_text(json.dumps({"moteur": "Codex", "ecran": {
-            "conversation": [{"de": "toi", "texte": text}], "occupe": False,
-            "coffres": "must not be exposed"}, "bulle": None, **extra}))
+        self.path.write_text(
+            json.dumps(
+                {
+                    "moteur": "Codex",
+                    "ecran": {
+                        "conversation": [{"de": "toi", "texte": text}],
+                        "occupe": False,
+                        "coffres": "must not be exposed",
+                    },
+                    "bulle": None,
+                    **extra,
+                }
+            )
+        )
 
     def request(self, route="state", method="GET", headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.viewer.server.server_port, timeout=2)
@@ -135,7 +161,9 @@ class ViewerTests(unittest.TestCase):
         self.assertEqual(json.loads(self.request()[2])["messages"][0]["text"], hostile)
 
     def test_busy_port_falls_back_without_stopping_assistant(self):
-        other = DiscussionViewer(self.root, self.root / "other-runtime", self.viewer.server.server_port)
+        other = DiscussionViewer(
+            self.root, self.root / "other-runtime", self.viewer.server.server_port
+        )
         self.addCleanup(other.close)
         self.assertNotEqual(other.server.server_port, self.viewer.server.server_port)
         self.assertEqual(self.viewer.server.server_address[0], "127.0.0.1")

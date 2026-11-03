@@ -11,7 +11,7 @@ import threading
 import time
 from pathlib import Path
 
-from codex_config import find_codex
+from monifactory_assistant.config import find_codex
 
 
 class RpcError(RuntimeError):
@@ -94,9 +94,7 @@ class PersistentCodex:
                     if "id" in message:
                         target = self.pending.get(message["id"])
                     else:
-                        target = self.listeners.get(
-                            message.get("params", {}).get("threadId")
-                        )
+                        target = self.listeners.get(message.get("params", {}).get("threadId"))
                 if target is not None:
                     target.put(message)
         except (OSError, ValueError, RuntimeError):
@@ -107,9 +105,7 @@ class PersistentCodex:
                     failure = RuntimeError(
                         "Connexion Codex interrompue. Session conservée ; aucune requête relancée automatiquement."
                     )
-                    for target in list(self.pending.values()) + list(
-                        self.listeners.values()
-                    ):
+                    for target in list(self.pending.values()) + list(self.listeners.values()):
                         target.put(failure)
                     self.loaded.clear()
 
@@ -155,9 +151,7 @@ class PersistentCodex:
             ):
                 cmd += ["-c", f"features.{feature}=false"]
             env = {
-                k: v
-                for k, v in os.environ.items()
-                if k not in ("OPENAI_API_KEY", "CODEX_API_KEY")
+                k: v for k, v in os.environ.items() if k not in ("OPENAI_API_KEY", "CODEX_API_KEY")
             }
             self.proc = subprocess.Popen(
                 cmd,
@@ -173,9 +167,7 @@ class PersistentCodex:
             self.generation += 1
             self.starts += 1
             proc = self.proc
-            threading.Thread(
-                target=self._read, args=(proc, self.generation), daemon=True
-            ).start()
+            threading.Thread(target=self._read, args=(proc, self.generation), daemon=True).start()
             threading.Thread(target=self._errors, args=(proc,), daemon=True).start()
             try:
                 self.request(
@@ -209,9 +201,7 @@ class PersistentCodex:
                 self.proc = None
                 self.loaded.clear()
                 failure = RuntimeError("Service Codex arrêté. Session conservée.")
-                for target in list(self.pending.values()) + list(
-                    self.listeners.values()
-                ):
+                for target in list(self.pending.values()) + list(self.listeners.values()):
                     target.put(failure)
             for stream in (proc.stdin, proc.stdout, proc.stderr):
                 try:
@@ -226,9 +216,9 @@ class PersistentCodex:
             if session_id and self.loaded.get(session_id) == key:
                 return session_id
             # Effective project settings are read without disclosing any configured credentials.
-            config = self.request(
-                "config/read", {"includeLayers": False, "cwd": key[0]}
-            ).get("config", {})
+            config = self.request("config/read", {"includeLayers": False, "cwd": key[0]}).get(
+                "config", {}
+            )
             overrides = {"project_doc_max_bytes": 0, "notify": [], "web_search": "live"}
             for name in config.get("mcp_servers") or {}:
                 overrides[f"mcp_servers.{name}.enabled"] = False
@@ -246,9 +236,7 @@ class PersistentCodex:
             if session_id:
                 params.update(threadId=session_id, excludeTurns=True)
             try:
-                result = self.request(
-                    "thread/resume" if session_id else "thread/start", params
-                )
+                result = self.request("thread/resume" if session_id else "thread/start", params)
             except RpcError as error:
                 if session_id and "already has an active writer" in str(error):
                     raise RpcError(
@@ -302,9 +290,7 @@ class PersistentCodex:
         turn_id = None
         turn_lock = None
         try:
-            ident = self.load_thread(
-                session_id, data_dir, model, instructions, ephemeral
-            )
+            ident = self.load_thread(session_id, data_dir, model, instructions, ephemeral)
             if on_thread:
                 on_thread(ident)
             metric["setup_s"] = round(time.monotonic() - started, 3)
@@ -312,9 +298,7 @@ class PersistentCodex:
                 turn_lock = self.thread_locks.setdefault(ident, threading.Lock())
             acquired = turn_lock.acquire(timeout=max(0.01, deadline - time.monotonic()))
             if not acquired:
-                raise TimeoutError(
-                    "Une réponse est déjà en cours dans cette conversation."
-                )
+                raise TimeoutError("Une réponse est déjà en cours dans cette conversation.")
             mailbox = queue.Queue()
             with self.lock:
                 self.listeners[ident] = mailbox
@@ -356,17 +340,13 @@ class PersistentCodex:
                     item_id = item.get("id", "")
                     if item.get("type") == "agentMessage":
                         phases[item_id] = item.get("phase")
-                        if (
-                            kind == "item/completed"
-                            and item.get("phase") != "commentary"
-                        ):
+                        if kind == "item/completed" and item.get("phase") != "commentary":
                             answer = item.get("text", "")
                             messages[item_id] = answer
                     elif (
                         kind == "item/started"
                         and on_tool
-                        and item.get("type")
-                        in ("commandExecution", "mcpToolCall", "webSearch")
+                        and item.get("type") in ("commandExecution", "mcpToolCall", "webSearch")
                     ):
                         on_tool(
                             "recherche web"
@@ -376,14 +356,10 @@ class PersistentCodex:
                         )
                 elif kind == "item/agentMessage/delta":
                     item_id = params.get("itemId", "")
-                    messages[item_id] = messages.get(item_id, "") + params.get(
-                        "delta", ""
-                    )
+                    messages[item_id] = messages.get(item_id, "") + params.get("delta", "")
                     if phases.get(item_id) == "final_answer":
                         if metric["first_text_s"] is None:
-                            metric["first_text_s"] = round(
-                                time.monotonic() - started, 3
-                            )
+                            metric["first_text_s"] = round(time.monotonic() - started, 3)
                         if on_preview and time.monotonic() - last_preview >= 0.12:
                             on_preview(messages[item_id])
                             last_preview = time.monotonic()
@@ -438,7 +414,7 @@ class PersistentCodex:
                     self.thread_locks.pop(ident, None)
             if metrics_path:
                 try:
-                    from codex_config import write_json
+                    from monifactory_assistant.config import write_json
 
                     with self.lock:
                         write_json(Path(metrics_path), self.metrics)

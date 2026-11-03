@@ -1,0 +1,11 @@
+{
+  "name": "monifactory-assistant-dev",
+  "private": true,
+  "scripts": {
+    "format": "prettier --write \"monifactory_assistant/ui/web/**/*.{html,css,js}\" \"docs/*.md\" README.md",
+    "format:check": "prettier --check \"monifactory_assistant/ui/web/**/*.{html,css,js}\" \"docs/*.md\" README.md"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
+  }
+}

@@ -5,8 +5,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 /** Branchement des événements côté client. */
 public final class Client {
-    private Client() {
-    }
+    private Client() {}
 
     public static void init() {
         var modBus = FMLJavaModLoadingContext.get().getModEventBus();

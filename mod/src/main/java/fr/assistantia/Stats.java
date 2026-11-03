@@ -31,26 +31,31 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Les caractéristiques des objets, que les recettes ne donnent pas, pour que Codex réponde à « quelle pioche est la
- * meilleure ? » : durabilité, ce qu'un outil peut miner et à quelle vitesse, dégâts, armure, enchantements, et
- * l'infobulle complète du jeu (ce que les mods y ajoutent : niveau de minage GregTech, charge, contenu...).
- * - inventaire_details.txt : ce que le joueur a sur lui et dans le coffre ouvert, mis à jour en direct ;
- * - stats_objets.txt : tous les outils, armes et armures du pack (écrit une fois par lancement du jeu).
+ * Les caractéristiques des objets, que les recettes ne donnent pas, pour que Codex réponde à «
+ * quelle pioche est la meilleure ? » : durabilité, ce qu'un outil peut miner et à quelle vitesse,
+ * dégâts, armure, enchantements, et l'infobulle complète du jeu (ce que les mods y ajoutent :
+ * niveau de minage GregTech, charge, contenu...). - inventaire_details.txt : ce que le joueur a sur
+ * lui et dans le coffre ouvert, mis à jour en direct ; - stats_objets.txt : tous les outils, armes
+ * et armures du pack (écrit une fois par lancement du jeu).
  */
 public final class Stats {
-    private static final String ENTETE = "# emplacement | id | nom | durabilité | mine (✔ = le bloc lâche quelque chose) "
-            + "| vitesse sur la pierre | dégâts | armure | enchantements | infobulle";
-    private static final Block[] REPERES = {Blocks.STONE, Blocks.IRON_ORE, Blocks.DIAMOND_ORE, Blocks.OBSIDIAN,
-            Blocks.ANCIENT_DEBRIS};
-    private static final String[] NOMS_REPERES = {"Stone", "Iron Ore", "Diamond Ore", "Obsidian", "Ancient Debris"};
+    private static final String ENTETE =
+            "# emplacement | id | nom | durabilité | mine (✔ = le bloc lâche quelque chose) "
+                    + "| vitesse sur la pierre | dégâts | armure | enchantements | infobulle";
+    private static final Block[] REPERES = {
+        Blocks.STONE, Blocks.IRON_ORE, Blocks.DIAMOND_ORE, Blocks.OBSIDIAN, Blocks.ANCIENT_DEBRIS
+    };
+    private static final String[] NOMS_REPERES = {
+        "Stone", "Iron Ore", "Diamond Ore", "Obsidian", "Ancient Debris"
+    };
     private static int tick;
     private static String signature = "";
-    private static Iterator<Item> catalogue;   // tous les objets du jeu, parcourus quelques centaines par tick
+    private static Iterator<Item>
+            catalogue; // tous les objets du jeu, parcourus quelques centaines par tick
     private static List<String> lignesCatalogue;
     private static boolean catalogueFait, machinesFaites;
 
-    private Stats() {
-    }
+    private Stats() {}
 
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
@@ -69,7 +74,10 @@ public final class Stats {
         }
     }
 
-    /** Quelle machine fait quelles recettes, dès qu'EMI a fini de charger celles du serveur (une minute ou plus). */
+    /**
+     * Quelle machine fait quelles recettes, dès qu'EMI a fini de charger celles du serveur (une
+     * minute ou plus).
+     */
     private static void machines() {
         List<String> lignes = Emi.postesDeTravail();
         if (!lignes.isEmpty()) {
@@ -86,8 +94,14 @@ public final class Stats {
         for (int i = 0; i < inv.getContainerSize(); i++) {
             ItemStack s = inv.getItem(i);
             if (!s.isEmpty()) {
-                emplacements.add(i == inv.selected ? "en main" : i < 9 ? "barre" : i < 36 ? "sac" : i < 40 ? "armure portée"
-                        : "main gauche");
+                emplacements.add(
+                        i == inv.selected
+                                ? "en main"
+                                : i < 9
+                                        ? "barre"
+                                        : i < 36
+                                                ? "sac"
+                                                : i < 40 ? "armure portée" : "main gauche");
                 objets.add(s);
             }
         }
@@ -102,8 +116,12 @@ public final class Stats {
         StringBuilder nouvelle = new StringBuilder();
         for (int i = 0; i < objets.size(); i++) {
             ItemStack s = objets.get(i);
-            nouvelle.append(emplacements.get(i)).append(id(s)).append(s.getCount()).append(s.getDamageValue())
-                    .append(s.getTag() == null ? 0 : s.getTag().hashCode()).append(';');
+            nouvelle.append(emplacements.get(i))
+                    .append(id(s))
+                    .append(s.getCount())
+                    .append(s.getDamageValue())
+                    .append(s.getTag() == null ? 0 : s.getTag().hashCode())
+                    .append(';');
         }
         if (nouvelle.toString().equals(signature)) {
             return;
@@ -127,7 +145,9 @@ public final class Stats {
             Item item = catalogue.next();
             try {
                 ItemStack s = new ItemStack(item);
-                if (s.isDamageableItem() || item instanceof TieredItem || item instanceof ArmorItem) {
+                if (s.isDamageableItem()
+                        || item instanceof TieredItem
+                        || item instanceof ArmorItem) {
                     lignesCatalogue.add(ligne(null, s, joueur));
                 }
             } catch (Throwable t) {
@@ -153,13 +173,22 @@ public final class Stats {
             l.append(" ×").append(s.getCount());
         }
         if (s.isDamageableItem()) {
-            l.append(" | durabilité ").append(s.getMaxDamage() - s.getDamageValue()).append('/').append(s.getMaxDamage());
+            l.append(" | durabilité ")
+                    .append(s.getMaxDamage() - s.getDamageValue())
+                    .append('/')
+                    .append(s.getMaxDamage());
         }
         BlockState pierre = Blocks.STONE.defaultBlockState();
-        if (s.getItem() instanceof DiggerItem || s.getDestroySpeed(pierre) > 1.0F || s.isCorrectToolForDrops(pierre)) {
+        if (s.getItem() instanceof DiggerItem
+                || s.getDestroySpeed(pierre) > 1.0F
+                || s.isCorrectToolForDrops(pierre)) {
             List<String> mine = new ArrayList<>();
             for (int i = 0; i < REPERES.length; i++) {
-                mine.add(NOMS_REPERES[i] + (s.isCorrectToolForDrops(REPERES[i].defaultBlockState()) ? " ✔" : " ✘"));
+                mine.add(
+                        NOMS_REPERES[i]
+                                + (s.isCorrectToolForDrops(REPERES[i].defaultBlockState())
+                                        ? " ✔"
+                                        : " ✘"));
             }
             l.append(" | mine : ").append(String.join(", ", mine));
             l.append(" | vitesse sur la pierre ").append(nombre(s.getDestroySpeed(pierre)));
@@ -169,7 +198,10 @@ public final class Stats {
             l.append(" | dégâts ").append(nombre(degats));
         }
         if (s.getItem() instanceof ArmorItem armure) {
-            l.append(" | armure ").append(armure.getDefense()).append(", résistance ").append(nombre(armure.getToughness()));
+            l.append(" | armure ")
+                    .append(armure.getDefense())
+                    .append(", résistance ")
+                    .append(nombre(armure.getToughness()));
         }
         Map<Enchantment, Integer> enchantements = EnchantmentHelper.getEnchantments(s);
         if (!enchantements.isEmpty()) {
@@ -192,7 +224,10 @@ public final class Stats {
             String id = id(s);
             for (int i = 1; i < bulle.size(); i++) {
                 String texte = bulle.get(i).getString().strip();
-                if (!texte.isEmpty() && !texte.equals(id) && !texte.startsWith("NBT:") && !texte.startsWith("Durability:")) {
+                if (!texte.isEmpty()
+                        && !texte.equals(id)
+                        && !texte.startsWith("NBT:")
+                        && !texte.startsWith("Durability:")) {
                     lignes.add(texte);
                 }
             }
@@ -207,7 +242,8 @@ public final class Stats {
     private static double degats(ItemStack s) {
         double total = 0;
         boolean trouve = false;
-        for (AttributeModifier m : s.getAttributeModifiers(EquipmentSlot.MAINHAND).get(Attributes.ATTACK_DAMAGE)) {
+        for (AttributeModifier m :
+                s.getAttributeModifiers(EquipmentSlot.MAINHAND).get(Attributes.ATTACK_DAMAGE)) {
             if (m.getOperation() == AttributeModifier.Operation.ADDITION) {
                 total += m.getAmount();
                 trouve = true;
@@ -222,6 +258,8 @@ public final class Stats {
     }
 
     private static String nombre(double valeur) {
-        return valeur == Math.rint(valeur) ? String.valueOf((long) valeur) : String.format(Locale.ROOT, "%.1f", valeur);
+        return valeur == Math.rint(valeur)
+                ? String.valueOf((long) valeur)
+                : String.format(Locale.ROOT, "%.1f", valeur);
     }
 }

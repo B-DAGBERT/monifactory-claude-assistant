@@ -9,12 +9,11 @@ import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 /**
- * Faisceaux dans le monde, comme ceux des balises : bleu vers la destination du guidage (coffre, filon, base...),
- * rouge ou jaune, plus court, au-dessus d'une machine qui a un problème.
+ * Faisceaux dans le monde, comme ceux des balises : bleu vers la destination du guidage (coffre,
+ * filon, base...), rouge ou jaune, plus court, au-dessus d'une machine qui a un problème.
  */
 public final class Guidage {
-    private Guidage() {
-    }
+    private Guidage() {}
 
     @SubscribeEvent
     public static void rendu(RenderLevelStageEvent event) {
@@ -41,8 +40,18 @@ public final class Guidage {
             }
             pose.pushPose();
             pose.translate(c.x() - camera.x, c.y() + 1 - camera.y, c.z() - camera.z);
-            BeaconRenderer.renderBeaconBeam(pose, tampons, BeaconRenderer.BEAM_LOCATION, event.getPartialTick(), 1.0F,
-                    temps, 0, c.hauteur(), c.couleur(), 0.15F, 0.2F);
+            BeaconRenderer.renderBeaconBeam(
+                    pose,
+                    tampons,
+                    BeaconRenderer.BEAM_LOCATION,
+                    event.getPartialTick(),
+                    1.0F,
+                    temps,
+                    0,
+                    c.hauteur(),
+                    c.couleur(),
+                    0.15F,
+                    0.2F);
             pose.popPose();
         }
         tampons.endBatch();

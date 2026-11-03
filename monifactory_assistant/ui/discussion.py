@@ -8,7 +8,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from codex_config import write_json
+from monifactory_assistant.config import write_json
 
 
 def recent_history(data_dir, provider):
@@ -20,9 +20,13 @@ def recent_history(data_dir, provider):
         rows = view["ecran"]["conversation"]
         if (view.get("bulle") or {}).get("en_cours"):
             rows = rows[:-1]
-        return [{"de": row["de"], "texte": row["texte"]} for row in rows[-30:]
-                if isinstance(row, dict) and row.get("de") in ("toi", "claude")
-                and isinstance(row.get("texte"), str)]
+        return [
+            {"de": row["de"], "texte": row["texte"]}
+            for row in rows[-30:]
+            if isinstance(row, dict)
+            and row.get("de") in ("toi", "claude")
+            and isinstance(row.get("texte"), str)
+        ]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return []
 
@@ -42,12 +46,20 @@ class DiscussionViewer:
             token_file.write_text(token, encoding="utf-8")
         token_file.chmod(0o600)
         self.prefix = "/" + token + "/"
-        self.last_state = {"messages": [], "provider": "Assistant", "status": "En attente du mod…",
-                           "busy": False, "notice": "", "connection_error": "", "updated_at": 0}
+        self.last_state = {
+            "messages": [],
+            "provider": "Assistant",
+            "status": "En attente du mod…",
+            "busy": False,
+            "notice": "",
+            "connection_error": "",
+            "updated_at": 0,
+        }
         self.lock = threading.Lock()
         viewer = self
-        self.html = Path(__file__).with_name("discussion_viewer.html").read_bytes()
-        self.script = Path(__file__).with_name("discussion_viewer.js").read_bytes()
+        self.html = (Path(__file__).parent / "web/index.html").read_bytes()
+        self.script = (Path(__file__).parent / "web/app.js").read_bytes()
+        self.style = (Path(__file__).parent / "web/style.css").read_bytes()
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_):
@@ -60,22 +72,34 @@ class DiscussionViewer:
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Referrer-Policy", "no-referrer")
-                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self'; "
-                                 "style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; "
-                                 "base-uri 'none'; form-action 'none'")
+                self.send_header(
+                    "Content-Security-Policy",
+                    "default-src 'none'; script-src 'self'; "
+                    "style-src 'self'; connect-src 'self'; frame-ancestors 'none'; "
+                    "base-uri 'none'; form-action 'none'",
+                )
                 self.end_headers()
                 self.wfile.write(content)
 
             def do_GET(self):
                 host = f"127.0.0.1:{self.server.server_port}"
-                if self.headers.get("Host") != host or self.headers.get("Origin", "http://" + host) != "http://" + host:
+                if (
+                    self.headers.get("Host") != host
+                    or self.headers.get("Origin", "http://" + host) != "http://" + host
+                ):
                     self.reply(403)
                 elif self.path == viewer.prefix:
                     self.reply(200, viewer.html, "text/html; charset=utf-8")
                 elif self.path == viewer.prefix + "app.js":
                     self.reply(200, viewer.script, "text/javascript; charset=utf-8")
+                elif self.path == viewer.prefix + "style.css":
+                    self.reply(200, viewer.style, "text/css; charset=utf-8")
                 elif self.path == viewer.prefix + "state":
-                    self.reply(200, json.dumps(viewer.snapshot(), ensure_ascii=False).encode(), "application/json; charset=utf-8")
+                    self.reply(
+                        200,
+                        json.dumps(viewer.snapshot(), ensure_ascii=False).encode(),
+                        "application/json; charset=utf-8",
+                    )
                 else:
                     self.reply(404)
 
@@ -108,12 +132,16 @@ class DiscussionViewer:
                 with self.source.open(encoding="utf-8") as handle:
                     view = json.loads(handle.read(8 * 1024 * 1024))
                 screen = view["ecran"]
-                messages = [{"role": "user" if m.get("de") == "toi" else "assistant", "text": m["texte"]}
-                            for m in screen.get("conversation", [])[-31:]
-                            if isinstance(m, dict) and isinstance(m.get("texte"), str)]
+                messages = [
+                    {"role": "user" if m.get("de") == "toi" else "assistant", "text": m["texte"]}
+                    for m in screen.get("conversation", [])[-31:]
+                    if isinstance(m, dict) and isinstance(m.get("texte"), str)
+                ]
                 self.last_state = {
-                    "messages": messages, "provider": str(view.get("moteur", "Assistant")),
-                    "status": str(screen.get("statut") or ""), "busy": bool(screen.get("occupe")),
+                    "messages": messages,
+                    "provider": str(view.get("moteur", "Assistant")),
+                    "status": str(screen.get("statut") or ""),
+                    "busy": bool(screen.get("occupe")),
                     "connection_error": str(screen.get("erreur_connexion") or ""),
                     "notice": str((view.get("bulle") or {}).get("texte") or ""),
                     "updated_at": self.source.stat().st_mtime,
