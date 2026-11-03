@@ -11,7 +11,7 @@ aucun compte, modèle personnel, plan, coffre ou conversation n’est publié su
    git clone --branch main https://github.com/B-DAGBERT/monifactory-claude-assistant.git
    ```
    Préférer Git au ZIP pour disposer du bouton de mise à jour.
-2. Installer Python 3.12 avec Tk, Git et Java 17 (le Java de CurseForge est détecté si disponible).
+2. Installer Python 3.12 avec Tk, Git et un JDK 17 (le Java de CurseForge est détecté s’il contient `javac`).
    Installer et connecter le CLI de l’IA choisie : Claude Code ou Codex. Une seule est nécessaire.
 3. Ouvrir **Choisir IA.command** sur Mac, ou **Choisir IA.bat** sur Windows, puis choisir Claude ou Codex.
    Le sélecteur nécessite Python, mais pas encore les dépendances de l’assistant.
@@ -44,7 +44,9 @@ Les valeurs de `assistant.local.json` ont priorité. Exemple :
 ```
 
 Les anciens `model_plan`, `model_question` et `model_quick` à la racine concernent uniquement Codex.
-Ils ne sont jamais envoyés à Claude. Le chemin de l’instance peut être défini par `minecraft_dir`.
+Ils ne sont jamais envoyés à Claude. Le chemin de l’instance peut être défini par `minecraft_dir`,
+et celui du JDK 17 qui compile le mod par `java_home` (utile sur Windows, où le Java de CurseForge
+n’a pas de compilateur).
 Un CLI hors PATH peut être désigné par `CLAUDE_BIN` ou `CODEX_BIN` dans l’environnement.
 
 Les discussions sont séparées : `session.json` pour Codex, `session_claude.json` pour Claude.
