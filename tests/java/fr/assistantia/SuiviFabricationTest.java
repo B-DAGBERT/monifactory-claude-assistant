@@ -28,6 +28,11 @@ public final class SuiviFabricationTest {
                 : "un objet déjà possédé à l'ouverture ne termine pas l'arbre";
         assert !suivi.actualiser(List.of(stack("plate", 5)));
         assert suivi.actualiser(List.of(stack("plate", 6))) : "seul le nouvel objet compte";
+        suivi = new SuiviFabrication<>(List.of(besoin("boiler", 2)), false);
+        assert !suivi.actualiser(List.of(stack("boiler", 1)))
+                : "objectif : la quantité inclut déjà la chaudière possédée";
+        assert suivi.actualiser(List.of(stack("boiler", 2)))
+                : "objectif : une seule chaudière fabriquée suffit";
         suivi = new SuiviFabrication<>(List.of(besoin("torch", 128)));
         assert !suivi.actualiser(List.of());
         assert !suivi.actualiser(List.of(stack("torch", 64), stack("torch", 63)));

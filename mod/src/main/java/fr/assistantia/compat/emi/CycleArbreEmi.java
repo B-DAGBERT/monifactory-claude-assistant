@@ -24,7 +24,9 @@ public final class CycleArbreEmi {
     private static SuiviFabrication<ItemStack> suivi;
     private static boolean erreurSignalee;
 
-    private record Cibles(String signature, List<PlanRetrait.Besoin<ItemStack>> besoins) {}
+    // objectif : arbre d'un objectif IA, dont les quantités incluent déjà ce que le joueur possède.
+    private record Cibles(
+            String signature, List<PlanRetrait.Besoin<ItemStack>> besoins, boolean objectif) {}
 
     private static void nettoyer() {
         RechercheEmi.arreter();
@@ -60,7 +62,7 @@ public final class CycleArbreEmi {
             if (suivi == null || !signature.equals(cibles.signature())) {
                 if (suivi != null) nettoyer(); // Quantités modifiées : ne pas garder l'ancien scan.
                 signature = cibles.signature();
-                suivi = new SuiviFabrication<>(cibles.besoins());
+                suivi = new SuiviFabrication<>(cibles.besoins(), !cibles.objectif());
             }
             if (RetraitCoffre.occupe()) return; // Attendre la fin des clics et leur confirmation.
             List<PlanRetrait.Stock<ItemStack>> stock = new ArrayList<>();
@@ -121,9 +123,9 @@ public final class CycleArbreEmi {
                             .map(EmiStack::copy)
                             .toList();
             // Une cible fluide ou inconnue ne peut pas être déclarée obtenue par l'inventaire.
-            if (variantes.isEmpty()) return new Cibles("non-objet", List.of());
+            if (variantes.isEmpty()) return new Cibles("non-objet", List.of(), virtuelle);
             int quantite = multiplier(node.getClass().getField("amount").getLong(node), batches);
-            if (quantite <= 0) return new Cibles("invalide", List.of());
+            if (quantite <= 0) return new Cibles("invalide", List.of(), virtuelle);
             key.append(quantite).append(':');
             for (var variante : variantes)
                 key.append(variante.getId()).append(variante.getNbt()).append(';');
@@ -133,7 +135,7 @@ public final class CycleArbreEmi {
                             item -> variantes.stream().anyMatch(v -> EmiStack.of(item).isEqual(v)),
                             quantite));
         }
-        return new Cibles(key.toString(), besoins);
+        return new Cibles(key.toString(), besoins, virtuelle);
     }
 
     private static int multiplier(long a, long b) {

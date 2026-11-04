@@ -4,22 +4,29 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Valide uniquement les cibles finales, aux quantités demandées, jamais leurs ingrédients. Ce que
- * le joueur possédait déjà au premier relevé ne compte pas : seul ce qui arrive ensuite termine.
+ * Valide uniquement les cibles finales, aux quantités demandées, jamais leurs ingrédients. Pour un
+ * arbre libre, ce que le joueur possédait déjà au premier relevé ne compte pas : seul ce qui arrive
+ * ensuite termine. Pour l'arbre d'un objectif, les quantités sont déjà des totaux à détenir.
  */
 public final class SuiviFabrication<T> {
     private final List<PlanRetrait.Besoin<T>> cibles;
     private final boolean[] obtenues;
+    private final boolean depuisDepart;
     private List<PlanRetrait.Besoin<T>> attendues;
 
     public SuiviFabrication(List<PlanRetrait.Besoin<T>> cibles) {
+        this(cibles, true);
+    }
+
+    public SuiviFabrication(List<PlanRetrait.Besoin<T>> cibles, boolean depuisDepart) {
         this.cibles = List.copyOf(cibles);
+        this.depuisDepart = depuisDepart;
         obtenues = new boolean[cibles.size()];
     }
 
     public boolean actualiser(List<PlanRetrait.Stock<T>> inventaire) {
         if (cibles.isEmpty()) return false;
-        if (attendues == null) attendues = ajouterDepart(inventaire);
+        if (attendues == null) attendues = depuisDepart ? ajouterDepart(inventaire) : cibles;
         var allocation = PlanRetrait.calculer(inventaire, attendues);
         boolean termine = true;
         for (int i = 0; i < cibles.size(); i++) {
