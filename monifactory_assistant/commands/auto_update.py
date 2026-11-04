@@ -178,13 +178,13 @@ class AutoUpdater:
             ),
         )
 
-    def run_logged(self, command, cwd, timeout):
+    def run_logged(self, command, cwd, timeout, **env):
         self.runtime.mkdir(parents=True, exist_ok=True)
         with (self.runtime / "update.log").open("a", encoding="utf-8") as log:
             process = subprocess.Popen(
                 command,
                 cwd=cwd,
-                env=dict(os.environ, MINECRAFT_DIR=str(self.instance)),
+                env=dict(os.environ, MINECRAFT_DIR=str(self.instance), **env),
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 start_new_session=os.name != "nt",
@@ -213,7 +213,15 @@ class AutoUpdater:
                 raise subprocess.CalledProcessError(code, command)
 
     def build(self, stage):
-        self.run_logged([sys.executable, str(stage / "codex_setup.py"), "build"], stage, 600)
+        from monifactory_assistant.commands.setup import java_home
+
+        # The staged checkout has no assistant.local.json: resolve java_home with the local one.
+        self.run_logged(
+            [sys.executable, str(stage / "codex_setup.py"), "build"],
+            stage,
+            600,
+            JAVA_HOME=str(java_home(self.instance)),
+        )
 
     def dependencies(self, stage):
         self.run_logged(

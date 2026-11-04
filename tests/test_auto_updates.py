@@ -235,6 +235,20 @@ class AutomaticUpdateTests(unittest.TestCase):
         self.assertEqual(self.updater.dependency_updates, 1)
 
 
+class StagedBuildTests(unittest.TestCase):
+    def test_staged_build_receives_the_local_java_home(self):
+        # The staged checkout has no assistant.local.json, so its own lookup would miss java_home.
+        with tempfile.TemporaryDirectory() as tmp:
+            jdk = Path(tmp) / "jdk-17"
+            updater = AutoUpdater(tmp, Path(tmp) / "instance")
+            with (
+                patch.object(setup, "java_home", return_value=jdk),
+                patch.object(updater, "run_logged") as run,
+            ):
+                updater.build(Path(tmp) / "stage")
+            self.assertEqual(run.call_args.kwargs["JAVA_HOME"], str(jdk))
+
+
 class ProcessDetectionTests(unittest.TestCase):
     def test_minecraft_is_distinguished_from_gradle_and_shells(self):
         self.assertTrue(
