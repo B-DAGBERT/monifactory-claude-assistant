@@ -132,7 +132,11 @@ nécessaires. Les détails de fabrication sont dans **Objectif EMI**.
 
 Les transferts utilisent les clics du jeu, avec le mécanisme natif de Sophisticated Storage
 pour ses coffres, sans commande ni installation serveur. Un transfert réussi est silencieux.
-Les clics répétés sont bloqués pendant le transfert ; fermer le coffre l’arrête. Si l’inventaire
+Les clics répétés sont bloqués pendant le transfert ; fermer le coffre l’arrête.
+Les mises à jour d’objets sans rapport (par exemple la charge d’un outil électrique) n’interrompent
+pas le retrait. Après un déplacement, le mod attend jusqu’à trois secondes la synchronisation du
+serveur, sans renvoyer les clics. Si le contenu reste incohérent, il s’arrête et consigne le slot
+concerné dans le journal. Les retraits partiels réduisent le nombre de clics envoyés. Si l’inventaire
 est plein, le retrait s’arrête en conservant les objets déjà récupérés. Le stock est lu directement
 dans le coffre ouvert, sans appel IA ni dépendance à la mémoire des coffres.
 

@@ -48,7 +48,9 @@ public final class RetraitCoffre {
     private static AbstractContainerScreen<?> ecran;
     private static Method clicStockage;
     private static List<Lot> attente = List.of();
-    private static int index, reste, pris, delai;
+    private static int index, reste, pris, delai, synchronisation, stable;
+    private static boolean confirmation;
+    private static final int ATTENTE_SERVEUR = 60; // Trois secondes sans renvoyer de clic.
     private static long dernierClic;
     private static final Map<Slot, ItemStack> attendu = new IdentityHashMap<>();
 
@@ -160,7 +162,8 @@ public final class RetraitCoffre {
         index = 0;
         reste = attente.get(0).quantite();
         pris = 0;
-        delai = 0;
+        delai = synchronisation = stable = 0;
+        confirmation = false;
         dernierClic = System.nanoTime();
         memoriser();
         return true;
@@ -179,15 +182,36 @@ public final class RetraitCoffre {
             return;
         }
         if (delai-- > 0) return;
-        if (!menu.getCarried().isEmpty()) {
-            terminer("Retrait arrêté : objet sur le curseur.");
-            return;
-        }
-        for (var entry : attendu.entrySet()) {
-            if (!menu.slots.contains(entry.getKey())
-                    || !identique(entry.getKey().getItem(), entry.getValue())) {
-                terminer(
-                        "Inventaire modifié ou transfert corrigé par le serveur : relance le retrait.");
+        String ecart = ecart();
+        if (confirmation) {
+            synchronisation++;
+            if (ecart != null || !menu.getCarried().isEmpty()) {
+                stable = 0;
+                if (synchronisation >= ATTENTE_SERVEUR) {
+                    System.getLogger(RetraitCoffre.class.getName())
+                            .log(
+                                    System.Logger.Level.WARNING,
+                                    "Transfert non confirmé : "
+                                            + (ecart == null ? "curseur encore occupé" : ecart)
+                                            + ", menu="
+                                            + menu.getClass().getName()
+                                            + ", déplacés côté client="
+                                            + pris);
+                    terminer(
+                            "Transfert arrêté : le contenu ne correspond pas au déplacement attendu.");
+                }
+                return; // Une réponse intermédiaire n'est pas un refus. Aucun nouveau clic.
+            }
+            if (++stable < 2) return;
+            confirmation = false;
+            synchronisation = stable = 0;
+        } else {
+            if (!menu.getCarried().isEmpty()) {
+                terminer("Retrait arrêté : objet sur le curseur.");
+                return;
+            }
+            if (ecart != null) {
+                terminer("Contenu modifié avant le transfert : relance le retrait.");
                 return;
             }
         }
@@ -258,8 +282,13 @@ public final class RetraitCoffre {
         }
         quantite = Math.min(quantite, curseur.getCount());
         int avant = dest.getItem().getCount();
-        if (quantite == curseur.getCount()) clic(dest, 0);
-        else for (int i = 0; i < quantite; i++) clic(dest, 1);
+        int surplus = curseur.getCount() - quantite;
+        if (surplus == 0) clic(dest, 0);
+        else if (surplus < quantite) {
+            // Rendre le petit surplus, puis poser le reste : moins de paquets qu'un clic par objet.
+            for (int i = 0; i < surplus; i++) clic(src, 1);
+            clic(dest, 0);
+        } else for (int i = 0; i < quantite; i++) clic(dest, 1);
         // Remettre le surplus dans son emplacement d'origine, jamais hors de l'écran.
         if (!menu.getCarried().isEmpty()) clic(src, 0);
         int deplace = dest.getItem().getCount() - avant;
@@ -274,7 +303,35 @@ public final class RetraitCoffre {
             if (index < attente.size()) reste = attente.get(index).quantite();
         }
         memoriser();
-        delai = 4; // Laisse au serveur le temps de synchroniser entre deux piles.
+        delai = 4;
+        confirmation = true;
+        synchronisation = stable = 0;
+    }
+
+    private static boolean concerne(ItemStack item) {
+        if (item.isEmpty()) return false;
+        for (Lot lot : attente) if (ItemStack.isSameItemSameTags(item, lot.objet())) return true;
+        return false;
+    }
+
+    private static String ecart() {
+        for (var entry : attendu.entrySet()) {
+            Slot slot = entry.getKey();
+            ItemStack avant = entry.getValue(), maintenant = slot.getItem();
+            // Un outil qui se recharge ou un objet sans rapport ne doit pas arrêter le retrait.
+            if (personnel(slot) && !concerne(avant) && !concerne(maintenant)) continue;
+            if (!menu.slots.contains(slot) || !identique(maintenant, avant))
+                return "slot="
+                        + slot.index
+                        + ", quantité attendue="
+                        + avant.getCount()
+                        + ", reçue="
+                        + maintenant.getCount()
+                        + ", même objet/NBT="
+                        + (avant.isEmpty() && maintenant.isEmpty()
+                                || ItemStack.isSameItemSameTags(avant, maintenant));
+        }
+        return null;
     }
 
     private static boolean identique(ItemStack a, ItemStack b) {
@@ -319,6 +376,8 @@ public final class RetraitCoffre {
         menu = null;
         ecran = null;
         clicStockage = null;
+        confirmation = false;
+        synchronisation = stable = 0;
         attente = List.of();
         attendu.clear();
         dernierClic = System.nanoTime();

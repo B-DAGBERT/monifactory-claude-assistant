@@ -125,7 +125,59 @@ public final class RetraitCoffreTest {
                 == 0;
     }
 
+    private static void synchronization() throws Exception {
+        setup(1000, 0);
+        menu.slots.get(3).item = new ItemStack("electric_drill", 1);
+        assert RetraitCoffre.lancer(screen, plan(120));
+        for (int i = 0; i < 1000 && RetraitCoffre.occupe(); i++) {
+            menu.slots.get(3).item.tag++; // Charge électrique actualisée par le serveur.
+            tick();
+        }
+        assert owned() == 120 && !RetraitCoffre.occupe()
+                : "ne pas surveiller le NBT des outils sans rapport";
+
+        setup(1000, 0);
+        assert RetraitCoffre.lancer(screen, plan(130));
+        tick();
+        var sourceConfirmee = menu.slots.get(0).item.copy();
+        var destinationConfirmee = menu.slots.get(1).item.copy();
+        int clicks = mc.gameMode.clicks;
+        menu.slots.get(0).item = new ItemStack("tin", 970);
+        menu.slots.get(1).item = new ItemStack("tin", 30);
+        menu.carried = new ItemStack("tin", 34); // Paquet intermédiaire reçu avec retard.
+        for (int i = 0; i < 15; i++) tick();
+        assert RetraitCoffre.occupe() && mc.gameMode.clicks == clicks
+                : "attendre sans renvoyer ni doubler les clics";
+        menu.slots.get(0).item = sourceConfirmee;
+        menu.slots.get(1).item = destinationConfirmee;
+        menu.carried = new ItemStack("", 0);
+        finish();
+        assert owned() == 130 && menu.slots.get(0).item.getCount() == 870;
+
+        setup(64, 0);
+        assert RetraitCoffre.lancer(screen, plan(50));
+        finish();
+        assert owned() == 50 && menu.slots.get(0).item.getCount() == 14;
+        assert mc.gameMode.clicks == 16 : "rendre 14 objets au lieu d'en poser 50 un par un";
+
+        setup(1000, 0);
+        assert RetraitCoffre.lancer(screen, plan(130));
+        tick();
+        clicks = mc.gameMode.clicks;
+        menu.slots.get(0).item = new ItemStack("tin", 1000);
+        menu.slots.get(1).item = new ItemStack("", 0); // Refus durable : ne jamais relancer seul.
+        finish();
+        assert owned() == 0 && mc.gameMode.clicks == clicks;
+
+        setup(64, 0);
+        assert RetraitCoffre.lancer(screen, plan(10));
+        menu.slots.get(2).item = new ItemStack("tin", 10);
+        finish();
+        assert mc.gameMode.clicks == 0 : "un nouvel apport de l'objet demandé reste surveillé";
+    }
+
     public static void main(String[] args) throws Exception {
+        synchronization();
         treeSelection();
         componentBeforeMaterials();
         setup(1000, 0);
