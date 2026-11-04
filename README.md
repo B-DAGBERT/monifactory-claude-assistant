@@ -55,32 +55,29 @@ EMI tient compte de ton inventaire ; il ne connaît pas les coffres mémorisés 
 posées. L’assistant continue de suivre ces stocks. Échap revient à l’inventaire, puis au menu
 assistant. Il faut relancer **l’assistant et Minecraft** après installation de cette version.
 
-## Coffres depuis une recette EMI
+## Coffres depuis l’arbre EMI
 
-Sur une recette EMI, cliquer **Coffres** juste en dessous du craft : ses ingrédients objets
-et ses outils sont surlignés en cyan dans les inventaires. Les coffres connus qui en contiennent
-ont un contour cyan lumineux, visible à travers les murs. Les variantes acceptées par la recette sont incluses ;
-les fluides et les différences de NBT ne sont pas suivis par la mémoire des coffres.
+Choisir l’objectif et ses recettes dans **Recipe Tree**, puis cliquer sur **Scanner coffres**,
+en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton devient **Arrêter scan** :
+un second clic désactive le repérage. Il remplace l’ancien bouton sous chaque recette.
 
-Le bouton devient **Recherche…**, puis **Arrêter**. Cliquer à nouveau coupe le repérage ;
-choisir une autre recette remplace la recherche. Celle-ci reste active après fermeture d’EMI,
-pendant dix minutes au maximum, et s’efface à la déconnexion ou au changement de dimension.
-Le repérage EMI prend temporairement la priorité sur les objets de l’objectif dans les inventaires.
-Les quantités sont celles d’une fabrication : les ingrédients déjà dans le sac sont déduits.
-Dès que la quantité d’un ingrédient est récupérée, ses contours et sa surbrillance disparaissent.
-Cet ingrédient reste validé pour cette recherche, même s’il est ensuite consommé, rangé ou perdu.
-Les autres ingrédients restent recherchés ; quand tout est récupéré, tous les contours s’éteignent.
-Pour repartir sur une nouvelle collecte, arrêter la recherche puis cliquer de nouveau sur **Coffres**.
+La recherche prend un instantané de **tout l’arbre choisi**, avec les composants intermédiaires,
+les matières premières, les variantes et les quantités pour le nombre de lots de l’arbre.
+Les outils réutilisables ne sont pas multipliés par le nombre de fabrications. Les fluides
+et les différences de NBT ne sont pas suivis par la mémoire des coffres. Si tu modifies
+l’arbre ou ses quantités après activation, désactive puis réactive le scan pour le reprendre.
 
-La recherche utilise les derniers contenus mémorisés, sans appel IA ni scan du monde.
-Ouvrir un coffre actualise son contenu. Un message indique si aucun coffre connu ne correspond.
-Tous les emplacements de coffres mémorisés correspondants dans la dimension actuelle sont signalés,
-sans limite à 16 résultats. Chaque moitié mémorisée d’un double coffre est conservée.
-Un coffre jamais observé n’est pas inventé : l’ouvrir permet de mémoriser son contenu.
-Les questions dans Discussion et la pause de l’objectif ne sont pas modifiées.
+Les objets manquants sont surlignés dans les inventaires et les coffres connus qui en contiennent
+ont un contour cyan lumineux visible à travers les murs. Les ingrédients récupérés restent
+validés pour cette recherche, même s’ils sont ensuite consommés, rangés ou perdus.
+La recherche reste active après fermeture d’EMI, pendant dix minutes au maximum, et s’efface
+à la déconnexion ou au changement de dimension. Elle utilise les contenus mémorisés,
+sans appel IA ni scan du monde : ouvrir un coffre actualise son contenu.
+Tous les emplacements correspondants de la dimension sont signalés, sans limite à 16 coffres.
 
-Le panneau en haut à gauche montre désormais uniquement le **plan**, l’**objectif** et son
-**avancement** : les listes d’objets à collecter et leurs quantités restent dans EMI et le menu.
+Le panneau en haut à gauche garde uniquement le **plan**, l’**objectif** et son **avancement**.
+Dans le menu de l’assistant, **Masquer** ferme l’avis de mise à jour et mémorise ce choix
+localement, y compris après redémarrage. Une nouvelle version peut afficher un nouvel avis.
 
 ## Récupérer les ingrédients depuis un coffre
 
@@ -92,7 +89,7 @@ Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habi
 Depuis une recette EMI ouverte avec un coffre, le bouton **+** devient une flèche **↓** :
 elle récupère les ingrédients pour **une fabrication**, y compris avec Maj enfoncée.
 Pour plusieurs fabrications de l’objectif, utiliser **Pour l’objectif** au-dessus du coffre.
-Le bouton **Coffres** continue de servir au repérage, sans déplacer d’objet.
+Le bouton **Scanner coffres** sert au repérage de l’arbre, sans déplacer d’objet.
 
 Le retrait déduit les objets déjà dans l’inventaire, respecte les variantes de la recette EMI
 et ne prend que les quantités manquantes. Il fonctionne aussi si ce coffre ne contient qu’une

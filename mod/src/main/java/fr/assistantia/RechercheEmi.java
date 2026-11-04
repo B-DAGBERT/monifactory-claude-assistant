@@ -193,7 +193,7 @@ public final class RechercheEmi {
         if (attente)
             informer(
                     Pont.texte(vue, "message")
-                            + " Repérage pendant 10 min ; reclique sur Coffres / Arrêter pour couper.");
+                            + " Repérage pendant 10 min ; reclique sur Arrêter scan pour couper.");
         attente = false;
     }
 }

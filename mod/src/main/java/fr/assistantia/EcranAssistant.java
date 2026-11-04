@@ -59,7 +59,12 @@ public class EcranAssistant extends Screen {
     private final List<Button> actionsObjectif = new ArrayList<>();
     private OngletFilons filons;
     private OngletBase base;
-    private Button projets, objectifEmi;
+    private Button projets, objectifEmi, masquerMaj;
+    private static final AvisMiseAJour AVIS_MAJ =
+            new AvisMiseAJour(
+                    net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR
+                            .get()
+                            .resolve("assistantia-avis-masque.txt"));
     private String messageEmi = "";
     private EditBox saisie;
     private Button envoyer;
@@ -114,6 +119,27 @@ public class EcranAssistant extends Screen {
                                     Component.literal(ONGLETS[i])));
             x += largeur + 4;
         }
+        masquerMaj =
+                addRenderableWidget(
+                        Button.builder(
+                                        Component.literal("Masquer"),
+                                        b -> {
+                                            JsonObject vue = Pont.partie("ecran");
+                                            try {
+                                                AVIS_MAJ.masquer(
+                                                        Pont.texte(vue, "mise_a_jour_id"),
+                                                        Pont.texte(vue, "mise_a_jour"));
+                                            } catch (java.io.IOException e) {
+                                                com.mojang.logging.LogUtils.getLogger()
+                                                        .warn(
+                                                                "Avis masqué pour cette session seulement",
+                                                                e);
+                                            }
+                                            masquerMaj.visible = false;
+                                        })
+                                .bounds(this.width - MARGE - 54, MARGE + 22, 54, 16)
+                                .build());
+        masquerMaj.visible = false;
         int bas = this.height - MARGE - 18;
         saisie =
                 new EditBox(
@@ -381,11 +407,12 @@ public class EcranAssistant extends Screen {
                 bas = this.height - MARGE - 18 - (onglet == OBJECTIF || onglet == PLAN ? 32 : 6);
         int hautMiseAJour = haut;
         String miseAJour = Pont.texte(ecran, "mise_a_jour");
-        if (!miseAJour.isEmpty()) {
+        masquerMaj.visible = AVIS_MAJ.visible(Pont.texte(ecran, "mise_a_jour_id"), miseAJour);
+        if (masquerMaj.visible) {
             g.fill(MARGE - 4, haut - 4, this.width - MARGE + 4, haut + 12, 0xD0353020);
             g.drawString(
                     this.font,
-                    this.font.plainSubstrByWidth(miseAJour, this.width - 2 * MARGE - 4),
+                    this.font.plainSubstrByWidth(miseAJour, this.width - 2 * MARGE - 62),
                     MARGE,
                     haut,
                     Hud.JAUNE,
@@ -500,7 +527,10 @@ public class EcranAssistant extends Screen {
             default -> discussion.render(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
         }
         super.render(g, sourisX, sourisY, partialTick);
-        if (!miseAJour.isEmpty() && sourisY >= hautMiseAJour - 4 && sourisY < hautMiseAJour + 12)
+        if (masquerMaj.visible
+                && sourisX < masquerMaj.getX() - 2
+                && sourisY >= hautMiseAJour - 4
+                && sourisY < hautMiseAJour + 12)
             g.renderTooltip(
                     this.font,
                     this.font.split(Component.literal(miseAJour), Math.min(320, this.width - 30)),

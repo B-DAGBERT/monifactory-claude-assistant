@@ -45,6 +45,7 @@ from PIL import Image
 
 import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.commands.auto_update import notice as update_notice
+from monifactory_assistant.commands.auto_update import notice_key as update_notice_key
 from monifactory_assistant.config import minecraft_dir
 from monifactory_assistant.game.emi import objective_tree
 from monifactory_assistant.game.emi_search import RecipeChestSearch
@@ -1733,6 +1734,7 @@ def build_mod_view(app):
         "recharger": app.bridge.script_outdated(state),
         "statut": app.status,
         "mise_a_jour": getattr(app, "update_notice", ""),
+        "mise_a_jour_id": getattr(app, "update_notice_id", ""),
         "alertes": app.world.alerts()[:2] if machine_alerts else [],
         "prochains": [],
         "direction": None,
@@ -2001,6 +2003,7 @@ def build_mod_view(app):
     screen = {
         "statut": app.status,
         "mise_a_jour": getattr(app, "update_notice", ""),
+        "mise_a_jour_id": getattr(app, "update_notice_id", ""),
         "question_recue": getattr(app, "question_ack", {}),
         "derniere_demande": getattr(app, "mod_request_n", None),
         "erreur_connexion": getattr(app, "connection_problem", ""),
@@ -2494,6 +2497,7 @@ class App:
         self.mod_request_time, self.mod_request_n = None, None
         self.question_ack = {}
         self.update_notice = update_notice()
+        self.update_notice_id = update_notice_key()
         # journal et coach
         self.session_open = False
         self.game_lost_at = 0

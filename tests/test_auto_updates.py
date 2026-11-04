@@ -12,6 +12,7 @@ from monifactory_assistant.commands.auto_update import (
     AutoUpdater,
     minecraft_command,
     minecraft_running,
+    notice_key,
 )
 
 GIT = shutil.which("git")
@@ -35,6 +36,19 @@ class Harness(AutoUpdater):
     def deploy(self, stage):
         with patch.object(setup, "HERE", self.root):
             return super().deploy(stage)
+
+
+class UpdateNoticeTests(unittest.TestCase):
+    def test_notice_key_tracks_release_not_repeated_checks(self):
+        with patch("monifactory_assistant.commands.auto_update.read_json") as read:
+            read.return_value = {"target": "release-a", "message": "Disponible", "checked_at": 1}
+            first = notice_key()
+            read.return_value = {"target": "release-a", "message": "Prête", "checked_at": 2}
+            self.assertEqual(notice_key(), first)
+            read.return_value = {"revision": "release-b", "message": "Prête", "checked_at": 2}
+            self.assertNotEqual(notice_key(), first)
+            read.return_value = {"message": "Hors ligne"}
+            self.assertEqual(notice_key(), "Hors ligne")
 
 
 class AutomaticUpdateTests(unittest.TestCase):

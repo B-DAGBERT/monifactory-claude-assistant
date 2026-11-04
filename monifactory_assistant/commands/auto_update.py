@@ -104,6 +104,12 @@ def digest(path):
         )
 
 
+def notice_key():
+    """Stable across checks, different for a new release; never use checked_at."""
+    data = read_json(ROOT / ".runtime/update-status.json")
+    return str(data.get("target") or data.get("revision") or data.get("message") or "")
+
+
 def notice():
     return read_json(ROOT / ".runtime/update-status.json").get("message", "")
 
