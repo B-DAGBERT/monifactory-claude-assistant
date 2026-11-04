@@ -13,7 +13,8 @@ public final class PlanRetrait {
 
     public record Prise(int index, int quantite) {}
 
-    public record Resultat(List<Prise> prises, long manquants, List<Integer> fournis) {
+    public record Resultat(
+            List<Prise> prises, long manquants, List<Integer> fournis, List<Integer> utilises) {
         public int total() {
             return prises.stream().mapToInt(Prise::quantite).sum();
         }
@@ -77,7 +78,8 @@ public final class PlanRetrait {
         return new Resultat(
                 List.copyOf(prises),
                 demande - fourni,
-                destinations.stream().map(a -> (int) a.inverse.capacite).toList());
+                destinations.stream().map(a -> (int) a.inverse.capacite).toList(),
+                sources.stream().map(a -> (int) a.inverse.capacite).toList());
     }
 
     private static long augmenter(List<List<Arc>> graphe, int fin) {

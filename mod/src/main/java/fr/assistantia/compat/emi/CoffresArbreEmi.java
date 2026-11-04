@@ -137,8 +137,7 @@ public final class CoffresArbreEmi {
             Set<Object> chemin = Collections.newSetFromMap(new IdentityHashMap<>());
             int[] count = {0};
             ArbreCollecte.Noeud snapshot = lire(root, chemin, count, 0, null);
-            RechercheEmi.basculer(
-                    ID, new MemoireCollecte(ArbreCollecte.ingredients(snapshot, lots)));
+            RechercheEmi.basculer(ID, new MemoireCollecte(snapshot, lots));
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);
             var p = Minecraft.getInstance().player;
@@ -151,12 +150,12 @@ public final class CoffresArbreEmi {
     }
 
     /** Le même arbre que la recherche, avec les comparaisons d'objets exactes d'EMI. */
-    public static List<fr.assistantia.PlanRetrait.Besoin<net.minecraft.world.item.ItemStack>>
-            besoinsTransfert() {
+    public static fr.assistantia.RetraitCoffre.Plan planTransfert(
+            AbstractContainerScreen<?> screen) {
         try {
             charger();
             Object tree = arbre.get(null);
-            if (tree == null) return List.of();
+            if (tree == null) return new fr.assistantia.RetraitCoffre.Plan(List.of(), 0);
             Object root = tree.getClass().getField("goal").get(tree);
             long lots = tree.getClass().getField("batches").getLong(tree);
             List<EmiStack> variantes = new ArrayList<>();
@@ -167,23 +166,20 @@ public final class CoffresArbreEmi {
                             new int[] {0},
                             0,
                             variantes);
-            List<fr.assistantia.PlanRetrait.Besoin<net.minecraft.world.item.ItemStack>> besoins =
-                    new ArrayList<>();
-            for (var ingredient : ArbreCollecte.ingredients(snapshot, lots)) {
-                var choix =
-                        ingredient.variantes().stream()
-                                .map(id -> variantes.get(Integer.parseInt(id)))
-                                .toList();
-                besoins.add(
-                        new fr.assistantia.PlanRetrait.Besoin<>(
-                                stack ->
-                                        choix.stream().anyMatch(v -> EmiStack.of(stack).isEqual(v)),
-                                ingredient.quantite()));
-            }
-            return List.copyOf(besoins);
+            return fr.assistantia.RetraitCoffre.planArbre(
+                    screen.getMenu(),
+                    snapshot,
+                    lots,
+                    ids -> {
+                        var choix =
+                                ids.stream()
+                                        .map(id -> variantes.get(Integer.parseInt(id)))
+                                        .toList();
+                        return stack -> choix.stream().anyMatch(v -> EmiStack.of(stack).isEqual(v));
+                    });
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);
-            return List.of();
+            return new fr.assistantia.RetraitCoffre.Plan(List.of(), 0);
         }
     }
 

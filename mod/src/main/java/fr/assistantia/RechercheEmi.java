@@ -22,7 +22,7 @@ public final class RechercheEmi {
     private static MemoireCollecte collecte;
     private static int ticks;
     private static Object connexion;
-    private static Set<String> objets = Set.of();
+    private static Set<String> objets = Set.of(), demandes = Set.of();
     private static List<Pont.Repere> reperes = List.of();
     private static JsonObject derniereVue;
 
@@ -86,7 +86,7 @@ public final class RechercheEmi {
         connexion = mc.getConnection();
         fin = now + 600_000;
         collecte = suivi;
-        objets = suivi.actualiser(inventaire());
+        demandes = suivi.actualiser(inventaire());
         transmettre();
     }
 
@@ -106,10 +106,11 @@ public final class RechercheEmi {
         long now = System.currentTimeMillis();
         numero = Math.max(now, numero + 1);
         envoye = now;
-        attente = !objets.isEmpty();
+        attente = !demandes.isEmpty();
         // Retirer immédiatement les anciens faisceaux. Une réponse de l'ancienne sélection
         // est rejetée grâce au numéro de requête, même si elle arrive après le transfert.
         reperes = List.of();
+        objets = Set.of();
         derniereVue = null;
         JsonObject demande = new JsonObject();
         demande.addProperty("n", numero);
@@ -119,14 +120,14 @@ public final class RechercheEmi {
         demande.addProperty("dimension", dimension);
         demande.addProperty("fin", fin / 1000.0);
         JsonArray items = new JsonArray();
-        objets.stream().sorted().forEach(items::add);
+        demandes.stream().sorted().forEach(items::add);
         demande.add("objets", items);
         if (!Pont.envoyerRechercheEmi(demande)) {
             informer("Recherche non transmise. Réessaie.");
             // Pas de retour à une ancienne liste d'ingrédients déjà validés.
             attente = false;
         }
-        if (objets.isEmpty())
+        if (demandes.isEmpty())
             informer("Ingrédients récupérés : repérage terminé pour cette recherche.");
     }
 
@@ -141,7 +142,7 @@ public final class RechercheEmi {
     private static void vider() {
         recette = "";
         attente = false;
-        objets = Set.of();
+        objets = demandes = Set.of();
         reperes = List.of();
         derniereVue = null;
         collecte = null;
@@ -160,26 +161,31 @@ public final class RechercheEmi {
             return;
         }
         if (collecte != null && ++ticks % 2 == 0 && !RetraitCoffre.occupe()) {
+            long version = collecte.version();
             Set<String> restants = collecte.actualiser(inventaire());
-            if (!restants.equals(objets)) {
-                objets = restants;
+            if (collecte.version() != version) derniereVue = null;
+            if (!restants.equals(demandes)) {
+                demandes = restants;
                 transmettre();
             }
         }
-        if (objets.isEmpty())
+        if (demandes.isEmpty())
             return; // Garder la recherche validée, sans revenir au guidage de l'objectif.
         if (attente && System.currentTimeMillis() - envoye > 8000) {
             informer("L’assistant n’a pas répondu à la recherche EMI. Relance-le puis réessaie.");
             vider();
             return;
         }
+        if (RetraitCoffre.occupe()) return;
         JsonObject vue = Pont.partie("recherche_emi");
         if (vue == derniereVue
                 || (long) Pont.nombre(vue, "n", 0) != numero
                 || !monde.equals(Pont.texte(vue, "monde"))
                 || !dimension.equals(Pont.texte(vue, "dimension"))) return;
         derniereVue = vue;
-        List<Pont.Repere> coffres = new ArrayList<>();
+        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
+        List<String> groupes = new ArrayList<>();
+        Map<String, List<Pont.Repere>> positions = new java.util.LinkedHashMap<>();
         for (JsonElement e : Pont.liste(vue, "coffres")) {
             if (!e.isJsonObject()) continue;
             JsonObject c = e.getAsJsonObject();
@@ -187,13 +193,45 @@ public final class RechercheEmi {
             int x = (int) Pont.nombre(c, "x", 0),
                     y = (int) Pont.nombre(c, "y", 0),
                     z = (int) Pont.nombre(c, "z", 0);
-            coffres.add(new Pont.Repere(x, y, z, dimension, Pont.texte(c, "texte")));
+            String groupe = Pont.texte(c, "stock");
+            if (groupe.isEmpty()) groupe = x + "|" + y + "|" + z;
+            boolean connu = positions.containsKey(groupe);
+            positions
+                    .computeIfAbsent(groupe, key -> new ArrayList<>())
+                    .add(new Pont.Repere(x, y, z, dimension, Pont.texte(c, "texte")));
+            if (connu || !c.has("objets") || !c.get("objets").isJsonObject()) continue;
+            for (var entry : c.getAsJsonObject("objets").entrySet()) {
+                int n =
+                        (int)
+                                Math.min(
+                                        1_000_000,
+                                        Math.max(
+                                                0,
+                                                Pont.nombre(
+                                                        c.getAsJsonObject("objets"),
+                                                        entry.getKey(),
+                                                        0)));
+                if (n == 0 || !demandes.contains(entry.getKey())) continue;
+                groupes.add(groupe);
+                stocks.add(new PlanRetrait.Stock<>(entry.getKey(), n, false));
+            }
         }
+        Set<String> utiles = new java.util.LinkedHashSet<>(),
+                visibles = new java.util.LinkedHashSet<>();
+        for (var prise : collecte.dansCoffres(stocks)) {
+            utiles.add(stocks.get(prise.index()).objet());
+            visibles.add(groupes.get(prise.index()));
+        }
+        List<Pont.Repere> coffres = new ArrayList<>();
+        for (String groupe : visibles) coffres.addAll(positions.get(groupe));
+        objets = Set.copyOf(utiles);
         reperes = List.copyOf(coffres);
         if (attente)
             informer(
-                    Pont.texte(vue, "message")
-                            + " Repérage pendant 10 min ; reclique sur Arrêter scan pour couper.");
+                    coffres.isEmpty()
+                            ? "Aucun stockage utile connu pour les branches restantes."
+                            : coffres.size()
+                                    + " stockage(s) utile(s) à l’arbre. Composants prêts à récupérer en priorité.");
         attente = false;
     }
 }

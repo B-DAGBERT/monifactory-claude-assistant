@@ -75,12 +75,35 @@ def chest_search(request, containers, state, now):
                 "z": chest["z"],
                 "dimension": dimension,
                 "n": sum(hits.values()),
+                "objets": hits,
+                "stock": f"{dimension}|{chest['x']}|{chest['y']}|{chest['z']}",
+                "bloc": chest.get("bloc", ""),
                 "texte": ", ".join(
                     f"{key.split(':')[-1].replace('_', ' ')} ×{count}" for key, count in best[:2]
                 )
                 + (" …" if len(best) > 2 else ""),
             }
         )
+    # Les deux moitiés d'un coffre vanilla exposent le même inventaire. Garder les
+    # deux contours, mais une seule réserve pour le parcours descendant du client.
+    grouped = []
+    for chest in chests:
+        if chest["bloc"] in {"minecraft:chest", "minecraft:trapped_chest"}:
+            twin = next(
+                (
+                    other
+                    for other in grouped
+                    if other["bloc"] == chest["bloc"]
+                    and other["y"] == chest["y"]
+                    and abs(other["x"] - chest["x"]) + abs(other["z"] - chest["z"]) == 1
+                    and other["objets"] == chest["objets"]
+                ),
+                None,
+            )
+            if twin is not None:
+                chest["stock"] = twin["stock"]
+                continue
+        grouped.append(chest)
     chests.sort(
         key=lambda c: math.dist(
             (c["x"], c["y"], c["z"]), (state.get("x", 0), state.get("y", 0), state.get("z", 0))

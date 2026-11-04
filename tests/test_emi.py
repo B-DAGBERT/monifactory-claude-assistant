@@ -68,6 +68,9 @@ class EmiTests(unittest.TestCase):
     def test_update_notice_dismissal_persists_for_this_revision(self):
         self._run_java_contract("AvisMiseAJour")
 
+    def test_collected_components_prune_raw_materials(self):
+        self._run_java_contract("PlanArbre")
+
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 
@@ -100,16 +103,17 @@ class EmiTests(unittest.TestCase):
                     directory,
                     str(ROOT / f"mod/src/main/java/fr/assistantia/{name}.java"),
                     str(ROOT / f"tests/java/fr/assistantia/{name}Test.java"),
-                    *(
-                        [str(ROOT / "mod/src/main/java/fr/assistantia/PlanRetrait.java")]
-                        if name in {"MemoireCollecte", "ArbreCollecte"}
-                        else []
-                    ),
-                    *(
-                        [str(ROOT / "mod/src/main/java/fr/assistantia/MemoireCollecte.java")]
-                        if name == "ArbreCollecte"
-                        else []
-                    ),
+                    *[
+                        str(ROOT / f"mod/src/main/java/fr/assistantia/{dependency}.java")
+                        for dependency in (
+                            "PlanRetrait",
+                            "MemoireCollecte",
+                            "ArbreCollecte",
+                            "PlanArbre",
+                        )
+                        if name in {"PlanRetrait", "MemoireCollecte", "ArbreCollecte", "PlanArbre"}
+                        and dependency != name
+                    ],
                 ],
                 check=True,
                 capture_output=True,

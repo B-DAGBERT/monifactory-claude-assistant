@@ -103,8 +103,31 @@ public final class RetraitCoffreTest {
         assert RetraitCoffre.plan(menu, other).total() == 5 : "changer d’arbre change les besoins";
     }
 
+    private static void componentBeforeMaterials() throws Exception {
+        setup(64, 0);
+        Slot casing = new Slot(new Object(), 4);
+        casing.item = new ItemStack("casing", 1);
+        menu.slots.add(casing);
+        var raw = new ArbreCollecte.Noeud(java.util.Set.of("tin"), 8, 1, false, List.of());
+        var component =
+                new ArbreCollecte.Noeud(java.util.Set.of("casing"), 1, 1, false, List.of(raw));
+        var root =
+                new ArbreCollecte.Noeud(
+                        java.util.Set.of("machine"), 1, 1, false, List.of(component));
+        var retrait =
+                RetraitCoffre.planArbre(menu, root, 1, ids -> stack -> ids.contains(stack.id));
+        assert retrait.total() == 1 && retrait.objets().get(0).id.equals("casing");
+        assert RetraitCoffre.lancer(screen, retrait);
+        finish();
+        assert casing.item.isEmpty() && menu.slots.get(0).item.getCount() == 64;
+        assert RetraitCoffre.planArbre(menu, root, 1, ids -> stack -> ids.contains(stack.id))
+                        .total()
+                == 0;
+    }
+
     public static void main(String[] args) throws Exception {
         treeSelection();
+        componentBeforeMaterials();
         setup(64, 2);
         assert RetraitCoffre.lancer(screen, plan(5));
         assert !RetraitCoffre.lancer(screen, plan(5)) : "double clic";

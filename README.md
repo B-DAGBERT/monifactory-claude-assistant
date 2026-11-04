@@ -67,13 +67,21 @@ Les outils réutilisables ne sont pas multipliés par le nombre de fabrications.
 et les différences de NBT ne sont pas suivis par la mémoire des coffres. Si tu modifies
 l’arbre ou ses quantités après activation, désactive puis réactive le scan pour le reprendre.
 
+La recherche réserve les stocks **de haut en bas de l’arbre**, en tenant compte de tous les
+coffres connus de la dimension. Un composant disponible dans un coffre masque les matières
+premières de sa branche, même si leur drawer est plus proche. Si la quantité disponible ne
+suffit pas, seules les matières premières de la quantité manquante restent utiles. Les stocks
+communs à plusieurs branches ne sont pas comptés plusieurs fois. Un composant simplement
+repéré n’est pas considéré comme récupéré : si son coffre se vide, la recherche s’adapte.
+
 Les objets manquants sont surlignés dans les inventaires et les coffres connus qui en contiennent
 ont un contour cyan lumineux visible à travers les murs. Les ingrédients récupérés restent
 validés pour cette recherche, même s’ils sont ensuite consommés, rangés ou perdus.
 La recherche reste active après fermeture d’EMI, pendant dix minutes au maximum, et s’efface
 à la déconnexion ou au changement de dimension. Elle utilise les contenus mémorisés,
 sans appel IA ni scan du monde : ouvrir un coffre actualise son contenu.
-Tous les emplacements correspondants de la dimension sont signalés, sans limite à 16 coffres.
+Tous les stockages connus de la dimension sont examinés, sans limite à 16 coffres.
+Seules les sources utiles sont signalées, en préférant les plus proches à niveau égal dans l’arbre.
 
 Le panneau en haut à gauche garde uniquement le **plan**, l’**objectif** et son **avancement**.
 Dans le menu de l’assistant, **Masquer** ferme l’avis de mise à jour et mémorise ce choix
@@ -90,7 +98,11 @@ coffre ; ses flèches permettent de parcourir plus de huit objets.
 - **Tout récupérer** prend tous les objets utiles à l’arbre disponibles dans ce coffre,
   en se limitant aux quantités manquantes. Les objets sans rapport restent dans le coffre.
 
-Les quantités suivent toutes les branches et le nombre de fabrications choisis dans EMI.
+Les quantités suivent les branches encore nécessaires et le nombre de fabrications choisi dans EMI.
+Un composant déjà possédé couvre sa branche : ses matières premières ne sont plus recherchées.
+Lors d’un transfert, les composants disponibles dans le coffre sont pris en priorité ; seuls les
+composants manquants demandent leurs ingrédients. Par exemple, un boîtier récupéré ne fait plus
+chercher son fer dans les drawers. Une branche validée reste éteinte après consommation du composant.
 L’inventaire est déduit et les variantes sont comparées avec les règles d’EMI, y compris le NBT.
 Le retrait fonctionne même si le coffre ne fournit qu’une partie des ingrédients. Les outils
 réutilisables ne sont pas multipliés ; fluides, upgrades, filtres et grilles de craft sont ignorés.

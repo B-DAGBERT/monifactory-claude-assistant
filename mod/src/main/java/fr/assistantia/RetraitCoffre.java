@@ -77,26 +77,53 @@ public final class RetraitCoffre {
         return false;
     }
 
-    public static Plan plan(AbstractContainerMenu m, List<PlanRetrait.Besoin<ItemStack>> besoins) {
+    private record Contenu(List<Slot> slots, List<PlanRetrait.Stock<ItemStack>> stocks) {}
+
+    private static Contenu contenu(AbstractContainerMenu m) {
         var p = Minecraft.getInstance().player;
-        if (p == null || !estCoffre(m)) return new Plan(List.of(), 0);
         List<Slot> slots = new ArrayList<>();
         List<PlanRetrait.Stock<ItemStack>> stocks = new ArrayList<>();
-        for (Slot s : m.slots) {
-            if (!s.isActive() || !s.hasItem() || !(personnel(s) || source(m, s) && s.mayPickup(p)))
-                continue;
-            slots.add(s);
-            stocks.add(
-                    new PlanRetrait.Stock<>(
-                            s.getItem().copy(), s.getItem().getCount(), personnel(s)));
-        }
-        var r = PlanRetrait.calculer(stocks, besoins);
+        if (p != null && estCoffre(m))
+            for (Slot s : m.slots) {
+                if (!s.isActive()
+                        || !s.hasItem()
+                        || !(personnel(s) || source(m, s) && s.mayPickup(p))) continue;
+                slots.add(s);
+                stocks.add(
+                        new PlanRetrait.Stock<>(
+                                s.getItem().copy(), s.getItem().getCount(), personnel(s)));
+            }
+        return new Contenu(slots, stocks);
+    }
+
+    private static Plan convertir(Contenu contenu, List<PlanRetrait.Prise> prises, long manque) {
         List<Lot> lots = new ArrayList<>();
-        for (var prise : r.prises()) {
-            Slot s = slots.get(prise.index());
+        for (var prise : prises) {
+            Slot s = contenu.slots().get(prise.index());
             lots.add(new Lot(s, s.getItem().copy(), prise.quantite()));
         }
-        return new Plan(List.copyOf(lots), r.manquants());
+        return new Plan(List.copyOf(lots), manque);
+    }
+
+    public static Plan plan(AbstractContainerMenu m, List<PlanRetrait.Besoin<ItemStack>> besoins) {
+        var contenu = contenu(m);
+        var r = PlanRetrait.calculer(contenu.stocks(), besoins);
+        return convertir(contenu, r.prises(), r.manquants());
+    }
+
+    public static Plan planArbre(
+            AbstractContainerMenu m,
+            ArbreCollecte.Noeud arbre,
+            long lots,
+            java.util.function.Function<
+                            java.util.Set<String>, java.util.function.Predicate<ItemStack>>
+                    accepte) {
+        var contenu = contenu(m);
+        var r = PlanArbre.calculer(arbre, lots, contenu.stocks(), accepte);
+        return convertir(
+                contenu,
+                r.prises(),
+                r.manquants().stream().mapToLong(MemoireCollecte.Ingredient::quantite).sum());
     }
 
     public static boolean occupe() {

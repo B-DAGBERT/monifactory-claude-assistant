@@ -54,6 +54,22 @@ class EmiSearchTests(unittest.TestCase):
         self.assertEqual([c["n"] for c in result["coffres"]], [12, 1, 64])
         self.assertEqual((result["n"], result["monde"]), (123, "server-a"))
 
+    def test_reply_exposes_quantities_for_top_down_client_allocation(self):
+        result = self.find()
+        self.assertEqual(result["coffres"][0]["objets"], {"minecraft:birch_planks": 12})
+        self.assertNotEqual(result["coffres"][0]["stock"], result["coffres"][1]["stock"])
+
+    def test_double_chest_shares_stock_but_drawers_remain_independent(self):
+        a = {**self.chest(1, "minecraft:oak_planks", 8), "bloc": "minecraft:chest"}
+        b = {**a, "x": 2}
+        result = self.find(chests=[a, b])["coffres"]
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["stock"], result[1]["stock"])
+        result = self.find(chests=[{**c, "bloc": "functionalstorage:oak_1"} for c in [a, b]])[
+            "coffres"
+        ]
+        self.assertNotEqual(result[0]["stock"], result[1]["stock"])
+
     def test_other_dimensions_never_have_beams(self):
         self.chests.append(self.chest(0, "minecraft:oak_planks", 100, "minecraft:the_nether"))
         self.assertEqual(self.find()["total_coffres"], 2)

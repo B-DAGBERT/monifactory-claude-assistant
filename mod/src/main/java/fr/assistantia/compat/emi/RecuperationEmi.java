@@ -15,7 +15,7 @@ import net.minecraft.network.chat.Component;
 public final class RecuperationEmi {
     public static RetraitCoffre.Plan planArbre(AbstractContainerScreen<?> screen) {
         if (screen == null) return new RetraitCoffre.Plan(List.of(), 0);
-        return RetraitCoffre.plan(screen.getMenu(), CoffresArbreEmi.besoinsTransfert());
+        return CoffresArbreEmi.planTransfert(screen);
     }
 
     /** Remplace le + de craft uniquement lorsque la recette a été ouverte depuis un coffre. */
