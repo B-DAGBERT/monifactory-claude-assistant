@@ -82,19 +82,27 @@ localement, y compris après redémarrage. Une nouvelle version peut afficher un
 ## Récupérer les ingrédients depuis un coffre
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
-au-dessus du coffre propose **Récupérer** (les ingrédients pour une fabrication) et
-**Pour l’objectif** (les ingrédients pour le nombre de fabrications demandé par le plan).
+au-dessus du coffre suit **l’arbre EMI courant**, même sans objectif dans l’assistant et sans
+activer le repérage des coffres. Le sélecteur montre les objets manquants disponibles dans ce
+coffre ; ses flèches permettent de parcourir plus de huit objets.
+
+- **Transférer les items** récupère la quantité manquante de l’objet sélectionné.
+- **Tout récupérer** prend tous les objets utiles à l’arbre disponibles dans ce coffre,
+  en se limitant aux quantités manquantes. Les objets sans rapport restent dans le coffre.
+
+Les quantités suivent toutes les branches et le nombre de fabrications choisis dans EMI.
+L’inventaire est déduit et les variantes sont comparées avec les règles d’EMI, y compris le NBT.
+Le retrait fonctionne même si le coffre ne fournit qu’une partie des ingrédients. Les outils
+réutilisables ne sont pas multipliés ; fluides, upgrades, filtres et grilles de craft sont ignorés.
+Sans arbre actif ou sans objet manquant disponible, le panneau n’apparaît pas.
+
+Depuis une recette EMI ouverte avec un coffre, la flèche **↓** permet aussi de **tout récupérer
+pour l’arbre courant**. Il n’y a plus de mode « une fabrication » dans les coffres.
 Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habituel.
+Le bouton **Scanner coffres** sert uniquement au repérage, sans déplacer d’objet.
 
-Depuis une recette EMI ouverte avec un coffre, le bouton **+** devient une flèche **↓** :
-elle récupère les ingrédients pour **une fabrication**, y compris avec Maj enfoncée.
-Pour plusieurs fabrications de l’objectif, utiliser **Pour l’objectif** au-dessus du coffre.
-Le bouton **Scanner coffres** sert au repérage de l’arbre, sans déplacer d’objet.
-
-Le retrait déduit les objets déjà dans l’inventaire, respecte les variantes de la recette EMI
-et ne prend que les quantités manquantes. Il fonctionne aussi si ce coffre ne contient qu’une
-partie des ingrédients. Les outils réutilisables ne sont pas multipliés et les fluides sont
-ignorés. Les upgrades, filtres et grilles de craft du coffre ne sont jamais des sources.
+L’onglet **Objectif** affiche l’objectif, son avancement, les cibles finales et les machines
+nécessaires. Les détails de fabrication sont dans **Objectif EMI**.
 
 Les transferts utilisent les clics du jeu, avec le mécanisme natif de Sophisticated Storage
 pour ses coffres, sans commande ni installation serveur. Un transfert réussi est silencieux.

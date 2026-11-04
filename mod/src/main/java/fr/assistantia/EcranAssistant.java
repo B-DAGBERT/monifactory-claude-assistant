@@ -22,11 +22,10 @@ import java.util.Map;
 
 /**
  * Le tableau de bord de l'assistant (touche Y), en onglets : - Objectif : l'objectif en cours, son
- * pourquoi, ses étapes (clic : cocher ou décocher) et tous les objets avec leur icône (clic :
- * recette dans EMI, clic droit : fiche « à quoi ça sert ») ; - Plan : l'objectif principal et la
- * liste de ses objectifs (faits, en cours, à venir) ; - Base : les machines vues par le serveur ;
- * Discussion ; Réglages : chaque option avec son état. Une question s'écrit en bas, quel que soit
- * l'onglet.
+ * avancement, ses cibles et les machines nécessaires (clic : recette dans EMI, clic droit : fiche «
+ * à quoi ça sert ») ; - Plan : l'objectif principal et la liste de ses objectifs (faits, en cours,
+ * à venir) ; - Base : les machines vues par le serveur ; Discussion ; Réglages : chaque option avec
+ * son état. Une question s'écrit en bas, quel que soit l'onglet.
  */
 public class EcranAssistant extends Screen {
     private static final int FOND = 0xD00D1013, MARGE = 10, LIGNE = 10;
@@ -161,8 +160,7 @@ public class EcranAssistant extends Screen {
                                 .build());
         String[][] actions = {
             {"Objectif suivant", "objectif_suivant"},
-            {"Refaire l'objectif", "refaire_objectif"},
-            {"Valider l'étape", "valider_etape"}
+            {"Refaire l'objectif", "refaire_objectif"}
         };
         int largeur = (this.width - 2 * MARGE - actions.length * 6 - 104) / actions.length;
         for (int i = 0; i < actions.length; i++) {
@@ -566,90 +564,71 @@ public class EcranAssistant extends Screen {
                     false);
             y += 11;
         }
-        g.drawString(this.font, "✦ " + objectif, x, y, Hud.OR, true);
-        y += 12;
+        y = ecrire(g, "✦ " + objectif, x, y, largeur, Hud.OR) + 4;
         double progres = Mth.clamp(Pont.nombre(ecran, "progres", 0), 0, 1);
         g.fill(x, y, x + largeur, y + 4, 0x30FFFFFF);
         g.fill(x, y, x + (int) (largeur * progres), y + 4, 0xFF6BE36B);
         y += 9;
-        String pourquoi = Pont.texte(ecran, "pourquoi");
-        if (!pourquoi.isEmpty()) {
-            y = ecrire(g, "Pourquoi : " + pourquoi, x, y, largeur, Hud.GRIS) + 4;
-        }
-        int colonne = largeur / 2 - 6;
-        // Colonne de gauche : les étapes, à cocher ou décocher d'un clic (elles défilent avec la
-        // molette, elles aussi)
-        int yEtapes = y - defilement * LIGNE, numero = 0;
-        for (JsonElement e : Pont.liste(ecran, "etapes")) {
-            JsonObject etape = e.getAsJsonObject();
-            boolean fait = Pont.vrai(etape, "fait"), courant = Pont.vrai(etape, "courant");
-            String texte = (fait ? "☑ " : "☐ ") + Pont.texte(etape, "texte");
-            int hauteur =
-                    Math.max(1, this.font.split(Component.literal(texte), colonne).size()) * LIGNE;
-            if (yEtapes >= y && yEtapes + hauteur <= bas - 14) {
-                boolean survol =
-                        sx >= x && sx < x + colonne && sy >= yEtapes && sy < yEtapes + hauteur;
-                if (survol) {
-                    g.fill(x - 2, yEtapes - 1, x + colonne, yEtapes + hauteur - 1, 0x20FFFFFF);
-                }
-                zones.add(new Zone(x, yEtapes, colonne, hauteur, null, numero, null));
-                ecrire(
-                        g,
-                        texte,
-                        x,
-                        yEtapes,
-                        colonne,
-                        survol ? Hud.BLEU : fait ? Hud.VERT : courant ? Hud.JAUNE : Hud.BLANC);
-            }
-            numero++;
-            yEtapes += hauteur + 2;
-        }
-        // Colonne de droite : tous les objets de l'objectif, avec leur icône (clic = recette dans
-        // EMI)
-        int xd = x + colonne + 12, yd = y - defilement * LIGNE;
-        for (JsonElement s : Pont.liste(ecran, "sections")) {
-            JsonObject section = s.getAsJsonObject();
-            if (yd >= y - LIGNE && yd < bas) {
+        g.drawString(
+                this.font,
+                "Avancement : " + Math.round(progres * 100) + " %",
+                x,
+                y,
+                Hud.GRIS,
+                false);
+        y += 18;
+        int haut = y, ligne = y - defilement * LIGNE;
+        // Les recettes détaillées restent dans EMI : ici uniquement les cibles et les machines.
+        for (JsonElement element : Pont.liste(ecran, "sections")) {
+            JsonObject section = element.getAsJsonObject();
+            String titre = Pont.texte(section, "titre");
+            if (!titre.equals("Objectif") && !titre.equals("Machines nécessaires")) continue;
+            if (ligne >= haut && ligne < bas - 12)
                 g.drawString(
                         this.font,
-                        Pont.texte(section, "titre"),
-                        xd,
-                        yd,
+                        titre,
+                        x,
+                        ligne,
                         Hud.couleur(Pont.texte(section, "couleur")),
                         false);
-            }
-            yd += 12;
-            for (JsonElement o : Pont.liste(section, "objets")) {
-                JsonObject objet = o.getAsJsonObject();
-                if (yd >= y - 4 && yd < bas - 16) {
-                    String item = Pont.texte(objet, "item");
-                    ItemStack stack = Pont.objet(item);
-                    g.renderItem(stack, xd, yd);
-                    boolean survol = sx >= xd && sx < xd + colonne && sy >= yd && sy < yd + 17;
-                    String ligne = Pont.texte(objet, "nom") + "  " + Pont.texte(objet, "texte");
-                    g.drawString(
-                            this.font,
-                            this.font.plainSubstrByWidth(ligne, colonne - 22),
-                            xd + 20,
-                            yd + 4,
-                            survol ? Hud.BLEU : Hud.BLANC,
-                            false);
-                    zones.add(new Zone(xd, yd, colonne, 17, item, -1, null));
+            ligne += 15;
+            for (JsonElement entry : Pont.liste(section, "objets")) {
+                JsonObject objet = entry.getAsJsonObject();
+                String item = Pont.texte(objet, "item");
+                String texte = Pont.texte(objet, "nom") + " · " + Pont.texte(objet, "texte");
+                int hauteur =
+                        Math.max(
+                                18,
+                                this.font
+                                                        .split(
+                                                                Component.literal(texte),
+                                                                Math.max(1, largeur - 24))
+                                                        .size()
+                                                * LIGNE
+                                        + 4);
+                if (ligne >= haut && ligne + hauteur <= bas - 14) {
+                    g.renderItem(Pont.objet(item), x, ligne);
+                    boolean survol =
+                            sx >= x && sx < x + largeur && sy >= ligne && sy < ligne + hauteur;
+                    ecrire(
+                            g,
+                            texte,
+                            x + 22,
+                            ligne + 3,
+                            largeur - 24,
+                            survol ? Hud.BLEU : Hud.BLANC);
+                    zones.add(new Zone(x, ligne, largeur, hauteur, item, -1, null));
                 }
-                yd += 18;
+                ligne += hauteur;
             }
-            yd += 4;
+            ligne += 8;
         }
-        // Pas plus bas que la fin de la plus longue des deux colonnes (pris en compte à l'image
-        // suivante)
-        int depassement = Math.max(yd, yEtapes) + defilement * LIGNE - (bas - 16);
+        int depassement = ligne + defilement * LIGNE - (bas - 14);
         defilement = Math.min(defilement, Math.max(0, (depassement + LIGNE - 1) / LIGNE));
         g.drawString(
                 this.font,
                 this.font.plainSubstrByWidth(
-                        "Clic sur une étape : la cocher · sur un objet : sa "
-                                + "recette (clic droit : à quoi ça sert) · molette : défiler",
-                        largeur),
+                        "Détails des crafts : Objectif EMI · Molette : défiler", largeur),
                 x,
                 bas - 10,
                 Hud.GRIS,

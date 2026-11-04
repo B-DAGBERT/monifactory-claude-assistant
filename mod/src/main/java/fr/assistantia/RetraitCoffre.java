@@ -25,6 +25,23 @@ public final class RetraitCoffre {
         public int total() {
             return lots.stream().mapToInt(Lot::quantite).sum();
         }
+
+        /** Sélection après allocation globale : ne compte pas deux fois les variantes communes. */
+        public Plan pour(ItemStack objet) {
+            return new Plan(
+                    lots.stream()
+                            .filter(l -> ItemStack.isSameItemSameTags(l.objet(), objet))
+                            .toList(),
+                    0);
+        }
+
+        public List<ItemStack> objets() {
+            List<ItemStack> objets = new ArrayList<>();
+            for (Lot lot : lots)
+                if (objets.stream().noneMatch(i -> ItemStack.isSameItemSameTags(i, lot.objet())))
+                    objets.add(lot.objet().copy());
+            return List.copyOf(objets);
+        }
     }
 
     private static AbstractContainerMenu menu;

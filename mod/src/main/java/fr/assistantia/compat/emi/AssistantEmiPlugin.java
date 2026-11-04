@@ -30,6 +30,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
         if (!branche) {
             MinecraftForge.EVENT_BUS.register(AssistantEmiPlugin.class);
             MinecraftForge.EVENT_BUS.register(CoffresArbreEmi.class);
+            MinecraftForge.EVENT_BUS.register(fr.assistantia.AideCoffre.class);
             branche = true;
         }
     }
@@ -61,7 +62,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
                         if (child.getClass()
                                 .getName()
                                 .equals("dev.emi.emi.api.widget.RecipeFillButtonWidget"))
-                            children.set(i, new RecuperationEmi.Bouton(recipe, child));
+                            children.set(i, new RecuperationEmi.Bouton(child));
                     }
                 }
                 if (container == null || !RetraitCoffre.estCoffre(container.getMenu())) {

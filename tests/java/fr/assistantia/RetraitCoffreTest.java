@@ -52,7 +52,59 @@ public final class RetraitCoffreTest {
                 .sum();
     }
 
+    /** Un arbre libre, sans objectif assistant : sélection, retrait global, puis recalcul. */
+    private static void treeSelection() throws Exception {
+        setup(64, 2);
+        Slot copper = new Slot(new Object(), 4);
+        copper.item = new ItemStack("copper", 64);
+        menu.slots.add(copper);
+        Slot unrelated = new Slot(new Object(), 5);
+        unrelated.item = new ItemStack("stone", 64);
+        menu.slots.add(unrelated);
+        var root =
+                new ArbreCollecte.Noeud(
+                        java.util.Set.of(),
+                        1,
+                        1,
+                        false,
+                        List.of(
+                                new ArbreCollecte.Noeud(
+                                        java.util.Set.of("tin"), 3, 1, false, List.of()),
+                                new ArbreCollecte.Noeud(
+                                        java.util.Set.of("copper"), 4, 1, false, List.of())));
+        var besoins =
+                ArbreCollecte.ingredients(root, 3).stream()
+                        .map(
+                                i ->
+                                        new PlanRetrait.Besoin<ItemStack>(
+                                                stack -> i.variantes().contains(stack.id),
+                                                i.quantite()))
+                        .toList();
+        var all = RetraitCoffre.plan(menu, besoins);
+        assert all.total() == 19 : "9 étains moins 2 déjà possédés, 12 cuivres";
+        assert all.objets().size() == 2 : "le sélecteur exclut les objets sans rapport";
+        assert all.pour(new ItemStack("stone", 1)).total() == 0;
+        assert RetraitCoffre.lancer(screen, all.pour(new ItemStack("tin", 1)));
+        finish();
+        assert owned() == 9 && copper.item.getCount() == 64;
+        var remaining = RetraitCoffre.plan(menu, besoins);
+        assert remaining.total() == 12 && remaining.objets().size() == 1;
+        var debounce = RetraitCoffre.class.getDeclaredField("dernierClic");
+        debounce.setAccessible(true);
+        debounce.setLong(null, 0);
+        assert RetraitCoffre.lancer(screen, remaining);
+        finish();
+        assert copper.item.getCount() == 52 && unrelated.item.getCount() == 64;
+        assert RetraitCoffre.plan(menu, besoins).total() == 0;
+        assert RetraitCoffre.plan(menu, List.of()).objets().isEmpty()
+                : "aucun arbre, aucun retrait";
+        var other =
+                List.of(new PlanRetrait.Besoin<ItemStack>(stack -> stack.id.equals("stone"), 5));
+        assert RetraitCoffre.plan(menu, other).total() == 5 : "changer d’arbre change les besoins";
+    }
+
     public static void main(String[] args) throws Exception {
+        treeSelection();
         setup(64, 2);
         assert RetraitCoffre.lancer(screen, plan(5));
         assert !RetraitCoffre.lancer(screen, plan(5)) : "double clic";

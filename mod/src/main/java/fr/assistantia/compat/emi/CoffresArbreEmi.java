@@ -31,7 +31,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 public final class CoffresArbreEmi {
     private static final String ID = "assistantia:coffres_arbre";
     private static final Map<Screen, Button> boutons = new WeakHashMap<>();
-    private static Field arbre, boutonArbre, barreRecherche;
+    private static Field arbre, boutonArbre, barreRecherche, comparaisonEmi;
     private static java.lang.reflect.Method desactive;
     private static boolean erreurSignalee;
     private static long dernierClic;
@@ -42,6 +42,8 @@ public final class CoffresArbreEmi {
         boutonArbre = manager.getField("tree");
         barreRecherche = manager.getField("search");
         desactive = manager.getMethod("isDisabled");
+        comparaisonEmi = EmiStack.class.getDeclaredField("comparison");
+        comparaisonEmi.setAccessible(true);
         arbre = Class.forName("dev.emi.emi.bom.BoM").getField("tree");
     }
 
@@ -134,7 +136,7 @@ public final class CoffresArbreEmi {
             long lots = tree.getClass().getField("batches").getLong(tree);
             Set<Object> chemin = Collections.newSetFromMap(new IdentityHashMap<>());
             int[] count = {0};
-            ArbreCollecte.Noeud snapshot = lire(root, chemin, count, 0);
+            ArbreCollecte.Noeud snapshot = lire(root, chemin, count, 0, null);
             RechercheEmi.basculer(
                     ID, new MemoireCollecte(ArbreCollecte.ingredients(snapshot, lots)));
         } catch (ReflectiveOperationException | RuntimeException e) {
@@ -148,7 +150,45 @@ public final class CoffresArbreEmi {
         }
     }
 
-    private static ArbreCollecte.Noeud lire(Object node, Set<Object> chemin, int[] count, int depth)
+    /** Le même arbre que la recherche, avec les comparaisons d'objets exactes d'EMI. */
+    public static List<fr.assistantia.PlanRetrait.Besoin<net.minecraft.world.item.ItemStack>>
+            besoinsTransfert() {
+        try {
+            charger();
+            Object tree = arbre.get(null);
+            if (tree == null) return List.of();
+            Object root = tree.getClass().getField("goal").get(tree);
+            long lots = tree.getClass().getField("batches").getLong(tree);
+            List<EmiStack> variantes = new ArrayList<>();
+            var snapshot =
+                    lire(
+                            root,
+                            Collections.newSetFromMap(new IdentityHashMap<>()),
+                            new int[] {0},
+                            0,
+                            variantes);
+            List<fr.assistantia.PlanRetrait.Besoin<net.minecraft.world.item.ItemStack>> besoins =
+                    new ArrayList<>();
+            for (var ingredient : ArbreCollecte.ingredients(snapshot, lots)) {
+                var choix =
+                        ingredient.variantes().stream()
+                                .map(id -> variantes.get(Integer.parseInt(id)))
+                                .toList();
+                besoins.add(
+                        new fr.assistantia.PlanRetrait.Besoin<>(
+                                stack ->
+                                        choix.stream().anyMatch(v -> EmiStack.of(stack).isEqual(v)),
+                                ingredient.quantite()));
+            }
+            return List.copyOf(besoins);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            signaler(e);
+            return List.of();
+        }
+    }
+
+    private static ArbreCollecte.Noeud lire(
+            Object node, Set<Object> chemin, int[] count, int depth, List<EmiStack> variantes)
             throws ReflectiveOperationException {
         if (node == null || depth > 128 || ++count[0] > 4096 || !chemin.add(node))
             throw new IllegalArgumentException("Arbre EMI invalide ou trop grand");
@@ -162,7 +202,20 @@ public final class CoffresArbreEmi {
             // Le livre de l'objectif est une racine virtuelle, jamais un objet à rechercher.
             if (item.hasTag() && item.getTag().contains("assistantia_objectif")) continue;
             var id = ForgeRegistries.ITEMS.getKey(item.getItem());
-            if (id != null) ids.add(id.toString());
+            if (id != null) {
+                if (variantes == null) ids.add(id.toString());
+                else {
+                    // Tokens propres aux variantes EMI : conserve aussi leurs règles NBT.
+                    int index = 0;
+                    while (index < variantes.size()
+                            && !(net.minecraft.world.item.ItemStack.isSameItemSameTags(
+                                            variantes.get(index).getItemStack(), item)
+                                    && comparaisonEmi.get(variantes.get(index))
+                                            == comparaisonEmi.get(stack))) index++;
+                    if (index == variantes.size()) variantes.add(stack);
+                    ids.add(Integer.toString(index));
+                }
+            }
             outil &=
                     item.isDamageableItem()
                             || !stack.getRemainder().isEmpty()
@@ -175,7 +228,8 @@ public final class CoffresArbreEmi {
         List<ArbreCollecte.Noeud> children = new ArrayList<>();
         Object raw = type.getField("children").get(node);
         if (raw instanceof List<?> nodes)
-            for (Object child : nodes) children.add(lire(child, chemin, count, depth + 1));
+            for (Object child : nodes)
+                children.add(lire(child, chemin, count, depth + 1, variantes));
         chemin.remove(node);
         return new ArbreCollecte.Noeud(
                 ids,

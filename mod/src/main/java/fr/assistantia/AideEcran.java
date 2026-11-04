@@ -22,16 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Dans un établi (ou tout écran qu'EMI sait remplir), au-dessus de l'interface (les côtés sont pris
- * par EMI) : les fabrications de l'objectif que tu peux faire ici et maintenant, la plus utile
- * d'abord (celle de l'étape en cours, puis ce qu'elle demande, puis la suite de l'objectif). Une
- * icône par fabrication (clic : la choisir), puis « Remplir » (une fois) ou « Tout » (ce qu'il en
- * faut, dans la limite de ce que ton inventaire permet), comme le bouton « + » d'EMI. Les recettes
- * de machines n'y sont pas : l'établi ne sait pas les faire. Rien ne s'affiche quand aucune
- * fabrication de l'objectif n'est possible ici. Dans les coffres, les boutons retirent les
- * ingrédients manquants pour une fabrication ou pour l'objectif, sans remplir de grille.
- */
+/** Fabrications possibles dans un établi. Les coffres utilisent exclusivement AideCoffre. */
 public final class AideEcran {
     private static final int MAX = 8, ICONE = 20;
 
@@ -47,9 +38,6 @@ public final class AideEcran {
     }
 
     private static Button remplir, tout;
-    private static boolean coffre;
-    private static long dernierCalcul;
-    private static RetraitCoffre.Plan retraitUn, retraitObjectif;
     private static AbstractContainerScreen<?> ecranActuel;
     private static List<Proposition> propositions = List.of();
     private static Item choisi; // gardé quand la liste change (après une fabrication)
@@ -64,13 +52,12 @@ public final class AideEcran {
         Screen ecran = event.getScreen();
         if (!(ecran instanceof AbstractContainerScreen<?> conteneur)
                 || ecran instanceof CreativeModeInventoryScreen
-                || !Emi.present()) {
+                || !Emi.present()
+                || RetraitCoffre.estCoffre(conteneur.getMenu())) {
             ecranActuel = null;
             return;
         }
         ecranActuel = conteneur;
-        coffre = RetraitCoffre.estCoffre(conteneur.getMenu());
-        retraitUn = retraitObjectif = null;
         cle = "";
         x = conteneur.getGuiLeft();
         y = Math.max(2, conteneur.getGuiTop() - 52);
@@ -99,12 +86,7 @@ public final class AideEcran {
     private static void agir(boolean toutFaire) {
         Proposition p = choisie();
         if (p != null && ecranActuel != null) {
-            if (coffre)
-                RetraitCoffre.lancer(
-                        ecranActuel,
-                        Emi.retrait(
-                                p.recette(), ecranActuel, toutFaire ? Math.max(1, p.fois()) : 1));
-            else Emi.remplir(p.recette(), ecranActuel, toutFaire ? p.aFaire() : 1);
+            Emi.remplir(p.recette(), ecranActuel, toutFaire ? p.aFaire() : 1);
             cle = ""; // la grille et l'inventaire changent : on recalcule
         }
     }
@@ -134,12 +116,7 @@ public final class AideEcran {
             }
             for (Object recette : Emi.recettes(Pont.texte(f, "id"), produit, ecran)) {
                 int possibles = Emi.possibles(recette, stock);
-                if (coffre
-                        ? Emi.retrait(recette, ecran, Math.max(1, (int) Pont.nombre(f, "fois", 1)))
-                                        .total()
-                                > 0
-                        : possibles
-                                > 0) { // Le coffre peut ne contenir qu'une partie des ingrédients.
+                if (possibles > 0) {
                     liste.add(
                             new Proposition(
                                     recette,
@@ -164,41 +141,25 @@ public final class AideEcran {
         }
         Map<Item, Integer> stock = stock(ecranActuel);
         String nouvelleCle = Pont.liste(Pont.vue(), "fabrications") + "|" + stock;
-        long maintenant = System.currentTimeMillis();
-        if (!nouvelleCle.equals(cle) || coffre && maintenant - dernierCalcul > 250) {
+        if (!nouvelleCle.equals(cle)) {
             cle = nouvelleCle;
-            dernierCalcul = maintenant;
             propositions = calculer(ecranActuel, stock);
-            retraitUn = retraitObjectif = null;
         }
         Proposition p = choisie();
         remplir.visible = tout.visible = p != null;
         if (p == null) {
             return;
         }
-        if (coffre && retraitUn == null) {
-            retraitUn = Emi.retrait(p.recette(), ecranActuel, 1);
-            retraitObjectif = Emi.retrait(p.recette(), ecranActuel, Math.max(1, p.fois()));
-        }
-        remplir.setMessage(Component.literal(coffre ? "Récupérer" : "Remplir"));
-        tout.setMessage(
-                Component.literal(coffre ? "Pour l’objectif" : "Tout (×" + p.aFaire() + ")"));
-        remplir.active = !coffre || !RetraitCoffre.occupe() && retraitUn.total() > 0;
-        tout.active = !coffre || !RetraitCoffre.occupe() && retraitObjectif.total() > 0;
+        remplir.setMessage(Component.literal("Remplir"));
+        tout.setMessage(Component.literal("Tout (×" + p.aFaire() + ")"));
+        remplir.active = tout.active = true;
         remplir.setTooltip(
                 net.minecraft.client.gui.components.Tooltip.create(
-                        Component.literal(
-                                coffre
-                                        ? "Récupérer (" + retraitUn.total() + " objets)"
-                                        : "Remplir la grille pour 1 fabrication")));
+                        Component.literal("Remplir la grille pour 1 fabrication")));
         tout.setTooltip(
                 net.minecraft.client.gui.components.Tooltip.create(
                         Component.literal(
-                                coffre
-                                        ? "Récupérer "
-                                                + retraitObjectif.total()
-                                                + " objet(s) pour l’objectif"
-                                        : "Remplir pour l’objectif avec les ingrédients disponibles")));
+                                "Remplir pour l’objectif avec les ingrédients disponibles")));
         GuiGraphics g = event.getGuiGraphics();
         Font font = Minecraft.getInstance().font;
         int largeur = Math.max(ecranActuel.getXSize(), propositions.size() * ICONE);
@@ -212,13 +173,7 @@ public final class AideEcran {
         g.drawString(
                 font,
                 font.plainSubstrByWidth(
-                        coffre
-                                ? p.nom()
-                                        + (RetraitCoffre.occupe()
-                                                ? " · Transfert…"
-                                                : " · " + retraitObjectif.total() + " à récupérer")
-                                : p.nom() + " · ×" + p.aFaire() + " possible" + encore,
-                        largeur),
+                        p.nom() + " · ×" + p.aFaire() + " possible" + encore, largeur),
                 x,
                 y,
                 Hud.OR,
@@ -242,13 +197,11 @@ public final class AideEcran {
                     List.of(
                             Component.literal(survolee.nom()),
                             Component.literal(
-                                            coffre
-                                                    ? "Récupérer les ingrédients présents dans ce coffre"
-                                                    : "×"
-                                                            + survolee.aFaire()
-                                                            + " possible maintenant, "
-                                                            + survolee.fois()
-                                                            + " à faire pour l'objectif")
+                                            "×"
+                                                    + survolee.aFaire()
+                                                    + " possible maintenant, "
+                                                    + survolee.fois()
+                                                    + " à faire pour l'objectif")
                                     .withStyle(s -> s.withColor(Hud.GRIS)),
                             Component.literal("Clic : la choisir")
                                     .withStyle(s -> s.withColor(Hud.BLEU))),
@@ -270,7 +223,6 @@ public final class AideEcran {
                     && event.getMouseY() >= iy - 1
                     && event.getMouseY() < iy + 17) {
                 choisi = propositions.get(i).produit().getItem();
-                retraitUn = retraitObjectif = null;
                 event.setCanceled(true);
                 return;
             }

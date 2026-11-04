@@ -131,7 +131,7 @@ class ChestTransferTests(unittest.TestCase):
                 sources.append(str(path))
             sources += [
                 str(ROOT / "mod/src/main/java/fr/assistantia" / f"{name}.java")
-                for name in ("PlanRetrait", "RetraitCoffre")
+                for name in ("PlanRetrait", "RetraitCoffre", "ArbreCollecte", "MemoireCollecte")
             ]
             sources.append(str(ROOT / "tests/java/fr/assistantia/RetraitCoffreTest.java"))
             compiled = subprocess.run(

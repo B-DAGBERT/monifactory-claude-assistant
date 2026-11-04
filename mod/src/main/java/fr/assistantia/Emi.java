@@ -305,22 +305,16 @@ public final class Emi {
     }
 
     /** Quantités exactes à prendre dans le coffre, après déduction de l'inventaire. */
-    public static RetraitCoffre.Plan retrait(
-            Object recette, AbstractContainerScreen<?> ecran, int fois) {
+    public static RetraitCoffre.Plan retraitArbre(AbstractContainerScreen<?> ecran) {
         if (pret())
             try {
                 if (planCoffre == null)
                     planCoffre =
                             Class.forName("fr.assistantia.compat.emi.RecuperationEmi")
-                                    .getMethod(
-                                            "plan",
-                                            Object.class,
-                                            AbstractContainerScreen.class,
-                                            int.class);
-                return (RetraitCoffre.Plan)
-                        planCoffre.invoke(null, recette, ecran, Math.max(1, fois));
+                                    .getMethod("planArbre", AbstractContainerScreen.class);
+                return (RetraitCoffre.Plan) planCoffre.invoke(null, ecran);
             } catch (ReflectiveOperationException e) {
-                LOGGER.warn("Assistant IA : calcul du retrait impossible", e);
+                LOGGER.warn("Assistant IA : calcul du retrait de l'arbre impossible", e);
             }
         return new RetraitCoffre.Plan(List.of(), 0);
     }
