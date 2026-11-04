@@ -150,22 +150,10 @@ public final class AideCoffre {
         Font font = Minecraft.getInstance().font;
         int mx = event.getMouseX(), my = event.getMouseY();
         boolean occupe = RetraitCoffre.occupe();
-        g.fill(c.x(), c.y(), c.droite(), c.bas(), 0xE00D1013);
-        g.renderOutline(c.x(), c.y(), c.largeur(), c.hauteur(), 0x60FFC94A);
-        String titre =
-                occupe
-                        ? "Transfert…"
-                        : (d.vertical() ? "EMI · " : "Arbre EMI · ")
-                                + plan.total()
-                                + (d.vertical() ? "" : " à prendre ici");
-        int interieur = c.largeur() - 2 * DispositionCoffre.BORD;
-        g.drawString(
-                font,
-                font.plainSubstrByWidth(titre, interieur),
-                c.x() + DispositionCoffre.BORD,
-                c.y() + DispositionCoffre.BORD + 1,
-                Hud.OR,
-                false);
+        // Même habillage que le panneau du HUD : fond sombre et barre dorée à gauche.
+        g.fill(c.x(), c.y(), c.droite(), c.bas(), 0xC80D1013);
+        g.fill(c.x(), c.y(), c.x() + DispositionCoffre.BARRE, c.bas(), 0xFFFFC94A);
+        titre(g, font, d.titre(), occupe);
         List<Component> infobulle = null;
         for (int rang = 0; rang < d.parPage(); rang++) {
             int n = page * d.parPage() + rang;
@@ -187,22 +175,15 @@ public final class AideCoffre {
                                         .withStyle(s -> s.withColor(Hud.GRIS)));
         }
         if (d.pages()) {
-            bouton(g, font, d.precedent(), "‹", !occupe && page > 0, mx, my);
-            bouton(g, font, d.suivant(), "›", !occupe && page < derniere(), mx, my);
-            if (d.vertical()) {
-                String numero = (page + 1) + "/" + (derniere() + 1);
-                g.drawString(
-                        font,
-                        numero,
-                        c.x() + (c.largeur() - font.width(numero)) / 2,
-                        d.precedent().y() + 3,
-                        Hud.GRIS,
-                        false);
-            }
+            bouton(g, font, d.precedent(), "‹", !occupe && page > 0, false, mx, my);
+            bouton(g, font, d.suivant(), "›", !occupe && page < derniere(), false, mx, my);
+            if (d.precedent().contient(mx, my) || d.suivant().contient(mx, my))
+                infobulle =
+                        List.of(Component.literal("Page " + (page + 1) + "/" + (derniere() + 1)));
         }
         int choix = plan.pour(choisi).total(), tout = plan.total();
-        bouton(g, font, d.prendre(), "Prendre", !occupe && choix > 0, mx, my);
-        bouton(g, font, d.tout(), "Tout", !occupe && tout > 0, mx, my);
+        bouton(g, font, d.prendre(), "Prendre", !occupe && choix > 0, false, mx, my);
+        bouton(g, font, d.tout(), "Tout", !occupe && tout > 0, true, mx, my);
         if (d.prendre().contient(mx, my))
             infobulle =
                     List.of(
@@ -216,21 +197,63 @@ public final class AideCoffre {
         if (infobulle != null) g.renderComponentTooltip(font, infobulle, mx, my);
     }
 
+    /** Titre doré et quantité en gris : sur deux lignes dans le bandeau, une sur le côté. */
+    private static void titre(GuiGraphics g, Font font, Zone z, boolean occupe) {
+        String nom = "Arbre EMI", detail = occupe ? "Transfert…" : plan.total() + " à prendre";
+        if (z.hauteur() >= 18) {
+            g.drawString(
+                    font, font.plainSubstrByWidth(nom, z.largeur()), z.x(), z.y(), Hud.OR, false);
+            g.drawString(
+                    font,
+                    font.plainSubstrByWidth(detail, z.largeur()),
+                    z.x(),
+                    z.y() + 10,
+                    Hud.GRIS,
+                    false);
+            return;
+        }
+        int y = z.y() + (z.hauteur() - 8) / 2;
+        String debut = font.plainSubstrByWidth(nom, z.largeur());
+        g.drawString(font, debut, z.x(), y, Hud.OR, false);
+        int reste = z.largeur() - font.width(debut);
+        String suite = font.plainSubstrByWidth(" · " + detail, Math.max(0, reste));
+        g.drawString(font, suite, z.x() + font.width(debut), y, Hud.GRIS, false);
+    }
+
     private static String nombre(int n) {
         return n < 1000 ? String.valueOf(n) : n / 1000 + "k";
     }
 
+    /** Boutons des réglages : vert pour l'action principale, gris sinon, contour au survol. */
     private static void bouton(
-            GuiGraphics g, Font font, Zone z, String texte, boolean actif, int mx, int my) {
-        int fond = !actif ? 0xC0303030 : z.contient(mx, my) ? 0xFF417486 : 0xFF293C44;
+            GuiGraphics g,
+            Font font,
+            Zone z,
+            String texte,
+            boolean actif,
+            boolean principal,
+            int mx,
+            int my) {
+        boolean survol = actif && z.contient(mx, my);
+        int fond =
+                !actif
+                        ? 0xFF2A2A2A
+                        : principal
+                                ? (survol ? 0xFF3FA845 : 0xFF2E8B36)
+                                : (survol ? 0xFF5A5A5A : 0xFF3C3C3C);
         g.fill(z.x(), z.y(), z.droite(), z.bas(), fond);
-        g.renderOutline(z.x(), z.y(), z.largeur(), z.hauteur(), actif ? 0xFF40E0FF : 0xFF555555);
+        g.renderOutline(
+                z.x(),
+                z.y(),
+                z.largeur(),
+                z.hauteur(),
+                survol ? 0xFFFFFFFF : actif ? 0x60FFFFFF : 0x30FFFFFF);
         String t = font.plainSubstrByWidth(texte, z.largeur() - 4);
         g.drawString(
                 font,
                 t,
                 z.x() + (z.largeur() - font.width(t)) / 2,
-                z.y() + (z.hauteur() - 8) / 2,
+                z.y() + (z.hauteur() - 8) / 2 + 1,
                 actif ? 0xFFFFFF : 0x808080,
                 false);
     }

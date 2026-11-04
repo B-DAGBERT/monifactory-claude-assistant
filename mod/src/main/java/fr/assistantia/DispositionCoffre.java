@@ -3,13 +3,14 @@ package fr.assistantia;
 import java.util.List;
 
 /**
- * Place le panneau de retrait hors de l'interface du coffre : en bandeau au-dessus quand il y a la
- * place, sinon en colonne sur le côté le plus libre. Aucune dépendance à Minecraft.
+ * Place le panneau de retrait hors de l'interface du coffre, en largeur plutôt qu'en hauteur pour
+ * laisser de la place à EMI : un bandeau d'une ligne au-dessus quand il y a la place, sinon un bloc
+ * large et bas sur le côté le plus libre. Aucune dépendance à Minecraft.
  */
 public final class DispositionCoffre {
-    public static final int ICONE = 20, TITRE = 12, BOUTON = 14, BORD = 3, ECART = 4, MARGE = 2;
-    static final int FLECHE = 12, PRENDRE = 48, TOUT = 34, COLONNES_BANDEAU = 9;
-    static final int COLONNES_COTE = 4, LIGNES_COTE = 6;
+    public static final int ICONE = 20, BARRE = 2, BORD = 3, ECART = 4, MARGE = 2;
+    static final int FLECHE = 12, BOUTON = 14, PRENDRE = 46, TOUT = 34, TITRE = 52, LIGNE = 12;
+    static final int COLONNES_MAX = 9, LIGNES_LARGE = 2, LIGNES_ETROIT = 4;
 
     private DispositionCoffre() {}
 
@@ -38,17 +39,23 @@ public final class DispositionCoffre {
                     Math.max(droite(), autre.droite()) - gauche,
                     Math.max(bas(), autre.bas()) - haut);
         }
+
+        Zone decaler(int dx, int dy) {
+            return new Zone(x + dx, y + dy, largeur, hauteur);
+        }
     }
 
     /**
-     * Le cadre et ses éléments. {@code chevauche} : l'écran est trop petit, le panneau passe sur
-     * l'interface faute de mieux.
+     * Le cadre et ses éléments. {@code titre} sur deux lignes dans le bandeau, une seule sur le
+     * côté. {@code chevauche} : l'écran est trop petit, le panneau passe sur l'interface.
      */
     public record Disposition(
             Zone cadre,
+            Zone titre,
+            Zone grille,
             int colonnes,
             int lignes,
-            boolean vertical,
+            boolean cote,
             boolean chevauche,
             Zone precedent,
             Zone suivant,
@@ -65,14 +72,32 @@ public final class DispositionCoffre {
         /** Case de l'icône {@code rang} dans la page (16 px d'objet + 1 px de bord). */
         public Zone icone(int rang) {
             return new Zone(
-                    cadre.x() + BORD + (rang % colonnes) * ICONE,
-                    cadre.y() + BORD + TITRE + (rang / colonnes) * ICONE,
+                    grille.x() + (rang % colonnes) * ICONE,
+                    grille.y() + (rang / colonnes) * ICONE,
                     18,
                     18);
         }
 
         public List<Zone> elements() {
-            return pages() ? List.of(precedent, suivant, prendre, tout) : List.of(prendre, tout);
+            return pages()
+                    ? List.of(titre, precedent, suivant, prendre, tout)
+                    : List.of(titre, prendre, tout);
+        }
+
+        Disposition placer(int x, int y, boolean chevauche) {
+            int dx = x - cadre.x(), dy = y - cadre.y();
+            return new Disposition(
+                    cadre.decaler(dx, dy),
+                    titre.decaler(dx, dy),
+                    grille.decaler(dx, dy),
+                    colonnes,
+                    lignes,
+                    cote,
+                    chevauche,
+                    precedent == null ? null : precedent.decaler(dx, dy),
+                    suivant == null ? null : suivant.decaler(dx, dy),
+                    prendre.decaler(dx, dy),
+                    tout.decaler(dx, dy));
         }
     }
 
@@ -83,117 +108,113 @@ public final class DispositionCoffre {
     public static Disposition calculer(
             int largeurEcran, int hauteurEcran, Zone occupee, int objets) {
         objets = Math.max(1, objets);
-        Disposition bandeau = bandeau(largeurEcran, occupee, objets, occupee.y() - ECART);
-        if (bandeau.cadre().y() >= MARGE) return bandeau;
+        Disposition bandeau = bandeau(largeurEcran, objets);
+        int x = Math.max(MARGE, Math.min(occupee.x(), largeurEcran - largeur(bandeau) - MARGE));
+        int y = occupee.y() - ECART - hauteur(bandeau);
+        if (y >= MARGE) return bandeau.placer(x, y, false);
         int gauche = occupee.x() - ECART - MARGE;
         int droite = largeurEcran - occupee.droite() - ECART - MARGE;
-        boolean aGauche = colonnes(gauche) >= 3 || colonnes(gauche) >= colonnes(droite);
-        int place = aGauche ? gauche : droite;
-        if (colonnes(place) >= 2) {
-            Disposition colonne = colonne(hauteurEcran, occupee, objets, colonnes(place));
-            if (colonne != null) {
-                Zone c = colonne.cadre();
-                int x = aGauche ? occupee.x() - ECART - c.largeur() : occupee.droite() + ECART;
-                return deplacer(colonne, x - c.x(), 0);
-            }
+        boolean aGauche = colonnes(gauche) >= colonnes(droite);
+        int colonnes = colonnes(aGauche ? gauche : droite);
+        Disposition bloc = colonnes >= 2 ? bloc(hauteurEcran, objets, colonnes) : null;
+        if (bloc != null) {
+            int bx = aGauche ? occupee.x() - ECART - largeur(bloc) : occupee.droite() + ECART;
+            int by = Math.max(MARGE, Math.min(occupee.y(), hauteurEcran - hauteur(bloc) - MARGE));
+            return bloc.placer(bx, by, false);
         }
-        // Aucune place libre : en haut de l'écran, comme avant, plutôt que pas du tout.
-        Disposition secours =
-                bandeau(largeurEcran, occupee, objets, MARGE + BORD + TITRE + ICONE + BORD);
-        return new Disposition(
-                secours.cadre(),
-                secours.colonnes(),
-                secours.lignes(),
-                false,
-                true,
-                secours.precedent(),
-                secours.suivant(),
-                secours.prendre(),
-                secours.tout());
+        // Aucune place libre : en haut de l'écran plutôt que pas du tout.
+        return bandeau.placer(x, MARGE, true);
+    }
+
+    private static int largeur(Disposition d) {
+        return d.cadre().largeur();
+    }
+
+    private static int hauteur(Disposition d) {
+        return d.cadre().hauteur();
     }
 
     private static int colonnes(int largeur) {
-        return Math.min(COLONNES_COTE, Math.max(0, (largeur - 2 * BORD) / ICONE));
+        return Math.min(COLONNES_MAX, Math.max(0, (largeur - BARRE - 2 * BORD + 2) / ICONE));
     }
 
-    /**
-     * Titre, puis une ligne d'icônes suivie des flèches et des deux boutons ; bas à {@code bas}.
-     */
-    private static Disposition bandeau(int largeurEcran, Zone occupee, int objets, int bas) {
-        int hauteur = BORD + TITRE + ICONE + BORD;
-        int boutons = ECART + PRENDRE + 2 + TOUT + BORD;
-        int place = largeurEcran - 2 * MARGE - BORD - boutons;
-        int colonnes = Math.max(1, Math.min(Math.min(objets, COLONNES_BANDEAU), place / ICONE));
+    /** Une ligne : titre sur deux lignes, icônes, flèches, Prendre et Tout. Construit en (0, 0). */
+    private static Disposition bandeau(int largeurEcran, int objets) {
+        int fixe = BARRE + BORD + TITRE + ECART + ECART + PRENDRE + 2 + TOUT + BORD;
+        int place = largeurEcran - 2 * MARGE - fixe;
+        int colonnes = Math.max(1, Math.min(Math.min(objets, COLONNES_MAX), place / ICONE));
         boolean pages = objets > colonnes;
-        if (pages) colonnes = Math.max(1, Math.min(colonnes, (place - 2 * FLECHE - 4) / ICONE));
-        int largeur = BORD + colonnes * ICONE + boutons + (pages ? 2 * FLECHE + 4 : 0);
-        int x = Math.max(MARGE, Math.min(occupee.x(), largeurEcran - largeur - MARGE));
-        int y = bas - hauteur;
-        int bx = x + BORD + colonnes * ICONE + ECART, by = y + BORD + TITRE + 2;
+        if (pages)
+            colonnes = Math.max(1, Math.min(colonnes, (place - 2 * FLECHE - 2 - ECART) / ICONE));
+        Zone titre = new Zone(BARRE + BORD, BORD, TITRE, 18);
+        Zone grille = new Zone(titre.droite() + ECART, BORD, colonnes * ICONE, ICONE);
+        int bx = grille.x() + colonnes * ICONE - 2 + ECART, by = BORD + 2;
         Zone precedent = null, suivant = null;
         if (pages) {
             precedent = new Zone(bx, by, FLECHE, BOUTON);
             suivant = new Zone(bx + FLECHE + 2, by, FLECHE, BOUTON);
-            bx += 2 * FLECHE + 4;
+            bx += 2 * FLECHE + 2 + ECART;
         }
+        Zone prendre = new Zone(bx, by, PRENDRE, BOUTON);
+        Zone tout = new Zone(prendre.droite() + 2, by, TOUT, BOUTON);
         return new Disposition(
-                new Zone(x, y, largeur, hauteur),
+                new Zone(0, 0, tout.droite() + BORD, BORD + 18 + BORD),
+                titre,
+                grille,
                 colonnes,
                 1,
                 false,
                 false,
                 precedent,
                 suivant,
-                new Zone(bx, by, PRENDRE, BOUTON),
-                new Zone(bx + PRENDRE + 2, by, TOUT, BOUTON));
+                prendre,
+                tout);
     }
 
-    /** Titre, grille d'icônes, flèches si besoin, puis les deux boutons l'un sous l'autre. */
-    private static Disposition colonne(int hauteurEcran, Zone occupee, int objets, int colonnes) {
-        int fixe = BORD + TITRE + 2 + 2 * (BOUTON + 2) + BORD;
-        int lignes = (objets + colonnes - 1) / colonnes;
-        int maximum = Math.min(LIGNES_COTE, (hauteurEcran - 2 * MARGE - fixe) / ICONE);
-        boolean pages = lignes > maximum;
-        if (pages)
-            maximum = Math.min(LIGNES_COTE, (hauteurEcran - 2 * MARGE - fixe - BOUTON - 2) / ICONE);
+    /**
+     * Sur le côté : titre et flèches, deux lignes d'icônes au plus (quatre si le côté est étroit),
+     * puis Prendre et Tout côte à côte quand la largeur le permet. Construit en (0, 0).
+     */
+    private static Disposition bloc(int hauteurEcran, int objets, int colonnes) {
+        int interieur = colonnes * ICONE - 2;
+        boolean cote = interieur >= PRENDRE + 2 + TOUT;
+        int fixe = BORD + LIGNE + 1 + (cote ? BOUTON : 2 * BOUTON + 2) + BORD;
+        int maximum =
+                Math.min(
+                        colonnes >= 4 ? LIGNES_LARGE : LIGNES_ETROIT,
+                        (hauteurEcran - 2 * MARGE - fixe) / ICONE);
         if (maximum < 1) return null;
+        int lignes = (objets + colonnes - 1) / colonnes;
+        boolean pages = lignes > maximum;
         lignes = Math.min(lignes, maximum);
-        int largeur = 2 * BORD + colonnes * ICONE;
-        int hauteur = fixe + lignes * ICONE + (pages ? BOUTON + 2 : 0);
-        int y = Math.max(MARGE, Math.min(occupee.y(), hauteurEcran - hauteur - MARGE));
-        int by = y + BORD + TITRE + lignes * ICONE + 2, interieur = largeur - 2 * BORD;
+        int gx = BARRE + BORD, fleches = pages ? 2 * FLECHE + 2 : 0;
+        Zone titre = new Zone(gx, BORD, interieur - (pages ? fleches + 2 : 0), LIGNE);
         Zone precedent = null, suivant = null;
         if (pages) {
-            precedent = new Zone(BORD, by, FLECHE, BOUTON);
-            suivant = new Zone(largeur - BORD - FLECHE, by, FLECHE, BOUTON);
-            by += BOUTON + 2;
+            precedent = new Zone(gx + interieur - fleches, BORD, FLECHE, LIGNE);
+            suivant = new Zone(gx + interieur - FLECHE, BORD, FLECHE, LIGNE);
+        }
+        Zone grille = new Zone(gx, BORD + LIGNE + 1, colonnes * ICONE, lignes * ICONE);
+        int by = grille.y() + lignes * ICONE;
+        Zone prendre, tout;
+        if (cote) {
+            prendre = new Zone(gx, by, interieur - TOUT - 2, BOUTON);
+            tout = new Zone(gx + interieur - TOUT, by, TOUT, BOUTON);
+        } else {
+            prendre = new Zone(gx, by, interieur, BOUTON);
+            tout = new Zone(gx, by + BOUTON + 2, interieur, BOUTON);
         }
         return new Disposition(
-                new Zone(0, y, largeur, hauteur),
+                new Zone(0, 0, gx + interieur + BORD, tout.bas() + BORD),
+                titre,
+                grille,
                 colonnes,
                 lignes,
                 true,
                 false,
                 precedent,
                 suivant,
-                new Zone(BORD, by, interieur, BOUTON),
-                new Zone(BORD, by + BOUTON + 2, interieur, BOUTON));
-    }
-
-    private static Disposition deplacer(Disposition d, int dx, int dy) {
-        return new Disposition(
-                decaler(d.cadre(), dx, dy),
-                d.colonnes(),
-                d.lignes(),
-                d.vertical(),
-                d.chevauche(),
-                decaler(d.precedent(), dx, dy),
-                decaler(d.suivant(), dx, dy),
-                decaler(d.prendre(), dx, dy),
-                decaler(d.tout(), dx, dy));
-    }
-
-    private static Zone decaler(Zone z, int dx, int dy) {
-        return z == null ? null : new Zone(z.x() + dx, z.y() + dy, z.largeur(), z.hauteur());
+                prendre,
+                tout);
     }
 }

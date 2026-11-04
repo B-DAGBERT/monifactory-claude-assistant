@@ -34,23 +34,31 @@ public final class DispositionCoffreTest {
         Zone petit = new Zone(152, 70, 176, 166);
         Disposition d = DispositionCoffre.calculer(480, 360, petit, 5);
         verifier("petit coffre", d, 480, 360, petit, 5);
-        assert !d.vertical() && d.cadre().bas() <= petit.y() : d;
+        assert !d.cote() && d.cadre().bas() <= petit.y() : d;
+        assert d.cadre().hauteur() <= 24 : "bandeau d'une seule ligne " + d;
 
-        // Grand coffre qui touche presque le haut de l'écran : colonne sur le côté.
+        // Grand coffre qui touche presque le haut de l'écran : bloc large et bas sur le côté.
         Zone grand = new Zone(130, 4, 220, 262);
         for (int objets : new int[] {1, 7, 30}) {
             d = DispositionCoffre.calculer(480, 270, grand, objets);
             verifier("grand coffre " + objets, d, 480, 270, grand, objets);
-            assert d.vertical() && !d.chevauche() && d.colonnes() >= 2 : d;
+            assert d.cote() && !d.chevauche() && d.colonnes() >= 4 && d.lignes() <= 2 : d;
+            assert d.cadre().hauteur() <= 80 : "laisse la hauteur à EMI " + d;
             assert d.cadre().droite() <= grand.x() : "à gauche par défaut " + d;
         }
         assert DispositionCoffre.calculer(480, 270, grand, 30).pages();
 
-        // Côté gauche pris par les upgrades : la colonne passe à droite.
+        // Côté gauche pris par les upgrades : le bloc passe à droite.
         Zone decale = new Zone(30, 4, 300, 262);
         d = DispositionCoffre.calculer(480, 270, decale, 12);
         verifier("à droite", d, 480, 270, decale, 12);
-        assert d.vertical() && d.cadre().x() >= decale.droite() : d;
+        assert d.cote() && d.cadre().x() >= decale.droite() : d;
+
+        // Côté étroit : moins de colonnes, quelques lignes de plus, boutons l'un sous l'autre.
+        Zone large = new Zone(56, 4, 368, 262);
+        d = DispositionCoffre.calculer(480, 270, large, 12);
+        verifier("côté étroit", d, 480, 270, large, 12);
+        assert d.cote() && d.colonnes() == 2 && d.lignes() <= 4 : d;
 
         // Beaucoup d'objets dans un bandeau : flèches et page de 9 au plus.
         d = DispositionCoffre.calculer(480, 360, petit, 40);

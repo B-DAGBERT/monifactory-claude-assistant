@@ -111,7 +111,7 @@ l’objectif seul n’active ni récupération ni surbrillance. Le sélecteur mo
 coffre, avec la quantité à prendre sur chaque icône ; ses flèches (ou la molette) parcourent les pages.
 
 Le panneau ne recouvre jamais le coffre : il se place au-dessus quand il y a la place, sinon en
-colonne sur le côté le plus libre, et EMI range ses listes d’objets autour de lui. Il se coupe dans
+bloc large et bas sur le côté le plus libre, et EMI range ses listes d’objets autour de lui. Il se coupe dans
 **Y → Réglages → Retrait depuis les coffres**, indépendamment du remplissage de l’établi.
 
 - **Prendre** récupère la quantité manquante de l’objet sélectionné.
