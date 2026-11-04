@@ -88,6 +88,7 @@ class ParityTests(unittest.TestCase):
             "App.on_error",  # retain the writer conflict until a successful reconnect
             "supervise",
             "build_mod_view",
+            "World.merged",  # keep physical chest positions for recipe search, including matching neighbors
             "describe_veins",  # distinguish GT deposits from partial local block observations
             "find_veins",  # local scanner export, tested by test_filons.py
         }

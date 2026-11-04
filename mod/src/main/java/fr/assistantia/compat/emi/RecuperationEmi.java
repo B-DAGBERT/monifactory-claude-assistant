@@ -103,14 +103,7 @@ public final class RecuperationEmi {
         @Override
         public List<ClientTooltipComponent> getTooltip(int x, int y) {
             var p = plan(recipe, EmiApi.getHandledScreen(), 1);
-            return List.of(
-                    texte("Récupérer les ingrédients · 1 fabrication"),
-                    texte(p.total() + " objet(s) à prendre ; inventaire déjà déduit"),
-                    texte(
-                            p.manquants() > 0
-                                    ? p.manquants() + " ingrédient(s) absent(s) de ce coffre"
-                                    : "Quantités de la recette couvertes"),
-                    texte("Transfert partiel possible · aucun craft dans le coffre"));
+            return List.of(texte("Récupérer " + p.total() + " objet(s)"));
         }
 
         private ClientTooltipComponent texte(String s) {

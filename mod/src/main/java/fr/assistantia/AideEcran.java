@@ -189,21 +189,15 @@ public final class AideEcran {
                 net.minecraft.client.gui.components.Tooltip.create(
                         Component.literal(
                                 coffre
-                                        ? "Prendre les ingrédients manquants pour 1 fabrication ("
-                                                + retraitUn.total()
-                                                + " objets)"
+                                        ? "Récupérer (" + retraitUn.total() + " objets)"
                                         : "Remplir la grille pour 1 fabrication")));
         tout.setTooltip(
                 net.minecraft.client.gui.components.Tooltip.create(
                         Component.literal(
                                 coffre
-                                        ? "Prendre pour "
-                                                + Math.max(1, p.fois())
-                                                + " fabrication(s) : "
+                                        ? "Récupérer "
                                                 + retraitObjectif.total()
-                                                + " objets disponibles, "
-                                                + retraitObjectif.manquants()
-                                                + " absents du coffre ; inventaire déduit"
+                                                + " objet(s) pour l’objectif"
                                         : "Remplir pour l’objectif avec les ingrédients disponibles")));
         GuiGraphics g = event.getGuiGraphics();
         Font font = Minecraft.getInstance().font;

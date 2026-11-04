@@ -1,6 +1,7 @@
 package fr.assistantia;
 
 import java.util.ArrayList;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.IdentityHashMap;
@@ -27,6 +28,8 @@ public final class RetraitCoffre {
     }
 
     private static AbstractContainerMenu menu;
+    private static AbstractContainerScreen<?> ecran;
+    private static Method clicStockage;
     private static List<Lot> attente = List.of();
     private static int index, reste, pris, delai;
     private static long dernierClic;
@@ -97,6 +100,13 @@ public final class RetraitCoffre {
             message("Aucun ingrédient manquant à prendre dans ce coffre.");
             return false;
         }
+        try {
+            clicStockage = clicSpecial(ecran);
+        } catch (ReflectiveOperationException e) {
+            message("Transfert indisponible.");
+            return false;
+        }
+        RetraitCoffre.ecran = ecran;
         menu = ecran.getMenu();
         attente = plan.lots();
         index = 0;
@@ -105,7 +115,6 @@ public final class RetraitCoffre {
         delai = 0;
         dernierClic = System.nanoTime();
         memoriser();
-        message("Récupération des ingrédients…");
         return true;
     }
 
@@ -118,7 +127,7 @@ public final class RetraitCoffre {
                 || mc.player.containerMenu != menu
                 || !(mc.screen instanceof AbstractContainerScreen<?> s)
                 || s.getMenu() != menu) {
-            terminer("Retrait arrêté : coffre fermé.");
+            terminer("");
             return;
         }
         if (delai-- > 0) return;
@@ -135,7 +144,7 @@ public final class RetraitCoffre {
             }
         }
         if (index >= attente.size()) {
-            terminer(pris + " ingrédient(s) récupéré(s).");
+            terminer("");
             return;
         }
         Lot lot = attente.get(index);
@@ -170,7 +179,7 @@ public final class RetraitCoffre {
                 }
             }
         if (dest == null) {
-            terminer("Inventaire plein : " + pris + " ingrédient(s) récupéré(s).");
+            terminer("Inventaire plein.");
             return;
         }
         int quantite =
@@ -181,9 +190,21 @@ public final class RetraitCoffre {
             terminer("Retrait arrêté : quantité indisponible.");
             return;
         }
+        try {
+            deplacer(src, dest, quantite);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            System.getLogger(RetraitCoffre.class.getName())
+                    .log(System.Logger.Level.WARNING, "Clic coffre impossible", e);
+            terminer("Transfert interrompu.");
+        }
+    }
+
+    private static void deplacer(Slot src, Slot dest, int quantite)
+            throws ReflectiveOperationException {
         clic(src, 0);
         ItemStack curseur = menu.getCarried();
-        if (curseur.isEmpty() || !ItemStack.isSameItemSameTags(curseur, lot.objet())) {
+        if (curseur.isEmpty()
+                || !ItemStack.isSameItemSameTags(curseur, attente.get(index).objet())) {
             terminer("Retrait refusé par le coffre.");
             return;
         }
@@ -219,14 +240,37 @@ public final class RetraitCoffre {
         for (Lot lot : attente) attendu.put(lot.source(), lot.source().getItem().copy());
     }
 
-    private static void clic(Slot s, int bouton) {
-        var mc = Minecraft.getInstance();
-        mc.gameMode.handleInventoryMouseClick(
-                menu.containerId, s.index, bouton, ClickType.PICKUP, mc.player);
+    private static Method clicSpecial(AbstractContainerScreen<?> screen)
+            throws ReflectiveOperationException {
+        for (Class<?> type = screen.getClass(); type != null; type = type.getSuperclass()) {
+            if (type.getName()
+                    .equals("net.p3pp3rf1y.sophisticatedcore.client.gui.StorageScreenBase")) {
+                // Ce mod synchronise les piles étendues et les upgrades avec ses propres paquets.
+                // Utiliser exactement le chemin de clic de son écran, pas le paquet vanilla.
+                Method method =
+                        type.getDeclaredMethod(
+                                "handleInventoryMouseClick", int.class, int.class, ClickType.class);
+                method.setAccessible(true);
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private static void clic(Slot s, int bouton) throws ReflectiveOperationException {
+        if (clicStockage != null) {
+            clicStockage.invoke(ecran, s.index, bouton, ClickType.PICKUP);
+        } else {
+            var mc = Minecraft.getInstance();
+            mc.gameMode.handleInventoryMouseClick(
+                    menu.containerId, s.index, bouton, ClickType.PICKUP, mc.player);
+        }
     }
 
     private static void terminer(String texte) {
         menu = null;
+        ecran = null;
+        clicStockage = null;
         attente = List.of();
         attendu.clear();
         dernierClic = System.nanoTime();
@@ -235,6 +279,6 @@ public final class RetraitCoffre {
 
     private static void message(String texte) {
         var p = Minecraft.getInstance().player;
-        if (p != null) p.displayClientMessage(Component.literal(texte), true);
+        if (p != null && !texte.isEmpty()) p.displayClientMessage(Component.literal(texte), true);
     }
 }

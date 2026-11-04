@@ -110,6 +110,16 @@ public final class RetraitCoffreTest {
         assert RetraitCoffre.lancer(screen, plan(4));
         finish();
         assert owned() == 2 && menu.carried.isEmpty();
+        setup(1000, 2);
+        var special = new net.p3pp3rf1y.sophisticatedcore.client.gui.StorageScreenBase(menu);
+        mc.screen = special;
+        mc.player.lastMessage = "";
+        assert RetraitCoffre.lancer(special, plan(5));
+        finish();
+        assert owned() == 5 && menu.slots.get(0).item.getCount() == 997;
+        assert special.customClicks > 0 && special.customClicks == mc.gameMode.clicks;
+        assert mc.player.lastMessage.isEmpty()
+                : "pas de message explicatif lors d'un transfert réussi";
         System.out.println(
                 "Transferts exacts, grandes piles, double clic, inventaire plein, fermeture, refus et changement de stock : OK");
     }

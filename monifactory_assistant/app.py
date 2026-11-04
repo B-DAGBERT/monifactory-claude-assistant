@@ -787,7 +787,10 @@ class World:
         containers = self.containers() + [c for c in storage.containers if c["cle"] not in keys]
         machines = self.machines() + [m for m in storage.machines if m["cle"] not in keys]
         return Storage(
-            containers, containers + [c for c in storage.raw if c["cle"] not in keys], machines
+            containers,
+            [b for b in self.blocks.values() if b.get("etat") is None]
+            + [c for c in storage.raw if c["cle"] not in keys],
+            machines,
         )
 
 

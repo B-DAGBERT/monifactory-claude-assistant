@@ -59,7 +59,7 @@ assistant. Il faut relancer **l’assistant et Minecraft** après installation d
 
 Sur une recette EMI, cliquer **Coffres** juste en dessous du craft : ses ingrédients objets
 et ses outils sont surlignés en cyan dans les inventaires. Les coffres connus qui en contiennent
-ont un contour et un faisceau cyan. Les variantes acceptées par la recette sont incluses ;
+ont un contour cyan lumineux, visible à travers les murs. Les variantes acceptées par la recette sont incluses ;
 les fluides et les différences de NBT ne sont pas suivis par la mémoire des coffres.
 
 Le bouton devient **Recherche…**, puis **Arrêter**. Cliquer à nouveau coupe le repérage ;
@@ -67,14 +67,16 @@ choisir une autre recette remplace la recherche. Celle-ci reste active après fe
 pendant dix minutes au maximum, et s’efface à la déconnexion ou au changement de dimension.
 Le repérage EMI prend temporairement la priorité sur les objets de l’objectif dans les inventaires.
 Les quantités sont celles d’une fabrication : les ingrédients déjà dans le sac sont déduits.
-Dès que la quantité d’un ingrédient est récupérée, ses faisceaux et sa surbrillance disparaissent.
+Dès que la quantité d’un ingrédient est récupérée, ses contours et sa surbrillance disparaissent.
 Cet ingrédient reste validé pour cette recherche, même s’il est ensuite consommé, rangé ou perdu.
-Les autres ingrédients restent recherchés ; quand tout est récupéré, tous les faisceaux s’éteignent.
+Les autres ingrédients restent recherchés ; quand tout est récupéré, tous les contours s’éteignent.
 Pour repartir sur une nouvelle collecte, arrêter la recherche puis cliquer de nouveau sur **Coffres**.
 
 La recherche utilise les derniers contenus mémorisés, sans appel IA ni scan du monde.
 Ouvrir un coffre actualise son contenu. Un message indique si aucun coffre connu ne correspond.
-Seuls les 16 coffres les plus proches de la dimension actuelle sont signalés pour limiter le rendu.
+Tous les emplacements de coffres mémorisés correspondants dans la dimension actuelle sont signalés,
+sans limite à 16 résultats. Chaque moitié mémorisée d’un double coffre est conservée.
+Un coffre jamais observé n’est pas inventé : l’ouvrir permet de mémoriser son contenu.
 Les questions dans Discussion et la pause de l’objectif ne sont pas modifiées.
 
 Le panneau en haut à gauche montre désormais uniquement le **plan**, l’**objectif** et son
@@ -97,7 +99,8 @@ et ne prend que les quantités manquantes. Il fonctionne aussi si ce coffre ne c
 partie des ingrédients. Les outils réutilisables ne sont pas multipliés et les fluides sont
 ignorés. Les upgrades, filtres et grilles de craft du coffre ne sont jamais des sources.
 
-Les transferts utilisent les clics normaux du jeu, sans commande ni installation serveur.
+Les transferts utilisent les clics du jeu, avec le mécanisme natif de Sophisticated Storage
+pour ses coffres, sans commande ni installation serveur. Un transfert réussi est silencieux.
 Les clics répétés sont bloqués pendant le transfert ; fermer le coffre l’arrête. Si l’inventaire
 est plein, le retrait s’arrête en conservant les objets déjà récupérés. Le stock est lu directement
 dans le coffre ouvert, sans appel IA ni dépendance à la mémoire des coffres.

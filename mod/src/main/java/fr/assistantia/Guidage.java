@@ -22,7 +22,6 @@ public final class Guidage {
         }
         Minecraft mc = Minecraft.getInstance();
         var cibles = new java.util.ArrayList<>(Pont.cibles());
-        cibles.addAll(RechercheEmi.faisceaux());
         if (mc.level == null || mc.player == null || cibles.isEmpty()) {
             return;
         }

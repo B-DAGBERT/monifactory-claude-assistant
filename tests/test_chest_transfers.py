@@ -69,6 +69,17 @@ public class AbstractContainerScreen<T extends net.minecraft.world.inventory.Abs
 public class TickEvent {public enum Phase {START,END}
     public static class ClientTickEvent {public Phase phase=Phase.END;}}
 """,
+    "net.p3pp3rf1y.sophisticatedcore.client.gui.StorageScreenBase": """
+public class StorageScreenBase extends net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<net.minecraft.world.inventory.ChestMenu> {
+    public int customClicks;
+    public StorageScreenBase(net.minecraft.world.inventory.ChestMenu menu){super(menu);}
+    private void handleInventoryMouseClick(int slot,int button,net.minecraft.world.inventory.ClickType type){
+        customClicks++;
+        var mc=net.minecraft.client.Minecraft.getInstance();
+        mc.gameMode.handleInventoryMouseClick(getMenu().containerId,slot,button,type,mc.player);
+    }
+}
+""",
     "net.minecraft.client.Minecraft": """
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.*;

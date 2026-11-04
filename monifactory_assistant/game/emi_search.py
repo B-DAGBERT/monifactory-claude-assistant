@@ -13,7 +13,7 @@ def chest_search(request, containers, state, now):
     try:
         end = float(request["fin"])
         number = int(request["n"])
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
         return None
     if not math.isfinite(end) or not now < end <= now + 601:
         return None
@@ -26,15 +26,44 @@ def chest_search(request, containers, state, now):
     wanted = {item for item in raw if isinstance(item, str) and ITEM.fullmatch(item)}
     if not wanted:
         return None
-    chests = []
+    # Keep every physical chest, including both halves of a double chest. A newer empty
+    # observation must replace an older nonempty one at the same coordinates.
+    latest = {}
     for chest in containers:
+        if not isinstance(chest, dict) or chest.get("dimension") != dimension:
+            continue
+        position = tuple(chest.get(k) for k in ("dimension", "x", "y", "z"))
+        if any(
+            not isinstance(chest.get(k), (int, float)) or not math.isfinite(chest[k])
+            for k in ("x", "y", "z")
+        ):
+            continue
+        previous = latest.get(position)
+
+        def timestamp(c):
+            value = c.get("t", 0)
+            return value if isinstance(value, (int, float)) and math.isfinite(value) else 0
+
+        if previous is None or timestamp(chest) >= timestamp(previous):
+            latest[position] = chest
+    chests = []
+    for chest in latest.values():
         if chest.get("dimension") != dimension:
             continue
         hits = {}
-        for item in chest.get("objets", []):
+        items = chest.get("objets")
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
             key = item.get("item")
             count = item.get("n", 0)
-            if key in wanted and isinstance(count, (int, float)) and count > 0:
+            if (
+                isinstance(key, str)
+                and key in wanted
+                and isinstance(count, (int, float))
+                and math.isfinite(count)
+                and count > 0
+            ):
                 hits[key] = hits.get(key, 0) + int(count)
         if not hits:
             continue
@@ -65,12 +94,9 @@ def chest_search(request, containers, state, now):
         "fin": end,
         "recette": str(request.get("recette", "")),
         "objets": sorted(wanted),
-        "coffres": chests[:16],
+        "coffres": chests,
         "total_coffres": count,
-        "message": (
-            f"{count} coffre(s) connu(s) contiennent des ingrédients de cette recette."
-            + (" Les 16 plus proches sont signalés." if count > 16 else "")
-        )
+        "message": (f"{count} coffre(s) connu(s) contiennent des ingrédients de cette recette.")
         if count
         else "Aucun ingrédient trouvé dans les coffres connus de cette dimension. Ouvre les coffres à mémoriser.",
     }
@@ -92,6 +118,7 @@ class RecipeChestSearch:
                     return None  # Retry a partially written file; never keep an old recipe visible.
                 self.request, self.stamp = request, stamp
         except OSError:
+            self.stamp = None
             self.request = None
             return None
-        return chest_search(self.request, storage.containers, state, now)
+        return chest_search(self.request, getattr(storage, "raw", storage.containers), state, now)

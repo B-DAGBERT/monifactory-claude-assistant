@@ -1,5 +1,6 @@
 """Local EMI chest lookup: variants, dimensions, expiration and live chest changes."""
 
+import ast
 import copy
 import json
 import tempfile
@@ -69,11 +70,52 @@ class EmiSearchTests(unittest.TestCase):
         self.assertEqual(result["coffres"], [])
         self.assertIn("Aucun ingrédient", result["message"])
 
-    def test_at_most_sixteen_nearest_but_reports_total(self):
+    def test_all_matching_chests_are_returned_sorted_by_distance(self):
         result = self.find(chests=[self.chest(x, "minecraft:oak_planks", 1) for x in range(30)])
-        self.assertEqual(len(result["coffres"]), 16)
+        self.assertEqual(len(result["coffres"]), 30)
         self.assertEqual(result["total_coffres"], 30)
-        self.assertEqual(result["coffres"][-1]["x"], 15)
+        self.assertEqual(result["coffres"][-1]["x"], 29)
+
+    def test_duplicate_positions_use_latest_observation_including_empty(self):
+        old = {**self.chest(1, "minecraft:oak_planks", 64), "t": 100}
+        newer = {**self.chest(1, "minecraft:oak_planks", 0), "t": 200}
+        second = self.chest(2, "minecraft:oak_planks", 3)
+        for records in ([old, newer, second], [newer, old, second]):
+            self.assertEqual([c["x"] for c in self.find(chests=records)["coffres"]], [2])
+
+    def test_reader_uses_all_physical_chests_even_when_totals_deduplicate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "recherche_emi.json"
+            path.write_text(json.dumps(self.request))
+            bridge = SimpleNamespace(dir=Path(directory), read=lambda _: self.request)
+            storage = SimpleNamespace(containers=self.chests[:1], raw=self.chests)
+            result = RecipeChestSearch().view(bridge, storage, self.state, 1000)
+            self.assertEqual(result["total_coffres"], 2)
+
+    def test_invalid_coordinates_and_counts_do_not_break_other_results(self):
+        records = self.chests + [
+            {"x": None},
+            self.chest(float("nan"), "minecraft:oak_planks", 4),
+            self.chest(8, "minecraft:oak_planks", float("nan")),
+        ]
+        self.assertEqual(self.find(chests=records)["total_coffres"], 2)
+
+    def test_world_merge_keeps_adjacent_identical_chests_for_outlines(self):
+        root = Path(__file__).resolve().parents[1]
+        tree = ast.parse((root / "monifactory_assistant/app.py").read_text())
+        nodes = [
+            n for n in tree.body if isinstance(n, ast.ClassDef) and n.name in {"Storage", "World"}
+        ]
+        namespace = {}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), "storage_test", "exec"), namespace)
+        world = object.__new__(namespace["World"])
+        a = {**self.chest(1, "minecraft:oak_planks", 3), "cle": "a", "bloc": "test:chest"}
+        b = {**a, "cle": "b", "x": 2}
+        world.blocks = {"a": a, "b": b}
+        merged = world.merged(namespace["Storage"]([]))
+        self.assertEqual(len(merged.containers), 1)  # Old totals behavior remains unchanged.
+        self.assertEqual(len(merged.raw), 2)  # Both physical positions stay visible.
+        self.assertEqual(self.find(chests=merged.raw)["total_coffres"], 2)
 
     def test_live_inventory_changes_and_no_mutations(self):
         before = copy.deepcopy(self.request)

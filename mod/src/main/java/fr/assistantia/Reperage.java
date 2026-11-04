@@ -3,6 +3,8 @@ package fr.assistantia;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import java.util.List;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
@@ -38,14 +40,33 @@ public final class Reperage {
         VertexConsumer lignes = tampons.getBuffer(Lignes.TRAVERSANTES);
         for (Pont.Repere r : reperes) {
             if (visible(r, dimension)) {
-                AABB boite =
-                        new AABB(r.x(), r.y(), r.z(), r.x() + 1, r.y() + 1, r.z() + 1)
-                                .inflate(0.02)
-                                .move(-camera.x, -camera.y, -camera.z);
-                LevelRenderer.renderLineBox(pose, lignes, boite, 0.25F, 0.88F, 1.0F, pulsation);
+                BlockPos pos = new BlockPos(r.x(), r.y(), r.z());
+                List<AABB> formes = List.of(new AABB(pos));
+                if (mc.level.hasChunkAt(pos)) {
+                    var state = mc.level.getBlockState(pos);
+                    if (state.isAir()) continue; // Coffre cassé depuis le dernier relevé.
+                    var shape = state.getShape(mc.level, pos);
+                    if (!shape.isEmpty())
+                        formes = shape.toAabbs().stream().map(box -> box.move(pos)).toList();
+                }
+                for (AABB forme : formes) {
+                    AABB boite = forme.move(-camera.x, -camera.y, -camera.z);
+                    LevelRenderer.renderLineBox(
+                            pose, lignes, boite.inflate(0.025), 0.15F, 0.8F, 1F, 0.25F);
+                    LevelRenderer.renderLineBox(
+                            pose,
+                            lignes,
+                            boite.inflate(0.006),
+                            0.35F,
+                            0.95F,
+                            1F,
+                            0.85F + pulsation * 0.15F);
+                }
             }
         }
         tampons.endBatch(Lignes.TRAVERSANTES);
+        if (RechercheEmi.actif())
+            return; // Des contours uniquement, sans texte empilé sur les coffres.
         Font font = mc.font;
         for (Pont.Repere r : reperes) {
             if (!visible(r, dimension) || r.texte().isEmpty()) {
