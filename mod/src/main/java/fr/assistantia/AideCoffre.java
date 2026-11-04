@@ -6,14 +6,9 @@ import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.events.GuiEventListener;
-import net.minecraft.client.gui.layouts.LayoutElement;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
@@ -42,48 +37,7 @@ public final class AideCoffre {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)
                 || !RetraitCoffre.estCoffre(screen.getMenu())) return;
         ecran = screen;
-        occupee = occupee(screen);
-    }
-
-    /** L'interface, ses cases (upgrades comprises) et les widgets ajoutés autour par son mod. */
-    private static Zone occupee(AbstractContainerScreen<?> screen) {
-        int gauche = screen.getGuiLeft(), haut = screen.getGuiTop();
-        Zone zone = new Zone(gauche, haut, screen.getXSize(), screen.getYSize());
-        for (Slot s : screen.getMenu().slots)
-            if (s.isActive())
-                zone = ajouter(screen, zone, new Zone(gauche + s.x - 1, haut + s.y - 1, 18, 18));
-        for (GuiEventListener enfant : screen.children())
-            zone = ajouter(screen, zone, zone(enfant));
-        return zone;
-    }
-
-    /** Ignore ce qui est caché hors de l'écran ou couvre la moitié de l'écran. */
-    private static Zone ajouter(Screen screen, Zone zone, Zone morceau) {
-        if (morceau == null
-                || morceau.largeur() <= 0
-                || morceau.hauteur() <= 0
-                || morceau.x() < 0
-                || morceau.y() < 0
-                || morceau.droite() > screen.width
-                || morceau.bas() > screen.height
-                || morceau.largeur() * morceau.hauteur() > screen.width * screen.height / 2)
-            return zone;
-        return zone.union(morceau);
-    }
-
-    private static Zone zone(GuiEventListener enfant) {
-        if (enfant instanceof LayoutElement e)
-            return new Zone(e.getX(), e.getY(), e.getWidth(), e.getHeight());
-        try { // Onglets de Sophisticated Storage : mêmes accesseurs, sans l'interface vanilla.
-            Class<?> type = enfant.getClass();
-            return new Zone(
-                    (Integer) type.getMethod("getX").invoke(enfant),
-                    (Integer) type.getMethod("getY").invoke(enfant),
-                    (Integer) type.getMethod("getWidth").invoke(enfant),
-                    (Integer) type.getMethod("getHeight").invoke(enfant));
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            return null;
-        }
+        occupee = PanneauAssistant.occupee(screen);
     }
 
     public static void vider() {
@@ -150,10 +104,13 @@ public final class AideCoffre {
         Font font = Minecraft.getInstance().font;
         int mx = event.getMouseX(), my = event.getMouseY();
         boolean occupe = RetraitCoffre.occupe();
-        // Même habillage que le panneau du HUD : fond sombre et barre dorée à gauche.
-        g.fill(c.x(), c.y(), c.droite(), c.bas(), 0xC80D1013);
-        g.fill(c.x(), c.y(), c.x() + DispositionCoffre.BARRE, c.bas(), 0xFFFFC94A);
-        titre(g, font, d.titre(), occupe);
+        PanneauAssistant.fond(g, c);
+        PanneauAssistant.titre(
+                g,
+                font,
+                d.titre(),
+                "Arbre EMI",
+                occupe ? "Transfert…" : plan.total() + " à prendre");
         List<Component> infobulle = null;
         for (int rang = 0; rang < d.parPage(); rang++) {
             int n = page * d.parPage() + rang;
@@ -161,12 +118,12 @@ public final class AideCoffre {
             ItemStack item = objets.get(n);
             Zone z = d.icone(rang);
             boolean selection = ItemStack.isSameItemSameTags(item, choisi);
-            g.fill(z.x(), z.y(), z.droite(), z.bas(), selection ? 0x90FFC94A : 0x30FFFFFF);
+            PanneauAssistant.caseIcone(g, z, selection);
             ItemStack icone = item.copy();
             icone.setCount(1);
             int quantite = plan.pour(item).total();
             g.renderItem(icone, z.x() + 1, z.y() + 1);
-            g.renderItemDecorations(font, icone, z.x() + 1, z.y() + 1, nombre(quantite));
+            PanneauAssistant.nombre(g, font, z, quantite);
             if (z.contient(mx, my))
                 infobulle =
                         List.of(
@@ -175,15 +132,18 @@ public final class AideCoffre {
                                         .withStyle(s -> s.withColor(Hud.GRIS)));
         }
         if (d.pages()) {
-            bouton(g, font, d.precedent(), "‹", !occupe && page > 0, false, mx, my);
-            bouton(g, font, d.suivant(), "›", !occupe && page < derniere(), false, mx, my);
+            PanneauAssistant.bouton(
+                    g, font, d.precedent(), "‹", !occupe && page > 0, false, mx, my);
+            PanneauAssistant.bouton(
+                    g, font, d.suivant(), "›", !occupe && page < derniere(), false, mx, my);
             if (d.precedent().contient(mx, my) || d.suivant().contient(mx, my))
                 infobulle =
                         List.of(Component.literal("Page " + (page + 1) + "/" + (derniere() + 1)));
         }
         int choix = plan.pour(choisi).total(), tout = plan.total();
-        bouton(g, font, d.prendre(), "Prendre", !occupe && choix > 0, false, mx, my);
-        bouton(g, font, d.tout(), "Tout", !occupe && tout > 0, true, mx, my);
+        PanneauAssistant.bouton(
+                g, font, d.prendre(), "Prendre", !occupe && choix > 0, false, mx, my);
+        PanneauAssistant.bouton(g, font, d.tout(), "Tout", !occupe && tout > 0, true, mx, my);
         if (d.prendre().contient(mx, my))
             infobulle =
                     List.of(
@@ -195,67 +155,6 @@ public final class AideCoffre {
                             Component.literal(
                                     "Prendre les " + tout + " objets de l’arbre présents ici"));
         if (infobulle != null) g.renderComponentTooltip(font, infobulle, mx, my);
-    }
-
-    /** Titre doré et quantité en gris : sur deux lignes dans le bandeau, une sur le côté. */
-    private static void titre(GuiGraphics g, Font font, Zone z, boolean occupe) {
-        String nom = "Arbre EMI", detail = occupe ? "Transfert…" : plan.total() + " à prendre";
-        if (z.hauteur() >= 18) {
-            g.drawString(
-                    font, font.plainSubstrByWidth(nom, z.largeur()), z.x(), z.y(), Hud.OR, false);
-            g.drawString(
-                    font,
-                    font.plainSubstrByWidth(detail, z.largeur()),
-                    z.x(),
-                    z.y() + 10,
-                    Hud.GRIS,
-                    false);
-            return;
-        }
-        int y = z.y() + (z.hauteur() - 8) / 2;
-        String debut = font.plainSubstrByWidth(nom, z.largeur());
-        g.drawString(font, debut, z.x(), y, Hud.OR, false);
-        int reste = z.largeur() - font.width(debut);
-        String suite = font.plainSubstrByWidth(" · " + detail, Math.max(0, reste));
-        g.drawString(font, suite, z.x() + font.width(debut), y, Hud.GRIS, false);
-    }
-
-    private static String nombre(int n) {
-        return n < 1000 ? String.valueOf(n) : n / 1000 + "k";
-    }
-
-    /** Boutons des réglages : vert pour l'action principale, gris sinon, contour au survol. */
-    private static void bouton(
-            GuiGraphics g,
-            Font font,
-            Zone z,
-            String texte,
-            boolean actif,
-            boolean principal,
-            int mx,
-            int my) {
-        boolean survol = actif && z.contient(mx, my);
-        int fond =
-                !actif
-                        ? 0xFF2A2A2A
-                        : principal
-                                ? (survol ? 0xFF3FA845 : 0xFF2E8B36)
-                                : (survol ? 0xFF5A5A5A : 0xFF3C3C3C);
-        g.fill(z.x(), z.y(), z.droite(), z.bas(), fond);
-        g.renderOutline(
-                z.x(),
-                z.y(),
-                z.largeur(),
-                z.hauteur(),
-                survol ? 0xFFFFFFFF : actif ? 0x60FFFFFF : 0x30FFFFFF);
-        String t = font.plainSubstrByWidth(texte, z.largeur() - 4);
-        g.drawString(
-                font,
-                t,
-                z.x() + (z.largeur() - font.width(t)) / 2,
-                z.y() + (z.hauteur() - 8) / 2 + 1,
-                actif ? 0xFFFFFF : 0x808080,
-                false);
     }
 
     private static void tourner(int sens) {
@@ -274,10 +173,10 @@ public final class AideCoffre {
         if (event.getButton() != 0 || RetraitCoffre.occupe()) return;
         Disposition d = disposition;
         if (d.prendre().contient(mx, my)) {
-            son();
+            PanneauAssistant.son();
             agir(false);
         } else if (d.tout().contient(mx, my)) {
-            son();
+            PanneauAssistant.son();
             agir(true);
         } else if (d.pages() && d.precedent().contient(mx, my)) tourner(-1);
         else if (d.pages() && d.suivant().contient(mx, my)) tourner(1);
@@ -303,11 +202,5 @@ public final class AideCoffre {
         event.setCanceled(true);
         if (disposition.pages() && !RetraitCoffre.occupe())
             tourner(event.getScrollDelta() > 0 ? -1 : 1);
-    }
-
-    private static void son() {
-        Minecraft.getInstance()
-                .getSoundManager()
-                .play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
     }
 }

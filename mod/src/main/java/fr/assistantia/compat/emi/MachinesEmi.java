@@ -6,6 +6,7 @@ import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.DispositionCoffre;
 import fr.assistantia.Lignes;
+import fr.assistantia.PanneauAssistant;
 import fr.assistantia.PlanMachines;
 import fr.assistantia.PlanRetrait;
 import fr.assistantia.DispositionCoffre.Disposition;
@@ -314,11 +315,7 @@ public final class MachinesEmi {
                     DispositionCoffre.calculer(
                             ecran.width,
                             ecran.height,
-                            new Zone(
-                                    ecran.getGuiLeft(),
-                                    ecran.getGuiTop(),
-                                    ecran.getXSize(),
-                                    ecran.getYSize()),
+                            PanneauAssistant.occupee(ecran),
                             locales.size());
             page = Math.min(page, (locales.size() - 1) / disposition.parPage());
         } catch (ReflectiveOperationException e) {
@@ -337,14 +334,6 @@ public final class MachinesEmi {
             actualiserInterface();
     }
 
-    private static void bouton(GuiGraphics g, Zone z, String texte, boolean active) {
-        g.fill(z.x(), z.y(), z.droite(), z.bas(), active ? 0xFF653234 : 0xFF303030);
-        g.renderOutline(z.x(), z.y(), z.largeur(), z.hauteur(), active ? 0xFFFF5555 : 0xFF555555);
-        var font = Minecraft.getInstance().font;
-        g.drawCenteredString(
-                font, texte, z.x() + z.largeur() / 2, z.y() + 3, active ? 0xFFFFFF : 0x888888);
-    }
-
     @SubscribeEvent
     public static void rendu(ScreenEvent.Render.Post event) {
         if (!affiche(event.getScreen()) || disposition == null || selection() == null) return;
@@ -354,8 +343,8 @@ public final class MachinesEmi {
         var font = Minecraft.getInstance().font;
         int mx = event.getMouseX(), my = event.getMouseY();
         var selected = selection();
-        g.fill(c.x(), c.y(), c.droite(), c.bas(), 0xEE160C0D);
-        g.renderOutline(c.x(), c.y(), c.largeur(), c.hauteur(), 0xFFFF5555);
+        // Même habillage que le panneau des coffres et le HUD.
+        PanneauAssistant.fond(g, c);
         String titre =
                 EnvoiMachine.occupe()
                         ? "Envoi…"
@@ -365,41 +354,25 @@ public final class MachinesEmi {
                                 + " / "
                                 + selected.fois()
                                 + " fabrications";
-        Zone titreZone = d.titre();
         String quantites = (plan == null ? 0 : plan.fois()) + " / " + selected.fois();
         String nom =
                 EnvoiMachine.occupe()
                         ? "Envoi…"
                         : selected.recette().getCategory().getName().getString();
-        g.drawString(
-                font,
-                font.plainSubstrByWidth(
-                        titreZone.hauteur() >= 18 ? nom : nom + " · " + quantites,
-                        titreZone.largeur()),
-                titreZone.x(),
-                titreZone.y(),
-                0xFFFF7777,
-                false);
-        if (titreZone.hauteur() >= 18)
-            g.drawString(
-                    font,
-                    font.plainSubstrByWidth(quantites, titreZone.largeur()),
-                    titreZone.x(),
-                    titreZone.y() + 10,
-                    0xFFCCCCCC,
-                    false);
+        PanneauAssistant.titre(g, font, d.titre(), nom, quantites);
         List<Component> tooltip = null;
         for (int rang = 0; rang < d.parPage(); rang++) {
             int i = page * d.parPage() + rang;
             if (i >= locales.size()) break;
             var op = locales.get(i);
             var z = d.icone(rang);
-            if (i == choix) g.fill(z.x(), z.y(), z.droite(), z.bas(), 0x99FF3333);
+            PanneauAssistant.caseIcone(g, z, i == choix);
             if (!op.recette().getOutputs().isEmpty())
                 op.recette()
                         .getOutputs()
                         .get(0)
                         .render(g, z.x() + 1, z.y() + 1, 0, EmiIngredient.RENDER_ICON);
+            PanneauAssistant.nombre(g, font, z, op.fois());
             if (z.contient(mx, my)) {
                 tooltip = new ArrayList<>();
                 tooltip.add(
@@ -408,19 +381,32 @@ public final class MachinesEmi {
                                         ? "Recette"
                                         : op.recette().getOutputs().get(0).getName().getString()));
                 tooltip.add(
-                        Component.literal(
-                                op.fois() + " fabrications restantes · clic pour choisir"));
+                        Component.literal(op.fois() + " fabrications restantes · Clic : choisir")
+                                .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
             }
         }
-        bouton(
+        boolean libre = !EnvoiMachine.occupe();
+        PanneauAssistant.bouton(
                 g,
+                font,
                 d.prendre(),
                 "Envoyer",
-                !EnvoiMachine.occupe() && plan != null && plan.possible());
-        bouton(g, d.tout(), "Voir", !EnvoiMachine.occupe());
+                libre && plan != null && plan.possible(),
+                true,
+                mx,
+                my);
+        PanneauAssistant.bouton(g, font, d.tout(), "Voir", libre, false, mx, my);
         if (d.pages()) {
-            bouton(g, d.precedent(), "‹", page > 0);
-            bouton(g, d.suivant(), "›", (page + 1) * d.parPage() < locales.size());
+            PanneauAssistant.bouton(g, font, d.precedent(), "‹", libre && page > 0, false, mx, my);
+            PanneauAssistant.bouton(
+                    g,
+                    font,
+                    d.suivant(),
+                    "›",
+                    libre && (page + 1) * d.parPage() < locales.size(),
+                    false,
+                    mx,
+                    my);
         }
         if (d.prendre().contient(mx, my) || d.titre().contient(mx, my)) {
             tooltip = new ArrayList<>();
@@ -452,11 +438,16 @@ public final class MachinesEmi {
             actualiserInterface();
             var op = selection();
             var envoi = plan;
-            if (op != null && envoi != null && envoi.possible())
+            if (op != null && envoi != null && envoi.possible()) {
+                PanneauAssistant.son();
                 EnvoiMachine.lancer(ecran, envoi, () -> envoyee(op.recette(), envoi.fois()));
+            }
         } else if (d.tout().contient(x, y)) {
             var op = selection();
-            if (op != null) EmiApi.displayRecipe(op.recette());
+            if (op != null) {
+                PanneauAssistant.son();
+                EmiApi.displayRecipe(op.recette());
+            }
         } else if (d.pages() && d.precedent().contient(x, y)) page = Math.max(0, page - 1);
         else if (d.pages() && d.suivant().contient(x, y))
             page = Math.min((locales.size() - 1) / d.parPage(), page + 1);

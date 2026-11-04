@@ -108,7 +108,7 @@ Avec un craft EMI actif, les machines GregTech compatibles des chunks chargés, 
 les composants déjà présents dans l’inventaire sont déduits. Un objectif IA seul ne déclenche
 pas ce repérage.
 
-Dans une machine compatible, le panneau rouge propose les recettes utiles :
+Dans une machine compatible, le panneau de l’assistant, au même style que celui des coffres, propose les recettes utiles :
 
 - Choisir le produit à préparer. Le titre indique les fabrications possibles et restantes.
 - Survoler **Envoyer** pour voir les ingrédients, le circuit et les volumes de fluide.
