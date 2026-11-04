@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -300,14 +301,25 @@ public final class Pont {
             Files.createDirectories(DOSSIER);
             Path temporaire = DOSSIER.resolve(nom + ".tmp");
             Files.writeString(temporaire, demande.toString(), StandardCharsets.UTF_8);
-            Files.move(
-                    temporaire,
-                    DOSSIER.resolve(nom),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
-            return true;
+            for (int essai = 1; ; essai++) {
+                try {
+                    Files.move(
+                            temporaire,
+                            DOSSIER.resolve(nom),
+                            StandardCopyOption.REPLACE_EXISTING,
+                            StandardCopyOption.ATOMIC_MOVE);
+                    return true;
+                } catch (AccessDeniedException e) {
+                    // Windows refuse le remplacement tant que l'assistant lit encore le fichier.
+                    if (essai == 4) throw e;
+                    Thread.sleep(5L * essai);
+                }
+            }
         } catch (IOException e) {
             LOGGER.warn("Assistant IA : demande non transmise", e);
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             return false;
         }
     }
