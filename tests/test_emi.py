@@ -56,7 +56,13 @@ class EmiTests(unittest.TestCase):
         )
         self.assertEqual(result["cibles"], [{"item": "minecraft:torch", "quantite": 12}])
 
+    def test_chest_withdrawal_allocation(self):
+        self._run_java_contract("PlanRetrait")
+
     def test_virtual_recipe_contract(self):
+        self._run_java_contract("RecetteObjectifEmi")
+
+    def _run_java_contract(self, name):
         java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
         if not (java_home / "bin/javac").exists():
             java_home = (
@@ -83,15 +89,15 @@ class EmiTests(unittest.TestCase):
                     "UTF-8",
                     "-d",
                     directory,
-                    str(ROOT / "mod/src/main/java/fr/assistantia/RecetteObjectifEmi.java"),
-                    str(ROOT / "tests/java/fr/assistantia/RecetteObjectifEmiTest.java"),
+                    str(ROOT / f"mod/src/main/java/fr/assistantia/{name}.java"),
+                    str(ROOT / f"tests/java/fr/assistantia/{name}Test.java"),
                 ],
                 check=True,
                 capture_output=True,
                 text=True,
             )
             result = subprocess.run(
-                [java, "-ea", "-cp", directory, "fr.assistantia.RecetteObjectifEmiTest"],
+                [java, "-ea", "-cp", directory, f"fr.assistantia.{name}Test"],
                 capture_output=True,
                 text=True,
                 timeout=15,

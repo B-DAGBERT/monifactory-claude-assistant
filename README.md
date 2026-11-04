@@ -75,6 +75,28 @@ Les questions dans Discussion et la pause de l’objectif ne sont pas modifiées
 Le panneau en haut à gauche montre désormais uniquement le **plan**, l’**objectif** et son
 **avancement** : les listes d’objets à collecter et leurs quantités restent dans EMI et le menu.
 
+## Récupérer les ingrédients depuis un coffre
+
+Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
+au-dessus du coffre propose **Récupérer** (les ingrédients pour une fabrication) et
+**Pour l’objectif** (les ingrédients pour le nombre de fabrications demandé par le plan).
+Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habituel.
+
+Depuis une recette EMI ouverte avec un coffre, le bouton **+** devient une flèche **↓** :
+elle récupère les ingrédients pour **une fabrication**, y compris avec Maj enfoncée.
+Pour plusieurs fabrications de l’objectif, utiliser **Pour l’objectif** au-dessus du coffre.
+Le bouton **Coffres** continue de servir au repérage, sans déplacer d’objet.
+
+Le retrait déduit les objets déjà dans l’inventaire, respecte les variantes de la recette EMI
+et ne prend que les quantités manquantes. Il fonctionne aussi si ce coffre ne contient qu’une
+partie des ingrédients. Les outils réutilisables ne sont pas multipliés et les fluides sont
+ignorés. Les upgrades, filtres et grilles de craft du coffre ne sont jamais des sources.
+
+Les transferts utilisent les clics normaux du jeu, sans commande ni installation serveur.
+Les clics répétés sont bloqués pendant le transfert ; fermer le coffre l’arrête. Si l’inventaire
+est plein, le retrait s’arrête en conservant les objets déjà récupérés. Le stock est lu directement
+dans le coffre ouvert, sans appel IA ni dépendance à la mémoire des coffres.
+
 ## Filons : scan, marquage et téléportation
 
 Sélectionner un filon puis **Scanner** : le scan vise son centre GregTech, même si tu es

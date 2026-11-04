@@ -9,6 +9,8 @@ import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.api.widget.Bounds;
 import dev.emi.emi.api.widget.Widget;
 import fr.assistantia.RechercheEmi;
+import fr.assistantia.RetraitCoffre;
+import dev.emi.emi.api.EmiApi;
 import com.mojang.logging.LogUtils;
 import java.lang.reflect.Field;
 import dev.emi.emi.api.widget.WidgetHolder;
@@ -78,7 +80,23 @@ public final class AssistantEmiPlugin implements EmiPlugin {
                 if (recipe == null
                         || recipe.getInputs().isEmpty() && recipe.getCatalysts().isEmpty())
                     continue;
-                List<?> children = (List<?>) widgetsDeGroupe.get(group);
+                @SuppressWarnings("unchecked")
+                List<Widget> children = (List<Widget>) widgetsDeGroupe.get(group);
+                var container = EmiApi.getHandledScreen();
+                if (container != null && RetraitCoffre.estCoffre(container.getMenu())) {
+                    for (int i = 0; i < children.size(); i++) {
+                        Widget child = children.get(i);
+                        if (child.getClass()
+                                .getName()
+                                .equals("dev.emi.emi.api.widget.RecipeFillButtonWidget"))
+                            children.set(i, new RecuperationEmi.Bouton(recipe, child));
+                    }
+                }
+                if (container == null || !RetraitCoffre.estCoffre(container.getMenu())) {
+                    for (int i = 0; i < children.size(); i++)
+                        if (children.get(i) instanceof RecuperationEmi.Bouton retrait)
+                            children.set(i, retrait.original());
+                }
                 if (children.stream().anyMatch(w -> w instanceof Coffres)) continue;
                 WidgetHolder holder = (WidgetHolder) group;
                 holder.add(

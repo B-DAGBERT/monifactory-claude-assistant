@@ -29,7 +29,8 @@ import java.util.Map;
  * icône par fabrication (clic : la choisir), puis « Remplir » (une fois) ou « Tout » (ce qu'il en
  * faut, dans la limite de ce que ton inventaire permet), comme le bouton « + » d'EMI. Les recettes
  * de machines n'y sont pas : l'établi ne sait pas les faire. Rien ne s'affiche quand aucune
- * fabrication de l'objectif n'est possible ici.
+ * fabrication de l'objectif n'est possible ici. Dans les coffres, les boutons retirent les
+ * ingrédients manquants pour une fabrication ou pour l'objectif, sans remplir de grille.
  */
 public final class AideEcran {
     private static final int MAX = 8, ICONE = 20;
@@ -46,6 +47,9 @@ public final class AideEcran {
     }
 
     private static Button remplir, tout;
+    private static boolean coffre;
+    private static long dernierCalcul;
+    private static RetraitCoffre.Plan retraitUn, retraitObjectif;
     private static AbstractContainerScreen<?> ecranActuel;
     private static List<Proposition> propositions = List.of();
     private static Item choisi; // gardé quand la liste change (après une fabrication)
@@ -65,6 +69,8 @@ public final class AideEcran {
             return;
         }
         ecranActuel = conteneur;
+        coffre = RetraitCoffre.estCoffre(conteneur.getMenu());
+        retraitUn = retraitObjectif = null;
         cle = "";
         x = conteneur.getGuiLeft();
         y = Math.max(2, conteneur.getGuiTop() - 52);
@@ -93,7 +99,12 @@ public final class AideEcran {
     private static void agir(boolean toutFaire) {
         Proposition p = choisie();
         if (p != null && ecranActuel != null) {
-            Emi.remplir(p.recette(), ecranActuel, toutFaire ? p.aFaire() : 1);
+            if (coffre)
+                RetraitCoffre.lancer(
+                        ecranActuel,
+                        Emi.retrait(
+                                p.recette(), ecranActuel, toutFaire ? Math.max(1, p.fois()) : 1));
+            else Emi.remplir(p.recette(), ecranActuel, toutFaire ? p.aFaire() : 1);
             cle = ""; // la grille et l'inventaire changent : on recalcule
         }
     }
@@ -123,7 +134,12 @@ public final class AideEcran {
             }
             for (Object recette : Emi.recettes(Pont.texte(f, "id"), produit, ecran)) {
                 int possibles = Emi.possibles(recette, stock);
-                if (possibles > 0) { // la première façon de la faire que l'inventaire permet
+                if (coffre
+                        ? Emi.retrait(recette, ecran, Math.max(1, (int) Pont.nombre(f, "fois", 1)))
+                                        .total()
+                                > 0
+                        : possibles
+                                > 0) { // Le coffre peut ne contenir qu'une partie des ingrédients.
                     liste.add(
                             new Proposition(
                                     recette,
@@ -148,16 +164,47 @@ public final class AideEcran {
         }
         Map<Item, Integer> stock = stock(ecranActuel);
         String nouvelleCle = Pont.liste(Pont.vue(), "fabrications") + "|" + stock;
-        if (!nouvelleCle.equals(cle)) {
+        long maintenant = System.currentTimeMillis();
+        if (!nouvelleCle.equals(cle) || coffre && maintenant - dernierCalcul > 250) {
             cle = nouvelleCle;
+            dernierCalcul = maintenant;
             propositions = calculer(ecranActuel, stock);
+            retraitUn = retraitObjectif = null;
         }
         Proposition p = choisie();
         remplir.visible = tout.visible = p != null;
         if (p == null) {
             return;
         }
-        tout.setMessage(Component.literal("Tout (×" + p.aFaire() + ")"));
+        if (coffre && retraitUn == null) {
+            retraitUn = Emi.retrait(p.recette(), ecranActuel, 1);
+            retraitObjectif = Emi.retrait(p.recette(), ecranActuel, Math.max(1, p.fois()));
+        }
+        remplir.setMessage(Component.literal(coffre ? "Récupérer" : "Remplir"));
+        tout.setMessage(
+                Component.literal(coffre ? "Pour l’objectif" : "Tout (×" + p.aFaire() + ")"));
+        remplir.active = !coffre || !RetraitCoffre.occupe() && retraitUn.total() > 0;
+        tout.active = !coffre || !RetraitCoffre.occupe() && retraitObjectif.total() > 0;
+        remplir.setTooltip(
+                net.minecraft.client.gui.components.Tooltip.create(
+                        Component.literal(
+                                coffre
+                                        ? "Prendre les ingrédients manquants pour 1 fabrication ("
+                                                + retraitUn.total()
+                                                + " objets)"
+                                        : "Remplir la grille pour 1 fabrication")));
+        tout.setTooltip(
+                net.minecraft.client.gui.components.Tooltip.create(
+                        Component.literal(
+                                coffre
+                                        ? "Prendre pour "
+                                                + Math.max(1, p.fois())
+                                                + " fabrication(s) : "
+                                                + retraitObjectif.total()
+                                                + " objets disponibles, "
+                                                + retraitObjectif.manquants()
+                                                + " absents du coffre ; inventaire déduit"
+                                        : "Remplir pour l’objectif avec les ingrédients disponibles")));
         GuiGraphics g = event.getGuiGraphics();
         Font font = Minecraft.getInstance().font;
         int largeur = Math.max(ecranActuel.getXSize(), propositions.size() * ICONE);
@@ -171,7 +218,13 @@ public final class AideEcran {
         g.drawString(
                 font,
                 font.plainSubstrByWidth(
-                        p.nom() + " · ×" + p.aFaire() + " possible" + encore, largeur),
+                        coffre
+                                ? p.nom()
+                                        + (RetraitCoffre.occupe()
+                                                ? " · Transfert…"
+                                                : " · " + retraitObjectif.total() + " à récupérer")
+                                : p.nom() + " · ×" + p.aFaire() + " possible" + encore,
+                        largeur),
                 x,
                 y,
                 Hud.OR,
@@ -195,11 +248,13 @@ public final class AideEcran {
                     List.of(
                             Component.literal(survolee.nom()),
                             Component.literal(
-                                            "×"
-                                                    + survolee.aFaire()
-                                                    + " possible maintenant, "
-                                                    + survolee.fois()
-                                                    + " à faire pour l'objectif")
+                                            coffre
+                                                    ? "Récupérer les ingrédients présents dans ce coffre"
+                                                    : "×"
+                                                            + survolee.aFaire()
+                                                            + " possible maintenant, "
+                                                            + survolee.fois()
+                                                            + " à faire pour l'objectif")
                                     .withStyle(s -> s.withColor(Hud.GRIS)),
                             Component.literal("Clic : la choisir")
                                     .withStyle(s -> s.withColor(Hud.BLEU))),
@@ -221,6 +276,7 @@ public final class AideEcran {
                     && event.getMouseY() >= iy - 1
                     && event.getMouseY() < iy + 17) {
                 choisi = propositions.get(i).produit().getItem();
+                retraitUn = retraitObjectif = null;
                 event.setCanceled(true);
                 return;
             }

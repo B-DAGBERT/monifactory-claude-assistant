@@ -130,8 +130,10 @@ class ParityTests(unittest.TestCase):
         for path in ("jeu/assistant_ia.js", "serveur/assistant_ia_serveur.js"):
             self.assertEqual(upstream(path), (ROOT / path).read_text())
 
-    def test_original_screens_only_change_branding(self):
-        for name in ("EcranInfo", "AideEcran"):
+    def test_original_info_screen_only_changes_branding(self):
+        # AideEcran now intentionally withdraws chest ingredients at the user's request.
+        # Its allocation and click engine are covered by test_emi / test_chest_transfers.
+        for name in ("EcranInfo",):
             path = f"mod/src/main/java/fr/assistantia/{name}.java"
             before = normalize(upstream(path)).replace(
                 "Lance « Lancer assistant.bat »",

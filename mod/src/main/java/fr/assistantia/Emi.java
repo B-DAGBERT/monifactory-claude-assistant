@@ -53,6 +53,7 @@ public final class Emi {
             getAmount,
             isLoaded;
     private static Object typeBouton, destinationAucune;
+    private static Method planCoffre;
 
     private Emi() {}
 
@@ -220,7 +221,9 @@ public final class Emi {
 
     public static boolean remplissable(Object recette, AbstractContainerScreen<?> ecran) {
         try {
-            return recette != null && getFirstValidHandler.invoke(null, recette, ecran) != null;
+            return recette != null
+                    && (ecran != null && RetraitCoffre.estCoffre(ecran.getMenu())
+                            || getFirstValidHandler.invoke(null, recette, ecran) != null);
         } catch (Throwable t) {
             return false;
         }
@@ -299,6 +302,27 @@ public final class Emi {
             LOGGER.warn("Assistant IA : remplissage impossible", t);
             return false;
         }
+    }
+
+    /** Quantités exactes à prendre dans le coffre, après déduction de l'inventaire. */
+    public static RetraitCoffre.Plan retrait(
+            Object recette, AbstractContainerScreen<?> ecran, int fois) {
+        if (pret())
+            try {
+                if (planCoffre == null)
+                    planCoffre =
+                            Class.forName("fr.assistantia.compat.emi.RecuperationEmi")
+                                    .getMethod(
+                                            "plan",
+                                            Object.class,
+                                            AbstractContainerScreen.class,
+                                            int.class);
+                return (RetraitCoffre.Plan)
+                        planCoffre.invoke(null, recette, ecran, Math.max(1, fois));
+            } catch (ReflectiveOperationException e) {
+                LOGGER.warn("Assistant IA : calcul du retrait impossible", e);
+            }
+        return new RetraitCoffre.Plan(List.of(), 0);
     }
 
     /** Ouvre les recettes d'un objet dans EMI. */
