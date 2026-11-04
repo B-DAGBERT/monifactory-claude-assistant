@@ -128,6 +128,16 @@ public final class RetraitCoffreTest {
     public static void main(String[] args) throws Exception {
         treeSelection();
         componentBeforeMaterials();
+        setup(1000, 0);
+        assert RetraitCoffre.lancer(screen, plan(130));
+        tick();
+        int avantPause = owned(), clicsPause = mc.gameMode.clicks;
+        RetraitCoffre.arreter();
+        for (int i = 0; i < 30; i++) tick();
+        assert !RetraitCoffre.occupe() && owned() == avantPause;
+        assert mc.gameMode.clicks == clicsPause && menu.carried.isEmpty()
+                : "pause sans déplacement supplémentaire ni objet perdu";
+
         setup(64, 2);
         assert RetraitCoffre.lancer(screen, plan(5));
         assert !RetraitCoffre.lancer(screen, plan(5)) : "double clic";

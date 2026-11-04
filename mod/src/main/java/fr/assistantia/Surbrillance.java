@@ -26,7 +26,8 @@ public final class Surbrillance {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> ecran)) {
             return;
         }
-        Set<String> besoins = RechercheEmi.actif() ? Set.of() : Pont.besoins();
+        Set<String> besoins =
+                RechercheEmi.actif() || PauseObjectifEmi.enPause() ? Set.of() : Pont.besoins();
         boolean recherche = RechercheEmi.actif() || Pont.rechercheActive();
         if (besoins.isEmpty() && !recherche) {
             return;

@@ -206,8 +206,10 @@ public class EcranAssistant extends Screen {
                                             demande.addProperty(
                                                     "projet",
                                                     Pont.texte(partie(vue, "projets"), "actif"));
-                                            Pont.envoyer(demande);
-                                            b.active = false;
+                                            if (Pont.envoyer(demande)) {
+                                                if (pauseDemandee) PauseObjectifEmi.demander(vue);
+                                                b.active = false;
+                                            } else pauseDemandee = null;
                                         })
                                 .bounds(this.width - MARGE - 120, MARGE + 26, 120, 18)
                                 .build());
@@ -274,7 +276,8 @@ public class EcranAssistant extends Screen {
 
     /** Met toutes les cibles et les recettes du plan dans EMI, uniquement à la demande. */
     private void ouvrirArbre() {
-        if (this.minecraft == null || this.minecraft.player == null) return;
+        if (this.minecraft == null || this.minecraft.player == null || PauseObjectifEmi.enPause())
+            return;
         EmiObjectif.Resultat resultat = EmiObjectif.preparer(partie(ecran(), "objectif_emi"));
         messageEmi = resultat.message();
         if (!resultat.succes()) return;
@@ -382,15 +385,18 @@ public class EcranAssistant extends Screen {
         JsonObject ecran = ecran();
         boolean ciblesEmi = !Pont.liste(partie(ecran, "objectif_emi"), "cibles").isEmpty();
         boolean emiPret = EmiObjectif.disponible();
-        objectifEmi.active = ciblesEmi && emiPret && this.minecraft.player != null;
+        boolean pauseEmi = PauseObjectifEmi.enPause();
+        objectifEmi.active = ciblesEmi && emiPret && this.minecraft.player != null && !pauseEmi;
         objectifEmi.setTooltip(
                 net.minecraft.client.gui.components.Tooltip.create(
                         Component.literal(
-                                !ciblesEmi
-                                        ? "Pas de craft défini pour cet objectif. Si besoin, relance l’assistant mis à jour."
-                                        : !emiPret
-                                                ? "EMI charge ses recettes ou n’est pas installé."
-                                                : "Mettre toutes les cibles, quantités et recettes de l’objectif dans l’arbre EMI. Inventaire suivi par EMI ; coffres suivis par l’assistant.")));
+                                pauseEmi
+                                        ? "Objectif en pause : reprends-le avant de rouvrir son arbre EMI."
+                                        : !ciblesEmi
+                                                ? "Pas de craft défini pour cet objectif. Si besoin, relance l’assistant mis à jour."
+                                                : !emiPret
+                                                        ? "EMI charge ses recettes ou n’est pas installé."
+                                                        : "Mettre toutes les cibles, quantités et recettes de l’objectif dans l’arbre EMI. Inventaire suivi par EMI ; coffres suivis par l’assistant.")));
         discussion.visible(onglet == DISCUSSION);
         discussion.actualiser(ecran);
         if (!saisie.getValue().equals(ETAT_DISCUSSION.brouillon()))

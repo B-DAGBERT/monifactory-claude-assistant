@@ -46,7 +46,14 @@ n’est pas un objet à fabriquer. Clique sur les branches pour suivre leurs rec
 La synchronisation se fait au clic, sans appel IA. Après un changement d’objectif ou de
 projet, clique à nouveau sur **Objectif EMI**. Réouvrir le même objectif conserve les choix
 et les branches de l’arbre tant que tu n’as pas remplacé cet arbre dans EMI. Les favoris et
-les recettes par défaut d’EMI ne sont pas modifiés. Un objectif en pause reste en pause.
+les recettes par défaut d’EMI ne sont pas modifiés.
+
+**Mettre en pause** arrête aussi l’arbre EMI actif, le scan des coffres, ses surbrillances et
+un éventuel transfert en cours. Cela s’applique aussi à une pause demandée dans la discussion.
+**Objectif EMI** reste désactivé pendant la pause. Après **Reprendre**, clique sur **Objectif EMI**
+pour retrouver les choix de recettes conservés pendant cette session, puis réactive le scan si
+nécessaire. Rien ne redémarre automatiquement. Tu peux toujours choisir un autre craft directement
+dans EMI pendant que ton objectif reste en pause.
 
 Si la recette indiquée manque ou si plusieurs recettes sont possibles sans choix dans le
 plan, un message indique les objets concernés : choisis leurs recettes directement dans EMI.

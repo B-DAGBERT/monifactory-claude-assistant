@@ -20,6 +20,7 @@ public final class EmiObjectif {
     public record Resultat(boolean succes, String message) {}
 
     private static Object gestionPrecedente, arbrePrecedent;
+    private static boolean suspendu;
     private static String signaturePrecedente = "", avertissementPrecedent = "";
 
     private EmiObjectif() {}
@@ -35,8 +36,33 @@ public final class EmiObjectif {
         }
     }
 
+    /**
+     * Retire l'arbre actif d'EMI et conserve les choix de l'objectif pour une réouverture
+     * explicite.
+     */
+    public static void suspendre() {
+        if (!Emi.present()) return;
+        try {
+            Class<?> bom = Class.forName("dev.emi.emi.bom.BoM");
+            Field field = bom.getField("tree");
+            Object tree = field.get(null);
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc.screen != null
+                    && mc.screen.getClass().getName().equals("dev.emi.emi.screen.BoMScreen"))
+                mc.screen.onClose(); // Ne pas laisser l'écran EMI lire un arbre devenu nul.
+            if (tree != null) suspendu = tree == arbrePrecedent;
+            field.set(null, null);
+            bom.getField("craftingMode").setBoolean(null, false);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            LogUtils.getLogger().warn("Assistant : arrêt de l’arbre EMI impossible", e);
+        }
+    }
+
     /** Construit avant de publier : un échec laisse l'arbre personnel d'EMI intact. */
     public static Resultat preparer(JsonObject objectif) {
+        if (PauseObjectifEmi.enPause())
+            return new Resultat(
+                    false, "Objectif en pause : reprends-le avant de rouvrir son arbre EMI.");
         if (!disponible())
             return new Resultat(false, "EMI est absent ou charge encore ses recettes.");
         if (Pont.liste(objectif, "cibles").isEmpty())
@@ -55,7 +81,10 @@ public final class EmiObjectif {
             // Garder les branches dépliées et les choix locaux de l'utilisateur à la réouverture.
             if (manager == gestionPrecedente
                     && signature.equals(signaturePrecedente)
-                    && treeField.get(null) == arbrePrecedent) {
+                    && (treeField.get(null) == arbrePrecedent
+                            || suspendu && treeField.get(null) == null)) {
+                treeField.set(null, arbrePrecedent);
+                suspendu = false;
                 return new Resultat(true, avertissementPrecedent);
             }
             Method of = stackType.getMethod("of", ItemStack.class, long.class);
@@ -168,6 +197,7 @@ public final class EmiObjectif {
             bom.getField("craftingMode").setBoolean(null, false);
             gestionPrecedente = manager;
             arbrePrecedent = tree;
+            suspendu = false;
             signaturePrecedente = signature;
             avertissementPrecedent =
                     manquantes.isEmpty()

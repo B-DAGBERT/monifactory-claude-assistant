@@ -71,6 +71,9 @@ class EmiTests(unittest.TestCase):
     def test_collected_components_prune_raw_materials(self):
         self._run_java_contract("PlanArbre")
 
+    def test_objective_pause_stops_emi_once_without_implicit_resume(self):
+        self._run_java_contract("EtatPauseEmi")
+
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 

@@ -126,6 +126,10 @@ public final class RetraitCoffre {
                 r.manquants().stream().mapToLong(MemoireCollecte.Ingredient::quantite).sum());
     }
 
+    public static void arreter() {
+        if (occupe()) terminer("");
+    }
+
     public static boolean occupe() {
         return menu != null;
     }
