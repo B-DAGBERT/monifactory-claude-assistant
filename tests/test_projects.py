@@ -156,9 +156,8 @@ class ProjectRequestTests(unittest.TestCase):
     def test_stale_busy_invalid_and_disconnected_requests_do_not_change_project(self):
         a = self.app
         before = copy.deepcopy(a.project_snapshot())
-        for condition in ("busy", "coach_busy", "disconnected", "stale", "unknown-id"):
+        for condition in ("busy", "disconnected", "stale", "unknown-id"):
             a.busy = condition == "busy"
-            a.coach_busy = condition == "coach_busy"
             a.game = None if condition == "disconnected" else {"inventaire": {}}
             self.request(
                 action="choisir" if condition == "unknown-id" else "creer",
@@ -199,7 +198,6 @@ class ProjectRequestTests(unittest.TestCase):
         a.plan = None
         a.session_open = False
         a.journal_tail = Mock(return_value=[])
-        a.settings["briefing"] = False
         a.on_game_connected()
         scheduled = a.root.after.call_args.args[1]
         self.request()

@@ -103,8 +103,6 @@ class ParityTests(unittest.TestCase):
             "App.check_game",
             "App.coach",
             "App.flush_coach",
-            "App.check_stuck",
-            "App.start_briefing",
             "App.handle_mod_request",
             "App.on_next_objective",
             "App.start_objective",
@@ -112,6 +110,19 @@ class ParityTests(unittest.TestCase):
             "App.action_effacer_objectif",
         }
         compatibility_changes |= pause_changes
+        # Retirés à la demande : briefing de reprise, conseils automatiques, alertes de machines.
+        compatibility_changes |= {
+            "World.alerts",
+            "App.check_world_alerts",
+            "App.check_coach",
+            "App.check_stuck",
+            "App.start_briefing",
+            "App.work_coach",
+            "App.on_coach_message",
+            "App.set_objective_paused",
+            "App.handle_project_request",
+            "App.watch_game",
+        }
         compatibility_changes |= {
             "App.on_game_connected",
             "App.action_nouveau_plan",

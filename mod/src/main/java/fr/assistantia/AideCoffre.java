@@ -1,60 +1,88 @@
 package fr.assistantia;
 
+import fr.assistantia.DispositionCoffre.Disposition;
+import fr.assistantia.DispositionCoffre.Zone;
 import java.util.List;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.layouts.LayoutElement;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-/** Retrait de l'arbre EMI courant, indépendant de l'objectif et du bouton de repérage. */
+/**
+ * Retrait de l'arbre EMI courant dans un coffre. Le panneau se place hors de l'interface du coffre
+ * (voir DispositionCoffre), se réserve sa place auprès d'EMI et se coupe dans les réglages.
+ */
 public final class AideCoffre {
-    private static final int PAGE = 8, ICONE = 20, LARGEUR = 232;
     private static AbstractContainerScreen<?> ecran;
-    private static Button transferer, tout, avant, apres;
+    private static Zone occupee;
+    private static Disposition disposition;
     private static RetraitCoffre.Plan plan = new RetraitCoffre.Plan(List.of(), 0);
     private static List<ItemStack> objets = List.of();
     private static ItemStack choisi = ItemStack.EMPTY;
     private static long actualise;
-    private static int page, x, y;
+    private static int page;
+
+    private AideCoffre() {}
 
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post event) {
         ecran = null;
+        vider();
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)
                 || !RetraitCoffre.estCoffre(screen.getMenu())) return;
         ecran = screen;
-        page = 0;
-        actualise = 0;
-        objets = List.of();
-        choisi = ItemStack.EMPTY;
-        x = Math.max(2, Math.min(screen.getGuiLeft(), screen.width - LARGEUR - 2));
-        y = Math.max(2, screen.getGuiTop() - 54);
-        transferer =
-                Button.builder(Component.literal("Transférer les items"), b -> agir(false))
-                        .bounds(x, y + 32, 124, 18)
-                        .build();
-        tout =
-                Button.builder(Component.literal("Tout récupérer"), b -> agir(true))
-                        .bounds(x + 128, y + 32, 104, 18)
-                        .build();
-        avant =
-                Button.builder(Component.literal("‹"), b -> page = Math.max(0, page - 1))
-                        .bounds(x + PAGE * ICONE + 4, y + 11, 28, 18)
-                        .build();
-        apres =
-                Button.builder(
-                                Component.literal("›"),
-                                b -> page = Math.min((objets.size() - 1) / PAGE, page + 1))
-                        .bounds(x + PAGE * ICONE + 36, y + 11, 28, 18)
-                        .build();
-        for (Button b : List.of(transferer, tout, avant, apres)) {
-            b.visible = false;
-            event.addListener(b);
+        occupee = occupee(screen);
+    }
+
+    /** L'interface, ses cases (upgrades comprises) et les widgets ajoutés autour par son mod. */
+    private static Zone occupee(AbstractContainerScreen<?> screen) {
+        int gauche = screen.getGuiLeft(), haut = screen.getGuiTop();
+        Zone zone = new Zone(gauche, haut, screen.getXSize(), screen.getYSize());
+        for (Slot s : screen.getMenu().slots)
+            if (s.isActive())
+                zone = ajouter(screen, zone, new Zone(gauche + s.x - 1, haut + s.y - 1, 18, 18));
+        for (GuiEventListener enfant : screen.children())
+            zone = ajouter(screen, zone, zone(enfant));
+        return zone;
+    }
+
+    /** Ignore ce qui est caché hors de l'écran ou couvre la moitié de l'écran. */
+    private static Zone ajouter(Screen screen, Zone zone, Zone morceau) {
+        if (morceau == null
+                || morceau.largeur() <= 0
+                || morceau.hauteur() <= 0
+                || morceau.x() < 0
+                || morceau.y() < 0
+                || morceau.droite() > screen.width
+                || morceau.bas() > screen.height
+                || morceau.largeur() * morceau.hauteur() > screen.width * screen.height / 2)
+            return zone;
+        return zone.union(morceau);
+    }
+
+    private static Zone zone(GuiEventListener enfant) {
+        if (enfant instanceof LayoutElement e)
+            return new Zone(e.getX(), e.getY(), e.getWidth(), e.getHeight());
+        try { // Onglets de Sophisticated Storage : mêmes accesseurs, sans l'interface vanilla.
+            Class<?> type = enfant.getClass();
+            return new Zone(
+                    (Integer) type.getMethod("getX").invoke(enfant),
+                    (Integer) type.getMethod("getY").invoke(enfant),
+                    (Integer) type.getMethod("getWidth").invoke(enfant),
+                    (Integer) type.getMethod("getHeight").invoke(enfant));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
         }
     }
 
@@ -62,11 +90,22 @@ public final class AideCoffre {
         plan = new RetraitCoffre.Plan(List.of(), 0);
         objets = List.of();
         choisi = ItemStack.EMPTY;
+        disposition = null;
         page = 0;
         actualise = 0;
-        if (transferer != null)
-            for (Button bouton : List.of(transferer, tout, avant, apres))
-                bouton.visible = bouton.active = false;
+    }
+
+    /** La place du panneau affiché, pour qu'EMI n'y pose pas ses listes d'objets. */
+    public static Zone zoneEmi(Screen screen) {
+        return screen == ecran && disposition != null ? disposition.cadre() : null;
+    }
+
+    /** Coffre ouvert, réglage actif et arbre EMI en cours ; sinon le panneau disparaît. */
+    private static boolean actif(Screen screen) {
+        if (screen != ecran || ecran == null) return false;
+        if (Pont.retraitCoffres() && Emi.arbreActif()) return true;
+        if (disposition != null || !objets.isEmpty()) vider();
+        return false;
     }
 
     private static void actualiser() {
@@ -74,15 +113,20 @@ public final class AideCoffre {
         objets = plan.objets();
         if (objets.stream().noneMatch(i -> ItemStack.isSameItemSameTags(i, choisi)))
             choisi = objets.isEmpty() ? ItemStack.EMPTY : objets.get(0);
-        page = Math.min(page, Math.max(0, (objets.size() - 1) / PAGE));
+        disposition =
+                objets.isEmpty()
+                        ? null
+                        : DispositionCoffre.calculer(
+                                ecran.width, ecran.height, occupee, objets.size());
+        page = disposition == null ? 0 : Math.min(page, derniere());
         actualise = System.currentTimeMillis();
     }
 
+    private static int derniere() {
+        return (objets.size() - 1) / disposition.parPage();
+    }
+
     private static void agir(boolean tous) {
-        if (!Emi.arbreActif()) {
-            vider();
-            return;
-        }
         if (RetraitCoffre.occupe() || ecran == null) return;
         // Le clic utilise l'arbre et les slots actuels, jamais le plan mis en cache pour le rendu.
         ItemStack selection = choisi.copy();
@@ -93,99 +137,154 @@ public final class AideCoffre {
 
     @SubscribeEvent
     public static void avantRendu(ScreenEvent.Render.Pre event) {
-        if (event.getScreen() != ecran || transferer == null) return;
-        if (!Emi.arbreActif()) {
-            vider();
-            return;
-        }
-        boolean occupe = RetraitCoffre.occupe();
-        if (!occupe && System.currentTimeMillis() - actualise >= 400) actualiser();
-        transferer.visible = tout.visible = !objets.isEmpty();
-        transferer.active = !occupe && plan.pour(choisi).total() > 0;
-        tout.active = !occupe && plan.total() > 0;
-        avant.visible = apres.visible = objets.size() > PAGE;
-        avant.active = !occupe && page > 0;
-        apres.active = !occupe && (page + 1) * PAGE < objets.size();
-        transferer.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Transférer "
-                                        + plan.pour(choisi).total()
-                                        + " objets sélectionnés")));
-        tout.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Récupérer les "
-                                        + plan.total()
-                                        + " objets manquants de l’arbre disponibles ici")));
+        if (!actif(event.getScreen())) return;
+        if (!RetraitCoffre.occupe() && System.currentTimeMillis() - actualise >= 400) actualiser();
     }
 
     @SubscribeEvent
     public static void rendu(ScreenEvent.Render.Post event) {
-        if (event.getScreen() != ecran || objets.isEmpty()) return;
-        if (!Emi.arbreActif()) {
-            vider();
-            return;
-        }
-        var g = event.getGuiGraphics();
-        var font = Minecraft.getInstance().font;
-        // Les boutons et les flèches sont rendus par Minecraft, hors de ces deux fonds.
-        g.fill(x - 3, y - 3, x + LARGEUR + 3, y + 10, 0xD00D1013);
-        g.fill(x - 3, y + 10, x + PAGE * ICONE + 2, y + 30, 0xD00D1013);
+        if (!actif(event.getScreen()) || disposition == null) return;
+        Disposition d = disposition;
+        Zone c = d.cadre();
+        GuiGraphics g = event.getGuiGraphics();
+        Font font = Minecraft.getInstance().font;
+        int mx = event.getMouseX(), my = event.getMouseY();
+        boolean occupe = RetraitCoffre.occupe();
+        g.fill(c.x(), c.y(), c.droite(), c.bas(), 0xE00D1013);
+        g.renderOutline(c.x(), c.y(), c.largeur(), c.hauteur(), 0x60FFC94A);
         String titre =
-                RetraitCoffre.occupe()
+                occupe
                         ? "Transfert…"
-                        : "Arbre EMI · " + plan.total() + " objets disponibles";
-        g.drawString(font, font.plainSubstrByWidth(titre, LARGEUR), x, y, Hud.OR, false);
-        for (int n = page * PAGE; n < Math.min(objets.size(), (page + 1) * PAGE); n++) {
+                        : (d.vertical() ? "EMI · " : "Arbre EMI · ")
+                                + plan.total()
+                                + (d.vertical() ? "" : " à prendre ici");
+        int interieur = c.largeur() - 2 * DispositionCoffre.BORD;
+        g.drawString(
+                font,
+                font.plainSubstrByWidth(titre, interieur),
+                c.x() + DispositionCoffre.BORD,
+                c.y() + DispositionCoffre.BORD + 1,
+                Hud.OR,
+                false);
+        List<Component> infobulle = null;
+        for (int rang = 0; rang < d.parPage(); rang++) {
+            int n = page * d.parPage() + rang;
+            if (n >= objets.size()) break;
             ItemStack item = objets.get(n);
-            int ix = x + (n % PAGE) * ICONE, iy = y + 11;
-            g.fill(
-                    ix - 1,
-                    iy - 1,
-                    ix + 17,
-                    iy + 17,
-                    ItemStack.isSameItemSameTags(item, choisi) ? 0x90FFC94A : 0x30FFFFFF);
+            Zone z = d.icone(rang);
+            boolean selection = ItemStack.isSameItemSameTags(item, choisi);
+            g.fill(z.x(), z.y(), z.droite(), z.bas(), selection ? 0x90FFC94A : 0x30FFFFFF);
             ItemStack icone = item.copy();
             icone.setCount(1);
-            g.renderItem(icone, ix, iy);
-            if (surIcone(event.getMouseX(), event.getMouseY(), n))
-                g.renderComponentTooltip(
-                        font,
+            int quantite = plan.pour(item).total();
+            g.renderItem(icone, z.x() + 1, z.y() + 1);
+            g.renderItemDecorations(font, icone, z.x() + 1, z.y() + 1, nombre(quantite));
+            if (z.contient(mx, my))
+                infobulle =
                         List.of(
                                 item.getHoverName(),
-                                Component.literal(
-                                        plan.pour(item).total()
-                                                + " à récupérer · Clic : sélectionner")),
-                        event.getMouseX(),
-                        event.getMouseY());
+                                Component.literal(quantite + " à prendre · Clic : choisir")
+                                        .withStyle(s -> s.withColor(Hud.GRIS)));
         }
+        if (d.pages()) {
+            bouton(g, font, d.precedent(), "‹", !occupe && page > 0, mx, my);
+            bouton(g, font, d.suivant(), "›", !occupe && page < derniere(), mx, my);
+            if (d.vertical()) {
+                String numero = (page + 1) + "/" + (derniere() + 1);
+                g.drawString(
+                        font,
+                        numero,
+                        c.x() + (c.largeur() - font.width(numero)) / 2,
+                        d.precedent().y() + 3,
+                        Hud.GRIS,
+                        false);
+            }
+        }
+        int choix = plan.pour(choisi).total(), tout = plan.total();
+        bouton(g, font, d.prendre(), "Prendre", !occupe && choix > 0, mx, my);
+        bouton(g, font, d.tout(), "Tout", !occupe && tout > 0, mx, my);
+        if (d.prendre().contient(mx, my))
+            infobulle =
+                    List.of(
+                            Component.literal(
+                                    "Prendre " + choix + " " + choisi.getHoverName().getString()));
+        else if (d.tout().contient(mx, my))
+            infobulle =
+                    List.of(
+                            Component.literal(
+                                    "Prendre les " + tout + " objets de l’arbre présents ici"));
+        if (infobulle != null) g.renderComponentTooltip(font, infobulle, mx, my);
     }
 
-    private static boolean surIcone(double mx, double my, int n) {
-        int ix = x + (n % PAGE) * ICONE;
-        return mx >= ix - 1 && mx < ix + 17 && my >= y + 10 && my < y + 28;
+    private static String nombre(int n) {
+        return n < 1000 ? String.valueOf(n) : n / 1000 + "k";
+    }
+
+    private static void bouton(
+            GuiGraphics g, Font font, Zone z, String texte, boolean actif, int mx, int my) {
+        int fond = !actif ? 0xC0303030 : z.contient(mx, my) ? 0xFF417486 : 0xFF293C44;
+        g.fill(z.x(), z.y(), z.droite(), z.bas(), fond);
+        g.renderOutline(z.x(), z.y(), z.largeur(), z.hauteur(), actif ? 0xFF40E0FF : 0xFF555555);
+        String t = font.plainSubstrByWidth(texte, z.largeur() - 4);
+        g.drawString(
+                font,
+                t,
+                z.x() + (z.largeur() - font.width(t)) / 2,
+                z.y() + (z.hauteur() - 8) / 2,
+                actif ? 0xFFFFFF : 0x808080,
+                false);
+    }
+
+    private static void tourner(int sens) {
+        page = Math.max(0, Math.min(derniere(), page + sens));
+    }
+
+    private static boolean surPanneau(Screen screen, double mx, double my) {
+        return actif(screen) && disposition != null && disposition.cadre().contient(mx, my);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
-        if (event.getScreen() != ecran || objets.isEmpty()) return;
-        if (!Emi.arbreActif()) {
-            vider();
-            return;
-        }
-        for (Button b : List.of(transferer, tout, avant, apres))
-            if (b.visible && b.isMouseOver(event.getMouseX(), event.getMouseY())) {
-                if (b.active)
-                    b.mouseClicked(event.getMouseX(), event.getMouseY(), event.getButton());
-                event.setCanceled(true);
-                return;
+        double mx = event.getMouseX(), my = event.getMouseY();
+        if (!surPanneau(event.getScreen(), mx, my)) return;
+        event.setCanceled(true); // jamais de clic qui traverse vers le coffre ou EMI
+        if (event.getButton() != 0 || RetraitCoffre.occupe()) return;
+        Disposition d = disposition;
+        if (d.prendre().contient(mx, my)) {
+            son();
+            agir(false);
+        } else if (d.tout().contient(mx, my)) {
+            son();
+            agir(true);
+        } else if (d.pages() && d.precedent().contient(mx, my)) tourner(-1);
+        else if (d.pages() && d.suivant().contient(mx, my)) tourner(1);
+        else
+            for (int rang = 0; rang < d.parPage(); rang++) {
+                int n = page * d.parPage() + rang;
+                if (n < objets.size() && d.icone(rang).contient(mx, my)) {
+                    choisi = objets.get(n);
+                    return;
+                }
             }
-        for (int n = page * PAGE; n < Math.min(objets.size(), (page + 1) * PAGE); n++)
-            if (surIcone(event.getMouseX(), event.getMouseY(), n)) {
-                if (event.getButton() == 0 && !RetraitCoffre.occupe()) choisi = objets.get(n);
-                event.setCanceled(true);
-                return;
-            }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void relache(ScreenEvent.MouseButtonReleased.Pre event) {
+        if (surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY()))
+            event.setCanceled(true);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void molette(ScreenEvent.MouseScrolled.Pre event) {
+        if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
+        event.setCanceled(true);
+        if (disposition.pages() && !RetraitCoffre.occupe())
+            tourner(event.getScrollDelta() > 0 ? -1 : 1);
+    }
+
+    private static void son() {
+        Minecraft.getInstance()
+                .getSoundManager()
+                .play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
     }
 }

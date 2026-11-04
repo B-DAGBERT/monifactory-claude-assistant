@@ -94,6 +94,9 @@ class EmiTests(unittest.TestCase):
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 
+    def test_chest_panel_never_covers_the_chest(self):
+        self._run_java_contract("DispositionCoffre")
+
     def _run_java_contract(self, name):
         java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
         if not (java_home / "bin/javac").exists():

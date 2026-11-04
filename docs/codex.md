@@ -12,7 +12,7 @@ Le code est sous la licence MIT d'origine ; les auteurs et la licence sont conse
 
 Les écrans **Objectif, Plan, Base, Discussion, Filons, Réglages**, les fiches avec **I**, les étapes cochables,
 les plans et objectifs automatiques, le calcul des besoins, la mémoire des coffres et des lieux,
-la recherche et la surbrillance des objets, le guidage, les alertes et le coach, les recettes EMI,
+la recherche et la surbrillance des objets, le guidage, les annonces de progression, les recettes EMI,
 les boutons **Remplir / Tout**, les caractéristiques des outils et le script serveur facultatif.
 Les deux scripts KubeJS sont identiques à ceux de la révision d'origine indiquée ci-dessus.
 
@@ -136,7 +136,7 @@ Dans **Y → Objectif** (ou **Plan**), cliquer sur **Mettre en pause**. Le bouto
 Les étapes, compteurs et recettes sont conservés, même après fermeture de l'assistant.
 Les objets obtenus pendant la pause restent comptés pour la reprise. Les rappels de
 progression, le guidage automatique de l'objectif et l'enchaînement sont suspendus.
-Les questions, recherches manuelles et alertes de danger restent disponibles.
+Les questions et recherches manuelles restent disponibles.
 Reprendre avant de remplacer l'objectif du projet actif ; choisir un autre projet conserve sa pause.
 Supprimer l'objectif reste possible depuis Discussion.
 On peut aussi demander « mets mon objectif en pause » ou « reprends mon objectif » dans Discussion.

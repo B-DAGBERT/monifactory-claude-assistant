@@ -4,7 +4,10 @@ import dev.emi.emi.api.EmiEntrypoint;
 import dev.emi.emi.api.EmiPlugin;
 import dev.emi.emi.api.EmiRegistry;
 import dev.emi.emi.api.recipe.EmiRecipe;
+import dev.emi.emi.api.widget.Bounds;
 import dev.emi.emi.api.widget.Widget;
+import fr.assistantia.AideCoffre;
+import fr.assistantia.Pont;
 import fr.assistantia.RetraitCoffre;
 import dev.emi.emi.api.EmiApi;
 import com.mojang.logging.LogUtils;
@@ -24,6 +27,14 @@ public final class AssistantEmiPlugin implements EmiPlugin {
     @Override
     public void register(EmiRegistry registry) {
         brancher();
+        // EMI range ses listes d'objets autour du panneau de retrait au lieu de passer dessous.
+        registry.addGenericExclusionArea(
+                (screen, zones) -> {
+                    var zone = AideCoffre.zoneEmi(screen);
+                    if (zone != null)
+                        zones.accept(
+                                new Bounds(zone.x(), zone.y(), zone.largeur(), zone.hauteur()));
+                });
     }
 
     private static synchronized void brancher() {
@@ -31,7 +42,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
             MinecraftForge.EVENT_BUS.register(AssistantEmiPlugin.class);
             MinecraftForge.EVENT_BUS.register(CoffresArbreEmi.class);
             MinecraftForge.EVENT_BUS.register(CycleArbreEmi.class);
-            MinecraftForge.EVENT_BUS.register(fr.assistantia.AideCoffre.class);
+            MinecraftForge.EVENT_BUS.register(AideCoffre.class);
             branche = true;
         }
     }
@@ -57,7 +68,11 @@ public final class AssistantEmiPlugin implements EmiPlugin {
                 @SuppressWarnings("unchecked")
                 List<Widget> children = (List<Widget>) widgetsDeGroupe.get(group);
                 var container = EmiApi.getHandledScreen();
-                if (container != null && RetraitCoffre.estCoffre(container.getMenu())) {
+                boolean coffre =
+                        container != null
+                                && RetraitCoffre.estCoffre(container.getMenu())
+                                && Pont.retraitCoffres();
+                if (coffre) {
                     for (int i = 0; i < children.size(); i++) {
                         Widget child = children.get(i);
                         if (child.getClass()
@@ -66,7 +81,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
                             children.set(i, new RecuperationEmi.Bouton(child));
                     }
                 }
-                if (container == null || !RetraitCoffre.estCoffre(container.getMenu())) {
+                if (!coffre) {
                     for (int i = 0; i < children.size(); i++)
                         if (children.get(i) instanceof RecuperationEmi.Bouton retrait)
                             children.set(i, retrait.original());

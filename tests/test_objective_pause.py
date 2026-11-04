@@ -52,9 +52,6 @@ METHODS = {
     "reopen_objective",
     "coach",
     "flush_coach",
-    "check_stuck",
-    "start_briefing",
-    "on_coach_message",
 }
 
 
@@ -135,14 +132,14 @@ class ObjectivePauseTests(unittest.TestCase):
             {"titre": "Deux pioches", "demande": "Pioches", "etat": "en_cours"},
             {"titre": "Miner", "demande": "Miner", "etat": "a_faire"},
         ]
-        a.busy = a.coach_busy = False
-        a.last_progress = a.last_moved = 0
+        a.busy = False
+        a.last_progress = 0
         a.plan_done_announced = False
         a.game = {"inventaire": {}}
         a.storage = SimpleNamespace(totals=lambda: {}, placed=lambda: {})
         a.last_totals = a.target_totals()
         a.obtained = dict(a.last_totals)
-        a.settings = {"enchainer": True, "coach": True}
+        a.settings = {"enchainer": True, "progression": True}
         a.root = SimpleNamespace(after=Mock())
         a.notify, a.refresh, a.journal, a.add_history = Mock(), Mock(), Mock(), Mock()
         a.coach_queue, a.coach_times = [], {}
@@ -272,23 +269,14 @@ class ObjectivePauseTests(unittest.TestCase):
         a.on_next_objective.assert_not_called()
         self.assertFalse(json.loads(self.path.read_text())["objectif_en_pause"])
 
-    def test_pause_keeps_safety_alerts_but_drops_progress_and_briefing(self):
+    def test_pause_drops_progress_announcements(self):
         a = self.app
-        a.coach_queue = [
-            ("Ancienne étape", True, "progression"),
-            ("Reprise", True, "briefing"),
-            ("Danger", True, "coach"),
-        ]
+        a.coach_queue = [("Ancienne étape", True, "progression")]
         a.set_objective_paused(True)
-        self.assertEqual(a.coach_queue, [("Danger", True, "coach")])
+        self.assertEqual(a.coach_queue, [])
+        a.coach("Étape faite pendant la pause.")
         a.flush_coach()
-        a.add_history.assert_called_once_with("claude", "Danger")
-        a.on_coach_message("Réponse retardée", "progression")
-        a.on_coach_message("Briefing retardé", "briefing")
-        a.add_history.assert_called_once()
-        a.check_stuck({}, time.time())
-        a.start_briefing()
-        self.assertFalse(a.coach_busy)
+        a.add_history.assert_not_called()
 
     def test_manual_step_validation_is_kept_during_pause(self):
         a = self.app
@@ -309,7 +297,7 @@ class ObjectivePauseTests(unittest.TestCase):
         a.search, a.info, a.guide = None, None, None
         a.message, a.message_until, a.history = "", 0, []
         a.recipe_index, a.veins = None, []
-        a.settings.update(machines=False, surbrillance=True, faisceaux=True, remplir=True)
+        a.settings.update(surbrillance=True, faisceaux=True, remplir=True, coffres=False)
         build = a.progress.__globals__["build_mod_view"]
         a.question_ack = {"n": 123, "etat": "acceptee"}
         a.mod_request_n = 123
@@ -318,6 +306,8 @@ class ObjectivePauseTests(unittest.TestCase):
         self.assertEqual(active["ecran"]["derniere_demande"], 123)
         self.assertTrue(active["hud"]["prochains"])
         self.assertTrue(active["besoins"])
+        self.assertFalse(active["retrait_coffres"])
+        self.assertNotIn("marqueurs", active)
         a.set_objective_paused(True)
         paused = build(a)
         self.assertTrue(paused["ecran"]["objectif_en_pause"])

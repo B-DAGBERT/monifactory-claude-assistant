@@ -68,9 +68,7 @@ MODEL_QUESTION = ai_provider.model("question")
 MODEL_QUICK = ai_provider.model("quick")
 EFFORT_QUESTION = "low"  # réflexion avant de répondre : "low" (rapide), "medium", "high"
 EFFORT_PLAN = "medium"
-COACH = "normal"  # "calme" : seulement les dangers ; "normal" ; "bavard" : il commente tout
-BRIEFING_PAUSE = 20  # briefing de reprise seulement après au moins 20 minutes sans jouer
-STUCK_MINUTES = 15  # au bout de combien de minutes sans avancer le coach propose son aide
+COACH = "normal"  # "calme" : aucune annonce ; "normal" ; "bavard" : il commente tout
 SEARCH_MINUTES = 10  # durée de la surbrillance demandée (« trouve-moi mes torches »)
 # Réglages modifiables dans le jeu (écran Y > Réglages) et gardés dans reglages.json :
 # clé : (nom affiché, ce que ça fait, valeur par défaut)
@@ -85,25 +83,9 @@ SETTINGS = {
         "L'objectif, l'étape en cours et les objets utiles, en haut à gauche.",
         True,
     ),
-    "briefing": (
-        "Briefing de reprise",
-        "Quand tu reprends la partie, un point sur où tu en étais.",
-        True,
-    ),
-    "coach": (
-        "Conseils automatiques",
-        "Dangers, mort, nuit loin de la base, faim, inventaire plein, aide si tu n'avances plus.",
-        True,
-    ),
     "progression": (
         "Annonces de progression",
         "Étapes et quêtes terminées, nouveaux filons, machines retenues.",
-        True,
-    ),
-    "machines": (
-        "Alertes des machines",
-        "Boiler à sec, machine en attente, multibloc cassé : messages, panneau "
-        "et faisceaux au-dessus des machines.",
         True,
     ),
     "enchainer": (
@@ -122,8 +104,13 @@ SETTINGS = {
         True,
     ),
     "remplir": (
-        "Boutons Remplir",
-        "À l'établi, la fabrication attendue avec Remplir et Tout.",
+        "Remplissage de l'établi",
+        "À l'établi, les boutons Remplir et Tout pour la fabrication attendue.",
+        True,
+    ),
+    "coffres": (
+        "Retrait depuis les coffres",
+        "Dans un coffre, le panneau qui prend les ingrédients de l'arbre EMI en cours.",
         True,
     ),
 }
@@ -147,7 +134,7 @@ WORLD_FILE = (
 INFO_FILE = HERE / "fiches.json"  # fiches « à quoi ça sert » déjà rédigées par Codex (touche I)
 SETTINGS_FILE = HERE / "reglages.json"
 COACH_LEVELS = {"calme": 0, "normal": 1, "bavard": 2}
-DANGER, USEFUL, CHATTY = 0, 1, 2  # niveau minimal du coach pour chaque message
+USEFUL, CHATTY = 1, 2  # niveau minimal du coach pour chaque message
 LOG_FILE = HERE / "assistant.log"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 SAMPLE_RATE = 16000
@@ -761,23 +748,6 @@ class World:
                 continue
             kept.append(b)
         return kept
-
-    def alerts(self):
-        """Lignes d'alerte permanentes pour le panneau tant que le problème dure."""
-        lines = []
-        for m in self.machines():
-            state = m["etat"]
-            if "eau" in state and state.get("se") and state["t"][0] >= 100:
-                lines.append(
-                    f"⚠ {m['nom']} à sec en {m['x']} {m['y']} {m['z']} : NE REMETS PAS D'EAU"
-                )
-        waiting = [m for m in self.machines() if m["etat"].get("s") == "WAITING"]
-        if waiting:
-            lines.append(
-                f"⚙ {len(waiting)} machine{'s' if len(waiting) > 1 else ''} en attente : "
-                + ", ".join(m["nom"] for m in waiting[:3])
-            )
-        return lines
 
     def machines(self):
         return [b for b in self.blocks.values() if b.get("etat") is not None]
@@ -1731,14 +1701,13 @@ def build_mod_view(app):
             return f"filon · {where_hint(vein, state)}", vein
         return "", None
 
-    machine_alerts = app.settings["machines"] and app.world.active
     hud = {
         "visible": app.visible,
         "recharger": app.bridge.script_outdated(state),
         "statut": app.status,
         "mise_a_jour": getattr(app, "update_notice", ""),
         "mise_a_jour_id": getattr(app, "update_notice_id", ""),
-        "alertes": app.world.alerts()[:2] if machine_alerts else [],
+        "alertes": [],
         "prochains": [],
         "direction": None,
     }
@@ -1958,28 +1927,6 @@ def build_mod_view(app):
             }
             beams.append(target)
             hud["direction"] = hud["direction"] or target
-    markers = []
-    if machine_alerts:
-        for m in app.world.machines():
-            st = m["etat"]
-            color = (
-                "rouge"
-                if "eau" in st and st.get("se") and st["t"][0] >= 100
-                else "jaune"
-                if st.get("s") == "WAITING"
-                else None
-            )
-            if color:
-                markers.append(
-                    {
-                        "x": m["x"],
-                        "y": m["y"],
-                        "z": m["z"],
-                        "dimension": m["dimension"],
-                        "label": m["nom"],
-                        "couleur": color,
-                    }
-                )
     live = app.message if app.message and not app.message_until else ""
     bubble = None
     if app.message and (not app.message_until or now < app.message_until):
@@ -2057,7 +2004,7 @@ def build_mod_view(app):
                 "etape": "Reprendre dans Y > Objectif",
                 "etape_num": "",
                 "prochains": [],
-                "alertes": app.world.alerts()[:2] if machine_alerts else [],
+                "alertes": [],
             }
         )
         needed.clear()
@@ -2076,10 +2023,10 @@ def build_mod_view(app):
         "bulle": bubble,
         "besoins": sorted(needed) if on["surbrillance"] else [],
         "guidage": beams if on["faisceaux"] else [],
-        "marqueurs": markers,
         "ecran": screen,
         "recette": recipe_now if on["remplir"] else None,
         "fabrications": crafts if on["remplir"] else [],
+        "retrait_coffres": on["coffres"],
         "recherche": search,
         "recherche_emi": app.emi_search.view(app.bridge, storage, state, now)
         if hasattr(app, "emi_search")
@@ -2505,8 +2452,8 @@ class App:
         self.session_open = False
         self.game_lost_at = 0
         self.previous_state = None
-        self.coach_times, self.coach_queue, self.coach_busy = {}, [], False
-        self.last_progress = self.last_moved = time.time()
+        self.coach_times, self.coach_queue = {}, []
+        self.last_progress = time.time()
         self.quests_read, self.quest_titles = 0, None
         self.known_machines = self.known_veins = None
         self.removed_chests = []  # coffres retirés de la mémoire : (heure, coffre, cassé tout seul ?)
@@ -2687,7 +2634,7 @@ class App:
         previous_projects = copy.deepcopy(self.projects.projects)
         previous_state = self.project_snapshot()
         try:
-            if self.busy or self.coach_busy:
+            if self.busy:
                 raise ValueError("Attends la fin de la réponse avant de changer de projet.")
             if request.get("origine") != self.projects.active:
                 raise ValueError("Le projet actif a changé. Rouvre le sélecteur.")
@@ -2764,9 +2711,7 @@ class App:
         if not paused:
             self.plan_done_announced = False
         self.coach_queue = [
-            (text, speak, kind)
-            for text, speak, kind in self.coach_queue
-            if kind not in ("progression", "briefing")
+            (text, speak, kind) for text, speak, kind in self.coach_queue if kind != "progression"
         ]
         self.save_plan()
         self.notify(
@@ -2871,7 +2816,7 @@ class App:
             self.check_craftable()
             if state:
                 self.check_game(state)
-                self.check_coach(state)
+                self.check_death(state)
                 self.previous_state = state
             self.flush_coach()
         except Exception:
@@ -2895,9 +2840,7 @@ class App:
         self.client_storage = client
         snapshot = self.bridge.read("monde.json")  # ce que voit le script serveur
         if snapshot and snapshot.get("t", 0) > self.world.last_t:
-            before = {k: dict(v) for k, v in self.world.blocks.items()}
             if self.world.update(snapshot):
-                self.check_world_alerts(before)
                 for error in self.world.errors:
                     if error not in self.logged_errors:
                         self.logged_errors.add(error)
@@ -3039,13 +2982,7 @@ class App:
         if self.session_open:
             return
         self.session_open = True
-        last = self.journal_tail(
-            1
-        )  # un retour après une courte pause (ou un redémarrage de l'assistant) : pas de briefing
-        away = bool(last) and time.time() - last[-1]["t"] > BRIEFING_PAUSE * 60
         self.journal("session", "Début de la partie")
-        if self.settings["briefing"] and away:
-            self.root.after(15000, self.start_briefing)
         if not self.plan:
             # Pas d'objectif en arrivant : l'assistant prépare le suivant du plan (ou un nouveau plan s'il n'y en a pas)
             epoch = self.objective_epoch
@@ -3096,96 +3033,17 @@ class App:
                 )
         self.known_veins = set(materials)
 
-    def check_world_alerts(self, before):
-        """Alertes sur les machines vues par le serveur : boiler à sec, machine bloquée, multibloc cassé."""
-        machines = self.world.machines()
-        boilers = [m for m in machines if "eau" in m["etat"]]
-        # Les machines à vapeur tournent sur la réserve alors que tous les boilers sont éteints : prévenir avant la panne
-        if boilers and all(b["etat"]["t"][0] < 100 for b in boilers):
-            for m in machines:
-                state = m["etat"]
-                if (
-                    "eau" not in state
-                    and "vap" in state
-                    and state.get("s") == "WORKING"
-                    and state["vap"][1]
-                    and state["vap"][0] / state["vap"][1] < 0.6
-                ):
-                    self.coach(
-                        f"Tes boilers sont éteints : ton {m['nom']} tourne sur sa réserve de Steam "
-                        f"({round(100 * state['vap'][0] / state['vap'][1])} %) et va bientôt s'arrêter. "
-                        "Remets du combustible.",
-                        USEFUL,
-                        cooldown=600,
-                        key="boilers éteints",
-                        kind="machines",
-                    )
-                    break
-        for m in machines:
-            state, key = m["etat"], m["cle"]
-            old = (before.get(key) or {}).get("etat") or {}
-            where = f"{m['nom']} en {m['x']} {m['y']} {m['z']}"
-            if "eau" in state:
-                water, capacity = state["eau"]
-                hot = state["t"][0] >= 100
-                if state.get("se") and hot:
-                    self.coach(
-                        f"Danger : le {where} est à sec et chaud. Ne lui remets surtout pas d'eau, il "
-                        "exploserait : retire le combustible et laisse-le refroidir.",
-                        DANGER,
-                        cooldown=120,
-                        key="à sec " + key,
-                        kind="machines",
-                    )
-                elif capacity and hot and water / capacity < 0.15:
-                    self.coach(
-                        f"Le {where} va manquer d'eau ({round(100 * water / capacity)} %).",
-                        USEFUL,
-                        cooldown=300,
-                        key="eau " + key,
-                        kind="machines",
-                    )
-            if state.get("s") == "WAITING" and old.get("s") == "WAITING" and state.get("r"):
-                self.coach(
-                    f"{where} est en attente : {state['r']}.",
-                    USEFUL,
-                    cooldown=600,
-                    key="attente " + key,
-                    kind="machines",
-                )
-            if (
-                old.get("s") == "WORKING"
-                and state.get("s") == "IDLE"
-                and not re.search(r"boiler", m["bloc"])
-            ):
-                self.coach(
-                    f"{where} a fini : plus rien à faire.",
-                    CHATTY,
-                    cooldown=300,
-                    key="fini " + key,
-                    kind="machines",
-                )
-            if old.get("f") is True and state.get("f") is False:
-                self.coach(
-                    f"{where} n'est plus formé : il lui manque un bloc.",
-                    USEFUL,
-                    cooldown=600,
-                    key="formé " + key,
-                    kind="machines",
-                )
-
     # --- coach : il parle de lui-même au bon moment ---
 
-    def coach(self, text, level=USEFUL, cooldown=0, key=None, speak=True, kind="coach"):
-        """kind : la famille du message, que le joueur peut couper dans les réglages (coach, progression,
-        machines, briefing)."""
+    def coach(self, text, level=USEFUL, cooldown=0, key=None, speak=True, kind="progression"):
+        """kind : la famille du message, que le joueur peut couper dans les réglages (progression)."""
         if COACH_LEVELS.get(COACH, 1) < level or not self.settings.get(kind, True):
             return
         key = key or text
         if time.time() - self.coach_times.get(key, 0) < cooldown:
             return
         self.coach_times[key] = time.time()
-        if self.objective_paused and kind in ("progression", "briefing"):
+        if self.objective_paused and kind == "progression":
             return
         self.coach_queue.append((text, speak, kind))
         self.flush_coach()
@@ -3204,110 +3062,19 @@ class App:
     def on_history(self, who, text):
         self.add_history(who, text)
 
-    def check_coach(self, state):
+    def check_death(self, state):
+        """Retient l'endroit de la mort, sans message : « ramène-moi à ma dernière mort »."""
         before = self.previous_state
-        now = time.time()
-        if before and math.dist((before["x"], before["z"]), (state["x"], state["z"])) > 2:
-            self.last_moved = now
-        if not before:
+        if not before or not state.get("mort") or before.get("mort"):
             return
-        health, health_before = state.get("sante"), before.get("sante")
-        if state.get("mort") and not before.get("mort"):
-            self.places["dernière mort"] = {
-                "x": int(state["x"]),
-                "y": int(state["y"]),
-                "z": int(state["z"]),
-                "dimension": state["dimension"],
-            }
-            self.save_places()
-            self.journal("mort", f"en {int(state['x'])} {int(state['y'])} {int(state['z'])}")
-            self.coach(
-                f"Tu es mort en {int(state['x'])} {int(state['y'])} {int(state['z'])}. J'ai noté l'endroit : "
-                "dis « ramène-moi à ma dernière mort » pour récupérer tes affaires.",
-                DANGER,
-            )
-        elif health is not None and health_before is not None and health <= 6 < health_before:
-            self.coach(
-                f"Attention, plus que {health / 2:g} cœurs !", DANGER, cooldown=30, key="santé"
-            )
-        food, food_before = state.get("faim"), before.get("faim")
-        if food is not None and food_before is not None and food <= 6 < food_before:
-            self.coach("Tu as faim, pense à manger.", USEFUL, cooldown=300, key="faim")
-        hour, hour_before = state.get("heure"), before.get("heure")
-        if hour is not None and hour_before is not None and hour_before < 11800 <= hour:
-            base = self.places.get("base")
-            if base and base["dimension"] == state["dimension"]:
-                far = math.dist((base["x"], base["z"]), (state["x"], state["z"]))
-                if far > 48:
-                    self.coach(
-                        f"La nuit tombe dans une minute et tu es à {round(far)} blocs de ta base.",
-                        DANGER,
-                        cooldown=600,
-                        key="nuit",
-                    )
-            else:
-                self.coach("La nuit tombe dans une minute.", USEFUL, cooldown=600, key="nuit")
-        free, free_before = state.get("cases_libres"), before.get("cases_libres")
-        if free == 0 and free_before:
-            self.coach("Ton inventaire est plein.", USEFUL, cooldown=300, key="inventaire")
-        self.check_stuck(state, now)
-
-    def check_stuck(self, state, now):
-        """Pas d'avancée sur le plan depuis un moment alors que le joueur joue : le coach propose son aide."""
-        if (
-            not self.plan
-            or self.objective_paused
-            or self.busy
-            or self.coach_busy
-            or self.progress()["termine"]
-            or now - self.last_progress < STUCK_MINUTES * 60
-            or now - self.last_moved > 120
-            or now - self.coach_times.get("bloqué", 0) < 20 * 60
-            or COACH_LEVELS.get(COACH, 1) < USEFUL
-            or not self.settings["coach"]
-        ):
-            return
-        self.coach_times["bloqué"] = now
-        self.coach_busy = True
-        threading.Thread(
-            target=self.work_coach,
-            args=(
-                f"Le joueur n'a pas avancé sur son objectif depuis {STUCK_MINUTES} minutes. En 2 phrases au plus, "
-                "donne-lui un conseil concret pour se débloquer : quoi fabriquer, où aller, quelle machine utiliser.",
-                "progression",
-            ),
-            daemon=True,
-        ).start()
-
-    def start_briefing(self):
-        if self.objective_paused or self.busy or self.coach_busy or not self.game:
-            return
-        self.coach_busy = True
-        threading.Thread(
-            target=self.work_coach,
-            args=(
-                "Le joueur reprend sa partie. Fais-lui un briefing de reprise en 2 ou 3 phrases, sans formule de "
-                "politesse : où il en était la dernière fois (d'après le journal), ce qui a changé, et quoi faire "
-                "maintenant.",
-                "briefing",
-            ),
-            daemon=True,
-        ).start()
-
-    def work_coach(self, request, kind):
-        try:
-            prompt = (
-                f"{self.context(None, with_storage=True)}\n{self.describe_journal(60)}\n\n{request}"
-            )
-            answer = ask_claude(prompt, self.bridge.dir, MODEL_QUICK, effort="low")
-            self.events.put(("coach_message", readable(split_actions(answer)[0]), kind))
-        except Exception:
-            log(traceback.format_exc())
-        finally:
-            self.coach_busy = False
-
-    def on_coach_message(self, text, kind):
-        self.coach(text, USEFUL, kind=kind)
+        self.places["dernière mort"] = {
+            "x": int(state["x"]),
+            "y": int(state["y"]),
+            "z": int(state["z"]),
+            "dimension": state["dimension"],
+        }
+        self.save_places()
+        self.journal("mort", f"en {int(state['x'])} {int(state['y'])} {int(state['z'])}")
 
     def check_removed_chests(self, storage):
         """Signale les coffres qui ont disparu de la mémoire du jeu (cassés, ou oubliés à la demande)."""
@@ -3348,7 +3115,7 @@ class App:
                 self.bridge.script_outdated(self.game),
                 self.objectives,
                 self.veins,
-                self.world.alerts() if self.world.active and self.settings["machines"] else [],
+                (),
                 self.world.active,
             )
             if self.objective_paused and self.plan:

@@ -74,7 +74,6 @@ public final class Pont {
             }
             List<Cible> nouvellesCibles = new ArrayList<>();
             lireCibles(tableau(lu, "guidage"), 256, nouvellesCibles);
-            lireCibles(tableau(lu, "marqueurs"), 12, nouvellesCibles);
             JsonObject recherche =
                     lu.has("recherche") && lu.get("recherche").isJsonObject()
                             ? lu.getAsJsonObject("recherche")
@@ -157,6 +156,14 @@ public final class Pont {
 
     public static JsonObject vue() {
         return vue;
+    }
+
+    /**
+     * Réglage « coffres » : le panneau de retrait de l'arbre EMI. Actif si l'assistant n'en dit
+     * rien.
+     */
+    public static boolean retraitCoffres() {
+        return !vue.has("retrait_coffres") || vrai(vue, "retrait_coffres");
     }
 
     /** Une partie de la vue (hud, bulle, ecran, recette), ou un objet vide. */

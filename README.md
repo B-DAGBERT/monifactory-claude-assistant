@@ -104,14 +104,18 @@ EMI ouvertes depuis un coffre. Effacer ou remplacer l’arbre coupe aussi l’an
 ## Récupérer les ingrédients depuis un coffre
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
-au-dessus du coffre suit **le craft actif d’EMI**, même sans objectif dans l’assistant et sans
+de retrait suit **le craft actif d’EMI**, même sans objectif dans l’assistant et sans
 activer le repérage des coffres. Un arbre simplement consulté ou conservé après l’arrêt du craft
 ne propose aucun transfert. **Objectif EMI** et **Scanner coffres** activent explicitement le craft ;
 l’objectif seul n’active ni récupération ni surbrillance. Le sélecteur montre les objets manquants disponibles dans ce
-coffre ; ses flèches permettent de parcourir plus de huit objets.
+coffre, avec la quantité à prendre sur chaque icône ; ses flèches (ou la molette) parcourent les pages.
 
-- **Transférer les items** récupère la quantité manquante de l’objet sélectionné.
-- **Tout récupérer** prend tous les objets utiles à l’arbre disponibles dans ce coffre,
+Le panneau ne recouvre jamais le coffre : il se place au-dessus quand il y a la place, sinon en
+colonne sur le côté le plus libre, et EMI range ses listes d’objets autour de lui. Il se coupe dans
+**Y → Réglages → Retrait depuis les coffres**, indépendamment du remplissage de l’établi.
+
+- **Prendre** récupère la quantité manquante de l’objet sélectionné.
+- **Tout** prend tous les objets utiles à l’arbre disponibles dans ce coffre,
   en se limitant aux quantités manquantes. Les objets sans rapport restent dans le coffre.
 
 Les quantités suivent les branches encore nécessaires et le nombre de fabrications choisi dans EMI.
@@ -126,7 +130,8 @@ Sans arbre actif ou sans objet manquant disponible, le panneau n’apparaît pas
 
 Depuis une recette EMI ouverte avec un coffre, la flèche **↓** permet aussi de **tout récupérer
 pour l’arbre courant**. Il n’y a plus de mode « une fabrication » dans les coffres.
-Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habituel.
+Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habituel ; il se coupe
+dans **Y → Réglages → Remplissage de l’établi**.
 Le bouton **Scanner coffres** sert uniquement au repérage, sans déplacer d’objet.
 
 L’onglet **Objectif** affiche l’objectif, son avancement, les cibles finales et les machines
