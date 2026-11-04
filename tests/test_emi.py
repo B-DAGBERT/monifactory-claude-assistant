@@ -56,6 +56,17 @@ class EmiTests(unittest.TestCase):
         )
         self.assertEqual(result["cibles"], [{"item": "minecraft:torch", "quantite": 12}])
 
+    def test_placed_machines_are_not_added_to_the_emi_target(self):
+        # Deux chaudières posées, aucune sur lui : EMI n'en demande qu'une, pas trois
+        target = {"item": "gtceu:solid_boiler", "quantite": 1, "deja": 2, "deja_inventaire": 0}
+        result = objective_tree({"cibles": [target]})
+        self.assertEqual(result["cibles"], [{"item": "gtceu:solid_boiler", "quantite": 1}])
+        # Ancien plan sauvegardé sans deja_inventaire : calcul inchangé
+        legacy = objective_tree(
+            {"cibles": [{"item": "gtceu:solid_boiler", "quantite": 1, "deja": 2}]}
+        )
+        self.assertEqual(legacy["cibles"], [{"item": "gtceu:solid_boiler", "quantite": 3}])
+
     def test_chest_withdrawal_allocation(self):
         self._run_java_contract("PlanRetrait")
 

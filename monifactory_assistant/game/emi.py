@@ -9,7 +9,10 @@ def objective_tree(plan, project="", version=""):
         item = target.get("item")
         if not item:
             continue
-        quantity = max(1, int(target.get("quantite") or 1)) + max(0, int(target.get("deja") or 0))
+        # Les machines déjà posées ne comptent pas : le mod ne voit que l'inventaire du joueur.
+        # Les anciens plans sans deja_inventaire gardent leur calcul.
+        extra = target.get("deja_inventaire", target.get("deja"))
+        quantity = max(1, int(target.get("quantite") or 1)) + max(0, int(extra or 0))
         targets[item] = targets.get(item, 0) + quantity
     if not targets:
         return None

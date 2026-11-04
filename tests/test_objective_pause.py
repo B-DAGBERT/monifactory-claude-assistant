@@ -49,6 +49,7 @@ METHODS = {
     "action_reprendre_objectif",
     "handle_mod_request",
     "set_step",
+    "reopen_objective",
     "coach",
     "flush_coach",
     "check_stuck",
@@ -157,6 +158,30 @@ class ObjectivePauseTests(unittest.TestCase):
         self.assertTrue(restored.objective_paused)
         for key in ("plan", "objectives", "plan_version", "done_steps", "undone_steps", "obtained"):
             self.assertEqual(getattr(restored, key), getattr(a, key), key)
+
+    def test_unchecking_a_step_keeps_an_objective_done_by_its_targets(self):
+        a = self.app
+        a.reached = {"minecraft:stone_pickaxe"}
+        a.update_objective_progress()
+        self.assertEqual(a.objectives[0]["etat"], "fait")
+        a.set_step(1, False)
+        a.update_objective_progress()
+        a.notify.assert_called_once()  # pas de second « Objectif terminé »
+        a.root.after.assert_called_once()  # ni de second enchaînement
+        self.assertEqual(a.objectives[0]["etat"], "fait")
+
+    def test_unchecking_the_last_step_cancels_the_scheduled_next_objective(self):
+        a = self.app
+        a.on_next_objective = Mock()
+        a.set_step(1, True)
+        a.update_objective_progress()
+        self.assertEqual(a.objectives[0]["etat"], "fait")
+        scheduled = a.root.after.call_args.args[1]
+        a.set_step(1, False)  # cochée par erreur
+        scheduled()
+        a.on_next_objective.assert_not_called()
+        self.assertEqual(a.objectives[0]["etat"], "en_cours")
+        self.assertFalse(a.plan_done_announced)
 
     def test_old_save_defaults_to_active(self):
         self.app.save_plan()

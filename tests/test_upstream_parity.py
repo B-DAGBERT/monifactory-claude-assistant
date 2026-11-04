@@ -91,6 +91,9 @@ class ParityTests(unittest.TestCase):
             "World.merged",  # keep physical chest positions for recipe search, including matching neighbors
             "describe_veins",  # distinguish GT deposits from partial local block observations
             "find_veins",  # local scanner export, tested by test_filons.py
+            "nearest_vein",  # skip exhausted veins, like the mod does
+            "App.set_step",  # unchecking a step only reopens an objective that is no longer done
+            "App.update_objective_progress",  # remember which objective was marked done
         }
         # User-requested gameplay extension, covered by test_objective_pause.py.
         pause_changes = {

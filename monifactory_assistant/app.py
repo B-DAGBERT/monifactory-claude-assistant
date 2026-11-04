@@ -1495,7 +1495,10 @@ def nearest_vein(item, veins, state):
     candidates = [
         v
         for v in veins
-        if v["vus"] and v["minerai"] in path and v["dimension"] == state["dimension"]
+        if v["vus"]
+        and not v.get("epuise")  # épuisé selon GregTech ou marqué par le joueur, comme dans le mod
+        and v["minerai"] in path
+        and v["dimension"] == state["dimension"]
     ]
     return min(
         candidates,
@@ -2782,6 +2785,20 @@ class App:
         """L'index de l'objectif du plan en cours, ou None."""
         return next((i for i, o in enumerate(self.objectives) if o["etat"] == "en_cours"), None)
 
+    def reopen_objective(self):
+        """L'objectif annoncé fini ne l'est plus (étape décochée) : annuler l'enchaînement prévu
+        et le remettre en cours dans le plan."""
+        self.objective_epoch += 1
+        version, index = getattr(self, "finished_objective", (None, None))
+        if (
+            version == self.plan_version
+            and index is not None
+            and index < len(self.objectives)
+            and self.objectives[index]["etat"] == "fait"
+            and self.current_objective() is None
+        ):
+            self.objectives[index]["etat"] = "en_cours"
+
     def load_places(self):
         try:
             self.places = json.loads(PLACES_FILE.read_text(encoding="utf-8"))
@@ -2945,6 +2962,7 @@ class App:
                 current = self.current_objective()
                 if current is not None:
                     self.objectives[current]["etat"] = "fait"
+                    self.finished_objective = (self.plan_version, current)
                     self.save_plan()
                 remaining = any(o["etat"] == "a_faire" for o in self.objectives)
                 if remaining:
@@ -3911,9 +3929,12 @@ class App:
         self.obtained = dict(self.last_totals)
         have, placed = self.have(), self.storage.placed()
         for target in plan["cibles"]:
-            already = have.get(target["item"], 0) + placed.get(target["item"], 0)
+            on_him = have.get(target["item"], 0)
+            already = on_him + placed.get(target["item"], 0)
             if already >= target["quantite"]:
                 target["deja"] = already
+                # Le mod et EMI ne voient que l'inventaire : seule cette part s'ajoute à l'arbre EMI
+                target["deja_inventaire"] = on_him
         # Les étapes déjà faites au départ sont cochées sans être annoncées
         self.done_steps = {i for i, done in enumerate(self.progress()["etapes"]) if done}
         self.last_progress = time.time()
@@ -4085,13 +4106,18 @@ class App:
             )
         if index is None:
             return
+        finished = self.progress()["termine"]
         if done:
             self.done_steps.add(index)
             self.undone_steps.discard(index)
         else:
             self.done_steps.discard(index)
             self.undone_steps.add(index)
-            self.plan_done_announced = False  # si l'objectif était fini, il ne l'est plus
+            # Fini par ses cibles, il le reste : ne pas l'annoncer ni l'enchaîner une seconde fois
+            if not self.progress()["termine"]:
+                self.plan_done_announced = False
+                if finished:
+                    self.reopen_objective()
         self.last_progress = time.time()
         self.save_plan()
         self.refresh(force=True)

@@ -27,6 +27,13 @@ public final class OngletFilons {
             boolean ancien) {}
 
     private final Map<String, Resume> resumes = new HashMap<>();
+    // Utile à l'objectif : une fois par filon et par actualisation, pas à chaque comparaison du
+    // tri.
+    private final Map<String, Boolean> utiles = new HashMap<>();
+
+    private boolean utile(FilonMemoire.Filon f) {
+        return utiles.computeIfAbsent(f.id, id -> Filons.utile(f));
+    }
 
     // Recompter au plus deux fois par seconde, jamais à chaque image du menu.
     private Resume resume(FilonMemoire.Filon f) {
@@ -210,23 +217,26 @@ public final class OngletFilons {
             listeDate = 0;
             liste = List.of();
             resumes.clear();
+            utiles.clear();
         }
         if (!connecte) {
             liste = List.of();
             selection = "";
             resumes.clear();
+            utiles.clear();
             return;
         }
         Filons.actualiserGregtech();
         if (System.currentTimeMillis() - listeDate < 500) return;
         listeDate = System.currentTimeMillis();
         resumes.clear();
+        utiles.clear();
         var position = Filons.position();
         Comparator<FilonMemoire.Filon> ordre =
                 Comparator.comparingDouble(f -> f.ancre.distance2(position));
         if (tri == 1)
             ordre =
-                    Comparator.<FilonMemoire.Filon, Boolean>comparing(f -> !Filons.utile(f))
+                    Comparator.<FilonMemoire.Filon, Boolean>comparing(f -> !utile(f))
                             .thenComparing(ordre);
         if (tri == 2) ordre = Comparator.comparing(this::titre);
         String q = normaliser(recherche);
@@ -341,13 +351,7 @@ public final class OngletFilons {
             if (choisi) g.fill(x, ly, x + 2, ly + 30, 0xFF000000 | Hud.OR);
             String item = resume(f).item();
             g.renderItem(Pont.objet(item), x + 5, ly + 7);
-            texte(
-                    g,
-                    titre(f),
-                    x + 25,
-                    ly + 4,
-                    listeLargeur - 96,
-                    Filons.utile(f) ? Hud.JAUNE : Hud.BLANC);
+            texte(g, titre(f), x + 25, ly + 4, listeLargeur - 96, utile(f) ? Hud.JAUNE : Hud.BLANC);
             String quantite =
                     f.estEpuise()
                             ? "épuisé"
