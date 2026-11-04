@@ -97,13 +97,81 @@ public final class MemoireCollecte {
         return PlanRetrait.calculer(stocks, besoins).prises();
     }
 
+    private void convertir(
+            ArbreCollecte.Noeud node,
+            Map<String, Integer> actuel,
+            Set<Set<String>> visites,
+            Set<String> credites,
+            Map<String, Integer> preuves) {
+        // Les recettes intermédiaires avant leurs parents, pour les fabrications en chaîne.
+        for (var child : node.enfants()) convertir(child, actuel, visites, credites, preuves);
+        if (node.variantes().isEmpty() || !visites.add(node.variantes())) return;
+        int arrive =
+                node.variantes().stream()
+                        .mapToInt(
+                                id ->
+                                        Math.max(
+                                                0,
+                                                Math.max(
+                                                        preuves.getOrDefault(id, 0),
+                                                        actuel.getOrDefault(id, 0)
+                                                                - observes.getOrDefault(id, 0))))
+                        .sum();
+        long fois = (arrive + Math.max(1, node.production()) - 1) / Math.max(1, node.production());
+        for (var child : node.enfants())
+            if (!child.reutilisable()) consommerHistorique(child, fois, actuel, 0);
+        // Rendre ce résultat disponible avant de visiter son parent : une chaîne peut être
+        // entièrement fabriquée entre deux relevés, sans garder ses intermédiaires.
+        for (String id : node.variantes()) if (credites.add(id)) crediter(id, actuel, preuves);
+    }
+
+    private void crediter(String id, Map<String, Integer> actuel, Map<String, Integer> preuves) {
+        int credit =
+                (int)
+                        Math.min(
+                                1_000_000L,
+                                (long) observes.getOrDefault(id, 0)
+                                        + Math.max(0, preuves.getOrDefault(id, 0)));
+        observes.put(id, Math.max(credit, Math.max(0, actuel.getOrDefault(id, 0))));
+    }
+
+    private void consommerHistorique(
+            ArbreCollecte.Noeud node, long fois, Map<String, Integer> actuel, int depth) {
+        if (depth > 128) return;
+        int besoin =
+                (int)
+                        Math.min(
+                                1_000_000L,
+                                Math.min(1_000_000L, node.quantite()) * Math.min(1_000_000L, fois));
+        int reste = besoin;
+        for (String id : node.variantes()) {
+            int ancien = observes.getOrDefault(id, 0), reel = actuel.getOrDefault(id, 0);
+            int retire = Math.min(reste, Math.max(0, ancien - reel));
+            observes.put(id, ancien - retire);
+            reste -= retire;
+        }
+        // Une conversion peut traverser plusieurs recettes entre deux relevés.
+        if (reste > 0) {
+            long production = Math.max(1, node.production());
+            long lots = (reste + production - 1) / production;
+            for (var child : node.enfants())
+                if (!child.reutilisable()) consommerHistorique(child, lots, actuel, depth + 1);
+        }
+    }
+
     public Set<String> actualiser(Map<String, Integer> inventaire) {
-        if (inventaire.equals(dernierInventaire)) return restants;
+        return actualiser(inventaire, Map.of());
+    }
+
+    public Set<String> actualiser(Map<String, Integer> inventaire, Map<String, Integer> preuves) {
+        if (inventaire.equals(dernierInventaire) && preuves.isEmpty()) return restants;
+        Set<String> credites = new LinkedHashSet<>();
+        if (arbre != null && dernierInventaire != null)
+            convertir(arbre, inventaire, new LinkedHashSet<>(), credites, preuves);
         dernierInventaire = Map.copyOf(inventaire);
         version++;
-        // Crédit conservé pour ne pas réclamer à nouveau un objet déjà collecté puis consommé.
-        for (String id : tous)
-            observes.merge(id, Math.max(0, inventaire.getOrDefault(id, 0)), Math::max);
+        // Le crédit est un stock encore utile, pas la somme de toutes les formes d'un matériau.
+        for (String id : tous) if (!credites.contains(id)) crediter(id, inventaire, preuves);
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
         observes.forEach(
                 (id, n) -> {
@@ -113,8 +181,6 @@ public final class MemoireCollecte {
             var allocation = PlanArbre.calculer(arbre, lots, stocks, ids -> ids::contains);
             Set<String> manquants = new LinkedHashSet<>();
             for (var ingredient : allocation.manquants()) manquants.addAll(ingredient.variantes());
-            // Une branche validée ne revient pas après consommation des composants.
-            manquants.retainAll(restants);
             restants = Set.copyOf(manquants);
             return restants;
         }

@@ -23,6 +23,7 @@ public final class PlanMachines {
             Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock) {
         var reserve = new ArrayList<>(stock);
         var operations = new LinkedHashMap<R, Integer>();
+        var outilsPrevus = new LinkedHashMap<R, Integer>();
         List<Demande<T, R>> niveau =
                 List.of(new Demande<>(root, produit(root.quantite(), batches)));
         int visites = 0, profondeur = 0;
@@ -66,9 +67,18 @@ public final class PlanMachines {
             for (int i = 0; i < niveau.size(); i++) {
                 var d = niveau.get(i);
                 int manque = d.quantite() - allocation.fournis().get(i) - outilsPresents.get(i);
+                if (d.node().reutilisable() && d.node().recette() != null) {
+                    int deja = outilsPrevus.getOrDefault(d.node().recette(), 0);
+                    manque = Math.max(0, manque - deja);
+                }
                 if (manque <= 0) continue;
                 long production = Math.max(1, d.node().production());
                 int fois = (int) (manque / production + (manque % production == 0 ? 0 : 1));
+                if (d.node().reutilisable() && d.node().recette() != null)
+                    outilsPrevus.merge(
+                            d.node().recette(),
+                            produit(fois, production),
+                            (a, b) -> Math.min(1_000_000, a + b));
                 if (d.node().recette() != null)
                     operations.merge(d.node().recette(), fois, Integer::sum);
                 for (var enfant : d.node().enfants())

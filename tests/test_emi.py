@@ -76,10 +76,15 @@ class EmiTests(unittest.TestCase):
         }
         result = objective_tree(plan, progress=progress, inventory={"machine": 1})
         self.assertEqual(result["cibles"], [{"item": "machine", "quantite": 3}])
+        self.assertEqual(result["credits"], {"machine": 1})
         result = objective_tree(plan, progress=progress, inventory={})
         self.assertEqual(result["cibles"], [{"item": "machine", "quantite": 2}])
+        self.assertEqual(result["credits"], {"machine": 2})
         progress["comptes"]["machine"] = 4
         self.assertIsNone(objective_tree(plan, progress=progress, inventory={}))
+
+    def test_machine_lot_states_partial_receipts_and_cancel(self):
+        self._run_java_contract("LotFabrication")
 
     def test_chest_withdrawal_allocation(self):
         self._run_java_contract("PlanRetrait")
@@ -165,8 +170,13 @@ class EmiTests(unittest.TestCase):
                     str(ROOT / f"mod/src/main/java/fr/assistantia/{name}.java"),
                     str(ROOT / f"tests/java/fr/assistantia/{name}Test.java"),
                     *(
+                        [str(ROOT / "mod/src/main/java/fr/assistantia/ReceptionSortie.java")]
+                        if name == "LotFabrication"
+                        else []
+                    ),
+                    *(
                         [str(ROOT / "mod/src/main/java/fr/assistantia/PlanRetrait.java")]
-                        if name in {"SuiviFabrication", "PlanMachines"}
+                        if name in {"SuiviFabrication", "PlanMachines", "LotFabrication"}
                         else []
                     ),
                     *[

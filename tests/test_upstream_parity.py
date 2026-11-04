@@ -94,6 +94,7 @@ class ParityTests(unittest.TestCase):
             "nearest_vein",  # skip exhausted veins, like the mod does
             "App.set_step",  # unchecking a step only reopens an objective that is no longer done
             "App.update_objective_progress",  # remember which objective was marked done
+            "App.track_targets",  # EMI production proofs replace duplicate return gains; test_objective_pause.py
         }
         # User-requested gameplay extension, covered by test_objective_pause.py.
         pause_changes = {

@@ -60,6 +60,29 @@ public final class PlanMachinesTest {
         assert PlanMachines.calculer(twoTools, 1, List.of(new PlanRetrait.Stock<>("mold", 1, true)))
                         .isEmpty()
                 : "Un moule reste réutilisable dans les branches";
+        assert PlanMachines.calculer(twoTools, 1, List.of())
+                        .equals(List.of(new PlanMachines.Operation<>("mold_press", 1)))
+                : "un outil à fabriquer est partagé lui aussi";
+        var deeper = node("other", 1, 1, "other_recipe", List.of(tool));
+        var nested = node("root", 1, 1, null, List.of(tool, deeper));
+        assert PlanMachines.calculer(nested, 1, List.of()).stream()
+                                .filter(o -> o.recette().equals("mold_press"))
+                                .mapToInt(PlanMachines.Operation::fois)
+                                .sum()
+                        == 1
+                : "outil partagé à différentes profondeurs";
+        var pairTool =
+                new PlanMachines.Noeud<String, String>(
+                        "mold"::equals, 1, 2, true, "pair_mold", List.of());
+        var twoPairTools =
+                new PlanMachines.Noeud<String, String>(
+                        "mold"::equals, 2, 2, true, "pair_mold", List.of());
+        assert PlanMachines.calculer(
+                                node("root", 1, 1, null, List.of(pairTool, twoPairTools)),
+                                1,
+                                List.of())
+                        .equals(List.of(new PlanMachines.Operation<>("pair_mold", 1)))
+                : "le surplus d'une fabrication d'outils couvre la deuxième branche";
         assert PlanMachines.produit(Long.MAX_VALUE, Long.MAX_VALUE) == 1_000_000;
     }
 }

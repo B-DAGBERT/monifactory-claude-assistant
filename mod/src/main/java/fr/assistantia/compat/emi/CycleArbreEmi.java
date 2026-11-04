@@ -23,6 +23,7 @@ public final class CycleArbreEmi {
     private static String signature = "";
     private static SuiviFabrication<ItemStack> suivi;
     private static boolean erreurSignalee;
+    private static String dernierExport = "";
 
     // objectif : arbre d'un objectif IA, dont les quantités incluent déjà ce que le joueur possède.
     private record Cibles(
@@ -46,6 +47,7 @@ public final class CycleArbreEmi {
         var mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) {
             if (precedent != null) nettoyer();
+            OrigineFabrication.vider();
             precedent = connexion = null;
             suivi = null;
             signature = "";
@@ -54,6 +56,7 @@ public final class CycleArbreEmi {
         Object tree = CoffresArbreEmi.arbreActif();
         if (tree != precedent || connexion != mc.getConnection()) {
             if (precedent != null) nettoyer();
+            OrigineFabrication.vider();
             precedent = tree;
             connexion = mc.getConnection();
             suivi = null;
@@ -90,7 +93,12 @@ public final class CycleArbreEmi {
             // Un craft normal peut arriver sur le curseur, un Maj-clic dans l'inventaire.
             // Ne jamais lire la case de résultat : ce n'est qu'un aperçu non encore fabriqué.
             ajouter(stock, mc.player.containerMenu.getCarried());
-            if (suivi.actualiser(stock) && CoffresArbreEmi.arbreActif() == tree) {
+            OrigineFabrication.actualiser(stock);
+            MachinesEmi.recevoir(OrigineFabrication.receptions());
+            boolean fini = suivi.actualiser(stock, OrigineFabrication.receptions());
+            exporter(tree);
+            if (fini && CoffresArbreEmi.arbreActif() == tree) {
+                MachinesEmi.termine();
                 nettoyer();
                 EmiObjectif.terminerArbre(tree);
                 precedent = null;
@@ -103,6 +111,41 @@ public final class CycleArbreEmi {
                         .warn("Assistant : suivi du résultat final EMI indisponible", e);
                 erreurSignalee = true;
             }
+        }
+    }
+
+    private static void exporter(Object tree) throws ReflectiveOperationException {
+        var root = tree.getClass().getField("goal").get(tree);
+        var ingredient = (EmiIngredient) root.getClass().getField("ingredient").get(root);
+        for (var stack : ingredient.getEmiStacks()) {
+            var item = stack.getItemStack();
+            if (!item.hasTag() || !item.getTag().contains("assistantia_objectif")) continue;
+            var cible =
+                    com.google.gson.JsonParser.parseString(
+                                    item.getTag().getString("assistantia_objectif"))
+                            .getAsJsonObject();
+            var json = new com.google.gson.JsonObject();
+            json.add("projet", cible.get("projet"));
+            json.add("version", cible.get("version"));
+            var credits =
+                    cible.has("credits")
+                            ? cible.getAsJsonObject("credits").deepCopy()
+                            : new com.google.gson.JsonObject();
+            java.util.Map<String, Integer> totaux = new java.util.HashMap<>();
+            for (var s : suivi.obtenus()) {
+                var id =
+                        net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(
+                                s.objet().getItem());
+                if (id != null) totaux.merge(id.toString(), s.quantite(), Integer::sum);
+            }
+            totaux.forEach(
+                    (id, n) ->
+                            credits.addProperty(
+                                    id, n + (credits.has(id) ? credits.get(id).getAsInt() : 0)));
+            json.add("obtenus", credits);
+            String texte = json.toString();
+            if (!texte.equals(dernierExport) && fr.assistantia.Pont.envoyerProgresFabrication(json))
+                dernierExport = texte;
         }
     }
 

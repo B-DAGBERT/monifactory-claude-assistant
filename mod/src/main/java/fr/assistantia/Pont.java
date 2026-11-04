@@ -303,6 +303,10 @@ public final class Pont {
         return ecrireDemande("recherche_emi.json", demande);
     }
 
+    public static boolean envoyerProgresFabrication(JsonObject progres) {
+        return ecrireDemande("fabrication_emi.json", progres);
+    }
+
     private static boolean ecrireDemande(String nom, JsonObject demande) {
         try {
             Files.createDirectories(DOSSIER);

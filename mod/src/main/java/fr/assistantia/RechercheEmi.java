@@ -27,7 +27,7 @@ public final class RechercheEmi {
     private static Set<String> objets = Set.of(), demandes = Set.of();
     private static List<Pont.Repere> reperes = List.of();
     private static JsonObject derniereVue;
-    private static Map<String, Integer> quantites = Map.of();
+    private static Map<String, Integer> quantites = Map.of(), fabricationsPrecedentes = Map.of();
 
     private RechercheEmi() {}
 
@@ -74,7 +74,15 @@ public final class RechercheEmi {
     private static void actualiserCollecte() {
         if (collecte == null || RetraitCoffre.occupe() || Emi.envoiMachineEnCours()) return;
         long version = collecte.version();
-        Set<String> restants = collecte.actualiser(inventaire());
+        var cumul = Emi.fabricationsConfirmees();
+        Map<String, Integer> preuves = new HashMap<>();
+        cumul.forEach(
+                (id, n) -> {
+                    int gain = n - fabricationsPrecedentes.getOrDefault(id, 0);
+                    if (gain > 0) preuves.put(id, gain);
+                });
+        fabricationsPrecedentes = cumul;
+        Set<String> restants = collecte.actualiser(inventaire(), preuves);
         if (collecte.version() != version) derniereVue = null;
         if (!restants.equals(demandes)) {
             demandes = restants;
@@ -120,8 +128,23 @@ public final class RechercheEmi {
         connexion = mc.getConnection();
         fin = now + 600_000;
         collecte = suivi;
+        fabricationsPrecedentes = Emi.fabricationsConfirmees();
         conforme = accepte;
         demandes = suivi.actualiser(inventaire());
+        transmettre();
+    }
+
+    public static void recalculer(
+            MemoireCollecte suivi,
+            java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte) {
+        if (!actif()) return;
+        RetraitCoffre.arreter();
+        AideCoffre.vider();
+        collecte = suivi;
+        fabricationsPrecedentes = Emi.fabricationsConfirmees();
+        conforme = accepte;
+        demandes = suivi.actualiser(inventaire());
+        fin = System.currentTimeMillis() + 600_000;
         transmettre();
     }
 

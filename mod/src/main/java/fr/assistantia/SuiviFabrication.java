@@ -15,7 +15,7 @@ public final class SuiviFabrication<T> {
 
     private static final class Releve<T> {
         final T objet;
-        int precedent, acquis;
+        int precedent, acquis, sortis;
 
         Releve(T objet) {
             this.objet = objet;
@@ -38,6 +38,12 @@ public final class SuiviFabrication<T> {
     }
 
     public boolean actualiser(List<PlanRetrait.Stock<T>> inventaire) {
+        return actualiser(inventaire, List.of());
+    }
+
+    /** Les preuves sont des gains constatés après craft ou retrait d'une vraie sortie machine. */
+    public boolean actualiser(
+            List<PlanRetrait.Stock<T>> inventaire, List<PlanRetrait.Stock<T>> preuves) {
         if (cibles.isEmpty()) return false;
         for (var s : inventaire)
             if (cibles.stream().anyMatch(c -> c.accepte().test(s.objet()))
@@ -49,12 +55,24 @@ public final class SuiviFabrication<T> {
                             .filter(s -> meme.test(r.objet, s.objet()))
                             .mapToInt(PlanRetrait.Stock::quantite)
                             .sum();
-            if (initialise || !depuisDepart)
-                r.acquis =
-                        (int)
-                                Math.min(
-                                        Integer.MAX_VALUE,
-                                        (long) r.acquis + Math.max(0, actuel - r.precedent));
+            if (!initialise) {
+                r.acquis = depuisDepart ? 0 : actuel;
+            } else {
+                int delta = actuel - r.precedent;
+                if (delta < 0) r.sortis = addition(r.sortis, -delta);
+                else if (delta > 0) {
+                    int nouveau =
+                            Math.min(
+                                    delta,
+                                    preuves.stream()
+                                            .filter(p -> meme.test(r.objet, p.objet()))
+                                            .mapToInt(PlanRetrait.Stock::quantite)
+                                            .sum());
+                    int retour = Math.min(r.sortis, delta - nouveau);
+                    r.sortis -= retour;
+                    r.acquis = addition(r.acquis, delta - retour);
+                }
+            }
             r.precedent = actuel;
         }
         initialise = true;
@@ -65,6 +83,17 @@ public final class SuiviFabrication<T> {
                                 cibles)
                         .manquants()
                 == 0;
+    }
+
+    public List<PlanRetrait.Stock<T>> obtenus() {
+        return releves.stream()
+                .filter(r -> r.acquis > 0)
+                .map(r -> new PlanRetrait.Stock<>(r.objet, r.acquis, true))
+                .toList();
+    }
+
+    private static int addition(int a, int b) {
+        return (int) Math.min(Integer.MAX_VALUE, (long) a + b);
     }
 
     /**

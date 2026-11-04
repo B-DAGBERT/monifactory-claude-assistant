@@ -31,6 +31,12 @@ def objective_tree(plan, project="", version="", *, progress=None, inventory=Non
         "projet": str(project),
         "version": str(version),
         "cibles": [{"item": item, "quantite": quantity} for item, quantity in targets.items()],
+        "credits": {
+            item: max(0, progress.get("buts", {}).get(item, quantity) - quantity)
+            for item, quantity in targets.items()
+        }
+        if progress is not None
+        else {},
         "recettes": [
             {"item": recipe["item"], "id": recipe.get("id") or ""}
             for recipe in plan.get("recettes", [])

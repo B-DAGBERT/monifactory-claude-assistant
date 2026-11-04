@@ -16,6 +16,7 @@ public class ItemStack {
     public static final ItemStack EMPTY=new ItemStack("",0);
     public String id, fluid=""; public int count, amount, tag;
     public ItemStack(String id,int count){this.id=id;this.count=count;}
+    public ItemStack(String id){this(id,1);}public String getItem(){return id;}
     public boolean isEmpty(){return count<=0;} public int getCount(){return Math.max(0,count);}
     public int getMaxStackSize(){return 64;} public void setCount(int n){count=n;}
     public void shrink(int n){count-=n;}
@@ -101,6 +102,9 @@ public record EmiRecipe(java.util.List<dev.emi.emi.api.stack.EmiIngredient> getI
         "com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient": "public class IntCircuitIngredient {private final int configuration;public IntCircuitIngredient(int n){configuration=n;}}",
         "com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient": "public record SizedIngredient(Object getInner) {}",
         "fr.assistantia.RetraitCoffre": "public class RetraitCoffre {public static boolean busy;public static boolean occupe(){return busy;}}",
+        "fr.assistantia.compat.emi.CoffresArbreEmi": "public class CoffresArbreEmi {public static Object arbreActif(){return fr.assistantia.ArbreEmi.tree;}}",
+        "net.minecraftforge.registries.ForgeRegistries": "public class ForgeRegistries {public static final Registry ITEMS=new Registry(); public static class Registry {public String getKey(String item){return item;}}}",
+        "net.minecraftforge.event.entity.player.PlayerEvent": "public class PlayerEvent {public record ItemCraftedEvent(net.minecraft.world.entity.player.Player getEntity,net.minecraft.world.item.ItemStack getCrafting) {}}",
         "fr.assistantia.ArbreEmi": "public class ArbreEmi {public static Object tree=new Object();public static Object actif(){return tree;}}",
         "fr.assistantia.compat.emi.GregTechMachines": """
 import java.util.*;
@@ -110,6 +114,8 @@ import net.minecraftforge.fluids.capability.templates.FluidTank;
 import net.minecraftforge.fluids.FluidUtil;
 public class GregTechMachines {
     public static Interface ui;public static boolean busy;public static int configuration=7;
+    public static List<Slot> outputSlots=List.of();
+    public static List<Slot> sorties(AbstractContainerMenu menu)throws ReflectiveOperationException{return outputSlots;}
     public record Content(Object content) {}
     public record Recipe(java.util.Map<String,java.util.List<Content>> inputs) {}
     public static int configurationCircuit(dev.emi.emi.api.recipe.EmiRecipe r) throws ReflectiveOperationException {
@@ -162,11 +168,13 @@ class MachineInputTests(unittest.TestCase):
                     "PlanMachines",
                     "SequenceEnvoi",
                     "compat/emi/EnvoiMachine",
+                    "compat/emi/OrigineFabrication",
                     "compat/emi/ComparaisonEmi",
                     "compat/emi/ConfigurationCircuit",
                 )
             ]
             sources.append(str(ROOT / "tests/java/fr/assistantia/EnvoiMachineTest.java"))
+            sources.append(str(ROOT / "tests/java/fr/assistantia/OrigineFabricationTest.java"))
             result = subprocess.run(
                 [javac, "-encoding", "UTF-8", "-d", directory, *sources],
                 capture_output=True,
@@ -176,6 +184,14 @@ class MachineInputTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             result = subprocess.run(
                 [java, "-ea", "-cp", directory, "fr.assistantia.EnvoiMachineTest"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            result = subprocess.run(
+                [java, "-ea", "-cp", directory, "fr.assistantia.OrigineFabricationTest"],
                 capture_output=True,
                 text=True,
                 timeout=30,

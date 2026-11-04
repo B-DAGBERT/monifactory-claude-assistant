@@ -142,6 +142,46 @@ public final class GregTechMachines {
         return new Interface(machine, pos, List.copyOf(entrees), List.copyOf(cuves), circuit);
     }
 
+    /** Les vraies sorties, excluant les aperçus/filtres et l'inventaire joueur. */
+    public static List<Slot> sorties(AbstractContainerMenu menu)
+            throws ReflectiveOperationException {
+        if (!menu.getClass()
+                .getName()
+                .equals("com.lowdragmc.lowdraglib.gui.modular.ModularUIContainer"))
+            return List.of();
+        Object ui = appeler(menu, "getModularUI");
+        Map<?, ?> slots = (Map<?, ?>) appeler(ui, "getSlotMap");
+        List<Slot> result = new ArrayList<>();
+        for (var e : slots.entrySet()) {
+            Object w = e.getValue();
+            if (w.getClass().getName().contains("Phantom")
+                    || w.getClass().getName().contains("Ghost")) continue;
+            if ("OUTPUT".equals(String.valueOf(appeler(w, "getIngredientIO"))))
+                result.add((Slot) e.getKey());
+        }
+        return List.copyOf(result);
+    }
+
+    /** Cuves de sortie synchronisées de l'interface native, sans accéder aux blocs voisins. */
+    public static List<Cuve> cuvesSortie(AbstractContainerMenu menu)
+            throws ReflectiveOperationException {
+        if (!menu.getClass()
+                .getName()
+                .equals("com.lowdragmc.lowdraglib.gui.modular.ModularUIContainer"))
+            return List.of();
+        Object ui = appeler(menu, "getModularUI");
+        List<Cuve> result = new ArrayList<>();
+        for (Object w : (List<?>) appeler(ui, "getFlatVisibleWidgetCollection")) {
+            if (!w.getClass().getName().equals("com.gregtechceu.gtceu.api.gui.widget.TankWidget")
+                    || !"OUTPUT".equals(String.valueOf(appeler(w, "getIngredientIO")))) continue;
+            IFluidHandler h = (IFluidHandler) appeler(w, "getFluidTank");
+            int index = (int) appeler(w, "getTank");
+            if (h != null && result.stream().noneMatch(c -> c.handler() == h && c.index() == index))
+                result.add(new Cuve(w, h, index));
+        }
+        return List.copyOf(result);
+    }
+
     public static Object recette(EmiRecipe r) throws ReflectiveOperationException {
         if (!r.getClass()
                 .getName()

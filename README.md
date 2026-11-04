@@ -120,7 +120,7 @@ Dans une machine compatible, le panneau de l’assistant, au même style que cel
   est réglé lorsqu’il dispose de son sélecteur GregTech natif. Sa configuration vient de la
   recette GregTech, pas du NBT factice affiché par EMI. Pour reconnaître l’objet Programmed
   Circuit, son NBT est ignoré ; cette exception ne s’applique pas aux autres objets.
-- **Voir** ouvre la recette dans EMI. Récupérer soi-même le résultat dans la machine.
+- **Suivi** affiche les étapes et les lots envoyés. Sélectionner une ligne pour ouvrir sa **Recette** ou **Annuler le lot**. Récupérer soi-même le résultat dans la machine.
 
 Les fluides proviennent uniquement des seaux et cellules de l’inventaire. Les contenants sont
 vidés par le clic natif GregTech puis rendus à l’inventaire. Le volume réel est affiché avant
@@ -133,6 +133,10 @@ un ingrédient manquant ou une entrée incompatible désactive l’envoi avec le
 Les fabrications envoyées restent réservées dans ce suivi pour éviter de les proposer à nouveau
 avant la récupération des sorties. Changer l’arbre ou arrêter son suivi remet ces réservations à zéro.
 Les machines et cuves sans entrées accessibles dans leur interface ne permettent pas cet envoi.
+
+À côté de **Scanner coffres**, **Suivi** affiche les états **À collecter**, **À envoyer / À fabriquer**, **En machine**, **À récupérer** et **Terminé**. **Recalculer** relit les besoins sans effacer l’avancement final ni les lots en attente. **Annuler le lot** libère sa réservation sans retirer les objets de la machine. Le fonctionnement et les limites sont détaillés dans [le guide EMI](docs/emi-transferts.md).
+
+Les composants transformés ne laissent plus un double crédit de matières premières. Les outils partagés sont prévus une seule fois, et les allers-retours du même résultat dans un coffre ne font plus progresser artificiellement la cible.
 
 ## Récupérer les ingrédients depuis un coffre
 

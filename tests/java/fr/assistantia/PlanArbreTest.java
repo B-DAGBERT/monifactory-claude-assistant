@@ -122,6 +122,49 @@ public final class PlanArbreTest {
         assert suivi.dansCoffres(List.of(stock("hammer", 1, false), stock("iron", 64, false)))
                         .isEmpty()
                 : "composant acquis : aucun outil ni matière pour le refaire";
+        var plates =
+                node("machine", 1, 1, false, node("plate", 4, 1, false, node("iron", 2, 1, false)));
+        suivi = new MemoireCollecte(plates, 1);
+        suivi.actualiser(Map.of());
+        suivi.actualiser(Map.of("iron", 4));
+        assert suivi.actualiser(Map.of("plate", 2)).contains("iron");
+        assert suivi.dansCoffres(List.of(stock("iron", 64, false)))
+                        .equals(List.of(new PlanRetrait.Prise(0, 4)))
+                : "4 lingots transformés ne sont plus 4 lingots disponibles";
+        suivi.actualiser(Map.of("plate", 2, "iron", 4));
+        assert !suivi.actualiser(Map.of("plate", 4)).contains("iron");
+        assert suivi.dansCoffres(List.of(stock("iron", 64, false))).isEmpty();
+        suivi = new MemoireCollecte(plates, 1);
+        suivi.actualiser(Map.of("plate", 2));
+        suivi.actualiser(Map.of());
+        suivi.actualiser(Map.of("plate", 2));
+        assert suivi.dansCoffres(List.of(stock("iron", 64, false))).get(0).quantite() == 4
+                : "reprendre les deux mêmes plaques ne valide pas les quatre";
+        suivi.actualiser(Map.of());
+        assert !suivi.actualiser(Map.of("plate", 2), Map.of("plate", 2)).contains("iron")
+                : "deux nouvelles plaques confirmées plus les deux rangées";
+        // Deux transformations entre deux lectures : les plaques produites puis consommées
+        // ne restent pas disponibles en plus de l'engrenage obtenu.
+        var gears =
+                node(
+                        "machine",
+                        1,
+                        1,
+                        false,
+                        node(
+                                "gear",
+                                2,
+                                1,
+                                false,
+                                node("plate", 2, 1, false, node("iron", 2, 1, false))));
+        suivi = new MemoireCollecte(gears, 1);
+        suivi.actualiser(Map.of("iron", 4));
+        suivi.actualiser(Map.of("gear", 1), Map.of("plate", 2, "gear", 1));
+        assert suivi.dansCoffres(List.of(stock("iron", 64, false)))
+                        .equals(List.of(new PlanRetrait.Prise(0, 4)))
+                : "chaîne rapide : matières et intermédiaires consommés sans double crédit";
+        suivi.actualiser(Map.of("gear", 2), Map.of("plate", 2, "gear", 1));
+        assert suivi.dansCoffres(List.of(stock("iron", 64, false))).isEmpty();
         System.out.println(
                 "Branches acquises, quantités partielles, stocks partagés, outils et extinction durable : OK");
     }

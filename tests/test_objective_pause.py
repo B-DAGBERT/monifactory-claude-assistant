@@ -145,6 +145,40 @@ class ObjectivePauseTests(unittest.TestCase):
         a.coach_queue, a.coach_times = [], {}
         a.recorder, a.popup = SimpleNamespace(stream=None), None
 
+    def test_returning_the_same_target_does_not_inflate_progress(self):
+        a = self.app
+        item = "minecraft:stone_pickaxe"
+        for count in [1, 0, 1, 0, 1]:
+            a.game = {"inventaire": {item: count}}
+            a.track_targets()
+        self.assertEqual(a.obtained[item], 1)
+        a.bridge = SimpleNamespace(
+            read=lambda name: {
+                "projet": a.projects.active,
+                "version": str(a.plan_version),
+                "obtenus": {item: 2},
+            }
+        )
+        self.assertTrue(a.track_targets())
+        self.assertEqual(a.obtained[item], 2)
+        self.assertFalse(a.track_targets(), "relire la preuve ne compte pas deux fois")
+
+    def test_production_proof_is_scoped_to_project_version_and_pause(self):
+        a = self.app
+        item = "minecraft:stone_pickaxe"
+        proof = {"projet": "autre", "version": str(a.plan_version), "obtenus": {item: 2}}
+        a.bridge = SimpleNamespace(read=lambda name: proof)
+        a.track_targets()
+        self.assertEqual(a.obtained.get(item, 0), 0)
+        proof["projet"] = a.projects.active
+        proof["version"] = "autre"
+        a.track_targets()
+        self.assertEqual(a.obtained.get(item, 0), 0)
+        proof["version"] = str(a.plan_version)
+        a.objective_paused = True
+        a.track_targets()
+        self.assertEqual(a.obtained.get(item, 0), 0)
+
     def test_pause_survives_restart_and_preserves_manual_progress(self):
         a = self.app
         a.done_steps, a.undone_steps = {0}, {1}

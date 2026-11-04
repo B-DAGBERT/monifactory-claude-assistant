@@ -2793,16 +2793,34 @@ class App:
         )
 
     def track_targets(self):
-        """Ce qu'il a obtenu de chaque cible, même déjà posé ailleurs : chaque hausse (fabriqué, ramassé) s'ajoute,
-        une baisse (posé dans un multibloc, utilisé pour une autre fabrication) ne fait pas reculer."""
+        """Conserver les acquis sans additionner chaque retour du même objet dans les stocks."""
         changed = False
         for item, total in self.target_totals().items():
             before = self.last_totals.get(item)
-            if before is not None and total > before:
-                self.obtained[item] = self.obtained.get(item, before) + total - before
+            acquired = max(self.obtained.get(item, 0), total)
+            if self.obtained.get(item, 0) != acquired:
+                self.obtained[item] = acquired
+                changed = True
             if before != total:
                 self.last_totals[item] = total
                 changed = True
+        bridge = getattr(self, "bridge", None)
+        proof = bridge.read("fabrication_emi.json") if bridge is not None else None
+        if (
+            isinstance(proof, dict)
+            and not self.objective_paused
+            and str(proof.get("projet", "")) == self.projects.active
+            and str(proof.get("version", "")) == str(self.plan_version)
+            and isinstance(proof.get("obtenus"), dict)
+        ):
+            for target in (self.plan or {}).get("cibles", []):
+                item = target["item"]
+                count = proof["obtenus"].get(item)
+                if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+                    count = min(count, target["quantite"] + target.get("deja", 0))
+                    if count > self.obtained.get(item, 0):
+                        self.obtained[item] = count
+                        changed = True
         return changed
 
     # --- suivi du jeu ---

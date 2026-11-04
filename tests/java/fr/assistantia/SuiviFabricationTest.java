@@ -69,15 +69,15 @@ public final class SuiviFabricationTest {
         assert !suivi.actualiser(List.of(stack("machine", 1)));
         assert !suivi.actualiser(List.of());
         assert suivi.credits().equals(List.of(stack("machine", 1))) : "premier résultat rangé";
-        assert !suivi.actualiser(List.of(stack("machine", 1)));
+        assert !suivi.actualiser(List.of(stack("machine", 1)), List.of(stack("machine", 1)));
         assert !suivi.actualiser(List.of());
         assert suivi.credits().equals(List.of(stack("machine", 2))) : "deux fabrications séparées";
-        assert suivi.actualiser(List.of(stack("machine", 1)))
+        assert suivi.actualiser(List.of(stack("machine", 1)), List.of(stack("machine", 1)))
                 : "trois lots, jamais détenus ensemble";
         suivi = new SuiviFabrication<>(List.of(besoin("machine", 3)), false);
         assert !suivi.actualiser(List.of(stack("machine", 1)));
         assert !suivi.actualiser(List.of());
-        assert suivi.actualiser(List.of(stack("machine", 2)))
+        assert suivi.actualiser(List.of(stack("machine", 2)), List.of(stack("machine", 2)))
                 : "objectif absolu : conserver la première unité";
         suivi =
                 new SuiviFabrication<>(
@@ -88,6 +88,18 @@ public final class SuiviFabricationTest {
         assert !suivi.actualiser(List.of(stack("tool#charge20", 1)))
                 : "le changement de charge d'un outil n'est pas une nouvelle fabrication";
         assert suivi.actualiser(List.of(stack("tool#charge20", 2)));
+        suivi = new SuiviFabrication<>(List.of(besoin("machine", 3)), false);
+        assert !suivi.actualiser(List.of(stack("machine", 1)));
+        for (int i = 0; i < 5; i++) {
+            assert !suivi.actualiser(List.of());
+            assert !suivi.actualiser(List.of(stack("machine", 1)))
+                    : "un retour de coffre ne produit rien";
+        }
+        assert !suivi.actualiser(List.of());
+        assert !suivi.actualiser(List.of(stack("machine", 1)), List.of(stack("machine", 1)));
+        assert !suivi.actualiser(List.of());
+        assert suivi.actualiser(List.of(stack("machine", 1)), List.of(stack("machine", 1)))
+                : "trois unités distinctes confirmées, malgré les rangements";
         System.out.println(
                 "Fin de craft : quantités, piles, intermédiaires, variantes, cibles multiples,"
                         + " objets déjà possédés et nouveau suivi OK");

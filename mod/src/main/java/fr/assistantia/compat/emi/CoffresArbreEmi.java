@@ -32,6 +32,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 public final class CoffresArbreEmi {
     private static final String ID = "assistantia:coffres_arbre";
     private static final Map<Screen, Button> boutons = new WeakHashMap<>();
+    private static final Map<Screen, Button> suivis = new WeakHashMap<>();
     private static Field boutonArbre, barreRecherche;
     private static boolean charge;
     private static java.lang.reflect.Method desactive;
@@ -71,6 +72,19 @@ public final class CoffresArbreEmi {
         button.visible = false;
         boutons.put(screen, button);
         event.addListener(button);
+        Button suivi =
+                Button.builder(
+                                Component.literal("Suivi"),
+                                b -> Minecraft.getInstance().setScreen(new SuiviEmiEcran(screen)))
+                        .bounds(150, screen.height - 22, 48, 20)
+                        .build();
+        suivi.visible = false;
+        suivi.setTooltip(
+                Tooltip.create(
+                        Component.literal(
+                                "États des fabrications, recalcul et annulation des lots")));
+        suivis.put(screen, suivi);
+        event.addListener(suivi);
     }
 
     @SubscribeEvent
@@ -82,6 +96,8 @@ public final class CoffresArbreEmi {
             AbstractWidget tree = (AbstractWidget) boutonArbre.get(null);
             AbstractWidget search = (AbstractWidget) barreRecherche.get(null);
             button.visible = tree != null && tree.visible && !(boolean) desactive.invoke(null);
+            Button suivi = suivis.get(event.getScreen());
+            if (suivi != null) suivi.visible = button.visible;
             if (!button.visible) return;
             int x = tree.getX() + tree.getWidth() + 2;
             int y = tree.getY();
@@ -92,7 +108,13 @@ public final class CoffresArbreEmi {
                     && search.getY() < y + 20
                     && search.getY() + search.getHeight() > y)
                 room = Math.min(room, search.getX() - x - 2);
-            int width = Math.min(102, Math.max(20, room));
+            int width = Math.min(102, Math.max(20, room - 52));
+            if (suivi != null) {
+                suivi.setX(room >= 74 ? x + width + 2 : x);
+                suivi.setY(room >= 74 ? y : y - 22);
+                suivi.setWidth(48);
+                suivi.active = ArbreEmi.actif() != null || MachinesEmi.dernierTermine();
+            }
             button.setX(x);
             button.setY(y);
             button.setWidth(width);
@@ -113,12 +135,23 @@ public final class CoffresArbreEmi {
                                                     : "Choisis d’abord un objectif dans Recipe Tree")));
         } catch (ReflectiveOperationException | RuntimeException e) {
             button.visible = false;
+            if (suivis.get(event.getScreen()) != null)
+                suivis.get(event.getScreen()).visible = false;
             signaler(e);
         }
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
+        Button suivi = suivis.get(event.getScreen());
+        if (suivi != null
+                && suivi.visible
+                && suivi.isMouseOver(event.getMouseX(), event.getMouseY())) {
+            if (suivi.active)
+                suivi.mouseClicked(event.getMouseX(), event.getMouseY(), event.getButton());
+            event.setCanceled(true);
+            return;
+        }
         Button button = boutons.get(event.getScreen());
         if (button != null
                 && button.visible
@@ -127,6 +160,40 @@ public final class CoffresArbreEmi {
                 button.mouseClicked(event.getMouseX(), event.getMouseY(), event.getButton());
             event.setCanceled(
                     true); // EMI ne doit pas aussi prendre le clic pour un objet situé derrière.
+        }
+    }
+
+    public static fr.assistantia.DispositionCoffre.Zone zoneSuivi(Screen screen) {
+        var b = suivis.get(screen);
+        return b != null && b.visible
+                ? new fr.assistantia.DispositionCoffre.Zone(
+                        b.getX(), b.getY(), b.getWidth(), b.getHeight())
+                : null;
+    }
+
+    public static boolean recalculer() {
+        if (!RechercheEmi.actif()) return true;
+        try {
+            Object tree = ArbreEmi.actif();
+            if (tree == null) return false;
+            List<EmiStack> variantes = new ArrayList<>();
+            var node =
+                    lire(
+                            tree.getClass().getField("goal").get(tree),
+                            Collections.newSetFromMap(new IdentityHashMap<>()),
+                            new int[] {0},
+                            0,
+                            variantes);
+            long lots = tree.getClass().getField("batches").getLong(tree);
+            RechercheEmi.recalculer(
+                    new MemoireCollecte(node, lots),
+                    item ->
+                            variantes.stream()
+                                    .anyMatch(v -> ComparaisonEmi.meme(EmiStack.of(item), v)));
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            signaler(e);
+            return false;
         }
     }
 
