@@ -99,6 +99,7 @@ public final class EmiObjectif {
                     && (treeField.get(null) == arbrePrecedent
                             || suspendu && treeField.get(null) == null)) {
                 treeField.set(null, arbrePrecedent);
+                ArbreEmi.activer();
                 suspendu = false;
                 return new Resultat(true, avertissementPrecedent);
             }
@@ -209,7 +210,7 @@ public final class EmiObjectif {
             treeType.getMethod("recalculate").invoke(tree);
             treeType.getMethod("calculateCost").invoke(tree);
             treeField.set(null, tree);
-            bom.getField("craftingMode").setBoolean(null, false);
+            ArbreEmi.activer();
             gestionPrecedente = manager;
             arbrePrecedent = tree;
             suspendu = false;

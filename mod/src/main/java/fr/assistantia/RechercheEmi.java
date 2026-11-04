@@ -31,6 +31,7 @@ public final class RechercheEmi {
     public static boolean actif() {
         Minecraft mc = Minecraft.getInstance();
         return !recette.isEmpty()
+                && Emi.arbreActif()
                 && mc.level != null
                 && mc.player != null
                 && mc.getConnection() == connexion

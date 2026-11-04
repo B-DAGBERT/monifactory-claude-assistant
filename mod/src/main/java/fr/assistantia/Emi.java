@@ -53,7 +53,7 @@ public final class Emi {
             getAmount,
             isLoaded;
     private static Object typeBouton, destinationAucune;
-    private static Method planCoffre, arbreCourant;
+    private static Method planCoffre;
 
     private Emi() {}
 
@@ -307,11 +307,7 @@ public final class Emi {
     public static boolean arbreActif() {
         if (!present()) return false;
         try {
-            if (arbreCourant == null)
-                arbreCourant =
-                        Class.forName("fr.assistantia.compat.emi.CoffresArbreEmi")
-                                .getMethod("arbreActif");
-            return arbreCourant.invoke(null) != null;
+            return ArbreEmi.actif() != null;
         } catch (ReflectiveOperationException | LinkageError e) {
             return false;
         }

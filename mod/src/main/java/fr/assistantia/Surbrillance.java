@@ -8,15 +8,11 @@ import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.registries.ForgeRegistries;
 
-import java.util.Set;
-
 /**
  * Dans un coffre, une machine ou l'inventaire : ce que tu as demandé à chercher pulse en cyan («
- * trouve-moi mes torches »), et les objets dont le plan a besoin brillent en vert.
+ * trouve-moi mes torches ») ou les objets de la recherche EMI explicite pulsent en cyan.
  */
 public final class Surbrillance {
-    private static final int FOND = 0x5530FF50;
-    private static final int CADRE = 0xFF40FF60;
     private static final int CADRE_RECHERCHE = 0xFF40E0FF;
 
     private Surbrillance() {}
@@ -26,12 +22,8 @@ public final class Surbrillance {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> ecran)) {
             return;
         }
-        Set<String> besoins =
-                RechercheEmi.actif() || PauseObjectifEmi.enPause() ? Set.of() : Pont.besoins();
         boolean recherche = RechercheEmi.actif() || Pont.rechercheActive();
-        if (besoins.isEmpty() && !recherche) {
-            return;
-        }
+        if (!recherche) return;
         int alpha = (int) (0x60 + 0x50 * Math.sin(System.currentTimeMillis() / 220.0)) << 24;
         GuiGraphics g = event.getGuiGraphics();
         g.pose().pushPose();
@@ -51,9 +43,6 @@ public final class Surbrillance {
                     : recherche && Pont.cherche(id.toString())) {
                 g.fill(x, y, x + 16, y + 16, alpha | 0x30D0FF);
                 g.renderOutline(x - 1, y - 1, 18, 18, CADRE_RECHERCHE);
-            } else if (besoins.contains(id.toString())) {
-                g.fill(x, y, x + 16, y + 16, FOND);
-                g.renderOutline(x - 1, y - 1, 18, 18, CADRE);
             }
         }
         g.pose().popPose();

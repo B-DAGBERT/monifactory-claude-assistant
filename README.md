@@ -98,14 +98,16 @@ Quand toutes les cibles finales de l’arbre sont obtenues dans les quantités d
 réinitialise l’arbre EMI, le scan, les contours et les transferts. La détection fonctionne aussi
 avec Maj-clic et avec un résultat pris sur le curseur ; l’aperçu dans la case de résultat ne compte
 pas comme un objet fabriqué. Un composant intermédiaire ne termine jamais le craft principal.
-Sans arbre actif, aucun bouton de transfert n’est affiché, y compris la flèche dans les recettes
+Sans craft actif (arbre présent et mode fabrication EMI activé), aucun bouton de transfert n’est affiché, y compris la flèche dans les recettes
 EMI ouvertes depuis un coffre. Effacer ou remplacer l’arbre coupe aussi l’ancien scan.
 
 ## Récupérer les ingrédients depuis un coffre
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
-au-dessus du coffre suit **l’arbre EMI courant**, même sans objectif dans l’assistant et sans
-activer le repérage des coffres. Le sélecteur montre les objets manquants disponibles dans ce
+au-dessus du coffre suit **le craft actif d’EMI**, même sans objectif dans l’assistant et sans
+activer le repérage des coffres. Un arbre simplement consulté ou conservé après l’arrêt du craft
+ne propose aucun transfert. **Objectif EMI** et **Scanner coffres** activent explicitement le craft ;
+l’objectif seul n’active ni récupération ni surbrillance. Le sélecteur montre les objets manquants disponibles dans ce
 coffre ; ses flèches permettent de parcourir plus de huit objets.
 
 - **Transférer les items** récupère la quantité manquante de l’objet sélectionné.

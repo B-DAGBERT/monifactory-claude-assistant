@@ -77,6 +77,9 @@ class EmiTests(unittest.TestCase):
     def test_final_craft_quantities_and_multiple_targets(self):
         self._run_java_contract("SuiviFabrication")
 
+    def test_only_explicitly_active_emi_craft_allows_collection(self):
+        self._run_java_contract("ArbreEmi")
+
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 
@@ -100,6 +103,23 @@ class EmiTests(unittest.TestCase):
         if not javac or not java:
             self.skipTest("JDK 17 required")
         with tempfile.TemporaryDirectory() as directory:
+            fixtures = []
+            if name == "ArbreEmi":
+                for package, cls, body in (
+                    (
+                        "dev.emi.emi.bom",
+                        "BoM",
+                        "public static Object tree; public static boolean craftingMode;",
+                    ),
+                    (
+                        "dev.emi.emi.screen",
+                        "EmiScreenManager",
+                        "public static boolean disabled; public static boolean isDisabled() { return disabled; }",
+                    ),
+                ):
+                    source = Path(directory) / f"{cls}.java"
+                    source.write_text(f"package {package}; public class {cls} {{ {body} }}")
+                    fixtures.append(str(source))
             subprocess.run(
                 [
                     javac,
@@ -107,6 +127,7 @@ class EmiTests(unittest.TestCase):
                     "UTF-8",
                     "-d",
                     directory,
+                    *fixtures,
                     str(ROOT / f"mod/src/main/java/fr/assistantia/{name}.java"),
                     str(ROOT / f"tests/java/fr/assistantia/{name}Test.java"),
                     *(

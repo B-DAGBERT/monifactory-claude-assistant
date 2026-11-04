@@ -4,6 +4,7 @@ import com.mojang.logging.LogUtils;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.ArbreCollecte;
+import fr.assistantia.ArbreEmi;
 import fr.assistantia.MemoireCollecte;
 import fr.assistantia.RechercheEmi;
 import java.lang.reflect.Field;
@@ -31,26 +32,27 @@ import net.minecraftforge.registries.ForgeRegistries;
 public final class CoffresArbreEmi {
     private static final String ID = "assistantia:coffres_arbre";
     private static final Map<Screen, Button> boutons = new WeakHashMap<>();
-    private static Field arbre, boutonArbre, barreRecherche, comparaisonEmi;
+    private static Field boutonArbre, barreRecherche, comparaisonEmi;
+    private static boolean charge;
     private static java.lang.reflect.Method desactive;
     private static boolean erreurSignalee;
     private static long dernierClic;
 
     private static void charger() throws ReflectiveOperationException {
-        if (arbre != null) return;
+        if (charge) return;
         Class<?> manager = Class.forName("dev.emi.emi.screen.EmiScreenManager");
         boutonArbre = manager.getField("tree");
         barreRecherche = manager.getField("search");
         desactive = manager.getMethod("isDisabled");
         comparaisonEmi = EmiStack.class.getDeclaredField("comparison");
         comparaisonEmi.setAccessible(true);
-        arbre = Class.forName("dev.emi.emi.bom.BoM").getField("tree");
+        charge = true;
     }
 
     public static Object arbreActif() {
         try {
             charger();
-            return arbre.get(null);
+            return ArbreEmi.actif();
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);
             return null;
@@ -97,7 +99,7 @@ public final class CoffresArbreEmi {
             button.setY(y);
             button.setWidth(width);
             boolean selected = RechercheEmi.selectionnee(ID);
-            button.active = selected || arbre.get(null) != null;
+            button.active = selected || ArbreEmi.consulte() != null;
             button.setMessage(
                     Component.literal(
                             width < 80
@@ -140,13 +142,15 @@ public final class CoffresArbreEmi {
         }
         try {
             charger();
-            Object tree = arbre.get(null);
+            Object tree = ArbreEmi.consulte();
             if (tree == null) return;
             Object root = tree.getClass().getField("goal").get(tree);
             long lots = tree.getClass().getField("batches").getLong(tree);
             Set<Object> chemin = Collections.newSetFromMap(new IdentityHashMap<>());
             int[] count = {0};
             ArbreCollecte.Noeud snapshot = lire(root, chemin, count, 0, null);
+            if (ArbreEmi.actif() == null) RechercheEmi.arreter();
+            if (!ArbreEmi.activer()) return;
             RechercheEmi.basculer(ID, new MemoireCollecte(snapshot, lots));
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);
@@ -164,7 +168,7 @@ public final class CoffresArbreEmi {
             AbstractContainerScreen<?> screen) {
         try {
             charger();
-            Object tree = arbre.get(null);
+            Object tree = ArbreEmi.actif();
             if (tree == null) return new fr.assistantia.RetraitCoffre.Plan(List.of(), 0);
             Object root = tree.getClass().getField("goal").get(tree);
             long lots = tree.getClass().getField("batches").getLong(tree);
