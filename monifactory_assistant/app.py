@@ -47,6 +47,7 @@ import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.commands.auto_update import notice as update_notice
 from monifactory_assistant.config import minecraft_dir
 from monifactory_assistant.game.emi import objective_tree
+from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.projects import ProjectStore
 from monifactory_assistant.paths import PACKAGE_ROOT
 from monifactory_assistant.paths import ROOT as HERE
@@ -2071,6 +2072,9 @@ def build_mod_view(app):
         "recette": recipe_now if on["remplir"] else None,
         "fabrications": crafts if on["remplir"] else [],
         "recherche": search,
+        "recherche_emi": app.emi_search.view(app.bridge, storage, state, now)
+        if hasattr(app, "emi_search")
+        else None,
         "info": dict(app.info) if app.info else None,
     }  # une copie : sinon la fiche complétée semble inchangée
 
@@ -2473,6 +2477,7 @@ class App:
             None,
             set(),
         )  # fiche « à quoi ça sert » affichée, fiches en rédaction
+        self.emi_search = RecipeChestSearch()
         self.search = None  # objets à mettre en surbrillance (« trouve-moi mes torches »)
         try:
             self.infos = json.loads(INFO_FILE.read_text(encoding="utf-8"))

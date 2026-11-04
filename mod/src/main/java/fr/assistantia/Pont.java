@@ -34,7 +34,6 @@ public final class Pont {
     private static final Path DOSSIER =
             FMLPaths.GAMEDIR.get().resolve("kubejs").resolve("assistant");
     private static final Path VUE = DOSSIER.resolve("vue_mod.json");
-    private static final Path DEMANDE = DOSSIER.resolve("demande_mod.json");
 
     /** Un faisceau à dessiner dans le monde : destination du guidage, ou machine à surveiller. */
     public record Cible(
@@ -288,13 +287,22 @@ public final class Pont {
     public static synchronized boolean envoyer(JsonObject demande) {
         dernierEnvoi = Math.max(System.currentTimeMillis(), dernierEnvoi + 1);
         demande.addProperty("n", dernierEnvoi);
+        return ecrireDemande("demande_mod.json", demande);
+    }
+
+    /** Canal indépendant : une recherche EMI ne remplace jamais une question en attente. */
+    static boolean envoyerRechercheEmi(JsonObject demande) {
+        return ecrireDemande("recherche_emi.json", demande);
+    }
+
+    private static boolean ecrireDemande(String nom, JsonObject demande) {
         try {
             Files.createDirectories(DOSSIER);
-            Path temporaire = DOSSIER.resolve("demande_mod.json.tmp");
+            Path temporaire = DOSSIER.resolve(nom + ".tmp");
             Files.writeString(temporaire, demande.toString(), StandardCharsets.UTF_8);
             Files.move(
                     temporaire,
-                    DEMANDE,
+                    DOSSIER.resolve(nom),
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
             return true;

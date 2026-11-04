@@ -26,7 +26,8 @@ public final class Reperage {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || mc.player == null || Pont.reperes().isEmpty()) {
+        var reperes = RechercheEmi.actif() ? RechercheEmi.reperes() : Pont.reperes();
+        if (mc.level == null || mc.player == null || reperes.isEmpty()) {
             return;
         }
         String dimension = mc.level.dimension().location().toString();
@@ -35,7 +36,7 @@ public final class Reperage {
         MultiBufferSource.BufferSource tampons = mc.renderBuffers().bufferSource();
         float pulsation = (float) (0.65 + 0.35 * Math.sin(System.currentTimeMillis() / 220.0));
         VertexConsumer lignes = tampons.getBuffer(Lignes.TRAVERSANTES);
-        for (Pont.Repere r : Pont.reperes()) {
+        for (Pont.Repere r : reperes) {
             if (visible(r, dimension)) {
                 AABB boite =
                         new AABB(r.x(), r.y(), r.z(), r.x() + 1, r.y() + 1, r.z() + 1)
@@ -46,7 +47,7 @@ public final class Reperage {
         }
         tampons.endBatch(Lignes.TRAVERSANTES);
         Font font = mc.font;
-        for (Pont.Repere r : Pont.reperes()) {
+        for (Pont.Repere r : reperes) {
             if (!visible(r, dimension) || r.texte().isEmpty()) {
                 continue;
             }

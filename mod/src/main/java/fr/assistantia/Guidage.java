@@ -21,7 +21,9 @@ public final class Guidage {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || mc.player == null || Pont.cibles().isEmpty()) {
+        var cibles = new java.util.ArrayList<>(Pont.cibles());
+        cibles.addAll(RechercheEmi.faisceaux());
+        if (mc.level == null || mc.player == null || cibles.isEmpty()) {
             return;
         }
         String dimension = mc.level.dimension().location().toString();
@@ -29,7 +31,7 @@ public final class Guidage {
         PoseStack pose = event.getPoseStack();
         MultiBufferSource.BufferSource tampons = mc.renderBuffers().bufferSource();
         long temps = mc.level.getGameTime();
-        for (Pont.Cible c : Pont.cibles()) {
+        for (Pont.Cible c : cibles) {
             if (c.dimension() != null && !c.dimension().equals(dimension)) {
                 continue;
             }

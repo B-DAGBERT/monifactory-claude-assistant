@@ -55,6 +55,26 @@ EMI tient compte de ton inventaire ; il ne connaît pas les coffres mémorisés 
 posées. L’assistant continue de suivre ces stocks. Échap revient à l’inventaire, puis au menu
 assistant. Il faut relancer **l’assistant et Minecraft** après installation de cette version.
 
+## Coffres depuis une recette EMI
+
+Sur une recette EMI, cliquer **Coffres** juste en dessous du craft : ses ingrédients objets
+et ses outils sont surlignés en cyan dans les inventaires. Les coffres connus qui en contiennent
+ont un contour et un faisceau cyan. Les variantes acceptées par la recette sont incluses ;
+les fluides et les différences de NBT ne sont pas suivis par la mémoire des coffres.
+
+Le bouton devient **Recherche…**, puis **Arrêter**. Cliquer à nouveau coupe le repérage ;
+choisir une autre recette remplace la recherche. Celle-ci reste active après fermeture d’EMI,
+pendant dix minutes au maximum, et s’efface à la déconnexion ou au changement de dimension.
+Le repérage EMI prend temporairement la priorité sur les objets de l’objectif dans les inventaires.
+
+La recherche utilise les derniers contenus mémorisés, sans appel IA ni scan du monde.
+Ouvrir un coffre actualise son contenu. Un message indique si aucun coffre connu ne correspond.
+Seuls les 16 coffres les plus proches de la dimension actuelle sont signalés pour limiter le rendu.
+Les questions dans Discussion et la pause de l’objectif ne sont pas modifiées.
+
+Le panneau en haut à gauche montre désormais uniquement le **plan**, l’**objectif** et son
+**avancement** : les listes d’objets à collecter et leurs quantités restent dans EMI et le menu.
+
 ## Filons : scan, marquage et téléportation
 
 Sélectionner un filon puis **Scanner** : le scan vise son centre GregTech, même si tu es

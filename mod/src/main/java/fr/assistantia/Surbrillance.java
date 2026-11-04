@@ -26,8 +26,8 @@ public final class Surbrillance {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> ecran)) {
             return;
         }
-        Set<String> besoins = Pont.besoins();
-        boolean recherche = Pont.rechercheActive();
+        Set<String> besoins = RechercheEmi.actif() ? Set.of() : Pont.besoins();
+        boolean recherche = RechercheEmi.actif() || Pont.rechercheActive();
         if (besoins.isEmpty() && !recherche) {
             return;
         }
@@ -45,7 +45,9 @@ public final class Surbrillance {
             }
             int x = ecran.getGuiLeft() + slot.x;
             int y = ecran.getGuiTop() + slot.y;
-            if (recherche && Pont.cherche(id.toString())) {
+            if (RechercheEmi.actif()
+                    ? RechercheEmi.cherche(id.toString())
+                    : recherche && Pont.cherche(id.toString())) {
                 g.fill(x, y, x + 16, y + 16, alpha | 0x30D0FF);
                 g.renderOutline(x - 1, y - 1, 18, 18, CADRE_RECHERCHE);
             } else if (besoins.contains(id.toString())) {

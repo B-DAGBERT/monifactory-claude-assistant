@@ -112,6 +112,11 @@ minecraft {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
+    maven {
+        name = 'EMI'
+        url = 'https://repo.sleeping.town/'
+        content { includeGroup 'dev.emi' }
+    }
     // Put repositories for dependencies here
     // ForgeGradle automatically adds the Forge maven and Maven Central for you
 
@@ -123,6 +128,8 @@ repositories {
 }
 
 dependencies {
+    // Optional client integration: API only, EMI is supplied by the modpack.
+    compileOnly fg.deobf('dev.emi:emi-forge:1.1.22+1.20.1:api')
     // Specify the version of Minecraft to use.
     // Any artifact can be supplied so long as it has a "userdev" classifier artifact and is a compatible patcher artifact.
     // The "userdev" classifier will be requested and setup by ForgeGradle.

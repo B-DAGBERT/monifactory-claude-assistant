@@ -1,6 +1,5 @@
 package fr.assistantia;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -15,12 +14,7 @@ import net.minecraftforge.client.gui.overlay.ForgeGui;
 
 import java.util.List;
 
-/**
- * Ce qui reste à l'écran pendant qu'on joue, volontairement léger : l'objectif et sa progression,
- * l'étape en cours, les trois prochains objets utiles, la direction, et seulement les alertes qui
- * comptent. Les réponses de Codex et du coach arrivent dans une bulle qui s'efface toute seule. Le
- * détail est dans l'écran (touche Y).
- */
+/** Panneau compact : plan, objectif et progression. Les réponses restent dans la bulle séparée. */
 public final class Hud {
     static final int OR = 0xFFC94A,
             BLANC = 0xF2F2F2,
@@ -86,29 +80,6 @@ public final class Hud {
                                     2)
                             + 1;
         }
-        if (Pont.vrai(hud, "recharger")) {
-            g.drawString(font, "⚠ F3 + T pour recharger le script", 2, y, ROUGE, false);
-            y += 11;
-        }
-        for (JsonElement a : Pont.liste(hud, "alertes")) {
-            String texte = a.getAsString();
-            y =
-                    ecrire(
-                                    g,
-                                    font,
-                                    texte,
-                                    2,
-                                    y,
-                                    LARGEUR - 4,
-                                    texte.startsWith("⚠") ? ROUGE : JAUNE,
-                                    2)
-                            + 1;
-        }
-        String recherche = Pont.texte(hud, "recherche");
-        if (!recherche
-                .isEmpty()) { // ce que tu as demandé à chercher, en surbrillance dans les coffres
-            y = ecrire(g, font, "⌕ " + recherche, 2, y, LARGEUR - 4, CYAN, 2) + 1;
-        }
         if (objectif.isEmpty()) {
             g.drawString(font, "Je prépare ton prochain objectif…", 2, y, GRIS, false);
             return;
@@ -131,99 +102,18 @@ public final class Hud {
         y += 11;
         g.fill(2, y, LARGEUR - 2, y + 3, 0x30FFFFFF);
         g.fill(2, y, 2 + (int) ((LARGEUR - 4) * progres), y + 3, 0xFF6BE36B);
-        y += 6;
-        String etape = Pont.texte(hud, "etape");
-        if (!etape.isEmpty()) {
-            y = ecrire(g, font, "▶ " + etape, 2, y, LARGEUR - 4, BLANC, 2) + 2;
-        }
-        for (JsonElement e : Pont.liste(hud, "prochains")) {
-            y = ligneObjet(g, font, e.getAsJsonObject(), 2, y);
-        }
-        if (hud.has("direction") && hud.get("direction").isJsonObject()) {
-            JsonObject d = hud.getAsJsonObject("direction");
-            String texte = "➜ " + Pont.texte(d, "label") + direction(mc.player, d);
-            g.drawString(font, font.plainSubstrByWidth(texte, LARGEUR - 4), 2, y + 1, BLEU, false);
-            y += 11;
-        }
-        String statut = Pont.texte(hud, "statut");
-        if (!statut.isEmpty()) {
-            g.drawString(
-                    font,
-                    font.plainSubstrByWidth(statut + points(), LARGEUR - 4),
-                    2,
-                    y + 1,
-                    GRIS,
-                    false);
-        }
     }
 
-    /** Hauteur du panneau, pour dessiner son fond avant son contenu. */
+    /** Le panneau ne contient que le plan, l'objectif et sa barre d'avancement. */
     private static int hauteurPanneau(Font font, JsonObject hud) {
-        int h = Pont.vrai(hud, "recharger") ? 11 : 0;
-        if (!arret().isEmpty()) {
-            h += Math.min(2, font.split(Component.literal(arret()), LARGEUR - 4).size()) * 10 + 1;
-        }
-        for (JsonElement a : Pont.liste(hud, "alertes")) {
-            h +=
-                    Math.min(2, font.split(Component.literal(a.getAsString()), LARGEUR - 4).size())
-                                    * 10
-                            + 1;
-        }
-        String recherche = Pont.texte(hud, "recherche");
-        if (!recherche.isEmpty()) {
-            h +=
-                    Math.min(2, font.split(Component.literal("⌕ " + recherche), LARGEUR - 4).size())
-                                    * 10
-                            + 1;
-        }
-        if (Pont.texte(hud, "objectif").isEmpty()) {
-            return h + 10;
-        }
-        h += 17 + (Pont.texte(hud, "plan").isEmpty() ? 0 : 10);
-        String etape = Pont.texte(hud, "etape");
-        if (!etape.isEmpty()) {
-            h +=
-                    Math.min(2, font.split(Component.literal("▶ " + etape), LARGEUR - 4).size())
-                                    * 10
-                            + 2;
-        }
-        h += Pont.liste(hud, "prochains").size() * 18;
-        if (hud.has("direction") && hud.get("direction").isJsonObject()) {
-            h += 11;
-        }
-        if (!Pont.texte(hud, "statut").isEmpty()) {
-            h += 11;
-        }
-        return h;
-    }
-
-    /** Un objet utile : icône, nom, où le trouver, et le compteur (vert quand c'est bon). */
-    private static int ligneObjet(GuiGraphics g, Font font, JsonObject o, int x, int y) {
-        g.renderItem(Pont.objet(Pont.texte(o, "item")), x, y);
-        int a = (int) Pont.nombre(o, "a", 0), besoin = (int) Pont.nombre(o, "besoin", 1);
-        String compte = Math.min(a, besoin) + "/" + besoin;
-        int couleurCompte = a >= besoin ? VERT : couleur(Pont.texte(o, "c"));
-        int largeurNom = LARGEUR - 22 - font.width(compte) - 6;
-        g.drawString(
-                font,
-                font.plainSubstrByWidth(Pont.texte(o, "nom"), largeurNom),
-                x + 19,
-                y,
-                BLANC,
-                false);
-        g.drawString(font, compte, LARGEUR - font.width(compte) - 2, y, couleurCompte, false);
-        g.pose().pushPose();
-        g.pose().translate(x + 19, y + 9, 0);
-        g.pose().scale(0.75F, 0.75F, 1);
-        g.drawString(
-                font,
-                font.plainSubstrByWidth(Pont.texte(o, "ou"), (int) (largeurNom / 0.75F)),
-                0,
-                0,
-                GRIS,
-                false);
-        g.pose().popPose();
-        return y + 18;
+        int h =
+                arret().isEmpty()
+                        ? 0
+                        : Math.min(2, font.split(Component.literal(arret()), LARGEUR - 4).size())
+                                        * 10
+                                + 1;
+        if (Pont.texte(hud, "objectif").isEmpty()) return h + 10;
+        return h + 17 + (Pont.texte(hud, "plan").isEmpty() ? 0 : 10);
     }
 
     /**
@@ -336,9 +226,5 @@ public final class Hud {
             y += 10;
         }
         return y;
-    }
-
-    private static String points() {
-        return ".".repeat((int) (System.currentTimeMillis() / 400 % 4));
     }
 }
