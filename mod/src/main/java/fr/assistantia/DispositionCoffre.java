@@ -1,6 +1,7 @@
 package fr.assistantia;
 
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Place le panneau de retrait hors de l'interface du coffre, en largeur plutôt qu'en hauteur pour
@@ -99,6 +100,34 @@ public final class DispositionCoffre {
                     prendre.decaler(dx, dy),
                     tout.decaler(dx, dy));
         }
+    }
+
+    /** Inclut les prolongements reliés au conteneur, jamais les commandes globales isolées. */
+    public static Zone entourage(Zone conteneur, List<Zone> widgets) {
+        List<Zone> relies = new ArrayList<>();
+        relies.add(conteneur);
+        List<Zone> restants = new ArrayList<>(widgets);
+        Zone resultat = conteneur;
+        boolean ajout;
+        do {
+            ajout = false;
+            for (int i = restants.size() - 1; i >= 0; i--) {
+                Zone candidat = restants.get(i);
+                if (relies.stream().noneMatch(z -> voisins(z, candidat))) continue;
+                relies.add(candidat);
+                resultat = resultat.union(candidat);
+                restants.remove(i);
+                ajout = true;
+            }
+        } while (ajout);
+        return resultat;
+    }
+
+    private static boolean voisins(Zone a, Zone b) {
+        return a.x() <= b.droite() + ECART
+                && b.x() <= a.droite() + ECART
+                && a.y() <= b.bas() + ECART
+                && b.y() <= a.bas() + ECART;
     }
 
     /**

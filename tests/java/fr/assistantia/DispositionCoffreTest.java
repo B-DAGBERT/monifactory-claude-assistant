@@ -30,6 +30,22 @@ public final class DispositionCoffreTest {
     }
 
     public static void main(String[] args) {
+        // Régression de la capture : FTB en haut à gauche ne doit pas décaler le panneau.
+        Zone tonneau = new Zone(215, 43, 194, 240);
+        Zone commandes = new Zone(2, 2, 76, 48);
+        Zone onglet = new Zone(411, 48, 22, 25);
+        Zone extension = new Zone(435, 48, 28, 50);
+        Zone entouré = DispositionCoffre.entourage(tonneau, List.of(commandes, extension, onglet));
+        assert entouré.equals(tonneau.union(onglet).union(extension));
+        assert DispositionCoffre.entourage(tonneau, List.of(onglet, commandes, extension))
+                        .equals(entouré)
+                : "Indépendant de l'ordre d'ajout des widgets";
+        Disposition panneau = DispositionCoffre.calculer(640, 360, entouré, 1);
+        verifier("tonneau et boutons FTB", panneau, 640, 360, entouré, 1);
+        assert panneau.cadre().x() == tonneau.x() && panneau.cadre().bas() < tonneau.y();
+        assert !panneau.cadre().croise(commandes) : "Le panneau reste près du coffre";
+        assert DispositionCoffre.entourage(tonneau, List.of(commandes)).equals(tonneau);
+
         // Coffre simple, place au-dessus : bandeau, comme avant.
         Zone petit = new Zone(152, 70, 176, 166);
         Disposition d = DispositionCoffre.calculer(480, 360, petit, 5);

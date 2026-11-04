@@ -5,6 +5,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.components.AbstractWidget;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.client.gui.layouts.LayoutElement;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -111,16 +114,16 @@ public final class PanneauAssistant {
     public static Zone occupee(AbstractContainerScreen<?> screen) {
         int gauche = screen.getGuiLeft(), haut = screen.getGuiTop();
         Zone zone = new Zone(gauche, haut, screen.getXSize(), screen.getYSize());
+        List<Zone> widgets = new ArrayList<>();
         for (Slot s : screen.getMenu().slots)
             if (s.isActive())
-                zone = ajouter(screen, zone, new Zone(gauche + s.x - 1, haut + s.y - 1, 18, 18));
-        for (GuiEventListener enfant : screen.children())
-            zone = ajouter(screen, zone, zone(enfant));
-        return zone;
+                ajouter(screen, widgets, new Zone(gauche + s.x - 1, haut + s.y - 1, 18, 18));
+        for (GuiEventListener enfant : screen.children()) ajouter(screen, widgets, zone(enfant));
+        return DispositionCoffre.entourage(zone, widgets);
     }
 
-    /** Ignore ce qui est caché hors de l'écran ou couvre la moitié de l'écran. */
-    private static Zone ajouter(Screen screen, Zone zone, Zone morceau) {
+    /** Ignore les widgets cachés hors écran et les grandes racines transparentes. */
+    private static void ajouter(Screen screen, List<Zone> widgets, Zone morceau) {
         if (morceau == null
                 || morceau.largeur() <= 0
                 || morceau.hauteur() <= 0
@@ -128,12 +131,13 @@ public final class PanneauAssistant {
                 || morceau.y() < 0
                 || morceau.droite() > screen.width
                 || morceau.bas() > screen.height
-                || morceau.largeur() * morceau.hauteur() > screen.width * screen.height / 2)
-            return zone;
-        return zone.union(morceau);
+                || (long) morceau.largeur() * morceau.hauteur()
+                        > (long) screen.width * screen.height / 2) return;
+        widgets.add(morceau);
     }
 
     private static Zone zone(GuiEventListener enfant) {
+        if (enfant instanceof AbstractWidget widget && !widget.visible) return null;
         if (enfant instanceof LayoutElement e)
             return new Zone(e.getX(), e.getY(), e.getWidth(), e.getHeight());
         try { // Onglets de Sophisticated Storage : mêmes accesseurs, sans l'interface vanilla.

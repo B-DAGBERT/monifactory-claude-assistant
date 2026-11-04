@@ -63,6 +63,7 @@ public final class AideCoffre {
     }
 
     private static void actualiser() {
+        occupee = PanneauAssistant.occupee(ecran);
         plan = Emi.retraitArbre(ecran);
         objets = plan.objets();
         if (objets.stream().noneMatch(i -> ItemStack.isSameItemSameTags(i, choisi)))
