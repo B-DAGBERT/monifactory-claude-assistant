@@ -30,6 +30,7 @@ public final class PauseObjectifEmi {
     private static void arreter() {
         RechercheEmi.arreter();
         RetraitCoffre.arreter();
+        AideCoffre.vider();
         EmiObjectif.suspendre();
     }
 

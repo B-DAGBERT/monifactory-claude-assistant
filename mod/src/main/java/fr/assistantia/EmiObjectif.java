@@ -58,6 +58,21 @@ public final class EmiObjectif {
         }
     }
 
+    /** Fin de craft : aucun arbre ni sélection terminée à réactiver depuis le cache. */
+    public static void terminerArbre(Object arbreTermine) {
+        boolean objectifTermine = arbreTermine == arbrePrecedent;
+        boolean pauseConservee = suspendu;
+        suspendre();
+        if (objectifTermine) {
+            gestionPrecedente = arbrePrecedent = null;
+            signaturePrecedente = avertissementPrecedent = "";
+            suspendu = false;
+        } else {
+            // Conserver les choix de l'objectif en pause après un craft libre.
+            suspendu = pauseConservee;
+        }
+    }
+
     /** Construit avant de publier : un échec laisse l'arbre personnel d'EMI intact. */
     public static Resultat preparer(JsonObject objectif) {
         if (PauseObjectifEmi.enPause())

@@ -47,6 +47,16 @@ public final class CoffresArbreEmi {
         arbre = Class.forName("dev.emi.emi.bom.BoM").getField("tree");
     }
 
+    public static Object arbreActif() {
+        try {
+            charger();
+            return arbre.get(null);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            signaler(e);
+            return null;
+        }
+    }
+
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post event) {
         Screen screen = event.getScreen();

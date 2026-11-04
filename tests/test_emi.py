@@ -74,6 +74,9 @@ class EmiTests(unittest.TestCase):
     def test_objective_pause_stops_emi_once_without_implicit_resume(self):
         self._run_java_contract("EtatPauseEmi")
 
+    def test_final_craft_quantities_and_multiple_targets(self):
+        self._run_java_contract("SuiviFabrication")
+
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 
@@ -106,6 +109,11 @@ class EmiTests(unittest.TestCase):
                     directory,
                     str(ROOT / f"mod/src/main/java/fr/assistantia/{name}.java"),
                     str(ROOT / f"tests/java/fr/assistantia/{name}Test.java"),
+                    *(
+                        [str(ROOT / "mod/src/main/java/fr/assistantia/PlanRetrait.java")]
+                        if name == "SuiviFabrication"
+                        else []
+                    ),
                     *[
                         str(ROOT / f"mod/src/main/java/fr/assistantia/{dependency}.java")
                         for dependency in (

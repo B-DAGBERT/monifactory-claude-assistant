@@ -58,6 +58,17 @@ public final class AideCoffre {
         }
     }
 
+    public static void vider() {
+        plan = new RetraitCoffre.Plan(List.of(), 0);
+        objets = List.of();
+        choisi = ItemStack.EMPTY;
+        page = 0;
+        actualise = 0;
+        if (transferer != null)
+            for (Button bouton : List.of(transferer, tout, avant, apres))
+                bouton.visible = bouton.active = false;
+    }
+
     private static void actualiser() {
         plan = Emi.retraitArbre(ecran);
         objets = plan.objets();
@@ -68,6 +79,10 @@ public final class AideCoffre {
     }
 
     private static void agir(boolean tous) {
+        if (!Emi.arbreActif()) {
+            vider();
+            return;
+        }
         if (RetraitCoffre.occupe() || ecran == null) return;
         // Le clic utilise l'arbre et les slots actuels, jamais le plan mis en cache pour le rendu.
         ItemStack selection = choisi.copy();
@@ -79,6 +94,10 @@ public final class AideCoffre {
     @SubscribeEvent
     public static void avantRendu(ScreenEvent.Render.Pre event) {
         if (event.getScreen() != ecran || transferer == null) return;
+        if (!Emi.arbreActif()) {
+            vider();
+            return;
+        }
         boolean occupe = RetraitCoffre.occupe();
         if (!occupe && System.currentTimeMillis() - actualise >= 400) actualiser();
         transferer.visible = tout.visible = !objets.isEmpty();
@@ -104,6 +123,10 @@ public final class AideCoffre {
     @SubscribeEvent
     public static void rendu(ScreenEvent.Render.Post event) {
         if (event.getScreen() != ecran || objets.isEmpty()) return;
+        if (!Emi.arbreActif()) {
+            vider();
+            return;
+        }
         var g = event.getGuiGraphics();
         var font = Minecraft.getInstance().font;
         // Les boutons et les flèches sont rendus par Minecraft, hors de ces deux fonds.
@@ -147,6 +170,10 @@ public final class AideCoffre {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
         if (event.getScreen() != ecran || objets.isEmpty()) return;
+        if (!Emi.arbreActif()) {
+            vider();
+            return;
+        }
         for (Button b : List.of(transferer, tout, avant, apres))
             if (b.visible && b.isMouseOver(event.getMouseX(), event.getMouseY())) {
                 if (b.active)

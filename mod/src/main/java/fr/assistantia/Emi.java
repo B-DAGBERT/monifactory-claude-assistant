@@ -53,7 +53,7 @@ public final class Emi {
             getAmount,
             isLoaded;
     private static Object typeBouton, destinationAucune;
-    private static Method planCoffre;
+    private static Method planCoffre, arbreCourant;
 
     private Emi() {}
 
@@ -300,6 +300,19 @@ public final class Emi {
                             null, recette, ecran, typeBouton, destinationAucune, Math.max(1, fois));
         } catch (Throwable t) {
             LOGGER.warn("Assistant IA : remplissage impossible", t);
+            return false;
+        }
+    }
+
+    public static boolean arbreActif() {
+        if (!present()) return false;
+        try {
+            if (arbreCourant == null)
+                arbreCourant =
+                        Class.forName("fr.assistantia.compat.emi.CoffresArbreEmi")
+                                .getMethod("arbreActif");
+            return arbreCourant.invoke(null) != null;
+        } catch (ReflectiveOperationException | LinkageError e) {
             return false;
         }
     }

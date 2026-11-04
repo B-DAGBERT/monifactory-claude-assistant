@@ -39,6 +39,7 @@ public final class RecuperationEmi {
 
         @Override
         public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+            if (CoffresArbreEmi.arbreActif() == null) return;
             g.fill(
                     bounds.x(),
                     bounds.y(),
@@ -56,6 +57,7 @@ public final class RecuperationEmi {
 
         @Override
         public List<ClientTooltipComponent> getTooltip(int x, int y) {
+            if (CoffresArbreEmi.arbreActif() == null) return List.of();
             var p = planArbre(EmiApi.getHandledScreen());
             return List.of(
                     texte(
@@ -71,8 +73,10 @@ public final class RecuperationEmi {
         @Override
         public boolean mouseClicked(int x, int y, int button) {
             if (button != 0 || !bounds.contains(x, y)) return false;
+            if (CoffresArbreEmi.arbreActif() == null) return true;
             var screen = EmiApi.getHandledScreen();
-            if (screen != null && RetraitCoffre.lancer(screen, planArbre(screen)))
+            var plan = planArbre(screen);
+            if (screen != null && plan.total() > 0 && RetraitCoffre.lancer(screen, plan))
                 Minecraft.getInstance().setScreen(screen);
             return true;
         }

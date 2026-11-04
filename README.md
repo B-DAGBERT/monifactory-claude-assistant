@@ -94,6 +94,13 @@ Le panneau en haut à gauche garde uniquement le **plan**, l’**objectif** et s
 Dans le menu de l’assistant, **Masquer** ferme l’avis de mise à jour et mémorise ce choix
 localement, y compris après redémarrage. Une nouvelle version peut afficher un nouvel avis.
 
+Quand toutes les cibles finales de l’arbre sont obtenues dans les quantités demandées, le mod
+réinitialise l’arbre EMI, le scan, les contours et les transferts. La détection fonctionne aussi
+avec Maj-clic et avec un résultat pris sur le curseur ; l’aperçu dans la case de résultat ne compte
+pas comme un objet fabriqué. Un composant intermédiaire ne termine jamais le craft principal.
+Sans arbre actif, aucun bouton de transfert n’est affiché, y compris la flèche dans les recettes
+EMI ouvertes depuis un coffre. Effacer ou remplacer l’arbre coupe aussi l’ancien scan.
+
 ## Récupérer les ingrédients depuis un coffre
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
