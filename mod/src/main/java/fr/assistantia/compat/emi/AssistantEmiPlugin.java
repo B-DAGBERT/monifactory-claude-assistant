@@ -9,6 +9,7 @@ import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.api.widget.Bounds;
 import dev.emi.emi.api.widget.Widget;
 import fr.assistantia.RechercheEmi;
+import fr.assistantia.MemoireCollecte;
 import fr.assistantia.RetraitCoffre;
 import dev.emi.emi.api.EmiApi;
 import com.mojang.logging.LogUtils;
@@ -176,18 +177,23 @@ public final class AssistantEmiPlugin implements EmiPlugin {
         @Override
         public boolean mouseClicked(int mouseX, int mouseY, int button) {
             if (button != 0 || !bounds.contains(mouseX, mouseY)) return false;
-            Set<String> ids = new LinkedHashSet<>();
+            List<MemoireCollecte.Ingredient> besoins = new ArrayList<>();
             List<EmiIngredient> ingredients = new ArrayList<>(recipe.getInputs());
             ingredients.addAll(recipe.getCatalysts());
             for (EmiIngredient ingredient : ingredients) {
+                Set<String> ids = new LinkedHashSet<>();
                 for (EmiStack stack : ingredient.getEmiStacks()) {
                     ItemStack item = stack.getItemStack();
                     if (item.isEmpty()) continue; // Pas de faux repérage d'un fluide comme objet.
                     ResourceLocation key = ForgeRegistries.ITEMS.getKey(item.getItem());
                     if (key != null) ids.add(key.toString());
                 }
+                besoins.add(
+                        new MemoireCollecte.Ingredient(
+                                ids,
+                                (int) Math.min(1_000_000L, Math.max(1L, ingredient.getAmount()))));
             }
-            RechercheEmi.basculer(id, ids);
+            RechercheEmi.basculer(id, new MemoireCollecte(besoins));
             return true;
         }
     }

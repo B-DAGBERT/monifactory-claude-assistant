@@ -6,6 +6,9 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
+import java.util.HashMap;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.event.TickEvent;
@@ -16,6 +19,8 @@ public final class RechercheEmi {
     private static String recette = "", monde = "", dimension = "";
     private static long numero, fin, dernierClic, envoye;
     private static boolean attente;
+    private static MemoireCollecte collecte;
+    private static int ticks;
     private static Object connexion;
     private static Set<String> objets = Set.of();
     private static List<Pont.Repere> reperes = List.of();
@@ -55,7 +60,8 @@ public final class RechercheEmi {
         return selectionnee(id) ? attente ? "Recherche…" : "Arrêter" : "Coffres";
     }
 
-    public static void basculer(String id, Set<String> ingredients) {
+    public static void basculer(String id, MemoireCollecte suivi) {
+        Set<String> ingredients = suivi.tous();
         long now = System.currentTimeMillis();
         if (now - dernierClic < 650) return;
         dernierClic = now;
@@ -78,31 +84,56 @@ public final class RechercheEmi {
             informer("Trop de variantes dans cette recette pour une recherche précise.");
             return;
         }
-        long n = Math.max(now, numero + 1), expiration = now + 600_000;
-        JsonObject demande = new JsonObject();
-        demande.addProperty("n", n);
-        demande.addProperty("actif", true);
-        demande.addProperty("recette", id);
-        demande.addProperty("monde", Filons.monde());
-        demande.addProperty("dimension", mc.level.dimension().location().toString());
-        demande.addProperty("fin", expiration / 1000.0);
-        JsonArray items = new JsonArray();
-        ingredients.stream().sorted().forEach(items::add);
-        demande.add("objets", items);
-        if (!Pont.envoyerRechercheEmi(demande)) {
-            informer("Recherche non transmise. Réessaie.");
-            return;
-        }
         vider();
         recette = id;
         monde = Filons.monde();
         dimension = mc.level.dimension().location().toString();
         connexion = mc.getConnection();
-        numero = n;
-        fin = expiration;
+        fin = now + 600_000;
+        collecte = suivi;
+        objets = suivi.actualiser(inventaire());
+        transmettre();
+    }
+
+    private static Map<String, Integer> inventaire() {
+        Map<String, Integer> stock = new HashMap<>();
+        var joueur = Minecraft.getInstance().player;
+        if (joueur != null)
+            for (var item : joueur.getInventory().items) {
+                if (item.isEmpty()) continue;
+                var id = ForgeRegistries.ITEMS.getKey(item.getItem());
+                if (id != null) stock.merge(id.toString(), item.getCount(), Integer::sum);
+            }
+        return stock;
+    }
+
+    private static void transmettre() {
+        long now = System.currentTimeMillis();
+        numero = Math.max(now, numero + 1);
         envoye = now;
-        attente = true;
-        objets = Set.copyOf(ingredients);
+        attente = !objets.isEmpty();
+        // Retirer immédiatement les anciens faisceaux. Une réponse de l'ancienne sélection
+        // est rejetée grâce au numéro de requête, même si elle arrive après le transfert.
+        reperes = List.of();
+        faisceaux = List.of();
+        derniereVue = null;
+        JsonObject demande = new JsonObject();
+        demande.addProperty("n", numero);
+        demande.addProperty("actif", attente);
+        demande.addProperty("recette", recette);
+        demande.addProperty("monde", monde);
+        demande.addProperty("dimension", dimension);
+        demande.addProperty("fin", fin / 1000.0);
+        JsonArray items = new JsonArray();
+        objets.stream().sorted().forEach(items::add);
+        demande.add("objets", items);
+        if (!Pont.envoyerRechercheEmi(demande)) {
+            informer("Recherche non transmise. Réessaie.");
+            // Pas de retour à une ancienne liste d'ingrédients déjà validés.
+            attente = false;
+        }
+        if (objets.isEmpty())
+            informer("Ingrédients récupérés : repérage terminé pour cette recherche.");
     }
 
     public static void arreter() {
@@ -120,6 +151,7 @@ public final class RechercheEmi {
         reperes = List.of();
         faisceaux = List.of();
         derniereVue = null;
+        collecte = null;
     }
 
     private static void informer(String message) {
@@ -134,6 +166,15 @@ public final class RechercheEmi {
             vider();
             return;
         }
+        if (collecte != null && ++ticks % 2 == 0 && !RetraitCoffre.occupe()) {
+            Set<String> restants = collecte.actualiser(inventaire());
+            if (!restants.equals(objets)) {
+                objets = restants;
+                transmettre();
+            }
+        }
+        if (objets.isEmpty())
+            return; // Garder la recherche validée, sans revenir au guidage de l'objectif.
         if (attente && System.currentTimeMillis() - envoye > 8000) {
             informer("L’assistant n’a pas répondu à la recherche EMI. Relance-le puis réessaie.");
             vider();

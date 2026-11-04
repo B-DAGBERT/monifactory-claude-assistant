@@ -59,6 +59,9 @@ class EmiTests(unittest.TestCase):
     def test_chest_withdrawal_allocation(self):
         self._run_java_contract("PlanRetrait")
 
+    def test_collected_ingredients_never_relight(self):
+        self._run_java_contract("MemoireCollecte")
+
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 
@@ -91,6 +94,11 @@ class EmiTests(unittest.TestCase):
                     directory,
                     str(ROOT / f"mod/src/main/java/fr/assistantia/{name}.java"),
                     str(ROOT / f"tests/java/fr/assistantia/{name}Test.java"),
+                    *(
+                        [str(ROOT / "mod/src/main/java/fr/assistantia/PlanRetrait.java")]
+                        if name == "MemoireCollecte"
+                        else []
+                    ),
                 ],
                 check=True,
                 capture_output=True,

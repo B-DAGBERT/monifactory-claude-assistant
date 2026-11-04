@@ -13,7 +13,7 @@ public final class PlanRetrait {
 
     public record Prise(int index, int quantite) {}
 
-    public record Resultat(List<Prise> prises, long manquants) {
+    public record Resultat(List<Prise> prises, long manquants, List<Integer> fournis) {
         public int total() {
             return prises.stream().mapToInt(Prise::quantite).sum();
         }
@@ -53,10 +53,11 @@ public final class PlanRetrait {
                             stocks.get(i).inventaire()
                                     ? Math.max(0, stocks.get(i).quantite())
                                     : 0));
+        List<Arc> destinations = new ArrayList<>();
         long demande = 0;
         for (int j = 0; j < m; j++) {
             long q = Math.max(0, besoins.get(j).quantite());
-            lien(graphe, n + 1 + j, fin, q);
+            destinations.add(lien(graphe, n + 1 + j, fin, q));
             demande += q;
             for (int i = 0; i < n; i++)
                 if (besoins.get(j).accepte().test(stocks.get(i).objet()))
@@ -73,7 +74,10 @@ public final class PlanRetrait {
         for (int i = 0; i < n; i++)
             if (!stocks.get(i).inventaire() && sources.get(i).inverse.capacite > 0)
                 prises.add(new Prise(i, (int) sources.get(i).inverse.capacite));
-        return new Resultat(List.copyOf(prises), demande - fourni);
+        return new Resultat(
+                List.copyOf(prises),
+                demande - fourni,
+                destinations.stream().map(a -> (int) a.inverse.capacite).toList());
     }
 
     private static long augmenter(List<List<Arc>> graphe, int fin) {

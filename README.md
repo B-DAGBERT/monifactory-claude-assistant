@@ -66,6 +66,11 @@ Le bouton devient **Recherche…**, puis **Arrêter**. Cliquer à nouveau coupe 
 choisir une autre recette remplace la recherche. Celle-ci reste active après fermeture d’EMI,
 pendant dix minutes au maximum, et s’efface à la déconnexion ou au changement de dimension.
 Le repérage EMI prend temporairement la priorité sur les objets de l’objectif dans les inventaires.
+Les quantités sont celles d’une fabrication : les ingrédients déjà dans le sac sont déduits.
+Dès que la quantité d’un ingrédient est récupérée, ses faisceaux et sa surbrillance disparaissent.
+Cet ingrédient reste validé pour cette recherche, même s’il est ensuite consommé, rangé ou perdu.
+Les autres ingrédients restent recherchés ; quand tout est récupéré, tous les faisceaux s’éteignent.
+Pour repartir sur une nouvelle collecte, arrêter la recherche puis cliquer de nouveau sur **Coffres**.
 
 La recherche utilise les derniers contenus mémorisés, sans appel IA ni scan du monde.
 Ouvrir un coffre actualise son contenu. Un message indique si aucun coffre connu ne correspond.
