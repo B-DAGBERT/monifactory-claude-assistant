@@ -11,6 +11,7 @@ DEFAULTS = {
     "codex": {"plan": "gpt-6.1-sol", "question": "gpt-5.6-sol", "quick": "gpt-5.6-sol"},
     "claude": {"plan": "sonnet", "question": "sonnet", "quick": "haiku"},
 }
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 def provider(config=None):
@@ -31,6 +32,13 @@ def model(kind, config=None):
     # Legacy top-level models belong to Codex, never forward gpt-* models to Claude.
     legacy = config.get("model_" + kind) if name == "codex" else None
     return custom.get("model_" + kind) or legacy or DEFAULTS[name][kind]
+
+
+def effort(kind, default, config=None):
+    """Réflexion choisie pour ce moteur (effort_plan, effort_question), sinon celle du code."""
+    config = CONFIG if config is None else config
+    value = config.get("providers", {}).get(provider(config), {}).get("effort_" + kind)
+    return value if value in EFFORTS else default
 
 
 def find_claude():

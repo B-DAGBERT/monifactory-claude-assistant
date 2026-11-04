@@ -122,6 +122,7 @@ class ParityTests(unittest.TestCase):
             "App.set_objective_paused",
             "App.handle_project_request",
             "App.watch_game",
+            "App.work_info",  # réflexion réglable (effort_question)
         }
         compatibility_changes |= {
             "App.on_game_connected",

@@ -16,6 +16,26 @@ import monifactory_assistant.providers.claude as claude
 
 
 class SelectionTests(unittest.TestCase):
+    def test_effort_is_configured_per_engine_with_code_defaults(self):
+        config = {
+            "provider": "claude",
+            "providers": {
+                "claude": {"effort_plan": "high", "effort_question": "high"},
+                "codex": {"effort_plan": "max"},
+            },
+        }
+        self.assertEqual(ai_provider.effort("plan", "medium", config), "high")
+        self.assertEqual(ai_provider.effort("question", "low", config), "high")
+        self.assertEqual(ai_provider.effort("plan", "medium", {"provider": "claude"}), "medium")
+        self.assertEqual(
+            ai_provider.effort("plan", "medium", dict(config, provider="codex")), "max"
+        )
+        self.assertEqual(
+            ai_provider.effort("question", "low", dict(config, provider="codex")), "low"
+        )
+        invalid = {"provider": "claude", "providers": {"claude": {"effort_plan": "très"}}}
+        self.assertEqual(ai_provider.effort("plan", "medium", invalid), "medium")
+
     def test_legacy_codex_models_and_claude_defaults_are_isolated(self):
         legacy = {"model_plan": "gpt-custom", "model_question": "gpt-fast"}
         self.assertEqual(ai_provider.model("plan", legacy), "gpt-custom")

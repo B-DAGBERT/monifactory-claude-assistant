@@ -66,8 +66,10 @@ HOTKEY_VOICE = "f10"
 MODEL_PLAN = ai_provider.model("plan")
 MODEL_QUESTION = ai_provider.model("question")
 MODEL_QUICK = ai_provider.model("quick")
-EFFORT_QUESTION = "low"  # réflexion avant de répondre : "low" (rapide), "medium", "high"
-EFFORT_PLAN = "medium"
+# Réflexion avant de répondre : "low" (rapide), "medium", "high"... ; réglable dans
+# assistant.local.json (providers > moteur > effort_question, effort_plan).
+EFFORT_QUESTION = ai_provider.effort("question", "low")
+EFFORT_PLAN = ai_provider.effort("plan", "medium")
 COACH = "normal"  # "calme" : aucune annonce ; "normal" ; "bavard" : il commente tout
 SEARCH_MINUTES = 10  # durée de la surbrillance demandée (« trouve-moi mes torches »)
 # Réglages modifiables dans le jeu (écran Y > Réglages) et gardés dans reglages.json :
@@ -3269,7 +3271,7 @@ class App:
             prompt = INFO_REQUEST.format(nom=name, item=item) + (
                 f"\n\nDéjà trouvé dans le pack :\n{known}" if known else ""
             )
-            answer = ask_claude(prompt, self.bridge.dir, MODEL_QUESTION, effort="low")
+            answer = ask_claude(prompt, self.bridge.dir, MODEL_QUESTION, effort=EFFORT_QUESTION)
             self.events.put(("info_ready", item, parse_info(answer), None))
         except Exception as e:
             log(traceback.format_exc())

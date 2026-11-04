@@ -33,7 +33,13 @@ Les valeurs de `assistant.local.json` ont priorité. Exemple :
 {
   "provider": "claude",
   "providers": {
-    "claude": { "model_plan": "sonnet", "model_question": "sonnet", "model_quick": "haiku" },
+    "claude": {
+      "model_plan": "sonnet",
+      "model_question": "sonnet",
+      "model_quick": "haiku",
+      "effort_plan": "medium",
+      "effort_question": "low"
+    },
     "codex": {
       "model_plan": "gpt-6.1-sol",
       "model_question": "gpt-5.6-sol",
@@ -43,6 +49,9 @@ Les valeurs de `assistant.local.json` ont priorité. Exemple :
 }
 ```
 
+`effort_plan` et `effort_question` règlent la réflexion avant de répondre : `low`, `medium`, `high`,
+`xhigh` ou `max`. Plus elle est élevée, plus la réponse est soignée et lente. Sans réglage, les plans
+utilisent `medium` et les questions `low`.
 Les anciens `model_plan`, `model_question` et `model_quick` à la racine concernent uniquement Codex.
 Ils ne sont jamais envoyés à Claude. Le chemin de l’instance peut être défini par `minecraft_dir`,
 et celui du JDK 17 qui compile le mod par `java_home` (utile sur Windows, où le Java de CurseForge
