@@ -85,6 +85,18 @@ public final class MemoireCollecte {
                 .toList();
     }
 
+    /**
+     * Retrait borné par la sélection globale du scan, jamais par un nouvel arbre local au coffre.
+     */
+    public static List<PlanRetrait.Prise> retraitSelection(
+            List<PlanRetrait.Stock<String>> stocks, Map<String, Integer> selection) {
+        var besoins =
+                selection.entrySet().stream()
+                        .map(e -> new PlanRetrait.Besoin<String>(e.getKey()::equals, e.getValue()))
+                        .toList();
+        return PlanRetrait.calculer(stocks, besoins).prises();
+    }
+
     public Set<String> actualiser(Map<String, Integer> inventaire) {
         if (inventaire.equals(dernierInventaire)) return restants;
         dernierInventaire = Map.copyOf(inventaire);

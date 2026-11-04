@@ -113,6 +113,32 @@ public final class RetraitCoffre {
         return convertir(contenu, r.prises(), r.manquants());
     }
 
+    public static Plan planRecherche(
+            AbstractContainerMenu m,
+            java.util.function.Function<List<PlanRetrait.Stock<String>>, List<PlanRetrait.Prise>>
+                    selection,
+            java.util.function.Function<ItemStack, String> identifiant) {
+        var contenu = contenu(m);
+        List<Slot> slots = new ArrayList<>();
+        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
+        for (Slot slot : contenu.slots())
+            if (!personnel(slot)) {
+                slots.add(slot);
+                stocks.add(
+                        new PlanRetrait.Stock<>(
+                                identifiant.apply(slot.getItem()),
+                                slot.getItem().getCount(),
+                                false));
+            }
+        List<Lot> lots = new ArrayList<>();
+        for (var prise : selection.apply(stocks)) {
+            Slot slot = slots.get(prise.index());
+            int n = Math.min(prise.quantite(), slot.getItem().getCount());
+            if (n > 0) lots.add(new Lot(slot, slot.getItem().copy(), n));
+        }
+        return new Plan(List.copyOf(lots), 0);
+    }
+
     public static Plan planArbre(
             AbstractContainerMenu m,
             ArbreCollecte.Noeud arbre,

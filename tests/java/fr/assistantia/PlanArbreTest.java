@@ -104,6 +104,24 @@ public final class PlanArbreTest {
         assert suivi.dansCoffres(List.of(stock("iron", 64, false), stock("casing", 2, false)))
                         .equals(List.of(new PlanRetrait.Prise(0, 8), new PlanRetrait.Prise(1, 2)))
                 : "stocks de tous les coffres, matières premières seulement pour le troisième";
+        // Le retrait doit utiliser exactement l'allocation globale, même ouvert dans le drawer de
+        // fer.
+        var global = List.of(stock("iron", 64, false), stock("casing", 2, false));
+        var selection = new java.util.HashMap<String, Integer>();
+        for (var prise : suivi.dansCoffres(global))
+            selection.merge(global.get(prise.index()).objet(), prise.quantite(), Integer::sum);
+        assert MemoireCollecte.retraitSelection(List.of(stock("iron", 64, false)), selection)
+                        .equals(List.of(new PlanRetrait.Prise(0, 8)))
+                : "8 fers du scan, pas 24 du recalcul local";
+        assert MemoireCollecte.retraitSelection(List.of(stock("iron", 64, false)), Map.of())
+                .isEmpty();
+        var crafted = node("part", 1, 1, false, hammer, node("iron", 2, 1, false));
+        suivi = new MemoireCollecte(node("machine", 1, 1, false, crafted), 1);
+        suivi.actualiser(Map.of("part", 1));
+        suivi.actualiser(Map.of());
+        assert suivi.dansCoffres(List.of(stock("hammer", 1, false), stock("iron", 64, false)))
+                        .isEmpty()
+                : "composant acquis : aucun outil ni matière pour le refaire";
         System.out.println(
                 "Branches acquises, quantités partielles, stocks partagés, outils et extinction durable : OK");
     }

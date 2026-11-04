@@ -144,7 +144,7 @@ public final class MachinesEmi {
             for (Object child : nodes) enfants.add(lire(child, chemin, key, depth + 1, count));
         chemin.remove(node);
         return new PlanMachines.Noeud<>(
-                s -> variantes.stream().anyMatch(v -> s.isEqual(v)),
+                s -> variantes.stream().anyMatch(v -> ComparaisonEmi.meme(s, v)),
                 amount,
                 divisor,
                 reusable,
@@ -185,6 +185,10 @@ public final class MachinesEmi {
                 signature = key.toString();
             }
             var stock = inventaire();
+            for (var credit : CycleArbreEmi.credits())
+                stock.add(
+                        new PlanRetrait.Stock<>(
+                                EmiStack.of(credit.objet()), credit.quantite(), true));
             // Les sorties déjà préparées ne réapparaissent pas après rangement ou consommation.
             // Le stock réel et le crédit se recouvrent : ne jamais les additionner deux fois.
             for (var p : productions) {
@@ -347,18 +351,18 @@ public final class MachinesEmi {
         PanneauAssistant.fond(g, c);
         String titre =
                 EnvoiMachine.occupe()
-                        ? "Envoi…"
+                        ? EnvoiMachine.statut()
                         : selected.recette().getCategory().getName().getString()
                                 + " · "
                                 + (plan == null ? 0 : plan.fois())
                                 + " / "
                                 + selected.fois()
                                 + " fabrications";
-        String quantites = (plan == null ? 0 : plan.fois()) + " / " + selected.fois();
+        String quantites = (plan == null ? 0 : plan.fois()) + "/" + selected.fois();
         String nom =
                 EnvoiMachine.occupe()
-                        ? "Envoi…"
-                        : selected.recette().getCategory().getName().getString();
+                        ? EnvoiMachine.statut()
+                        : plan != null && !plan.possible() ? "En attente" : "Machine";
         PanneauAssistant.titre(g, font, d.titre(), nom, quantites);
         List<Component> tooltip = null;
         for (int rang = 0; rang < d.parPage(); rang++) {

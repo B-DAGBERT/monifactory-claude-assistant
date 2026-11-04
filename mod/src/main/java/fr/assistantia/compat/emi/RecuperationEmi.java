@@ -39,7 +39,7 @@ public final class RecuperationEmi {
 
         @Override
         public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
-            if (CoffresArbreEmi.arbreActif() == null) return;
+            if (!fr.assistantia.RechercheEmi.actif()) return;
             g.fill(
                     bounds.x(),
                     bounds.y(),
@@ -57,13 +57,13 @@ public final class RecuperationEmi {
 
         @Override
         public List<ClientTooltipComponent> getTooltip(int x, int y) {
-            if (CoffresArbreEmi.arbreActif() == null) return List.of();
+            if (!fr.assistantia.RechercheEmi.actif()) return List.of();
             var p = planArbre(EmiApi.getHandledScreen());
             return List.of(
                     texte(
                             p.total() > 0
-                                    ? "Tout récupérer · " + p.total() + " objets de l’arbre EMI"
-                                    : "Aucun objet manquant de l’arbre EMI dans ce coffre"));
+                                    ? "Tout récupérer · " + p.total() + " objets du scan actif"
+                                    : "Aucun objet du scan à prendre ici"));
         }
 
         private ClientTooltipComponent texte(String s) {
@@ -73,7 +73,7 @@ public final class RecuperationEmi {
         @Override
         public boolean mouseClicked(int x, int y, int button) {
             if (button != 0 || !bounds.contains(x, y)) return false;
-            if (CoffresArbreEmi.arbreActif() == null) return true;
+            if (!fr.assistantia.RechercheEmi.actif()) return true;
             var screen = EmiApi.getHandledScreen();
             var plan = planArbre(screen);
             if (screen != null && plan.total() > 0 && RetraitCoffre.lancer(screen, plan))

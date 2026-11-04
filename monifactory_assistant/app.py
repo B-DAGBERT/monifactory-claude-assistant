@@ -1997,7 +1997,11 @@ def build_mod_view(app):
         main = next((recipes[t["item"]] for t in plan["cibles"] if t["item"] in recipes), None)
         screen["arbre"] = {"item": main["item"], "id": main.get("id")} if main else None
         screen["objectif_emi"] = objective_tree(
-            plan, screen["projets"].get("actif", ""), app.plan_version
+            plan,
+            screen["projets"].get("actif", ""),
+            app.plan_version,
+            progress=progress,
+            inventory=have,
         )
     if paused and plan:
         hud.update(

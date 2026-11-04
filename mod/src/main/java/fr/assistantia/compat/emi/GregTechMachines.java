@@ -179,6 +179,11 @@ public final class GregTechMachines {
         }
     }
 
+    /** Le NBT affiché par EMI peut être factice : lire la configuration de la recette GT. */
+    public static int configurationCircuit(EmiRecipe r) throws ReflectiveOperationException {
+        return ConfigurationCircuit.lire(recette(r));
+    }
+
     public static int circuit(ItemStack item) throws ReflectiveOperationException {
         return (int)
                 Class.forName("com.gregtechceu.gtceu.common.item.IntCircuitBehaviour")

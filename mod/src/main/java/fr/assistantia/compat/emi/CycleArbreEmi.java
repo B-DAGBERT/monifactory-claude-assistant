@@ -28,6 +28,12 @@ public final class CycleArbreEmi {
     private record Cibles(
             String signature, List<PlanRetrait.Besoin<ItemStack>> besoins, boolean objectif) {}
 
+    public static List<PlanRetrait.Stock<ItemStack>> credits() {
+        return suivi == null || CoffresArbreEmi.arbreActif() != precedent
+                ? List.of()
+                : suivi.credits();
+    }
+
     private static void nettoyer() {
         RechercheEmi.arreter();
         RetraitCoffre.arreter();
@@ -62,7 +68,18 @@ public final class CycleArbreEmi {
             if (suivi == null || !signature.equals(cibles.signature())) {
                 if (suivi != null) nettoyer(); // Quantités modifiées : ne pas garder l'ancien scan.
                 signature = cibles.signature();
-                suivi = new SuiviFabrication<>(cibles.besoins(), !cibles.objectif());
+                suivi =
+                        new SuiviFabrication<>(
+                                cibles.besoins(),
+                                !cibles.objectif(),
+                                (a, b) ->
+                                        a.getItem() == b.getItem()
+                                                && cibles.besoins().stream()
+                                                        .allMatch(
+                                                                c ->
+                                                                        c.accepte().test(a)
+                                                                                == c.accepte()
+                                                                                        .test(b)));
             }
             if (RetraitCoffre.occupe() || EnvoiMachine.occupe())
                 return; // Attendre la fin des clics et leur confirmation.

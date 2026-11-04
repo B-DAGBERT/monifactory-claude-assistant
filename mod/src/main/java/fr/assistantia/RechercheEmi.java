@@ -20,11 +20,14 @@ public final class RechercheEmi {
     private static long numero, fin, dernierClic, envoye;
     private static boolean attente;
     private static MemoireCollecte collecte;
+    private static java.util.function.Predicate<net.minecraft.world.item.ItemStack> conforme =
+            s -> false;
     private static int ticks;
     private static Object connexion;
     private static Set<String> objets = Set.of(), demandes = Set.of();
     private static List<Pont.Repere> reperes = List.of();
     private static JsonObject derniereVue;
+    private static Map<String, Integer> quantites = Map.of();
 
     private RechercheEmi() {}
 
@@ -52,11 +55,41 @@ public final class RechercheEmi {
         return actif() ? reperes : List.of();
     }
 
+    /** Même sélection et mêmes crédits que les contours : aucun recalcul depuis l'objectif. */
+    public static RetraitCoffre.Plan retrait(
+            net.minecraft.world.inventory.AbstractContainerMenu menu) {
+        if (!Pont.retraitCoffres() || !actif() || collecte == null)
+            return new RetraitCoffre.Plan(List.of(), 0);
+        actualiserCollecte();
+        actualiserVue();
+        return RetraitCoffre.planRecherche(
+                menu,
+                stocks -> MemoireCollecte.retraitSelection(stocks, quantites),
+                item ->
+                        conforme.test(item)
+                                ? String.valueOf(ForgeRegistries.ITEMS.getKey(item.getItem()))
+                                : "");
+    }
+
+    private static void actualiserCollecte() {
+        if (collecte == null || RetraitCoffre.occupe() || Emi.envoiMachineEnCours()) return;
+        long version = collecte.version();
+        Set<String> restants = collecte.actualiser(inventaire());
+        if (collecte.version() != version) derniereVue = null;
+        if (!restants.equals(demandes)) {
+            demandes = restants;
+            transmettre();
+        }
+    }
+
     public static String bouton(String id) {
         return selectionnee(id) ? attente ? "Recherche…" : "Arrêter" : "Coffres";
     }
 
-    public static void basculer(String id, MemoireCollecte suivi) {
+    public static void basculer(
+            String id,
+            MemoireCollecte suivi,
+            java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte) {
         Set<String> ingredients = suivi.tous();
         long now = System.currentTimeMillis();
         if (now - dernierClic < 650) return;
@@ -87,6 +120,7 @@ public final class RechercheEmi {
         connexion = mc.getConnection();
         fin = now + 600_000;
         collecte = suivi;
+        conforme = accepte;
         demandes = suivi.actualiser(inventaire());
         transmettre();
     }
@@ -94,12 +128,23 @@ public final class RechercheEmi {
     private static Map<String, Integer> inventaire() {
         Map<String, Integer> stock = new HashMap<>();
         var joueur = Minecraft.getInstance().player;
-        if (joueur != null)
-            for (var item : joueur.getInventory().items) {
-                if (item.isEmpty()) continue;
+        if (joueur != null) {
+            List<net.minecraft.world.item.ItemStack> piles =
+                    new ArrayList<>(joueur.getInventory().items);
+            piles.addAll(joueur.getInventory().armor);
+            piles.addAll(joueur.getInventory().offhand);
+            piles.add(joueur.containerMenu.getCarried());
+            for (var item : piles) {
+                if (item.isEmpty() || !conforme.test(item)) continue;
                 var id = ForgeRegistries.ITEMS.getKey(item.getItem());
                 if (id != null) stock.merge(id.toString(), item.getCount(), Integer::sum);
             }
+            for (var credit : Emi.creditsFabrication()) {
+                if (!conforme.test(credit.objet())) continue;
+                var id = ForgeRegistries.ITEMS.getKey(credit.objet().getItem());
+                if (id != null) stock.merge(id.toString(), credit.quantite(), Integer::sum);
+            }
+        }
         return stock;
     }
 
@@ -112,6 +157,7 @@ public final class RechercheEmi {
         // est rejetée grâce au numéro de requête, même si elle arrive après le transfert.
         reperes = List.of();
         objets = Set.of();
+        quantites = Map.of();
         derniereVue = null;
         JsonObject demande = new JsonObject();
         demande.addProperty("n", numero);
@@ -141,12 +187,16 @@ public final class RechercheEmi {
     }
 
     private static void vider() {
+        RetraitCoffre.arreter();
+        AideCoffre.vider();
         recette = "";
         attente = false;
         objets = demandes = Set.of();
+        quantites = Map.of();
         reperes = List.of();
         derniereVue = null;
         collecte = null;
+        conforme = s -> false;
     }
 
     private static void informer(String message) {
@@ -161,15 +211,12 @@ public final class RechercheEmi {
             vider();
             return;
         }
-        if (collecte != null && ++ticks % 2 == 0 && !RetraitCoffre.occupe()) {
-            long version = collecte.version();
-            Set<String> restants = collecte.actualiser(inventaire());
-            if (collecte.version() != version) derniereVue = null;
-            if (!restants.equals(demandes)) {
-                demandes = restants;
-                transmettre();
-            }
-        }
+        if (++ticks % 2 == 0) actualiserCollecte();
+        actualiserVue();
+    }
+
+    private static void actualiserVue() {
+        if (collecte == null) return;
         if (demandes.isEmpty())
             return; // Garder la recherche validée, sans revenir au guidage de l'objectif.
         if (attente && System.currentTimeMillis() - envoye > 8000) {
@@ -177,7 +224,7 @@ public final class RechercheEmi {
             vider();
             return;
         }
-        if (RetraitCoffre.occupe()) return;
+        if (RetraitCoffre.occupe() || Emi.envoiMachineEnCours()) return;
         JsonObject vue = Pont.partie("recherche_emi");
         if (vue == derniereVue
                 || (long) Pont.nombre(vue, "n", 0) != numero
@@ -219,13 +266,16 @@ public final class RechercheEmi {
         }
         Set<String> utiles = new java.util.LinkedHashSet<>(),
                 visibles = new java.util.LinkedHashSet<>();
+        Map<String, Integer> selection = new HashMap<>();
         for (var prise : collecte.dansCoffres(stocks)) {
+            selection.merge(stocks.get(prise.index()).objet(), prise.quantite(), Integer::sum);
             utiles.add(stocks.get(prise.index()).objet());
             visibles.add(groupes.get(prise.index()));
         }
         List<Pont.Repere> coffres = new ArrayList<>();
         for (String groupe : visibles) coffres.addAll(positions.get(groupe));
         objets = Set.copyOf(utiles);
+        quantites = Map.copyOf(selection);
         reperes = List.copyOf(coffres);
         if (attente)
             informer(

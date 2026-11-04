@@ -177,6 +177,27 @@ public final class RetraitCoffreTest {
     }
 
     public static void main(String[] args) throws Exception {
+        setup(64, 2);
+        var selection = java.util.Map.of("tin", 3);
+        var scan =
+                RetraitCoffre.planRecherche(
+                        menu,
+                        stocks -> MemoireCollecte.retraitSelection(stocks, selection),
+                        s -> s.id);
+        assert scan.total() == 3 && scan.lots().get(0).source() == menu.slots.get(0)
+                : "le scan a déjà déduit l'inventaire, ne pas le déduire une seconde fois";
+        assert RetraitCoffre.lancer(screen, scan);
+        finish();
+        assert owned() == 5;
+        menu.slots.get(0).item.tag = 7;
+        var exact =
+                RetraitCoffre.planRecherche(
+                        menu,
+                        stocks -> MemoireCollecte.retraitSelection(stocks, selection),
+                        s -> s.tag == 42 ? s.id : "");
+        assert exact.total() == 0
+                : "le quota du scan ne rend pas une variante NBT incompatible acceptable";
+
         synchronization();
         treeSelection();
         componentBeforeMaterials();

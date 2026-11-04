@@ -7,6 +7,7 @@ import fr.assistantia.ArbreEmi;
 import fr.assistantia.PlanMachines;
 import fr.assistantia.PlanRetrait;
 import fr.assistantia.SequenceEnvoi;
+import fr.assistantia.RetraitCoffre;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -47,7 +48,7 @@ public final class EnvoiMachine {
     }
 
     public static String statut() {
-        return statut;
+        return sequence == null ? statut : "Envoi " + sequence.progression() + " %";
     }
 
     public static void effacerStatut() {
@@ -85,7 +86,10 @@ public final class EnvoiMachine {
     private static boolean accepte(EmiIngredient i, ItemStack s) {
         return !s.isEmpty()
                 && i.getEmiStacks().stream()
-                        .anyMatch(v -> !v.getItemStack().isEmpty() && EmiStack.of(s).isEqual(v));
+                        .anyMatch(
+                                v ->
+                                        !v.getItemStack().isEmpty()
+                                                && ComparaisonEmi.meme(EmiStack.of(s), v));
     }
 
     private static boolean accepte(EmiIngredient i, FluidStack f) {
@@ -135,23 +139,58 @@ public final class EnvoiMachine {
             AbstractContainerMenu menu, GregTechMachines.Interface ui, EmiRecipe recipe, int n)
             throws ReflectiveOperationException {
         List<SequenceEnvoi.Action> actions = new ArrayList<>();
+        actions.add(
+                new SequenceEnvoi.Action() {
+                    public void envoyer() {
+                        verifier(
+                                GregTechMachines.compatible(ui.machine(), recipe)
+                                        && !GregTechMachines.occupe(ui.machine()),
+                                "Machine modifiée ou déjà en cours de fabrication");
+                    }
+
+                    public boolean confirmee() {
+                        return true;
+                    }
+                });
         List<String> details = new ArrayList<>();
         List<Slot> joueurs =
-                menu.slots.stream().filter(EnvoiMachine::personnel).filter(Slot::isActive).toList();
+                menu.slots.stream()
+                        .filter(EnvoiMachine::personnel)
+                        .filter(Slot::isActive)
+                        .filter(s -> s.mayPickup(Minecraft.getInstance().player))
+                        .toList();
         Map<Slot, ItemStack> simulation = new IdentityHashMap<>();
         joueurs.forEach(s -> simulation.put(s, s.getItem().copy()));
         List<FluidTank> cuves = ui.cuves().stream().map(GregTechMachines.Cuve::simulation).toList();
         var items = new ArrayList<PlanRetrait.Besoin<ItemStack>>();
         var tous = ingredients(recipe);
         Map<String, Integer> fluidesDemandes = new HashMap<>();
+        Map<String, Integer> outilsDemandes = new HashMap<>();
         for (int k = 0; k < tous.size(); k++) {
             var ingredient = tous.get(k);
             if (ingredient.isEmpty()) continue;
             boolean outil = k >= recipe.getInputs().size() || ingredient.getChance() == 0;
             int besoin = PlanMachines.produit(ingredient.getAmount(), outil ? 1 : n);
+            if (outil) {
+                String key =
+                        ingredient.getEmiStacks().stream()
+                                .map(
+                                        v ->
+                                                v.getId()
+                                                        + "|"
+                                                        + (ComparaisonEmi.circuit(v)
+                                                                ? ""
+                                                                : v.getNbt()))
+                                .sorted()
+                                .toList()
+                                .toString();
+                int deja = outilsDemandes.getOrDefault(key, 0);
+                outilsDemandes.merge(key, besoin, Math::max);
+                besoin = Math.max(0, besoin - deja);
+                if (besoin == 0) continue;
+            }
             if (circuit(ingredient) && ui.circuit() != null) {
-                int valeur =
-                        GregTechMachines.circuit(ingredient.getEmiStacks().get(0).getItemStack());
+                int valeur = GregTechMachines.configurationCircuit(recipe);
                 actions.add(
                         new SequenceEnvoi.Action() {
                             public void envoyer() throws Exception {
@@ -298,7 +337,7 @@ public final class EnvoiMachine {
             }
             if (restant > 0) return vide("Pas assez de place dans les entrées de la machine");
         }
-        if (actions.isEmpty()) return vide("Ingrédients déjà en machine");
+        if (actions.size() == 1) return vide("Ingrédients déjà en machine");
         return new Plan(n, List.copyOf(actions), List.copyOf(details), "");
     }
 
@@ -309,10 +348,14 @@ public final class EnvoiMachine {
         return new SequenceEnvoi.Action() {
             public void envoyer() {
                 verifier(
-                        menu.getCarried().isEmpty() && meme(src.getItem(), original),
+                        menu.getCarried().isEmpty()
+                                && src.isActive()
+                                && src.mayPickup(Minecraft.getInstance().player)
+                                && meme(src.getItem(), original),
                         "Inventaire modifié : envoi interrompu");
                 verifier(
-                        dest.mayPlace(original)
+                        dest.isActive()
+                                && dest.mayPlace(original)
                                 && (dest.getItem().isEmpty()
                                         || ItemStack.isSameItemSameTags(dest.getItem(), original))
                                 && dest.getMaxStackSize(original) - dest.getItem().getCount() >= n,
@@ -351,7 +394,10 @@ public final class EnvoiMachine {
                 new SequenceEnvoi.Action() {
                     public void envoyer() {
                         verifier(
-                                menu.getCarried().isEmpty() && meme(src.getItem(), original),
+                                menu.getCarried().isEmpty()
+                                        && src.isActive()
+                                        && src.mayPickup(Minecraft.getInstance().player)
+                                        && meme(src.getItem(), original),
                                 "Contenant déplacé");
                         verifier(
                                 src == retour || retour.getItem().isEmpty(),
@@ -395,7 +441,11 @@ public final class EnvoiMachine {
                 new SequenceEnvoi.Action() {
                     public void envoyer() {
                         verifier(meme(menu.getCarried(), vide), "Contenant vide non confirmé");
-                        verifier(retour.getItem().isEmpty(), "Case du contenant vide occupée");
+                        verifier(
+                                retour.isActive()
+                                        && retour.getItem().isEmpty()
+                                        && (vide.isEmpty() || retour.mayPlace(vide)),
+                                "Case du contenant vide indisponible");
                         if (!vide.isEmpty()) clic(menu, retour, 0);
                     }
 
@@ -406,8 +456,16 @@ public final class EnvoiMachine {
     }
 
     public static void lancer(AbstractContainerScreen<?> screen, Plan plan, Runnable termine) {
-        if (occupe() || !plan.possible() || System.nanoTime() - dernierClic < 1_000_000_000L)
-            return;
+        var mc = Minecraft.getInstance();
+        if (occupe()
+                || RetraitCoffre.occupe()
+                || !plan.possible()
+                || mc.player == null
+                || mc.gameMode == null
+                || mc.screen != screen
+                || mc.player.containerMenu != screen.getMenu()
+                || !screen.getMenu().getCarried().isEmpty()
+                || System.nanoTime() - dernierClic < 1_000_000_000L) return;
         try {
             arbre = ArbreEmi.actif();
         } catch (Exception e) {
@@ -451,7 +509,11 @@ public final class EnvoiMachine {
             }
         } catch (Exception e) {
             sequence = null;
-            statut = "Envoi interrompu";
+            ecran = null;
+            succes = null;
+            arbre = null;
+            statut = "Envoi interrompu : vérifie les entrées de la machine";
+            if (mc.player != null) mc.player.displayClientMessage(Component.literal(statut), false);
         }
     }
 }

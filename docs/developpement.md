@@ -49,3 +49,14 @@ utilisent des CLI simulés : aucun compte IA ni appel facturé n’est nécessai
 Travailler sur une branche de fonctionnalité issue de `main`, tester, puis fusionner vers `main`.
 La commande **Mettre à jour** récupère uniquement `origin/main` et refuse d’écraser des modifications
 locales ou des commits non publiés. Ne pas utiliser de reset forcé pour contourner ces protections.
+
+## Collecte et machines EMI
+
+- `RechercheEmi` possède la sélection globale du scan et ses quantités. `AideCoffre` et `RecuperationEmi` passent par cette sélection ; aucun retrait ne doit reconstruire un arbre depuis le seul coffre ouvert.
+- `MemoireCollecte` conserve les ingrédients acquis ; `PlanArbre` réserve les composants avant leurs enfants. `RetraitCoffre.planRecherche` applique les quotas aux cases réelles, sans déduire deux fois l’inventaire.
+- `SuiviFabrication` cumule les acquisitions finales et fournit les crédits sortis de l’inventaire à `CycleArbreEmi`, au scan et à `MachinesEmi`. Ne pas utiliser la case de résultat comme preuve d’un craft.
+- `ConfigurationCircuit` lit les ingrédients natifs GregTech, y compris un `SizedIngredient`. `ComparaisonEmi` limite l’exception NBT au Programmed Circuit.
+- `SequenceEnvoi` attend une confirmation stable avant l’action suivante. `EnvoiMachine` valide l’interface, les sources, les entrées et les cuves ; il n’effectue aucun nouvel essai automatique après un refus.
+- `game/emi.py` exporte l’avancement conservé uniquement lors d’un import explicite. Ne pas reprendre un objectif en pause.
+
+Les tests `test_emi.py`, `test_chest_transfers.py` et `test_machine_inputs.py` rejouent les allocations et les interactions client dans des conteneurs déterministes. Ils couvrent notamment les composants répartis entre coffres, les lots finaux rangés séparément, les circuits à NBT factice, les cases verrouillées, les doubles clics et les fluides. Ils ne remplacent pas une validation visuelle dans Minecraft ni les réponses d’un serveur réel.

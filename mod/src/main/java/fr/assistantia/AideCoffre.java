@@ -57,7 +57,7 @@ public final class AideCoffre {
     /** Coffre ouvert, réglage actif et arbre EMI en cours ; sinon le panneau disparaît. */
     private static boolean actif(Screen screen) {
         if (screen != ecran || ecran == null) return false;
-        if (Pont.retraitCoffres() && Emi.arbreActif()) return true;
+        if (Pont.retraitCoffres() && RechercheEmi.actif()) return true;
         if (disposition != null || !objets.isEmpty()) vider();
         return false;
     }
@@ -83,7 +83,7 @@ public final class AideCoffre {
 
     private static void agir(boolean tous) {
         if (RetraitCoffre.occupe() || ecran == null) return;
-        // Le clic utilise l'arbre et les slots actuels, jamais le plan mis en cache pour le rendu.
+        // Le clic utilise la sélection du scan et les slots actuels, jamais le plan du rendu.
         ItemStack selection = choisi.copy();
         actualiser();
         RetraitCoffre.Plan retrait = tous ? plan : plan.pour(selection);
@@ -110,7 +110,7 @@ public final class AideCoffre {
                 g,
                 font,
                 d.titre(),
-                "Arbre EMI",
+                "Collecte",
                 occupe ? "Transfert…" : plan.total() + " à prendre");
         List<Component> infobulle = null;
         for (int rang = 0; rang < d.parPage(); rang++) {
@@ -154,7 +154,7 @@ public final class AideCoffre {
             infobulle =
                     List.of(
                             Component.literal(
-                                    "Prendre les " + tout + " objets de l’arbre présents ici"));
+                                    "Prendre les " + tout + " objets du scan présents ici"));
         if (infobulle != null) g.renderComponentTooltip(font, infobulle, mx, my);
     }
 

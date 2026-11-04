@@ -64,6 +64,30 @@ public final class SuiviFabricationTest {
         assert suivi.actualiser(List.of(stack("oak", 4), stack("plank", 1)));
         assert !new SuiviFabrication<String>(List.of()).actualiser(List.of())
                 : "arbre absent ou inconnu : aucune fin inventée";
+        suivi = new SuiviFabrication<>(List.of(besoin("machine", 3)));
+        assert !suivi.actualiser(List.of());
+        assert !suivi.actualiser(List.of(stack("machine", 1)));
+        assert !suivi.actualiser(List.of());
+        assert suivi.credits().equals(List.of(stack("machine", 1))) : "premier résultat rangé";
+        assert !suivi.actualiser(List.of(stack("machine", 1)));
+        assert !suivi.actualiser(List.of());
+        assert suivi.credits().equals(List.of(stack("machine", 2))) : "deux fabrications séparées";
+        assert suivi.actualiser(List.of(stack("machine", 1)))
+                : "trois lots, jamais détenus ensemble";
+        suivi = new SuiviFabrication<>(List.of(besoin("machine", 3)), false);
+        assert !suivi.actualiser(List.of(stack("machine", 1)));
+        assert !suivi.actualiser(List.of());
+        assert suivi.actualiser(List.of(stack("machine", 2)))
+                : "objectif absolu : conserver la première unité";
+        suivi =
+                new SuiviFabrication<>(
+                        List.of(new PlanRetrait.Besoin<String>(id -> id.startsWith("tool#"), 2)),
+                        false,
+                        (a, b) -> a.split("#")[0].equals(b.split("#")[0]));
+        assert !suivi.actualiser(List.of(stack("tool#charge10", 1)));
+        assert !suivi.actualiser(List.of(stack("tool#charge20", 1)))
+                : "le changement de charge d'un outil n'est pas une nouvelle fabrication";
+        assert suivi.actualiser(List.of(stack("tool#charge20", 2)));
         System.out.println(
                 "Fin de craft : quantités, piles, intermédiaires, variantes, cibles multiples,"
                         + " objets déjà possédés et nouveau suivi OK");

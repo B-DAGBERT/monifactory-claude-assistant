@@ -32,7 +32,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 public final class CoffresArbreEmi {
     private static final String ID = "assistantia:coffres_arbre";
     private static final Map<Screen, Button> boutons = new WeakHashMap<>();
-    private static Field boutonArbre, barreRecherche, comparaisonEmi;
+    private static Field boutonArbre, barreRecherche;
     private static boolean charge;
     private static java.lang.reflect.Method desactive;
     private static boolean erreurSignalee;
@@ -44,8 +44,6 @@ public final class CoffresArbreEmi {
         boutonArbre = manager.getField("tree");
         barreRecherche = manager.getField("search");
         desactive = manager.getMethod("isDisabled");
-        comparaisonEmi = EmiStack.class.getDeclaredField("comparison");
-        comparaisonEmi.setAccessible(true);
         charge = true;
     }
 
@@ -148,10 +146,16 @@ public final class CoffresArbreEmi {
             long lots = tree.getClass().getField("batches").getLong(tree);
             Set<Object> chemin = Collections.newSetFromMap(new IdentityHashMap<>());
             int[] count = {0};
-            ArbreCollecte.Noeud snapshot = lire(root, chemin, count, 0, null);
+            List<EmiStack> variantes = new ArrayList<>();
+            ArbreCollecte.Noeud snapshot = lire(root, chemin, count, 0, variantes);
             if (ArbreEmi.actif() == null) RechercheEmi.arreter();
             if (!ArbreEmi.activer()) return;
-            RechercheEmi.basculer(ID, new MemoireCollecte(snapshot, lots));
+            RechercheEmi.basculer(
+                    ID,
+                    new MemoireCollecte(snapshot, lots),
+                    item ->
+                            variantes.stream()
+                                    .anyMatch(v -> ComparaisonEmi.meme(EmiStack.of(item), v)));
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);
             var p = Minecraft.getInstance().player;
@@ -163,38 +167,10 @@ public final class CoffresArbreEmi {
         }
     }
 
-    /** Le même arbre que la recherche, avec les comparaisons d'objets exactes d'EMI. */
+    /** Les quantités réservées par la recherche active, sans reconstruire l'arbre. */
     public static fr.assistantia.RetraitCoffre.Plan planTransfert(
             AbstractContainerScreen<?> screen) {
-        try {
-            charger();
-            Object tree = ArbreEmi.actif();
-            if (tree == null) return new fr.assistantia.RetraitCoffre.Plan(List.of(), 0);
-            Object root = tree.getClass().getField("goal").get(tree);
-            long lots = tree.getClass().getField("batches").getLong(tree);
-            List<EmiStack> variantes = new ArrayList<>();
-            var snapshot =
-                    lire(
-                            root,
-                            Collections.newSetFromMap(new IdentityHashMap<>()),
-                            new int[] {0},
-                            0,
-                            variantes);
-            return fr.assistantia.RetraitCoffre.planArbre(
-                    screen.getMenu(),
-                    snapshot,
-                    lots,
-                    ids -> {
-                        var choix =
-                                ids.stream()
-                                        .map(id -> variantes.get(Integer.parseInt(id)))
-                                        .toList();
-                        return stack -> choix.stream().anyMatch(v -> EmiStack.of(stack).isEqual(v));
-                    });
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            signaler(e);
-            return new fr.assistantia.RetraitCoffre.Plan(List.of(), 0);
-        }
+        return RechercheEmi.retrait(screen.getMenu());
     }
 
     private static ArbreCollecte.Noeud lire(
@@ -213,18 +189,8 @@ public final class CoffresArbreEmi {
             if (item.hasTag() && item.getTag().contains("assistantia_objectif")) continue;
             var id = ForgeRegistries.ITEMS.getKey(item.getItem());
             if (id != null) {
-                if (variantes == null) ids.add(id.toString());
-                else {
-                    // Tokens propres aux variantes EMI : conserve aussi leurs règles NBT.
-                    int index = 0;
-                    while (index < variantes.size()
-                            && !(net.minecraft.world.item.ItemStack.isSameItemSameTags(
-                                            variantes.get(index).getItemStack(), item)
-                                    && comparaisonEmi.get(variantes.get(index))
-                                            == comparaisonEmi.get(stack))) index++;
-                    if (index == variantes.size()) variantes.add(stack);
-                    ids.add(Integer.toString(index));
-                }
+                ids.add(id.toString());
+                variantes.add(stack.copy());
             }
             outil &=
                     item.isDamageableItem()

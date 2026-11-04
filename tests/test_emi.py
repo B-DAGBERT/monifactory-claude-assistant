@@ -67,6 +67,20 @@ class EmiTests(unittest.TestCase):
         )
         self.assertEqual(legacy["cibles"], [{"item": "gtceu:solid_boiler", "quantite": 3}])
 
+    def test_reopening_exports_only_unfinished_targets_and_preserves_inventory_credit(self):
+        plan = {"cibles": [{"item": "machine", "quantite": 4}, {"item": "cable", "quantite": 16}]}
+        progress = {
+            "buts": {"machine": 4, "cable": 16},
+            "comptes": {"machine": 2, "cable": 16},
+            "atteints": {"cable"},
+        }
+        result = objective_tree(plan, progress=progress, inventory={"machine": 1})
+        self.assertEqual(result["cibles"], [{"item": "machine", "quantite": 3}])
+        result = objective_tree(plan, progress=progress, inventory={})
+        self.assertEqual(result["cibles"], [{"item": "machine", "quantite": 2}])
+        progress["comptes"]["machine"] = 4
+        self.assertIsNone(objective_tree(plan, progress=progress, inventory={}))
+
     def test_chest_withdrawal_allocation(self):
         self._run_java_contract("PlanRetrait")
 

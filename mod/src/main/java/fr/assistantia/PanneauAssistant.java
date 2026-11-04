@@ -46,11 +46,9 @@ public final class PanneauAssistant {
             return;
         }
         int y = z.y() + (z.hauteur() - 8) / 2;
-        String debut = font.plainSubstrByWidth(nom, z.largeur());
+        String suite = font.plainSubstrByWidth(" · " + detail, z.largeur());
+        String debut = font.plainSubstrByWidth(nom, Math.max(0, z.largeur() - font.width(suite)));
         g.drawString(font, debut, z.x(), y, Hud.OR, false);
-        String suite =
-                font.plainSubstrByWidth(
-                        " · " + detail, Math.max(0, z.largeur() - font.width(debut)));
         g.drawString(font, suite, z.x() + font.width(debut), y, Hud.GRIS, false);
     }
 

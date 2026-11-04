@@ -2,53 +2,78 @@ package fr.assistantia;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.BiPredicate;
 
-/**
- * Valide uniquement les cibles finales, aux quantités demandées, jamais leurs ingrédients. Pour un
- * arbre libre, ce que le joueur possédait déjà au premier relevé ne compte pas : seul ce qui arrive
- * ensuite termine. Pour l'arbre d'un objectif, les quantités sont déjà des totaux à détenir.
- */
+/** Crédit des cibles obtenues pendant ce craft, conservé après rangement ou consommation. */
 public final class SuiviFabrication<T> {
     private final List<PlanRetrait.Besoin<T>> cibles;
-    private final boolean[] obtenues;
     private final boolean depuisDepart;
-    private List<PlanRetrait.Besoin<T>> attendues;
+    private final BiPredicate<T, T> meme;
+    private final List<Releve<T>> releves = new ArrayList<>();
+    private boolean initialise;
+
+    private static final class Releve<T> {
+        final T objet;
+        int precedent, acquis;
+
+        Releve(T objet) {
+            this.objet = objet;
+        }
+    }
 
     public SuiviFabrication(List<PlanRetrait.Besoin<T>> cibles) {
         this(cibles, true);
     }
 
     public SuiviFabrication(List<PlanRetrait.Besoin<T>> cibles, boolean depuisDepart) {
+        this(cibles, depuisDepart, Objects::equals);
+    }
+
+    public SuiviFabrication(
+            List<PlanRetrait.Besoin<T>> cibles, boolean depuisDepart, BiPredicate<T, T> meme) {
         this.cibles = List.copyOf(cibles);
         this.depuisDepart = depuisDepart;
-        obtenues = new boolean[cibles.size()];
+        this.meme = meme;
     }
 
     public boolean actualiser(List<PlanRetrait.Stock<T>> inventaire) {
         if (cibles.isEmpty()) return false;
-        if (attendues == null) attendues = depuisDepart ? ajouterDepart(inventaire) : cibles;
-        var allocation = PlanRetrait.calculer(inventaire, attendues);
-        boolean termine = true;
-        for (int i = 0; i < cibles.size(); i++) {
-            obtenues[i] |= allocation.fournis().get(i) >= attendues.get(i).quantite();
-            termine &= obtenues[i];
+        for (var s : inventaire)
+            if (cibles.stream().anyMatch(c -> c.accepte().test(s.objet()))
+                    && releves.stream().noneMatch(r -> meme.test(r.objet, s.objet())))
+                releves.add(new Releve<>(s.objet()));
+        for (var r : releves) {
+            int actuel =
+                    inventaire.stream()
+                            .filter(s -> meme.test(r.objet, s.objet()))
+                            .mapToInt(PlanRetrait.Stock::quantite)
+                            .sum();
+            if (initialise || !depuisDepart)
+                r.acquis =
+                        (int)
+                                Math.min(
+                                        Integer.MAX_VALUE,
+                                        (long) r.acquis + Math.max(0, actuel - r.precedent));
+            r.precedent = actuel;
         }
-        return termine;
+        initialise = true;
+        return PlanRetrait.calculer(
+                                releves.stream()
+                                        .map(r -> new PlanRetrait.Stock<>(r.objet, r.acquis, true))
+                                        .toList(),
+                                cibles)
+                        .manquants()
+                == 0;
     }
 
-    private List<PlanRetrait.Besoin<T>> ajouterDepart(List<PlanRetrait.Stock<T>> inventaire) {
-        // Mesurer sans plafond ce que chaque cible possède déjà, sans compter deux fois un objet.
-        List<PlanRetrait.Besoin<T>> sansPlafond = new ArrayList<>();
-        for (var cible : cibles)
-            sansPlafond.add(new PlanRetrait.Besoin<>(cible.accepte(), Integer.MAX_VALUE));
-        var depart = PlanRetrait.calculer(inventaire, sansPlafond).fournis();
-        List<PlanRetrait.Besoin<T>> resultat = new ArrayList<>();
-        for (int i = 0; i < cibles.size(); i++) {
-            long quantite = (long) cibles.get(i).quantite() + depart.get(i);
-            resultat.add(
-                    new PlanRetrait.Besoin<>(
-                            cibles.get(i).accepte(), (int) Math.min(Integer.MAX_VALUE, quantite)));
-        }
-        return List.copyOf(resultat);
+    /**
+     * Stock virtuel uniquement pour les cibles finales déjà reçues puis sorties de l'inventaire.
+     */
+    public List<PlanRetrait.Stock<T>> credits() {
+        return releves.stream()
+                .filter(r -> r.acquis > r.precedent)
+                .map(r -> new PlanRetrait.Stock<>(r.objet, r.acquis - r.precedent, true))
+                .toList();
     }
 }

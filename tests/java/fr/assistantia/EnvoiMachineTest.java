@@ -30,6 +30,8 @@ public final class EnvoiMachineTest {
         done = 0;
         ArbreEmi.tree = new Object();
         GregTechMachines.busy = false;
+        GregTechMachines.configuration = 7;
+        RetraitCoffre.busy = false;
         for (int i = 0; i < 8; i++)
             menu.slots.add(new Slot(i < 2 ? new Object() : mc.player.getInventory(), i));
         GregTechMachines.ui =
@@ -145,5 +147,65 @@ public final class EnvoiMachineTest {
         menu.slots.get(2).item = new ItemStack("tin", 64);
         GregTechMachines.busy = true;
         assert !EnvoiMachine.preparer(screen, r, 1).possible();
+        setup();
+        menu.slots.get(2).item = new ItemStack("tin", 64);
+        launch(r, 1);
+        GregTechMachines.busy = true;
+        finish();
+        assert mc.gameMode.clicks == 0 && done == 0 : "machine devenue occupée après le clic";
+        setup();
+        menu.slots.get(2).item = new ItemStack("tin", 64);
+        launch(r, 1);
+        menu.slots.get(2).pickup = false;
+        finish();
+        assert mc.gameMode.clicks == 0 && done == 0 : "source verrouillée entre plan et envoi";
+        setup();
+        menu.slots.get(2).item = new ItemStack("tin", 64);
+        p = EnvoiMachine.preparer(screen, r, 1);
+        RetraitCoffre.busy = true;
+        EnvoiMachine.lancer(screen, p, () -> done++);
+        assert !EnvoiMachine.occupe() && mc.gameMode.clicks == 0;
+        RetraitCoffre.busy = false;
+        mc.screen = null;
+        EnvoiMachine.lancer(screen, p, () -> done++);
+        assert !EnvoiMachine.occupe() : "un ancien écran ne lance rien";
+        setup();
+        var actualCircuit = new ItemStack("gtceu:programmed_circuit", 1);
+        actualCircuit.tag = 2;
+        var fakeCircuit = actualCircuit.copy();
+        fakeCircuit.tag = 99;
+        menu.slots.get(2).item = new ItemStack("tin", 4);
+        menu.slots.get(3).item = actualCircuit;
+        var catalyst = EmiStack.of(fakeCircuit);
+        catalyst.chance = 0;
+        var withCircuit = new EmiRecipe(List.of(item("tin", 1), catalyst), List.of(catalyst));
+        launch(withCircuit, 4);
+        finish();
+        assert done == 1
+                        && menu.slots.get(0).item.count == 4
+                        && menu.slots.get(1).item.tag == 2
+                        && menu.slots.get(1).item.count == 1
+                : "circuit physique reconnu sans fake NBT, réutilisé sans double comptage";
+        setup();
+        menu.slots.get(2).item = new ItemStack("tin", 4);
+        var ghost = new ItemStack("gtceu:programmed_circuit", 1);
+        ghost.tag = 1;
+        GregTechMachines.ui =
+                new GregTechMachines.Interface(
+                        new Object(), menu.slots.subList(0, 2), List.of(), ghost);
+        p = EnvoiMachine.preparer(screen, withCircuit, 4);
+        assert p.possible() && p.details().contains("Circuit : 7") : p.probleme();
+        EnvoiMachine.lancer(screen, p, () -> done++);
+        finish();
+        assert done == 1 && ghost.tag == 7 : "configuration native, pas le NBT factice 99";
+        GregTechMachines.configuration = 99;
+        assert !EnvoiMachine.preparer(screen, withCircuit, 4).possible()
+                : "configuration invalide refusée";
+        setup();
+        var tagged = new ItemStack("tool", 1);
+        tagged.tag = 42;
+        menu.slots.get(2).item = new ItemStack("tool", 1);
+        assert !EnvoiMachine.preparer(screen, recipe(EmiStack.of(tagged)), 1).possible()
+                : "l'exception NBT est limitée au programmed circuit";
     }
 }

@@ -19,6 +19,7 @@ Une installation existante doit utiliser **Mettre à jour** une première fois p
 
 - [Installation, configuration et mises à jour](docs/installation.md)
 - [Fonctionnement de Codex et suivi en lecture seule](docs/codex.md)
+- [Collecte EMI, machines et suivi des fabrications](docs/emi-transferts.md)
 - [Organisation du code et développement](docs/developpement.md)
 - [Description historique de la version Claude](docs/historique-claude.md)
 
@@ -45,7 +46,8 @@ n’est pas un objet à fabriquer. Clique sur les branches pour suivre leurs rec
 
 La synchronisation se fait au clic, sans appel IA. Après un changement d’objectif ou de
 projet, clique à nouveau sur **Objectif EMI**. Réouvrir le même objectif conserve les choix
-et les branches de l’arbre tant que tu n’as pas remplacé cet arbre dans EMI. Les favoris et
+et les branches de l’arbre tant que les cibles et leur avancement n’ont pas changé. Si
+l’avancement a changé, l’import explicite reconstruit uniquement ce qu’il reste à obtenir. Les favoris et
 les recettes par défaut d’EMI ne sont pas modifiés.
 
 **Mettre en pause** arrête aussi l’arbre EMI actif, le scan des coffres, ses surbrillances et
@@ -57,9 +59,9 @@ dans EMI pendant que ton objectif reste en pause.
 
 Si la recette indiquée manque ou si plusieurs recettes sont possibles sans choix dans le
 plan, un message indique les objets concernés : choisis leurs recettes directement dans EMI.
-Les quantités transmises sont les cibles totales de l’objectif, pas seulement les manques.
-EMI tient compte de ton inventaire ; il ne connaît pas les coffres mémorisés ni les machines
-posées. L’assistant continue de suivre ces stocks. Échap revient à l’inventaire, puis au menu
+L’import retire les cibles déjà obtenues, rangées ou posées, et tient compte de l’avancement
+partiel. Le stock encore dans ton inventaire est inclus dans la quantité envoyée pour qu’EMI
+le déduise lui-même, une seule fois. L’assistant conserve le suivi des coffres et machines posées. Échap revient à l’inventaire, puis au menu
 assistant. Il faut relancer **l’assistant et Minecraft** après installation de cette version.
 
 ## Coffres depuis l’arbre EMI
@@ -96,8 +98,9 @@ localement, y compris après redémarrage. Une nouvelle version peut afficher un
 
 Quand toutes les cibles finales de l’arbre sont obtenues dans les quantités demandées, le mod
 réinitialise l’arbre EMI, le scan, les contours et les transferts. La détection fonctionne aussi
-avec Maj-clic et avec un résultat pris sur le curseur ; l’aperçu dans la case de résultat ne compte
-pas comme un objet fabriqué. Un composant intermédiaire ne termine jamais le craft principal.
+avec Maj-clic et avec un résultat pris sur le curseur. Les cibles reçues en plusieurs lots
+restent comptées après rangement ou utilisation ; il n’est pas nécessaire de détenir toute
+la quantité à la fois. L’aperçu dans la case de résultat ne compte pas comme un objet fabriqué. Un composant intermédiaire ne termine jamais le craft principal.
 Sans craft actif (arbre présent et mode fabrication EMI activé), aucun bouton de transfert n’est affiché, y compris la flèche dans les recettes
 EMI ouvertes depuis un coffre. Effacer ou remplacer l’arbre coupe aussi l’ancien scan.
 
@@ -114,7 +117,9 @@ Dans une machine compatible, le panneau de l’assistant, au même style que cel
 - Survoler **Envoyer** pour voir les ingrédients, le circuit et les volumes de fluide.
 - Cliquer **Envoyer** pour déposer un lot réalisable, limité par le stock et la place disponible.
   Les entrées existantes sont déduites, les sorties ne sont pas touchées. Le circuit programmable
-  est réglé lorsqu’il dispose de son sélecteur GregTech natif.
+  est réglé lorsqu’il dispose de son sélecteur GregTech natif. Sa configuration vient de la
+  recette GregTech, pas du NBT factice affiché par EMI. Pour reconnaître l’objet Programmed
+  Circuit, son NBT est ignoré ; cette exception ne s’applique pas aux autres objets.
 - **Voir** ouvre la recette dans EMI. Récupérer soi-même le résultat dans la machine.
 
 Les fluides proviennent uniquement des seaux et cellules de l’inventaire. Les contenants sont
@@ -122,7 +127,7 @@ vidés par le clic natif GregTech puis rendus à l’inventaire. Le volume réel
 l’envoi : par exemple, un seau de 1 000 mB peut dépasser un besoin de 144 mB. Les fluides déjà
 présents dans les cuves d’entrée sont déduits. Les réservoirs voisins ne sont pas sollicités.
 
-Le bouton attend la confirmation des transferts et ignore les doubles clics. Fermer l’interface,
+Le bouton affiche l’avancement de l’envoi, attend la confirmation des transferts et ignore les doubles clics. Fermer l’interface,
 arrêter le craft ou mettre son objectif en pause interrompt la séquence. Une machine occupée,
 un ingrédient manquant ou une entrée incompatible désactive l’envoi avec le motif au survol.
 Les fabrications envoyées restent réservées dans ce suivi pour éviter de les proposer à nouveau
@@ -132,10 +137,9 @@ Les machines et cuves sans entrées accessibles dans leur interface ne permetten
 ## Récupérer les ingrédients depuis un coffre
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
-de retrait suit **le craft actif d’EMI**, même sans objectif dans l’assistant et sans
-activer le repérage des coffres. Un arbre simplement consulté ou conservé après l’arrêt du craft
-ne propose aucun transfert. **Objectif EMI** et **Scanner coffres** activent explicitement le craft ;
-l’objectif seul n’active ni récupération ni surbrillance. Le sélecteur montre les objets manquants disponibles dans ce
+**Collecte** suit **les ingrédients du scan actif** : activer **Scanner coffres** pour utiliser
+**Prendre / Tout**. Cela fonctionne aussi sans objectif dans l’assistant. Un arbre simplement
+consulté, un objectif seul ou un scan arrêté ne proposent aucun transfert. Le sélecteur montre les objets manquants disponibles dans ce
 coffre, avec la quantité à prendre sur chaque icône ; ses flèches (ou la molette) parcourent les pages.
 
 Le panneau ne recouvre jamais le coffre : il se place au-dessus quand il y a la place, sinon en
@@ -143,24 +147,29 @@ bloc large et bas sur le côté le plus libre, et EMI range ses listes d’objet
 **Y → Réglages → Retrait depuis les coffres**, indépendamment du remplissage de l’établi.
 
 - **Prendre** récupère la quantité manquante de l’objet sélectionné.
-- **Tout** prend tous les objets utiles à l’arbre disponibles dans ce coffre,
+- **Tout** prend tous les objets sélectionnés par le scan et disponibles dans ce coffre,
   en se limitant aux quantités manquantes. Les objets sans rapport restent dans le coffre.
 
 Les quantités suivent les branches encore nécessaires et le nombre de fabrications choisi dans EMI.
 Un composant déjà possédé couvre sa branche : ses matières premières ne sont plus recherchées.
-Lors d’un transfert, les composants disponibles dans le coffre sont pris en priorité ; seuls les
-composants manquants demandent leurs ingrédients. Par exemple, un boîtier récupéré ne fait plus
+Le retrait utilise les quantités réservées par le scan dans tous les coffres connus : il ne
+recalcule pas un nouvel arbre à partir du seul coffre ouvert. Si un composant prêt a été retenu
+ailleurs, le bouton ne prend pas les matières ni les outils pour le refaire ici. Par exemple, un boîtier récupéré ne fait plus
 chercher son fer dans les drawers. Une branche validée reste éteinte après consommation du composant.
-L’inventaire est déduit et les variantes sont comparées avec les règles d’EMI, y compris le NBT.
+L’inventaire, l’équipement et le curseur sont déduits par le scan. La mémoire des coffres
+regroupe les objets par identifiant, sans distinguer leur NBT. Dans le coffre ouvert, le retrait
+vérifie les variantes EMI et conserve les données des piles ; seul le Programmed Circuit ignore
+le NBT factice. Un coffre mémorisé peut donc être signalé sans proposer de retrait si sa variante
+n’est pas compatible.
 Le retrait fonctionne même si le coffre ne fournit qu’une partie des ingrédients. Les outils
 réutilisables ne sont pas multipliés ; fluides, upgrades, filtres et grilles de craft sont ignorés.
-Sans arbre actif ou sans objet manquant disponible, le panneau n’apparaît pas.
+Sans scan actif ou sans objet sélectionné disponible, le panneau n’apparaît pas.
 
 Depuis une recette EMI ouverte avec un coffre, la flèche **↓** permet aussi de **tout récupérer
-pour l’arbre courant**. Il n’y a plus de mode « une fabrication » dans les coffres.
+pour le scan actif**. Il n’y a plus de mode « une fabrication » dans les coffres.
 Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habituel ; il se coupe
 dans **Y → Réglages → Remplissage de l’établi**.
-Le bouton **Scanner coffres** sert uniquement au repérage, sans déplacer d’objet.
+Le bouton **Scanner coffres** prépare le repérage et la liste de retrait, sans déplacer d’objet.
 
 L’onglet **Objectif** affiche l’objectif, son avancement, les cibles finales et les machines
 nécessaires. Les détails de fabrication sont dans **Objectif EMI**.
@@ -173,7 +182,8 @@ pas le retrait. Après un déplacement, le mod attend jusqu’à trois secondes 
 serveur, sans renvoyer les clics. Si le contenu reste incohérent, il s’arrête et consigne le slot
 concerné dans le journal. Les retraits partiels réduisent le nombre de clics envoyés. Si l’inventaire
 est plein, le retrait s’arrête en conservant les objets déjà récupérés. Le stock est lu directement
-dans le coffre ouvert, sans appel IA ni dépendance à la mémoire des coffres.
+dans le coffre ouvert ; la sélection vient du scan et des coffres mémorisés. Aucun appel IA
+n’est nécessaire.
 
 ## Filons : scan, marquage et téléportation
 

@@ -27,6 +27,10 @@ public final class SequenceEnvoi {
         return fin && erreur.isEmpty() && index == actions.size();
     }
 
+    public int progression() {
+        return actions.isEmpty() ? 100 : index * 100 / actions.size();
+    }
+
     public String erreur() {
         return erreur;
     }

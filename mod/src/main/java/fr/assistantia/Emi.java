@@ -304,6 +304,31 @@ public final class Emi {
         }
     }
 
+    public static boolean envoiMachineEnCours() {
+        if (!pret()) return false;
+        try {
+            return (boolean)
+                    Class.forName("fr.assistantia.compat.emi.EnvoiMachine")
+                            .getMethod("occupe")
+                            .invoke(null);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return false;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public static List<PlanRetrait.Stock<ItemStack>> creditsFabrication() {
+        if (!pret()) return List.of();
+        try {
+            return (List<PlanRetrait.Stock<ItemStack>>)
+                    Class.forName("fr.assistantia.compat.emi.CycleArbreEmi")
+                            .getMethod("credits")
+                            .invoke(null);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return List.of();
+        }
+    }
+
     public static boolean arbreActif() {
         if (!present()) return false;
         try {

@@ -98,6 +98,9 @@ public class EmiStack implements EmiIngredient {
         "dev.emi.emi.api.recipe.EmiRecipe": """
 public record EmiRecipe(java.util.List<dev.emi.emi.api.stack.EmiIngredient> getInputs,java.util.List<dev.emi.emi.api.stack.EmiIngredient> getCatalysts){}
 """,
+        "com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient": "public class IntCircuitIngredient {private final int configuration;public IntCircuitIngredient(int n){configuration=n;}}",
+        "com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient": "public record SizedIngredient(Object getInner) {}",
+        "fr.assistantia.RetraitCoffre": "public class RetraitCoffre {public static boolean busy;public static boolean occupe(){return busy;}}",
         "fr.assistantia.ArbreEmi": "public class ArbreEmi {public static Object tree=new Object();public static Object actif(){return tree;}}",
         "fr.assistantia.compat.emi.GregTechMachines": """
 import java.util.*;
@@ -106,14 +109,21 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.fluids.capability.templates.FluidTank;
 import net.minecraftforge.fluids.FluidUtil;
 public class GregTechMachines {
-    public static Interface ui;public static boolean busy;
+    public static Interface ui;public static boolean busy;public static int configuration=7;
+    public record Content(Object content) {}
+    public record Recipe(java.util.Map<String,java.util.List<Content>> inputs) {}
+    public static int configurationCircuit(dev.emi.emi.api.recipe.EmiRecipe r) throws ReflectiveOperationException {
+        return ConfigurationCircuit.lire(new Recipe(java.util.Map.of("item",java.util.List.of(
+            new Content(new com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient(
+                new com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient(configuration)))))));
+    }
     public record Interface(Object machine,List<Slot> entrees,List<Cuve> cuves,Object circuit){}
     public static Interface ouvrir(AbstractContainerMenu menu)throws ReflectiveOperationException{return ui;}
     public static boolean compatible(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return true;}
     public static boolean occupe(Object m){return busy;}
     public static int circuit(ItemStack s){return s.tag;}
-    public static void reglerCircuit(Object w,int v){}
-    public static Object appeler(Object w,String name){return ItemStack.EMPTY;}
+    public static void reglerCircuit(Object w,int v){((ItemStack)w).tag=v;((ItemStack)w).count=1;}
+    public static Object appeler(Object w,String name){return w;}
     public static class Cuve {
         public FluidTank tank=new FluidTank(16000);public int calls;
         public FluidTank simulation(){var t=new FluidTank(tank.capacity);t.setFluid(tank.getFluid().copy());return t;}
@@ -152,6 +162,8 @@ class MachineInputTests(unittest.TestCase):
                     "PlanMachines",
                     "SequenceEnvoi",
                     "compat/emi/EnvoiMachine",
+                    "compat/emi/ComparaisonEmi",
+                    "compat/emi/ConfigurationCircuit",
                 )
             ]
             sources.append(str(ROOT / "tests/java/fr/assistantia/EnvoiMachineTest.java"))
