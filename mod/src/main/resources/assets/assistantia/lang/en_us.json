@@ -5,5 +5,6 @@
   "key.assistantia.objectif": "Next objective",
   "key.assistantia.parler": "Talk (hold; Shift: type; Ctrl: new conversation)",
   "key.assistantia.panneau": "Show / hide panel",
-  "key.assistantia.voix": "Enable / disable voice"
+  "key.assistantia.voix": "Enable / disable voice",
+  "emi.category.assistantia.objectif": "Assistant objective"
 }

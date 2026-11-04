@@ -46,6 +46,7 @@ from PIL import Image
 import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.commands.auto_update import notice as update_notice
 from monifactory_assistant.config import minecraft_dir
+from monifactory_assistant.game.emi import objective_tree
 from monifactory_assistant.game.projects import ProjectStore
 from monifactory_assistant.paths import PACKAGE_ROOT
 from monifactory_assistant.paths import ROOT as HERE
@@ -2036,6 +2037,9 @@ def build_mod_view(app):
         ]
         main = next((recipes[t["item"]] for t in plan["cibles"] if t["item"] in recipes), None)
         screen["arbre"] = {"item": main["item"], "id": main.get("id")} if main else None
+        screen["objectif_emi"] = objective_tree(
+            plan, screen["projets"].get("actif", ""), app.plan_version
+        )
     if paused and plan:
         hud.update(
             {

@@ -59,7 +59,8 @@ public class EcranAssistant extends Screen {
     private final List<Button> actionsObjectif = new ArrayList<>();
     private OngletFilons filons;
     private OngletBase base;
-    private Button projets;
+    private Button projets, objectifEmi;
+    private String messageEmi = "";
     private EditBox saisie;
     private Button envoyer;
     private static final EtatDiscussion ETAT_DISCUSSION = new EtatDiscussion();
@@ -148,11 +149,12 @@ public class EcranAssistant extends Screen {
                                     .bounds(MARGE + i * (largeur + 6), bas - 26, largeur, 20)
                                     .build()));
         }
-        actionsObjectif.add(
+        objectifEmi =
                 addRenderableWidget(
-                        Button.builder(Component.literal("Arbre EMI"), b -> ouvrirArbre())
+                        Button.builder(Component.literal("Objectif EMI"), b -> ouvrirArbre())
                                 .bounds(this.width - MARGE - 104, bas - 26, 104, 20)
-                                .build()));
+                                .build());
+        actionsObjectif.add(objectifEmi);
         relancer =
                 addRenderableWidget(
                         Button.builder(
@@ -246,20 +248,27 @@ public class EcranAssistant extends Screen {
         REGLAGES_EN_ATTENTE.put(cle, valeur);
     }
 
-    /** L'arbre de fabrication d'EMI, avec l'objectif en cours : EMI y suit ce que tu as déjà. */
+    /** Met toutes les cibles et les recettes du plan dans EMI, uniquement à la demande. */
     private void ouvrirArbre() {
-        JsonObject arbre =
-                ecran().has("arbre") && ecran().get("arbre").isJsonObject()
-                        ? ecran().getAsJsonObject("arbre")
-                        : new JsonObject();
-        String item = Pont.texte(arbre, "item");
-        if (item.isEmpty() || this.minecraft == null || this.minecraft.player == null) {
-            return;
-        }
+        if (this.minecraft == null || this.minecraft.player == null) return;
+        EmiObjectif.Resultat resultat = EmiObjectif.preparer(partie(ecran(), "objectif_emi"));
+        messageEmi = resultat.message();
+        if (!resultat.succes()) return;
+        Screen parent = this;
         this.minecraft.setScreen(
-                new InventoryScreen(
-                        this.minecraft.player)); // EMI ouvre son arbre depuis un inventaire
-        Emi.ouvrirArbre(Pont.texte(arbre, "id"), Pont.objet(item));
+                new InventoryScreen(this.minecraft.player) {
+                    @Override
+                    public void onClose() {
+                        this.minecraft.setScreen(parent);
+                    }
+                });
+        if (!EmiObjectif.afficher()) {
+            messageEmi =
+                    "L’arbre EMI n’a pas pu s’ouvrir. Réessaie après le chargement des recettes.";
+            this.minecraft.setScreen(this);
+        } else if (!messageEmi.isEmpty()) {
+            this.minecraft.player.displayClientMessage(Component.literal(messageEmi), false);
+        }
     }
 
     private static JsonObject ecran() {
@@ -347,6 +356,17 @@ public class EcranAssistant extends Screen {
             boutonsOnglets.get(i).active = i != onglet; // l'onglet ouvert est grisé
         }
         JsonObject ecran = ecran();
+        boolean ciblesEmi = !Pont.liste(partie(ecran, "objectif_emi"), "cibles").isEmpty();
+        boolean emiPret = EmiObjectif.disponible();
+        objectifEmi.active = ciblesEmi && emiPret && this.minecraft.player != null;
+        objectifEmi.setTooltip(
+                net.minecraft.client.gui.components.Tooltip.create(
+                        Component.literal(
+                                !ciblesEmi
+                                        ? "Pas de craft défini pour cet objectif. Si besoin, relance l’assistant mis à jour."
+                                        : !emiPret
+                                                ? "EMI charge ses recettes ou n’est pas installé."
+                                                : "Mettre toutes les cibles, quantités et recettes de l’objectif dans l’arbre EMI. Inventaire suivi par EMI ; coffres suivis par l’assistant.")));
         discussion.visible(onglet == DISCUSSION);
         discussion.actualiser(ecran);
         if (!saisie.getValue().equals(ETAT_DISCUSSION.brouillon()))
@@ -468,6 +488,9 @@ public class EcranAssistant extends Screen {
             haut += 24;
         }
         int largeur = this.width - 2 * MARGE;
+        if (!messageEmi.isEmpty() && (onglet == OBJECTIF || onglet == PLAN)) {
+            haut = ecrire(g, messageEmi, MARGE, haut, largeur, Hud.JAUNE) + 4;
+        }
         switch (onglet) {
             case OBJECTIF -> objectif(g, ecran, MARGE, haut, largeur, bas - 4, sourisX, sourisY);
             case PLAN -> plan(g, ecran, MARGE, haut, largeur, bas - 4);

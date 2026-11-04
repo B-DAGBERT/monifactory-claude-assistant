@@ -5,5 +5,6 @@
   "key.assistantia.objectif": "Objectif suivant",
   "key.assistantia.parler": "Parler (maintenir ; Maj : écrire ; Ctrl : nouvelle conversation)",
   "key.assistantia.panneau": "Afficher / masquer le panneau",
-  "key.assistantia.voix": "Activer / désactiver la voix"
+  "key.assistantia.voix": "Activer / désactiver la voix",
+  "emi.category.assistantia.objectif": "Objectif de l’assistant"
 }

@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import monifactory_assistant.providers as ai_provider
+from monifactory_assistant.game.emi import objective_tree
 from monifactory_assistant.game.projects import ProjectStore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +83,7 @@ def load_logic(path):
         ai_provider=ai_provider,
         copy=copy,
         ProjectStore=ProjectStore,
+        objective_tree=objective_tree,
         json=json,
         time=time,
         math=math,
@@ -297,6 +299,8 @@ class ObjectivePauseTests(unittest.TestCase):
         self.assertEqual(paused["ecran"]["objectif_version"], "42")
         self.assertEqual(paused["ecran"]["plan"]["objectifs"][0]["etat"], "en_pause")
         self.assertEqual(paused["ecran"]["etapes"], active["ecran"]["etapes"])
+        self.assertEqual(paused["ecran"]["objectif_emi"], active["ecran"]["objectif_emi"])
+        self.assertEqual(paused["ecran"]["objectif_emi"]["cibles"][0]["quantite"], 2)
         self.assertEqual(paused["hud"]["prochains"], [])
         self.assertEqual(paused["besoins"], [])
         self.assertEqual(paused["fabrications"], [])

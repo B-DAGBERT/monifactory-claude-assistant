@@ -36,6 +36,25 @@ ne déclenchent aucun appel IA supplémentaire.
 
 Après cette mise à jour, relancer **l’assistant et Minecraft** pour activer la nouvelle discussion.
 
+## Objectif dans EMI
+
+Dans **Y → Objectif** ou **Plan**, **Objectif EMI** met le craft demandé dans l’arbre
+EMI : toutes les cibles avec leurs quantités, et les recettes intermédiaires choisies par
+l’assistant. Le livre « Objectif » est une racine virtuelle qui regroupe les cibles ; il
+n’est pas un objet à fabriquer. Clique sur les branches pour suivre leurs recettes dans EMI.
+
+La synchronisation se fait au clic, sans appel IA. Après un changement d’objectif ou de
+projet, clique à nouveau sur **Objectif EMI**. Réouvrir le même objectif conserve les choix
+et les branches de l’arbre tant que tu n’as pas remplacé cet arbre dans EMI. Les favoris et
+les recettes par défaut d’EMI ne sont pas modifiés. Un objectif en pause reste en pause.
+
+Si la recette indiquée manque ou si plusieurs recettes sont possibles sans choix dans le
+plan, un message indique les objets concernés : choisis leurs recettes directement dans EMI.
+Les quantités transmises sont les cibles totales de l’objectif, pas seulement les manques.
+EMI tient compte de ton inventaire ; il ne connaît pas les coffres mémorisés ni les machines
+posées. L’assistant continue de suivre ces stocks. Échap revient à l’inventaire, puis au menu
+assistant. Il faut relancer **l’assistant et Minecraft** après installation de cette version.
+
 ## Filons : scan, marquage et téléportation
 
 Sélectionner un filon puis **Scanner** : le scan vise son centre GregTech, même si tu es
