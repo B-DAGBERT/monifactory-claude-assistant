@@ -62,3 +62,11 @@ locales ou des commits non publiés. Ne pas utiliser de reset forcé pour contou
 - `game/emi.py` exporte l’avancement conservé uniquement lors d’un import explicite. Ne pas reprendre un objectif en pause.
 
 Les tests `test_emi.py`, `test_chest_transfers.py` et `test_machine_inputs.py` rejouent les allocations et les interactions client dans des conteneurs déterministes. Ils couvrent notamment les composants répartis entre coffres, les transformations partielles et en chaîne, les retours du même objet, les lots finaux rangés séparément, les outils partagés, les réceptions et annulations partielles, les circuits à NBT factice, les cases verrouillées, les doubles clics et les fluides. Ils ne remplacent pas une validation visuelle dans Minecraft ni les réponses d’un serveur réel.
+
+## Inventaire personnel et backpacks
+
+`InventaireJoueur` est la source commune du scan, du suivi final et du plan machine. `compat/backpacks/SacsPortes` utilise les API natives de Sophisticated Backpacks de manière optionnelle : inventaires enregistrés (dont Curios), lecture du menu ouvert et requête de contenu d’un UUID porté. Le mixin client `ContenuSacMixin` observe la réponse native, y compris pour un sac vide ; aucune nouvelle extension serveur n’est requise.
+
+Une seule requête par sac reste en vol. Le relevé est lié à la révision des quantités personnelles ; une réponse précédant un déplacement ne peut pas valider le nouvel inventaire. Le cache est effacé à la déconnexion et limité aux sacs encore portés. Le fichier `inventaire_joueur.json` exporte une vue complète ; `game/inventory.py` la substitue au relevé KubeJS seulement si elle est synchronisée, récente et correspond au joueur et à la dimension. Ne jamais ajouter ces quantités à un autre relevé : cela compterait deux fois les poches.
+
+`test_backpack_inventory.py` rejoue la lecture native, Curios, les grosses piles, les sacs imbriqués, les déplacements, les réponses retardées, le retrait d’un sac et le remplacement des relevés Python. Les transferts restent limités aux cases du menu natif ; les tests ne prétendent pas simuler un serveur Minecraft complet.

@@ -303,6 +303,10 @@ public final class Pont {
         return ecrireDemande("recherche_emi.json", demande);
     }
 
+    public static boolean envoyerInventaire(JsonObject inventaire) {
+        return ecrireDemande("inventaire_joueur.json", inventaire);
+    }
+
     public static boolean envoyerProgresFabrication(JsonObject progres) {
         return ecrireDemande("fabrication_emi.json", progres);
     }

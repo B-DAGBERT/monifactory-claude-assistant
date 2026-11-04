@@ -182,9 +182,11 @@ public final class SuiviEmiEcran extends Screen {
         if (lignes.isEmpty())
             g.drawCenteredString(
                     font,
-                    MachinesEmi.dernierTermine()
-                            ? "Terminé · résultats obtenus"
-                            : "Choisis un craft actif dans EMI",
+                    !fr.assistantia.InventaireJoueur.synchronise()
+                            ? "Synchronisation du backpack…"
+                            : MachinesEmi.dernierTermine()
+                                    ? "Terminé · résultats obtenus"
+                                    : "Choisis un craft actif dans EMI",
                     width / 2,
                     80,
                     0xAAAAAA);

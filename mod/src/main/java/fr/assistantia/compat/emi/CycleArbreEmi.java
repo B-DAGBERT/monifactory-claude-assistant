@@ -84,15 +84,12 @@ public final class CycleArbreEmi {
                                                                                 == c.accepte()
                                                                                         .test(b)));
             }
-            if (RetraitCoffre.occupe() || EnvoiMachine.occupe())
+            if (RetraitCoffre.occupe()
+                    || EnvoiMachine.occupe()
+                    || !fr.assistantia.InventaireJoueur.synchronise())
                 return; // Attendre la fin des clics et leur confirmation.
             List<PlanRetrait.Stock<ItemStack>> stock = new ArrayList<>();
-            for (ItemStack item : mc.player.getInventory().items) ajouter(stock, item);
-            for (ItemStack item : mc.player.getInventory().armor) ajouter(stock, item);
-            for (ItemStack item : mc.player.getInventory().offhand) ajouter(stock, item);
-            // Un craft normal peut arriver sur le curseur, un Maj-clic dans l'inventaire.
-            // Ne jamais lire la case de résultat : ce n'est qu'un aperçu non encore fabriqué.
-            ajouter(stock, mc.player.containerMenu.getCarried());
+            for (ItemStack item : fr.assistantia.InventaireJoueur.piles()) ajouter(stock, item);
             OrigineFabrication.actualiser(stock);
             MachinesEmi.recevoir(OrigineFabrication.receptions());
             boolean fini = suivi.actualiser(stock, OrigineFabrication.receptions());

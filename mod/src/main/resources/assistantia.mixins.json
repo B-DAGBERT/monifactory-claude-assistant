@@ -1,0 +1,7 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "fr.assistantia.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": ["ContenuSacMixin"]
+}

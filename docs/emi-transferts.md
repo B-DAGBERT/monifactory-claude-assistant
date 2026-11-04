@@ -18,6 +18,14 @@ Le scan est un instantané de l’arbre : après modification des recettes, util
 
 La mémoire des coffres distingue les identifiants des objets, pas leurs variantes NBT. Dans le coffre ouvert, le retrait vérifie aussi les variantes EMI, avec une exception pour le NBT factice du Programmed Circuit. Un coffre peut donc être signalé sans proposer de retrait si la variante est incompatible. La recherche ne suit pas les fluides. Un stock inaccessible ou périmé ne crée jamais d’objet : les retraits sont bornés par les vraies cases du coffre ouvert.
 
+## Objets dans le backpack
+
+Les sacs Sophisticated Backpacks portés sont inclus dans le stock personnel : inventaire, armure, main secondaire, curseur ou emplacement Curios. Les contenus imbriqués sont dédupliqués par identifiant de sac. Les piles agrandies conservent leur vraie quantité et leur NBT ; les upgrades et filtres ne sont pas des ingrédients disponibles.
+
+Le client demande périodiquement le contenu via le protocole natif du mod. Le menu ouvert donne une lecture directe. Les besoins et le compteur attendent une synchronisation cohérente lors d’un déplacement entre les poches et le sac ; un ancien cache ne valide pas un nouvel inventaire ou une nouvelle connexion. **Lecture du sac…** indique cette attente. Ouvrir le sac donne accès immédiatement au contenu synchronisé par son interface.
+
+Les objets du sac comptent pour l’avancement et évitent des retraits en double dans les coffres. Pour un envoi machine, **À sortir du sac** signifie qu’il faut d’abord déplacer les ingrédients dans les poches. Le remplissage natif d’EMI et le bouton **Envoyer** ne prélèvent pas automatiquement dans un sac fermé. Un sac posé au sol reste un stockage du monde, et non un inventaire personnel.
+
 ## Envoyer dans une machine
 
 - Le panneau indique les fabrications possibles / restantes. Les quantités détaillées sont au survol ; **Suivi → Recette** ouvre la recette EMI.
@@ -32,14 +40,15 @@ Pendant un envoi, la progression est affichée et les doubles clics sont ignoré
 
 Le bouton **Suivi** est placé à côté de **Scanner coffres**, en bas d’EMI. Il est aussi accessible dans le panneau d’une machine. Chaque ligne affiche le produit, le nombre de fabrications et son état :
 
-| État        | Signification                                                                                                                                        |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| À collecter | Il manque encore des ingrédients dans l’inventaire pour un lot.                                                                                      |
-| À envoyer   | Les ingrédients d’au moins une fabrication machine sont disponibles. Le panneau de la machine vérifie ensuite ses entrées, sa place et son activité. |
-| À fabriquer | Les ingrédients d’au moins une fabrication manuelle sont disponibles.                                                                                |
-| En machine  | Le dépôt a réussi ; ses sorties garanties restent réservées. Cela ne garantit pas que la machine reçoit assez d’énergie.                             |
-| À récupérer | Une sortie attendue a été observée dans l’interface de cette machine.                                                                                |
-| Terminé     | Les résultats attendus ont été récupérés.                                                                                                            |
+| État            | Signification                                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| À collecter     | Il manque encore des ingrédients dans l’inventaire pour un lot.                                                                                      |
+| À envoyer       | Les ingrédients d’au moins une fabrication machine sont disponibles. Le panneau de la machine vérifie ensuite ses entrées, sa place et son activité. |
+| À sortir du sac | Les ingrédients sont possédés mais doivent être déplacés dans les poches avant utilisation.                                                          |
+| À fabriquer     | Les ingrédients d’au moins une fabrication manuelle sont disponibles.                                                                                |
+| En machine      | Le dépôt a réussi ; ses sorties garanties restent réservées. Cela ne garantit pas que la machine reçoit assez d’énergie.                             |
+| À récupérer     | Une sortie attendue a été observée dans l’interface de cette machine.                                                                                |
+| Terminé         | Les résultats attendus ont été récupérés.                                                                                                            |
 
 Sélectionner une ligne donne accès à **Recette** et, pour un lot envoyé non terminé, **Annuler le lot**. Échap depuis la recette ramène au suivi ; **Retour** ramène au menu précédent.
 

@@ -18,7 +18,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 public final class RechercheEmi {
     private static String recette = "", monde = "", dimension = "";
     private static long numero, fin, dernierClic, envoye;
-    private static boolean attente;
+    private static boolean attente, inventaireEnAttente;
     private static MemoireCollecte collecte;
     private static java.util.function.Predicate<net.minecraft.world.item.ItemStack> conforme =
             s -> false;
@@ -48,18 +48,20 @@ public final class RechercheEmi {
     }
 
     public static boolean cherche(String id) {
-        return actif() && objets.contains(id);
+        return actif() && InventaireJoueur.synchronise() && objets.contains(id);
     }
 
     public static List<Pont.Repere> reperes() {
-        return actif() ? reperes : List.of();
+        return actif() && InventaireJoueur.synchronise() ? reperes : List.of();
     }
 
     /** Même sélection et mêmes crédits que les contours : aucun recalcul depuis l'objectif. */
     public static RetraitCoffre.Plan retrait(
             net.minecraft.world.inventory.AbstractContainerMenu menu) {
-        if (!Pont.retraitCoffres() || !actif() || collecte == null)
-            return new RetraitCoffre.Plan(List.of(), 0);
+        if (!Pont.retraitCoffres()
+                || !actif()
+                || collecte == null
+                || !InventaireJoueur.synchronise()) return new RetraitCoffre.Plan(List.of(), 0);
         actualiserCollecte();
         actualiserVue();
         return RetraitCoffre.planRecherche(
@@ -72,7 +74,10 @@ public final class RechercheEmi {
     }
 
     private static void actualiserCollecte() {
-        if (collecte == null || RetraitCoffre.occupe() || Emi.envoiMachineEnCours()) return;
+        if (collecte == null
+                || RetraitCoffre.occupe()
+                || Emi.envoiMachineEnCours()
+                || !InventaireJoueur.synchronise()) return;
         long version = collecte.version();
         var cumul = Emi.fabricationsConfirmees();
         Map<String, Integer> preuves = new HashMap<>();
@@ -84,14 +89,19 @@ public final class RechercheEmi {
         fabricationsPrecedentes = cumul;
         Set<String> restants = collecte.actualiser(inventaire(), preuves);
         if (collecte.version() != version) derniereVue = null;
-        if (!restants.equals(demandes)) {
+        if (inventaireEnAttente || !restants.equals(demandes)) {
+            inventaireEnAttente = false;
             demandes = restants;
             transmettre();
         }
     }
 
     public static String bouton(String id) {
-        return selectionnee(id) ? attente ? "Recherche…" : "Arrêter" : "Coffres";
+        return selectionnee(id)
+                ? !InventaireJoueur.synchronise()
+                        ? "Lecture du sac…"
+                        : attente ? "Recherche…" : "Arrêter"
+                : "Coffres";
     }
 
     public static void basculer(
@@ -130,8 +140,9 @@ public final class RechercheEmi {
         collecte = suivi;
         fabricationsPrecedentes = Emi.fabricationsConfirmees();
         conforme = accepte;
-        demandes = suivi.actualiser(inventaire());
-        transmettre();
+        inventaireEnAttente = true;
+        demandes = Set.of();
+        actualiserCollecte();
     }
 
     public static void recalculer(
@@ -143,21 +154,17 @@ public final class RechercheEmi {
         collecte = suivi;
         fabricationsPrecedentes = Emi.fabricationsConfirmees();
         conforme = accepte;
-        demandes = suivi.actualiser(inventaire());
+        inventaireEnAttente = true;
+        demandes = Set.of();
         fin = System.currentTimeMillis() + 600_000;
-        transmettre();
+        actualiserCollecte();
     }
 
     private static Map<String, Integer> inventaire() {
         Map<String, Integer> stock = new HashMap<>();
         var joueur = Minecraft.getInstance().player;
         if (joueur != null) {
-            List<net.minecraft.world.item.ItemStack> piles =
-                    new ArrayList<>(joueur.getInventory().items);
-            piles.addAll(joueur.getInventory().armor);
-            piles.addAll(joueur.getInventory().offhand);
-            piles.add(joueur.containerMenu.getCarried());
-            for (var item : piles) {
+            for (var item : InventaireJoueur.piles()) {
                 if (item.isEmpty() || !conforme.test(item)) continue;
                 var id = ForgeRegistries.ITEMS.getKey(item.getItem());
                 if (id != null) stock.merge(id.toString(), item.getCount(), Integer::sum);
@@ -213,7 +220,7 @@ public final class RechercheEmi {
         RetraitCoffre.arreter();
         AideCoffre.vider();
         recette = "";
-        attente = false;
+        attente = inventaireEnAttente = false;
         objets = demandes = Set.of();
         quantites = Map.of();
         reperes = List.of();
@@ -239,7 +246,7 @@ public final class RechercheEmi {
     }
 
     private static void actualiserVue() {
-        if (collecte == null) return;
+        if (collecte == null || !InventaireJoueur.synchronise()) return;
         if (demandes.isEmpty())
             return; // Garder la recherche validée, sans revenir au guidage de l'objectif.
         if (attente && System.currentTimeMillis() - envoye > 8000) {

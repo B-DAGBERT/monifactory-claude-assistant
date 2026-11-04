@@ -105,7 +105,14 @@ public final class Stats {
                 objets.add(s);
             }
         }
-        if (joueur.containerMenu != joueur.inventoryMenu) {
+        if (InventaireJoueur.synchronise())
+            for (var s : InventaireJoueur.sacs()) {
+                emplacements.add("backpack porté");
+                objets.add(s);
+            }
+        boolean sacPorteOuvert =
+                fr.assistantia.compat.backpacks.SacsPortes.client().ouvertPorte(joueur);
+        if (joueur.containerMenu != joueur.inventoryMenu && !sacPorteOuvert) {
             for (Slot slot : joueur.containerMenu.slots) {
                 if (!(slot.container instanceof Inventory) && slot.hasItem()) {
                     emplacements.add("coffre ouvert");

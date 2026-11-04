@@ -11,6 +11,7 @@ public final class Client {
         var modBus = FMLJavaModLoadingContext.get().getModEventBus();
         modBus.addListener(Touches::enregistrer);
         modBus.addListener(Hud::enregistrer);
+        MinecraftForge.EVENT_BUS.register(InventaireJoueur.class);
         MinecraftForge.EVENT_BUS.register(Touches.class);
         MinecraftForge.EVENT_BUS.register(Surbrillance.class);
         MinecraftForge.EVENT_BUS.register(Guidage.class);

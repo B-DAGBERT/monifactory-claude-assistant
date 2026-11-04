@@ -49,6 +49,7 @@ from monifactory_assistant.commands.auto_update import notice_key as update_noti
 from monifactory_assistant.config import minecraft_dir
 from monifactory_assistant.game.emi import objective_tree
 from monifactory_assistant.game.emi_search import RecipeChestSearch
+from monifactory_assistant.game.inventory import personal_inventory
 from monifactory_assistant.game.projects import ProjectStore
 from monifactory_assistant.paths import PACKAGE_ROOT
 from monifactory_assistant.paths import ROOT as HERE
@@ -205,7 +206,8 @@ Quand tu fais une action, dis-le en une phrase courte."""
 SYSTEM_PROMPT = """Tu es un assistant intégré au jeu Minecraft du joueur. Il joue au modpack Monifactory \
 (Minecraft 1.20.1, GregTech CEu Modern) en mode EXPERT, sur un serveur avec un ami.
 Données du jeu en temps réel, en lecture seule, dans {data_dir} :
-- etat.json : position, inventaire, écran ouvert.
+- etat.json : position, inventaire de base, écran ouvert.
+- inventaire_joueur.json : inventaire complet incluant les backpacks portés ; utiliser seulement un relevé actif, synchronisé et récent.
 - quetes.json : progression des quêtes FTB (chapitres, quêtes terminées, quêtes disponibles avec leurs tâches \
 et leur description).
 - recettes_*.json : TOUTES les recettes du pack, une par ligne "catégorie | entrées => sorties | id". \
@@ -390,7 +392,9 @@ class Bridge:
             self.last_state = state
         state = self.last_state
         if state and time.time() * 1000 - state.get("t", 0) < 5000:
-            return state
+            return personal_inventory(
+                state, self.read("inventaire_joueur.json"), time.time() * 1000
+            )
         return None
 
 

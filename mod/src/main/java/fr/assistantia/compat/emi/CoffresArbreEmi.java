@@ -119,20 +119,25 @@ public final class CoffresArbreEmi {
             button.setY(y);
             button.setWidth(width);
             boolean selected = RechercheEmi.selectionnee(ID);
+            boolean lectureSac = selected && !fr.assistantia.InventaireJoueur.synchronise();
             button.active = selected || ArbreEmi.consulte() != null;
             button.setMessage(
                     Component.literal(
-                            width < 80
-                                    ? selected ? "■" : "▣"
-                                    : selected ? "Arrêter scan" : "Scanner coffres"));
+                            lectureSac
+                                    ? (width < 80 ? "…" : "Lecture du sac…")
+                                    : width < 80
+                                            ? selected ? "■" : "▣"
+                                            : selected ? "Arrêter scan" : "Scanner coffres"));
             button.setTooltip(
                     Tooltip.create(
                             Component.literal(
-                                    selected
-                                            ? "Désactiver la recherche de l’arbre dans les coffres"
-                                            : button.active
-                                                    ? "Chercher tous les objets de l’arbre EMI dans les coffres"
-                                                    : "Choisis d’abord un objectif dans Recipe Tree")));
+                                    lectureSac
+                                            ? "Synchronisation du backpack · cliquer pour arrêter le scan"
+                                            : selected
+                                                    ? "Désactiver la recherche de l’arbre dans les coffres"
+                                                    : button.active
+                                                            ? "Chercher tous les objets de l’arbre EMI dans les coffres"
+                                                            : "Choisis d’abord un objectif dans Recipe Tree")));
         } catch (ReflectiveOperationException | RuntimeException e) {
             button.visible = false;
             if (suivis.get(event.getScreen()) != null)

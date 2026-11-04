@@ -64,6 +64,14 @@ partiel. Le stock encore dans ton inventaire est inclus dans la quantité envoy�
 le déduise lui-même, une seule fois. L’assistant conserve le suivi des coffres et machines posées. Échap revient à l’inventaire, puis au menu
 assistant. Il faut relancer **l’assistant et Minecraft** après installation de cette version.
 
+## Backpack comme inventaire
+
+Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans les besoins du scan EMI, la planification des machines et l’avancement des objectifs. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
+
+La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
+
+Cette option concerne le **comptage**. **Envoyer** continue à utiliser les cases accessibles de l’inventaire : le suivi indique **À sortir du sac** lorsque les ingrédients nécessaires sont dans le backpack. Le mod ne les extrait pas automatiquement.
+
 ## Coffres depuis l’arbre EMI
 
 Choisir l’objectif et ses recettes dans **Recipe Tree**, puis cliquer sur **Scanner coffres**,

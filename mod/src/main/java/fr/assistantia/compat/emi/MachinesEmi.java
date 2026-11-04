@@ -126,7 +126,7 @@ public final class MachinesEmi {
                                 : GregTechMachines.cuvesSortie(menuObserve);
                 receptionFluides = new fr.assistantia.ReceptionSortie<>(ComparaisonEmi::meme);
             }
-            if (machineObservee == null) return;
+            if (machineObservee == null || !fr.assistantia.InventaireJoueur.synchronise()) return;
             List<PlanRetrait.Stock<EmiStack>> sorties = new ArrayList<>();
             for (var slot : sortiesObservees)
                 if (!slot.getItem().isEmpty())
@@ -154,8 +154,6 @@ public final class MachinesEmi {
                                                         instanceof
                                                         net.minecraft.world.level.material.Fluid)
                                 .toList());
-                ajouterFluide(personnels, menuObserve.getCarried());
-                for (var item : player.getInventory().offhand) ajouterFluide(personnels, item);
             }
             recevoir(receptionFluides.actualiser(personnels, fluides), machineObservee.position());
             for (var lot : lots)
@@ -216,6 +214,7 @@ public final class MachinesEmi {
         if (actif() == null) return List.of();
         List<Ligne> lignes = new ArrayList<>();
         var stock = inventaire();
+        var disponibles = inventaire(false);
         for (var o : toutes) {
             if (o.recette().getId() != null
                     && o.recette().getId().getNamespace().equals("assistantia")) continue;
@@ -225,9 +224,15 @@ public final class MachinesEmi {
                             -1,
                             o.recette(),
                             o.fois(),
-                            pret
-                                    ? (estGT(o.recette()) ? "À envoyer" : "À fabriquer")
-                                    : "À collecter",
+                            !fr.assistantia.InventaireJoueur.synchronise()
+                                    ? "Lecture du sac…"
+                                    : pret
+                                            ? (!ingredientsDisponibles(o.recette(), disponibles)
+                                                    ? "À sortir du sac"
+                                                    : estGT(o.recette())
+                                                            ? "À envoyer"
+                                                            : "À fabriquer")
+                                            : "À collecter",
                             false,
                             o.recette().getCategory().getName().getString()));
         }
@@ -298,10 +303,17 @@ public final class MachinesEmi {
     }
 
     private static List<PlanRetrait.Stock<EmiStack>> inventaire() {
+        return inventaire(true);
+    }
+
+    private static List<PlanRetrait.Stock<EmiStack>> inventaire(boolean avecSacs) {
         List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
         var mc = Minecraft.getInstance();
         if (mc.player == null) return stock;
-        for (ItemStack s : mc.player.getInventory().items) {
+        for (ItemStack s :
+                avecSacs
+                        ? fr.assistantia.InventaireJoueur.piles()
+                        : mc.player.getInventory().items) {
             if (s.isEmpty()) continue;
             stock.add(new PlanRetrait.Stock<>(EmiStack.of(s), s.getCount(), true));
             ItemStack un = s.copy();
@@ -416,7 +428,11 @@ public final class MachinesEmi {
             dimension = dim;
             choix = page = 0;
         }
-        if (arbre == null || mc.player == null || mc.level == null || EnvoiMachine.occupe()) return;
+        if (arbre == null
+                || mc.player == null
+                || mc.level == null
+                || EnvoiMachine.occupe()
+                || !fr.assistantia.InventaireJoueur.synchronise()) return;
         try {
             var key = new StringBuilder();
             var root =
