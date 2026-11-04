@@ -86,6 +86,9 @@ class EmiTests(unittest.TestCase):
     def test_machine_lot_states_partial_receipts_and_cancel(self):
         self._run_java_contract("LotFabrication")
 
+    def test_manual_machine_batch_receipts_do_not_duplicate_stock(self):
+        self._run_java_contract("ReceptionManuelle")
+
     def test_chest_withdrawal_allocation(self):
         self._run_java_contract("PlanRetrait")
 
@@ -176,7 +179,18 @@ class EmiTests(unittest.TestCase):
                     ),
                     *(
                         [str(ROOT / "mod/src/main/java/fr/assistantia/PlanRetrait.java")]
-                        if name in {"SuiviFabrication", "PlanMachines", "LotFabrication"}
+                        if name
+                        in {
+                            "SuiviFabrication",
+                            "PlanMachines",
+                            "LotFabrication",
+                            "ReceptionManuelle",
+                        }
+                        else []
+                    ),
+                    *(
+                        [str(ROOT / "mod/src/main/java/fr/assistantia/LotFabrication.java")]
+                        if name == "ReceptionManuelle"
                         else []
                     ),
                     *[

@@ -66,7 +66,7 @@ assistant. Il faut relancer **l’assistant et Minecraft** après installation d
 
 ## Backpack comme inventaire
 
-Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans les besoins du scan EMI, la planification des machines et l’avancement des objectifs. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
+Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans l’arbre natif EMI et sa liste latérale, les besoins du scan, la planification des machines et l’avancement des objectifs. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
 
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 
@@ -78,11 +78,11 @@ Choisir l’objectif et ses recettes dans **Recipe Tree**, puis cliquer sur **Sc
 en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton devient **Arrêter scan** :
 un second clic désactive le repérage. Il remplace l’ancien bouton sous chaque recette.
 
-La recherche prend un instantané de **tout l’arbre choisi**, avec les composants intermédiaires,
+La recherche suit **tout l’arbre choisi**, avec les composants intermédiaires,
 les matières premières, les variantes et les quantités pour le nombre de lots de l’arbre.
 Les outils réutilisables ne sont pas multipliés par le nombre de fabrications. Les fluides
 et les différences de NBT ne sont pas suivis par la mémoire des coffres. Si tu modifies
-l’arbre ou ses quantités après activation, désactive puis réactive le scan pour le reprendre.
+l’arbre ou ses quantités après activation, le scan se recalcule automatiquement en conservant les objets acquis et les fabrications en machine.
 
 La recherche réserve les stocks **de haut en bas de l’arbre**, en tenant compte de tous les
 coffres connus de la dimension. Un composant disponible dans un coffre masque les matières
@@ -128,7 +128,7 @@ Dans une machine compatible, le panneau de l’assistant, au même style que cel
   est réglé lorsqu’il dispose de son sélecteur GregTech natif. Sa configuration vient de la
   recette GregTech, pas du NBT factice affiché par EMI. Pour reconnaître l’objet Programmed
   Circuit, son NBT est ignoré ; cette exception ne s’applique pas aux autres objets.
-- **Suivi** affiche les étapes et les lots envoyés. Sélectionner une ligne pour ouvrir sa **Recette** ou **Annuler le lot**. Récupérer soi-même le résultat dans la machine.
+- **Suivi** affiche les étapes et les lots envoyés. Sélectionner une recette pour **En cours de craft** si elle a déjà été lancée manuellement, ou un lot pour **Annuler le lot**. **Recette** ouvre son détail EMI. Récupérer soi-même le résultat dans la machine.
 
 Les fluides proviennent uniquement des seaux et cellules de l’inventaire. Les contenants sont
 vidés par le clic natif GregTech puis rendus à l’inventaire. Le volume réel est affiché avant
@@ -142,7 +142,7 @@ Les fabrications envoyées restent réservées dans ce suivi pour éviter de les
 avant la récupération des sorties. Changer l’arbre ou arrêter son suivi remet ces réservations à zéro.
 Les machines et cuves sans entrées accessibles dans leur interface ne permettent pas cet envoi.
 
-À côté de **Scanner coffres**, **Suivi** affiche les états **À collecter**, **À envoyer / À fabriquer**, **En machine**, **À récupérer** et **Terminé**. **Recalculer** relit les besoins sans effacer l’avancement final ni les lots en attente. **Annuler le lot** libère sa réservation sans retirer les objets de la machine. Le fonctionnement et les limites sont détaillés dans [le guide EMI](docs/emi-transferts.md).
+À côté de **Scanner coffres**, **Suivi** affiche les états **À collecter**, **À envoyer / À fabriquer**, **En machine**, **À récupérer** et **Terminé**. **En cours de craft** réserve le nombre de fabrications déjà lancées manuellement. Leurs résultats attendus et leurs ingrédients cessent d’être demandés par le suivi et le scan. **Recalculer** relit les besoins sans effacer l’avancement final ni les lots en attente. **Annuler le lot** libère sa réservation sans retirer les objets de la machine. Le fonctionnement et les limites sont détaillés dans [le guide EMI](docs/emi-transferts.md).
 
 Les composants transformés ne laissent plus un double crédit de matières premières. Les outils partagés sont prévus une seule fois, et les allers-retours du même résultat dans un coffre ne font plus progresser artificiellement la cible.
 

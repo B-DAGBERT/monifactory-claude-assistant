@@ -46,6 +46,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
         if (!branche) {
             MinecraftForge.EVENT_BUS.register(AssistantEmiPlugin.class);
             MinecraftForge.EVENT_BUS.register(CoffresArbreEmi.class);
+            MinecraftForge.EVENT_BUS.register(InventaireArbreEmi.class);
             MinecraftForge.EVENT_BUS.register(CycleArbreEmi.class);
             MinecraftForge.EVENT_BUS.register(OrigineFabrication.class);
             MinecraftForge.EVENT_BUS.register(AideCoffre.class);

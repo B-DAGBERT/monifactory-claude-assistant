@@ -38,6 +38,85 @@ public final class CoffresArbreEmi {
     private static java.lang.reflect.Method desactive;
     private static boolean erreurSignalee;
     private static long dernierClic;
+    private static int ticks;
+    private static Instantane dernierArbre;
+
+    private record Instantane(
+            ArbreCollecte.Noeud noeud,
+            long lots,
+            List<EmiStack> variantes,
+            String cles,
+            String cible) {
+        boolean meme(Instantane autre) {
+            return autre != null
+                    && lots == autre.lots
+                    && noeud.equals(autre.noeud)
+                    && cles.equals(autre.cles)
+                    && cible.equals(autre.cible);
+        }
+    }
+
+    private static Instantane instantane(Object tree) throws ReflectiveOperationException {
+        List<EmiStack> variantes = new ArrayList<>();
+        var node =
+                lire(
+                        tree.getClass().getField("goal").get(tree),
+                        Collections.newSetFromMap(new IdentityHashMap<>()),
+                        new int[] {0},
+                        0,
+                        variantes);
+        long lots = tree.getClass().getField("batches").getLong(tree);
+        String cles =
+                variantes.stream()
+                        .map(v -> v.getId() + "|" + v.getNbt())
+                        .sorted()
+                        .toList()
+                        .toString();
+        var root = tree.getClass().getField("goal").get(tree);
+        var produit = (EmiIngredient) root.getClass().getField("ingredient").get(root);
+        String cible =
+                produit.getEmiStacks().stream()
+                        .map(v -> v.getId() + "|" + v.getNbt())
+                        .sorted()
+                        .toList()
+                        .toString();
+        return new Instantane(node, lots, List.copyOf(variantes), cles, cible);
+    }
+
+    private static void appliquer(Instantane vue) {
+        RechercheEmi.recalculer(
+                new MemoireCollecte(vue.noeud(), vue.lots()),
+                item ->
+                        vue.variantes().stream()
+                                .anyMatch(v -> ComparaisonEmi.meme(EmiStack.of(item), v)),
+                dernierArbre != null && vue.cible().equals(dernierArbre.cible()));
+        dernierArbre = vue;
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public static void tick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
+        if (event.phase != net.minecraftforge.event.TickEvent.Phase.END) return;
+        if (!RechercheEmi.selectionnee(ID)) {
+            dernierArbre = null;
+            return;
+        }
+        if (++ticks % 10 != 0 || EnvoiMachine.occupe() || fr.assistantia.RetraitCoffre.occupe())
+            return;
+        try {
+            Object tree = ArbreEmi.actif();
+            if (tree == null) return;
+            var vue = instantane(tree);
+            if (!vue.meme(dernierArbre)) appliquer(vue);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            RechercheEmi.arreter(); // Ne pas proposer les ingrédients de l'ancien arbre.
+            signaler(e);
+            var p = Minecraft.getInstance().player;
+            if (p != null)
+                p.displayClientMessage(
+                        Component.literal("Arbre illisible · scan arrêté. Rouvre Recipe Tree."),
+                        true);
+        }
+    }
 
     private static void charger() throws ReflectiveOperationException {
         if (charge) return;
@@ -181,20 +260,7 @@ public final class CoffresArbreEmi {
         try {
             Object tree = ArbreEmi.actif();
             if (tree == null) return false;
-            List<EmiStack> variantes = new ArrayList<>();
-            var node =
-                    lire(
-                            tree.getClass().getField("goal").get(tree),
-                            Collections.newSetFromMap(new IdentityHashMap<>()),
-                            new int[] {0},
-                            0,
-                            variantes);
-            long lots = tree.getClass().getField("batches").getLong(tree);
-            RechercheEmi.recalculer(
-                    new MemoireCollecte(node, lots),
-                    item ->
-                            variantes.stream()
-                                    .anyMatch(v -> ComparaisonEmi.meme(EmiStack.of(item), v)));
+            appliquer(instantane(tree));
             return true;
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);
@@ -220,6 +286,7 @@ public final class CoffresArbreEmi {
             int[] count = {0};
             List<EmiStack> variantes = new ArrayList<>();
             ArbreCollecte.Noeud snapshot = lire(root, chemin, count, 0, variantes);
+            dernierArbre = instantane(tree);
             if (ArbreEmi.actif() == null) RechercheEmi.arreter();
             if (!ArbreEmi.activer()) return;
             RechercheEmi.basculer(

@@ -14,7 +14,7 @@ Le scan réserve d’abord les composants prêts, puis les matières et les outi
 
 Les contours, les objets surlignés et les boutons de retrait utilisent la même sélection. Exemple : sur trois boîtiers nécessaires, deux existent dans un coffre ; le drawer de fer ne propose que le fer pour le troisième. Un outil déjà possédé ne doit pas être prélevé une seconde fois. Si le composant est déjà récupéré, son outil de fabrication ne devient pas nécessaire après rangement.
 
-Le scan est un instantané de l’arbre : après modification des recettes, utiliser **Suivi → Recalculer** ou arrêter puis relancer le scan. Ouvrir un coffre actualise son contenu mémorisé. Arrêter le scan retire les contours et le panneau **Collecte**. Un objectif seul n’autorise aucun retrait.
+Quand le scan est actif, il suit automatiquement les modifications de recettes, de branches et de quantités, au plus toutes les 500 ms hors transfert. Les acquisitions pertinentes de la même cible et les lots en machine sont conservés. Choisir une autre cible remet les crédits de collecte à zéro, en gardant le stock réel et les lots encore en cours. **Suivi → Recalculer** permet aussi de forcer une relecture. Cette actualisation ne réactive jamais un scan arrêté. Ouvrir un coffre actualise son contenu mémorisé. Arrêter le scan retire les contours et le panneau **Collecte**. Un objectif seul n’autorise aucun retrait.
 
 La mémoire des coffres distingue les identifiants des objets, pas leurs variantes NBT. Dans le coffre ouvert, le retrait vérifie aussi les variantes EMI, avec une exception pour le NBT factice du Programmed Circuit. Un coffre peut donc être signalé sans proposer de retrait si la variante est incompatible. La recherche ne suit pas les fluides. Un stock inaccessible ou périmé ne crée jamais d’objet : les retraits sont bornés par les vraies cases du coffre ouvert.
 
@@ -24,7 +24,7 @@ Les sacs Sophisticated Backpacks portés sont inclus dans le stock personnel : i
 
 Le client demande périodiquement le contenu via le protocole natif du mod. Le menu ouvert donne une lecture directe. Les besoins et le compteur attendent une synchronisation cohérente lors d’un déplacement entre les poches et le sac ; un ancien cache ne valide pas un nouvel inventaire ou une nouvelle connexion. **Lecture du sac…** indique cette attente. Ouvrir le sac donne accès immédiatement au contenu synchronisé par son interface.
 
-Les objets du sac comptent pour l’avancement et évitent des retraits en double dans les coffres. Pour un envoi machine, **À sortir du sac** signifie qu’il faut d’abord déplacer les ingrédients dans les poches. Le remplissage natif d’EMI et le bouton **Envoyer** ne prélèvent pas automatiquement dans un sac fermé. Un sac posé au sol reste un stockage du monde, et non un inventaire personnel.
+Les objets du sac comptent dans **l’arbre natif EMI et sa liste latérale**, même après fermeture, ainsi que pour l’avancement et les retraits dans les coffres. L’arbre se rafraîchit à la réception du relevé ; ses calculs ne modifient pas les sources de transfert. Les cases réelles de la grille de craft restent comptées, et le curseur ainsi qu’un sac ouvert ne sont comptés qu’une fois. Pour un envoi machine, **À sortir du sac** signifie qu’il faut d’abord déplacer les ingrédients dans les poches. Le remplissage natif d’EMI et le bouton **Envoyer** ne prélèvent pas automatiquement dans un sac fermé. Un sac posé au sol reste un stockage du monde, et non un inventaire personnel.
 
 ## Envoyer dans une machine
 
@@ -40,23 +40,23 @@ Pendant un envoi, la progression est affichée et les doubles clics sont ignoré
 
 Le bouton **Suivi** est placé à côté de **Scanner coffres**, en bas d’EMI. Il est aussi accessible dans le panneau d’une machine. Chaque ligne affiche le produit, le nombre de fabrications et son état :
 
-| État            | Signification                                                                                                                                        |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| À collecter     | Il manque encore des ingrédients dans l’inventaire pour un lot.                                                                                      |
-| À envoyer       | Les ingrédients d’au moins une fabrication machine sont disponibles. Le panneau de la machine vérifie ensuite ses entrées, sa place et son activité. |
-| À sortir du sac | Les ingrédients sont possédés mais doivent être déplacés dans les poches avant utilisation.                                                          |
-| À fabriquer     | Les ingrédients d’au moins une fabrication manuelle sont disponibles.                                                                                |
-| En machine      | Le dépôt a réussi ; ses sorties garanties restent réservées. Cela ne garantit pas que la machine reçoit assez d’énergie.                             |
-| À récupérer     | Une sortie attendue a été observée dans l’interface de cette machine.                                                                                |
-| Terminé         | Les résultats attendus ont été récupérés.                                                                                                            |
+| État            | Signification                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| À collecter     | Il manque encore des ingrédients dans l’inventaire pour un lot.                                                                                               |
+| À envoyer       | Les ingrédients d’au moins une fabrication machine sont disponibles. Le panneau de la machine vérifie ensuite ses entrées, sa place et son activité.          |
+| À sortir du sac | Les ingrédients sont possédés mais doivent être déplacés dans les poches avant utilisation.                                                                   |
+| À fabriquer     | Les ingrédients d’au moins une fabrication manuelle sont disponibles.                                                                                         |
+| En machine      | Le dépôt a réussi ou le lot a été déclaré manuellement ; ses sorties garanties restent réservées. Cela ne garantit pas que la machine reçoit assez d’énergie. |
+| À récupérer     | Une sortie attendue a été observée dans l’interface de cette machine.                                                                                         |
+| Terminé         | Les résultats attendus ont été récupérés.                                                                                                                     |
 
-Sélectionner une ligne donne accès à **Recette** et, pour un lot envoyé non terminé, **Annuler le lot**. Échap depuis la recette ramène au suivi ; **Retour** ramène au menu précédent.
+Sélectionner une recette donne accès à **Recette** et **En cours de craft**. Ce bouton sert aux fabrications déjà lancées manuellement : saisir le nombre de fabrications, ou choisir **Tout le reste**, puis confirmer. Le nombre de résultats réservé est affiché avant confirmation. Seules les sorties objets garanties sont réservées pour un lot manuel. Leur réception réelle réduit la réservation, y compris si les objets arrivent dans le backpack. Les objets déjà possédés au moment de la déclaration ne valident pas ce lot. Une réservation ne fait jamais avancer à elle seule l’objectif. Pour un lot encore en attente, le même emplacement propose **Annuler le lot**. Échap depuis la recette ramène au suivi ; **Retour** ramène au menu précédent.
 
-**Recalculer** relit les branches et les stocks actuels. L’avancement final et les lots encore en attente sont conservés ; un scan arrêté reste arrêté. Le scan actif repart de l’inventaire actuel et des cibles finales acquises : ses anciens crédits d’ingrédients intermédiaires sont remplacés. Les contenus des coffres restent ceux mémorisés lors de leur ouverture.
+**Recalculer** relit les branches et les stocks actuels. L’avancement final et les lots encore en attente sont conservés ; un scan arrêté reste arrêté. Le scan actif conserve les crédits des ingrédients encore pertinents. Les réservations restent séparées : les annuler rend les besoins correspondants visibles, sans conserver de faux crédit. Les matières déjà envoyées ne couvrent pas aussi une autre branche. Les contenus des coffres restent ceux mémorisés lors de leur ouverture.
 
 **Annuler le lot** libère la réservation dans le suivi. Cette action ne déplace pas les objets déjà envoyés et ne stoppe pas physiquement la machine. Vérifier son contenu avant d’envoyer un autre lot.
 
-Les sorties sont observées quand l’interface native est ouverte. Le suivi reconnaît les objets repris et les fluides repris dans les contenants de l’inventaire ou du curseur. Une sortie transférée automatiquement vers un coffre ou un tuyau ne prouve pas une récupération personnelle ; annuler sa réservation si nécessaire. Seules les sorties garanties sont réservées, pas les résultats aléatoires. Les lots sont locaux à l’arbre, à la dimension et à la session.
+Les sorties sont observées quand l’interface native est ouverte. Le suivi reconnaît les objets repris et les fluides repris dans les contenants de l’inventaire ou du curseur. Une sortie transférée automatiquement vers un coffre ou un tuyau ne prouve pas une récupération personnelle ; annuler sa réservation si nécessaire. Seules les sorties garanties sont réservées, pas les résultats aléatoires. Les lots survivent aux modifications de l’arbre actif. Arrêter l’arbre, mettre l’objectif en pause, changer de dimension ou se déconnecter efface les réservations locales. Elles ne sont pas restaurées au redémarrage.
 
 Les composants transformés remplacent leur crédit de matières premières : quatre lingots devenus deux plaques ne restent pas disponibles comme lingots pour les plaques suivantes. Un moule ou outil partagé n’est planifié qu’une fois, même dans des branches de profondeurs différentes.
 
@@ -66,11 +66,17 @@ Les résultats finaux sont comptés lorsqu’ils arrivent dans l’inventaire ou
 
 Le suivi distingue un retour d’objet d’une nouvelle fabrication grâce aux événements de craft et aux retraits des vraies sorties machine. Ranger et reprendre le même objet ne gonfle plus le compteur. Les déplacements entre l’inventaire, l’équipement et le curseur ne créent pas de crédit supplémentaire. Sans preuve de fabrication, un gain remplaçant un objet précédemment sorti est traité prudemment comme son retour ; récupérer un objet différent mais identique depuis un coffre ne prouve donc pas toujours une nouvelle fabrication. Ce suivi reste une observation client, pas un journal serveur.
 
-L’avancement d’un objectif est enregistré localement par l’assistant. Réimporter **Objectif EMI** utilise le reste à obtenir ; les cibles terminées ne reviennent pas après rangement. Le suivi d’un craft libre est limité à son arbre et à la session ; changer d’arbre démarre un nouveau suivi. Une pause n’est jamais annulée automatiquement.
+L’avancement d’un objectif est enregistré localement par l’assistant. Réimporter **Objectif EMI** utilise le reste à obtenir ; les cibles terminées ne reviennent pas après rangement. Le suivi d’un craft libre est limité à la session ; changer sa cible démarre un nouveau suivi final. Modifier seulement la quantité de la même cible conserve les objets déjà obtenus, même rangés. Une pause n’est jamais annulée automatiquement.
 
 ## Tester une mise à jour
 
 Redémarrer l’assistant et Minecraft. Choisir un petit arbre avec un composant prêt dans un coffre et ses matières dans un autre, activer le scan et vérifier **Prendre / Tout**. Tester ensuite une recette machine avec circuit, une récupération partielle, **Suivi → Recalculer / Annuler le lot**, puis une cible de plusieurs objets rangés au fur et à mesure. Reprendre plusieurs fois le même objet ne doit pas augmenter son avancement.
+
+Pour cette version, tester aussi :
+
+- Déplacer un objet des poches au backpack, fermer le sac et consulter Recipe Tree : le total possédé doit rester identique.
+- Déclarer deux fabrications en cours dans **Suivi** : le scan ne doit plus demander leurs matières ni leurs outils. Récupérer un résultat, puis annuler le reste pour vérifier le besoin rétabli.
+- Modifier une branche ou la quantité avec le scan actif : seuls les nouveaux besoins doivent apparaître et les lots déjà lancés doivent rester dans **Suivi**.
 
 Ces fonctions utilisent le client, les recettes locales et les contenus mémorisés. Aucun appel IA n’est nécessaire pour calculer les retraits ou envoyer un lot.
 

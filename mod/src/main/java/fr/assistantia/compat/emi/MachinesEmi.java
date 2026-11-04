@@ -52,6 +52,8 @@ public final class MachinesEmi {
     private static String calculPrecedent = "";
     private static long lotsVersion;
     private static int prochainLot;
+    private static final fr.assistantia.ReceptionManuelle<EmiStack> receptionManuelle =
+            new fr.assistantia.ReceptionManuelle<>(ComparaisonEmi::meme);
     private static boolean dernierTermine;
     private static final java.util.Map<Object, java.util.Map<EmiRecipe, Boolean>> compatibilites =
             new java.util.WeakHashMap<>();
@@ -68,6 +70,7 @@ public final class MachinesEmi {
             EmiRecipe recette,
             int fois,
             BlockPos position,
+            boolean manuel,
             LotFabrication<EmiStack> suivi) {}
 
     public record Ligne(
@@ -82,7 +85,7 @@ public final class MachinesEmi {
     }
 
     public static void recevoir(List<PlanRetrait.Stock<ItemStack>> objets) {
-        if (objets.isEmpty() || lots.isEmpty()) return;
+        if (lots.isEmpty()) return;
         List<PlanRetrait.Stock<EmiStack>> gains =
                 objets.stream()
                         .map(
@@ -92,20 +95,36 @@ public final class MachinesEmi {
                         .toList();
         var player = Minecraft.getInstance().player;
         if (player == null) return;
+        List<PlanRetrait.Stock<EmiStack>> restants = gains;
         try {
             var ui = GregTechMachines.ouvrir(player.containerMenu);
-            if (ui != null) recevoir(gains, ui.position());
+            if (ui != null) restants = recevoir(gains, ui.position());
         } catch (ReflectiveOperationException | RuntimeException e) {
-            // Pas de réservation validée sans connaître l'origine du résultat.
+            // Les lots envoyés automatiquement exigent une preuve de leur machine.
         }
+        var attribues = receptionManuelle.soustraire(gains, restants);
+        var nouveaux = receptionManuelle.actualiser(inventaire(), attribues);
+        for (var lot : lots)
+            if (lot.manuel()) {
+                int avant = lot.suivi().totalRecu();
+                nouveaux = lot.suivi().recevoir(nouveaux);
+                if (avant != lot.suivi().totalRecu()) lotsVersion++;
+            }
     }
 
-    private static void recevoir(List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position) {
-        if (gains.isEmpty()) return;
+    private static List<PlanRetrait.Stock<EmiStack>> recevoir(
+            List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position) {
+        if (gains.isEmpty()) return gains;
         for (var lot : lots)
-            if (lot.position().equals(position)) gains = lot.suivi().recevoir(gains);
-        lotsVersion++;
-        actualise = 0;
+            if (!lot.manuel() && java.util.Objects.equals(lot.position(), position)) {
+                int avant = lot.suivi().totalRecu();
+                gains = lot.suivi().recevoir(gains);
+                if (avant != lot.suivi().totalRecu()) {
+                    lotsVersion++;
+                    actualise = 0;
+                }
+            }
+        return gains;
     }
 
     private static void actualiserLots() {
@@ -157,7 +176,7 @@ public final class MachinesEmi {
             }
             recevoir(receptionFluides.actualiser(personnels, fluides), machineObservee.position());
             for (var lot : lots)
-                if (lot.position().equals(machineObservee.position()))
+                if (java.util.Objects.equals(lot.position(), machineObservee.position()))
                     lot.suivi()
                             .disponible(
                                     sorties.stream()
@@ -249,8 +268,56 @@ public final class MachinesEmi {
                                         + "/"
                                         + lot.suivi().total()
                                         + " récupérés · "
-                                        + lot.position().toShortString()));
+                                        + (lot.manuel()
+                                                ? "déclaré manuellement"
+                                                : lot.position().toShortString())));
         return List.copyOf(lignes);
+    }
+
+    public static int declarables(EmiRecipe recette) {
+        if (actif() == null
+                || EnvoiMachine.occupe()
+                || !fr.assistantia.InventaireJoueur.synchronise()
+                || recette.getOutputs().stream()
+                        .noneMatch(s -> !s.getItemStack().isEmpty() && s.getChance() >= 1))
+            return 0;
+        return toutes.stream()
+                .filter(o -> o.recette() == recette)
+                .mapToInt(PlanMachines.Operation::fois)
+                .sum();
+    }
+
+    public static boolean declarer(EmiRecipe recette, int fois) {
+        actualiserArbre();
+        int max = declarables(recette);
+        if (fois < 1 || fois > max) return false;
+        // Point de départ physique : les objets déjà possédés ne valident pas ce nouveau lot.
+        receptionManuelle.initialiser(inventaire());
+        ajouterLot(recette, fois, null, true);
+        calculPrecedent = "";
+        actualiserArbre();
+        return true;
+    }
+
+    /** Réservations temporaires, distinctes de l'avancement réel et des acquisitions du scan. */
+    public static java.util.Map<String, Integer> reservationsObjets() {
+        var mc = Minecraft.getInstance();
+        if (actif() == null
+                || mc.level == null
+                || connexion != mc.getConnection()
+                || !dimension.equals(mc.level.dimension().location().toString()))
+            return java.util.Map.of();
+        java.util.Map<String, Integer> result = new java.util.HashMap<>();
+        for (var lot : lots)
+            for (var s : lot.suivi().restants()) {
+                var item = s.objet().getItemStack();
+                if (!item.isEmpty())
+                    result.merge(
+                            s.objet().getId().toString(),
+                            s.quantite(),
+                            (a, b) -> (int) Math.min(1_000_000L, (long) a + b));
+            }
+        return java.util.Map.copyOf(result);
     }
 
     private static boolean estGT(EmiRecipe recette) {
@@ -337,9 +404,15 @@ public final class MachinesEmi {
     }
 
     private static void envoyee(EmiRecipe recipe, int n, BlockPos position) {
+        ajouterLot(recipe, n, position, false);
+    }
+
+    private static void ajouterLot(EmiRecipe recipe, int n, BlockPos position, boolean manuel) {
         List<PlanRetrait.Stock<EmiStack>> sorties = new ArrayList<>();
         for (var output : recipe.getOutputs())
-            if (!output.isEmpty() && output.getChance() >= 1)
+            if (!output.isEmpty()
+                    && output.getChance() >= 1
+                    && (!manuel || !output.getItemStack().isEmpty()))
                 sorties.add(
                         new PlanRetrait.Stock<>(
                                 output.copy(), PlanMachines.produit(output.getAmount(), n), true));
@@ -349,7 +422,8 @@ public final class MachinesEmi {
                             ++prochainLot,
                             recipe,
                             n,
-                            position.immutable(),
+                            position == null ? null : position.immutable(),
+                            manuel,
                             new LotFabrication<>(sorties, ComparaisonEmi::meme)));
         lotsVersion++;
         actualise = 0;
@@ -413,7 +487,11 @@ public final class MachinesEmi {
         String dim = mc.level == null ? "" : mc.level.dimension().location().toString();
         if (current != arbre || connexion != mc.getConnection() || !dim.equals(dimension)) {
             EnvoiMachine.arreter();
-            lots.clear();
+            if (current == null || connexion != mc.getConnection() || !dim.equals(dimension)) {
+                lots.clear();
+                receptionManuelle.initialiser(List.of());
+                lotsVersion++;
+            }
             menuObserve = null;
             toutes = List.of();
             calculPrecedent = "";
@@ -445,8 +523,7 @@ public final class MachinesEmi {
             long batches = arbre.getClass().getField("batches").getLong(arbre);
             key.append(batches);
             if (!signature.equals(key.toString())) {
-                lots.clear();
-                lotsVersion++;
+                // Un changement de recette ou de quantité ne retire rien des machines.
                 compatibilites.clear();
                 signature = key.toString();
             }

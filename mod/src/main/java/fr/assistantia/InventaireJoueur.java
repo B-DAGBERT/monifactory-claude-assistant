@@ -15,6 +15,13 @@ public final class InventaireJoueur {
     private static List<ItemStack> piles = List.of(), sacs = List.of();
     private static boolean synchronise = true, connecte;
     private static long dernierExport;
+    private static Object connexion;
+
+    /** Un nouveau monde ne peut pas utiliser la dernière vue de la connexion précédente. */
+    public static boolean disponible() {
+        var mc = Minecraft.getInstance();
+        return connecte && synchronise && mc.player != null && mc.getConnection() == connexion;
+    }
 
     public static List<ItemStack> piles() {
         return piles;
@@ -43,6 +50,7 @@ public final class InventaireJoueur {
                 Pont.envoyerInventaire(j);
             }
             connecte = false;
+            connexion = null;
             return;
         }
         connecte = true;
@@ -56,6 +64,7 @@ public final class InventaireJoueur {
         synchronise = etat.synchronise();
         base.addAll(sacs);
         piles = List.copyOf(base);
+        connexion = mc.getConnection();
         if (temps - dernierExport < 500) return;
         dernierExport = temps;
         var json = new JsonObject();

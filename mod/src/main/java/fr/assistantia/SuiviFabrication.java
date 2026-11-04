@@ -7,7 +7,7 @@ import java.util.function.BiPredicate;
 
 /** Crédit des cibles obtenues pendant ce craft, conservé après rangement ou consommation. */
 public final class SuiviFabrication<T> {
-    private final List<PlanRetrait.Besoin<T>> cibles;
+    private List<PlanRetrait.Besoin<T>> cibles;
     private final boolean depuisDepart;
     private final BiPredicate<T, T> meme;
     private final List<Releve<T>> releves = new ArrayList<>();
@@ -35,6 +35,11 @@ public final class SuiviFabrication<T> {
         this.cibles = List.copyOf(cibles);
         this.depuisDepart = depuisDepart;
         this.meme = meme;
+    }
+
+    /** Modifier les quantités d'une même cible ne fait pas oublier les objets déjà obtenus. */
+    public void quantites(List<PlanRetrait.Besoin<T>> cibles) {
+        this.cibles = List.copyOf(cibles);
     }
 
     public boolean actualiser(List<PlanRetrait.Stock<T>> inventaire) {

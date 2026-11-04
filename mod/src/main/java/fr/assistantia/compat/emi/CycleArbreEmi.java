@@ -20,14 +20,17 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 /** Durée de vie du craft EMI, indépendante de l'objectif IA et du bouton Scanner coffres. */
 public final class CycleArbreEmi {
     private static Object precedent, connexion;
-    private static String signature = "";
+    private static String signature = "", identite = "", dimension = "";
     private static SuiviFabrication<ItemStack> suivi;
     private static boolean erreurSignalee;
     private static String dernierExport = "";
 
     // objectif : arbre d'un objectif IA, dont les quantités incluent déjà ce que le joueur possède.
     private record Cibles(
-            String signature, List<PlanRetrait.Besoin<ItemStack>> besoins, boolean objectif) {}
+            String signature,
+            String identite,
+            List<PlanRetrait.Besoin<ItemStack>> besoins,
+            boolean objectif) {}
 
     public static List<PlanRetrait.Stock<ItemStack>> credits() {
         return suivi == null || CoffresArbreEmi.arbreActif() != precedent
@@ -54,13 +57,21 @@ public final class CycleArbreEmi {
             return;
         }
         Object tree = CoffresArbreEmi.arbreActif();
-        if (tree != precedent || connexion != mc.getConnection()) {
-            if (precedent != null) nettoyer();
+        String dim = mc.level.dimension().location().toString();
+        if (tree != precedent || connexion != mc.getConnection() || !dim.equals(dimension)) {
+            if (precedent != null
+                    && (tree == null || connexion != mc.getConnection() || !dim.equals(dimension)))
+                nettoyer();
+            boolean conserver =
+                    tree != null && connexion == mc.getConnection() && dim.equals(dimension);
+            dimension = dim;
             OrigineFabrication.vider();
             precedent = tree;
             connexion = mc.getConnection();
-            suivi = null;
-            signature = "";
+            if (!conserver) {
+                suivi = null;
+                signature = identite = "";
+            }
         }
         if (tree == null) {
             AideCoffre.vider();
@@ -69,20 +80,24 @@ public final class CycleArbreEmi {
         try {
             Cibles cibles = cibles(tree);
             if (suivi == null || !signature.equals(cibles.signature())) {
-                if (suivi != null) nettoyer(); // Quantités modifiées : ne pas garder l'ancien scan.
                 signature = cibles.signature();
-                suivi =
-                        new SuiviFabrication<>(
-                                cibles.besoins(),
-                                !cibles.objectif(),
-                                (a, b) ->
-                                        a.getItem() == b.getItem()
-                                                && cibles.besoins().stream()
-                                                        .allMatch(
-                                                                c ->
-                                                                        c.accepte().test(a)
-                                                                                == c.accepte()
-                                                                                        .test(b)));
+                if (suivi != null && identite.equals(cibles.identite()))
+                    suivi.quantites(cibles.besoins());
+                else
+                    suivi =
+                            new SuiviFabrication<>(
+                                    cibles.besoins(),
+                                    !cibles.objectif(),
+                                    (a, b) ->
+                                            a.getItem() == b.getItem()
+                                                    && cibles.besoins().stream()
+                                                            .allMatch(
+                                                                    c ->
+                                                                            c.accepte().test(a)
+                                                                                    == c.accepte()
+                                                                                            .test(
+                                                                                                    b)));
+                identite = cibles.identite();
             }
             if (RetraitCoffre.occupe()
                     || EnvoiMachine.occupe()
@@ -171,7 +186,9 @@ public final class CycleArbreEmi {
             long production = Math.max(1, root.getClass().getField("divisor").getLong(root));
             batches = quantite / production + (quantite % production == 0 ? 0 : 1);
         }
-        StringBuilder key = new StringBuilder();
+        StringBuilder key = new StringBuilder(), identite = new StringBuilder();
+        if (virtuelle)
+            for (var variante : ingredient.getEmiStacks()) identite.append(variante.getNbt());
         List<PlanRetrait.Besoin<ItemStack>> besoins = new ArrayList<>();
         for (Object node : nodes) {
             var cible = (EmiIngredient) node.getClass().getField("ingredient").get(node);
@@ -181,19 +198,22 @@ public final class CycleArbreEmi {
                             .map(EmiStack::copy)
                             .toList();
             // Une cible fluide ou inconnue ne peut pas être déclarée obtenue par l'inventaire.
-            if (variantes.isEmpty()) return new Cibles("non-objet", List.of(), virtuelle);
+            if (variantes.isEmpty())
+                return new Cibles("non-objet", "non-objet", List.of(), virtuelle);
             int quantite = multiplier(node.getClass().getField("amount").getLong(node), batches);
-            if (quantite <= 0) return new Cibles("invalide", List.of(), virtuelle);
+            if (quantite <= 0) return new Cibles("invalide", "invalide", List.of(), virtuelle);
             key.append(quantite).append(':');
-            for (var variante : variantes)
+            for (var variante : variantes) {
                 key.append(variante.getId()).append(variante.getNbt()).append(';');
+                identite.append(variante.getId()).append(variante.getNbt()).append(';');
+            }
             key.append('|');
             besoins.add(
                     new PlanRetrait.Besoin<>(
                             item -> variantes.stream().anyMatch(v -> EmiStack.of(item).isEqual(v)),
                             quantite));
         }
-        return new Cibles(key.toString(), besoins, virtuelle);
+        return new Cibles(identite + "|" + key, identite.toString(), besoins, virtuelle);
     }
 
     private static int multiplier(long a, long b) {

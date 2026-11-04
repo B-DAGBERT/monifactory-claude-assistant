@@ -87,6 +87,7 @@ public final class RechercheEmi {
                     if (gain > 0) preuves.put(id, gain);
                 });
         fabricationsPrecedentes = cumul;
+        collecte.reserver(Emi.reservationsFabrication());
         Set<String> restants = collecte.actualiser(inventaire(), preuves);
         if (collecte.version() != version) derniereVue = null;
         if (inventaireEnAttente || !restants.equals(demandes)) {
@@ -147,15 +148,22 @@ public final class RechercheEmi {
 
     public static void recalculer(
             MemoireCollecte suivi,
-            java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte) {
+            java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte,
+            boolean conserver) {
         if (!actif()) return;
         RetraitCoffre.arreter();
         AideCoffre.vider();
+        if (conserver) suivi.reprendre(collecte);
         collecte = suivi;
         fabricationsPrecedentes = Emi.fabricationsConfirmees();
         conforme = accepte;
         inventaireEnAttente = true;
         demandes = Set.of();
+        // Invalider aussi les quotas tant que le nouveau relevé n'est pas arrivé.
+        objets = Set.of();
+        quantites = Map.of();
+        reperes = List.of();
+        derniereVue = null;
         fin = System.currentTimeMillis() + 600_000;
         actualiserCollecte();
     }

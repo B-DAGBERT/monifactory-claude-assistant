@@ -69,17 +69,24 @@ public final class SuiviEmiEcran extends Screen {
         annuler =
                 addRenderableWidget(
                         Button.builder(
-                                        Component.literal("Annuler le lot"),
+                                        Component.literal("En cours de craft"),
                                         b -> {
                                             if (!clicPossible()
                                                     || selection < 0
                                                     || selection >= lignes.size()) return;
-                                            MachinesEmi.annulerLot(lignes.get(selection).lot());
-                                            actualise = 0;
-                                            message =
-                                                    "Réservation annulée · les objets restent dans la machine";
+                                            var ligne = lignes.get(selection);
+                                            if (ligne.lot() < 0) {
+                                                minecraft.setScreen(
+                                                        new DeclarerFabricationEcran(
+                                                                this, ligne.recette()));
+                                            } else {
+                                                MachinesEmi.annulerLot(ligne.lot());
+                                                actualise = 0;
+                                                message =
+                                                        "Réservation annulée · les objets restent dans la machine";
+                                            }
                                         })
-                                .bounds(88, height - 28, 110, 20)
+                                .bounds(88, height - 28, Math.min(132, width - 176), 20)
                                 .build());
         annuler.setTooltip(
                 Tooltip.create(
@@ -124,11 +131,22 @@ public final class SuiviEmiEcran extends Screen {
         boolean actif = CoffresArbreEmi.arbreActif() != null;
         recalculer.active = actif && !EnvoiMachine.occupe();
         voir.active = selection >= 0;
+        var ligne = selection >= 0 ? lignes.get(selection) : null;
+        boolean declaration = ligne != null && ligne.lot() < 0;
+        annuler.setMessage(Component.literal(declaration ? "En cours de craft" : "Annuler le lot"));
+        annuler.setTooltip(
+                Tooltip.create(
+                        Component.literal(
+                                declaration
+                                        ? "Réserver les résultats déjà en fabrication dans une machine. Aucune validation avant récupération."
+                                        : "Libérer la réservation. Les objets restent dans la machine.")));
         annuler.active =
                 actif
                         && !EnvoiMachine.occupe()
-                        && selection >= 0
-                        && lignes.get(selection).annulable();
+                        && ligne != null
+                        && (declaration
+                                ? MachinesEmi.declarables(ligne.recette()) > 0
+                                : ligne.annulable());
     }
 
     @Override

@@ -87,6 +87,57 @@ public final class PlanArbreTest {
         assert new MemoireCollecte(machine, 1)
                 .actualiser(Map.of("casing", 1))
                 .equals(Set.of("machine"));
+        // Une fabrication manuelle réserve un composant, pas ses matières ni ses outils.
+        var manuel = new MemoireCollecte(machine, 1);
+        manuel.actualiser(Map.of());
+        manuel.reserver(Map.of("casing", 1));
+        assert manuel.actualiser(Map.of()).equals(Set.of("machine"));
+        assert manuel.dansCoffres(List.of(stock("iron", 64, false), stock("casing", 1, false)))
+                .isEmpty();
+        manuel.reserver(Map.of());
+        assert manuel.actualiser(Map.of()).contains("iron")
+                : "annulation : aucune acquisition fictive persistante";
+        // Deux branches utilisent le même fer. Celui envoyé au boîtier ne couvre plus les vis.
+        manuel = new MemoireCollecte(twoUses, 1);
+        manuel.actualiser(Map.of("iron", 8));
+        manuel.actualiser(Map.of());
+        manuel.reserver(Map.of("casing", 1));
+        manuel.actualiser(Map.of());
+        assert manuel.dansCoffres(List.of(stock("iron", 64, false)))
+                        .equals(List.of(new PlanRetrait.Prise(0, 2)))
+                : "matière réservée une seule fois";
+        // Récupération partielle : stock réel + reste en machine, jamais double quantité.
+        var trois = new MemoireCollecte(partial, 1);
+        trois.actualiser(Map.of());
+        trois.reserver(Map.of("casing", 2));
+        trois.actualiser(Map.of());
+        assert trois.dansCoffres(List.of(stock("iron", 64, false)))
+                .equals(List.of(new PlanRetrait.Prise(0, 8)));
+        trois.reserver(Map.of("casing", 1));
+        trois.actualiser(Map.of("casing", 1));
+        assert trois.dansCoffres(List.of(stock("iron", 64, false)))
+                .equals(List.of(new PlanRetrait.Prise(0, 8)));
+        // Changer une recette garde les acquisitions pertinentes et les lots encore présents.
+        var change =
+                new MemoireCollecte(
+                        node(
+                                "",
+                                1,
+                                1,
+                                false,
+                                node("casing", 4, 1, false, node("copper", 2, 1, false))),
+                        1);
+        change.reprendre(trois);
+        change.reserver(Map.of("casing", 1));
+        change.actualiser(Map.of());
+        assert change.dansCoffres(List.of(stock("iron", 64, false), stock("copper", 64, false)))
+                        .equals(List.of(new PlanRetrait.Prise(1, 4)))
+                : "recette changée, nouvelles matières seulement";
+        change.reserver(Map.of());
+        change.actualiser(Map.of());
+        assert change.dansCoffres(List.of(stock("copper", 64, false)))
+                        .equals(List.of(new PlanRetrait.Prise(0, 6)))
+                : "la réservation n'est pas devenue un crédit";
         // Le drawer de fer proche ne doit pas gagner sur le boîtier d'un coffre éloigné.
         suivi = new MemoireCollecte(machine, 1);
         suivi.actualiser(Map.of());

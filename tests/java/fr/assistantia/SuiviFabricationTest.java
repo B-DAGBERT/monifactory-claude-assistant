@@ -100,6 +100,16 @@ public final class SuiviFabricationTest {
         assert !suivi.actualiser(List.of());
         assert suivi.actualiser(List.of(stack("machine", 1)), List.of(stack("machine", 1)))
                 : "trois unités distinctes confirmées, malgré les rangements";
+        suivi = new SuiviFabrication<>(List.of(besoin("machine", 3)), false);
+        suivi.actualiser(List.of(stack("machine", 1)));
+        suivi.actualiser(List.of());
+        suivi.quantites(List.of(besoin("machine", 5)));
+        assert suivi.obtenus().equals(List.of(stack("machine", 1)))
+                : "augmenter la quantité conserve le résultat rangé";
+        assert !suivi.actualiser(List.of(stack("machine", 1)))
+                : "reprendre le même objet n'est pas une production";
+        suivi.quantites(List.of(besoin("machine", 1)));
+        assert suivi.actualiser(List.of()) : "réduire la cible conserve les acquisitions";
         System.out.println(
                 "Fin de craft : quantités, piles, intermédiaires, variantes, cibles multiples,"
                         + " objets déjà possédés et nouveau suivi OK");
