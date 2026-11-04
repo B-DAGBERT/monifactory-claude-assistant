@@ -101,6 +101,34 @@ pas comme un objet fabriqué. Un composant intermédiaire ne termine jamais le c
 Sans craft actif (arbre présent et mode fabrication EMI activé), aucun bouton de transfert n’est affiché, y compris la flèche dans les recettes
 EMI ouvertes depuis un coffre. Effacer ou remplacer l’arbre coupe aussi l’ancien scan.
 
+## Utiliser les machines de l’arbre EMI
+
+Avec un craft EMI actif, les machines GregTech compatibles des chunks chargés, à moins de
+48 blocs, sont entourées en **rouge**. Les recettes suivent les branches choisies dans EMI et
+les composants déjà présents dans l’inventaire sont déduits. Un objectif IA seul ne déclenche
+pas ce repérage.
+
+Dans une machine compatible, le panneau rouge propose les recettes utiles :
+
+- Choisir le produit à préparer. Le titre indique les fabrications possibles et restantes.
+- Survoler **Envoyer** pour voir les ingrédients, le circuit et les volumes de fluide.
+- Cliquer **Envoyer** pour déposer un lot réalisable, limité par le stock et la place disponible.
+  Les entrées existantes sont déduites, les sorties ne sont pas touchées. Le circuit programmable
+  est réglé lorsqu’il dispose de son sélecteur GregTech natif.
+- **Voir** ouvre la recette dans EMI. Récupérer soi-même le résultat dans la machine.
+
+Les fluides proviennent uniquement des seaux et cellules de l’inventaire. Les contenants sont
+vidés par le clic natif GregTech puis rendus à l’inventaire. Le volume réel est affiché avant
+l’envoi : par exemple, un seau de 1 000 mB peut dépasser un besoin de 144 mB. Les fluides déjà
+présents dans les cuves d’entrée sont déduits. Les réservoirs voisins ne sont pas sollicités.
+
+Le bouton attend la confirmation des transferts et ignore les doubles clics. Fermer l’interface,
+arrêter le craft ou mettre son objectif en pause interrompt la séquence. Une machine occupée,
+un ingrédient manquant ou une entrée incompatible désactive l’envoi avec le motif au survol.
+Les fabrications envoyées restent réservées dans ce suivi pour éviter de les proposer à nouveau
+avant la récupération des sorties. Changer l’arbre ou arrêter son suivi remet ces réservations à zéro.
+Les machines et cuves sans entrées accessibles dans leur interface ne permettent pas cet envoi.
+
 ## Récupérer les ingrédients depuis un coffre
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau

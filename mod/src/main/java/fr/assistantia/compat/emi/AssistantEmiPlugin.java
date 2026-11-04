@@ -31,6 +31,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
         registry.addGenericExclusionArea(
                 (screen, zones) -> {
                     var zone = AideCoffre.zoneEmi(screen);
+                    if (zone == null) zone = MachinesEmi.zoneEmi(screen);
                     if (zone != null)
                         zones.accept(
                                 new Bounds(zone.x(), zone.y(), zone.largeur(), zone.hauteur()));
@@ -43,6 +44,8 @@ public final class AssistantEmiPlugin implements EmiPlugin {
             MinecraftForge.EVENT_BUS.register(CoffresArbreEmi.class);
             MinecraftForge.EVENT_BUS.register(CycleArbreEmi.class);
             MinecraftForge.EVENT_BUS.register(AideCoffre.class);
+            MinecraftForge.EVENT_BUS.register(MachinesEmi.class);
+            MinecraftForge.EVENT_BUS.register(EnvoiMachine.class);
             branche = true;
         }
     }

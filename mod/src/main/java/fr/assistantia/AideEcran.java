@@ -53,7 +53,12 @@ public final class AideEcran {
         if (!(ecran instanceof AbstractContainerScreen<?> conteneur)
                 || ecran instanceof CreativeModeInventoryScreen
                 || !Emi.present()
-                || RetraitCoffre.estCoffre(conteneur.getMenu())) {
+                || RetraitCoffre.estCoffre(conteneur.getMenu())
+                || conteneur
+                        .getMenu()
+                        .getClass()
+                        .getName()
+                        .equals("com.lowdragmc.lowdraglib.gui.modular.ModularUIContainer")) {
             ecranActuel = null;
             return;
         }

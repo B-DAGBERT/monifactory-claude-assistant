@@ -91,6 +91,12 @@ class EmiTests(unittest.TestCase):
     def test_only_explicitly_active_emi_craft_allows_collection(self):
         self._run_java_contract("ArbreEmi")
 
+    def test_machine_steps_prune_owned_components_and_scale_batches(self):
+        self._run_java_contract("PlanMachines")
+
+    def test_machine_send_waits_without_replaying_actions(self):
+        self._run_java_contract("SequenceEnvoi")
+
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 
@@ -146,7 +152,7 @@ class EmiTests(unittest.TestCase):
                     str(ROOT / f"tests/java/fr/assistantia/{name}Test.java"),
                     *(
                         [str(ROOT / "mod/src/main/java/fr/assistantia/PlanRetrait.java")]
-                        if name == "SuiviFabrication"
+                        if name in {"SuiviFabrication", "PlanMachines"}
                         else []
                     ),
                     *[

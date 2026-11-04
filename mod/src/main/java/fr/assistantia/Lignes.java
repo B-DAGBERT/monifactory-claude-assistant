@@ -10,8 +10,8 @@ import java.util.OptionalDouble;
  * Des lignes dessinées par-dessus tout (sans test de profondeur) : on voit le contour à travers les
  * murs.
  */
-final class Lignes extends RenderType {
-    static final RenderType TRAVERSANTES =
+public final class Lignes extends RenderType {
+    public static final RenderType TRAVERSANTES =
             create(
                     "assistantia_lignes",
                     DefaultVertexFormat.POSITION_COLOR_NORMAL,

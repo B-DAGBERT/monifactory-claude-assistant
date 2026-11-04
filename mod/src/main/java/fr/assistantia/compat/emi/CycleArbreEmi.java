@@ -64,7 +64,8 @@ public final class CycleArbreEmi {
                 signature = cibles.signature();
                 suivi = new SuiviFabrication<>(cibles.besoins(), !cibles.objectif());
             }
-            if (RetraitCoffre.occupe()) return; // Attendre la fin des clics et leur confirmation.
+            if (RetraitCoffre.occupe() || EnvoiMachine.occupe())
+                return; // Attendre la fin des clics et leur confirmation.
             List<PlanRetrait.Stock<ItemStack>> stock = new ArrayList<>();
             for (ItemStack item : mc.player.getInventory().items) ajouter(stock, item);
             for (ItemStack item : mc.player.getInventory().armor) ajouter(stock, item);
