@@ -18,14 +18,44 @@ public final class LotFabrication<T> {
     }
 
     private final List<PlanRetrait.Stock<T>> attendu;
-    private final int[] recus;
+    private int[] recus;
     private final BiPredicate<T, T> meme;
     private boolean annule, disponible;
 
     public LotFabrication(List<PlanRetrait.Stock<T>> attendu, BiPredicate<T, T> meme) {
-        this.attendu = List.copyOf(attendu);
+        this.attendu = new ArrayList<>(attendu);
         this.meme = meme;
         recus = new int[attendu.size()];
+    }
+
+    /** Agrandir le lot choisi conserve ses réceptions réelles et son identité dans le suivi. */
+    public boolean ajouter(List<PlanRetrait.Stock<T>> supplement) {
+        if (annule) return false;
+        for (var pile : supplement) {
+            if (pile.quantite() <= 0) continue;
+            int index = -1;
+            for (int i = 0; i < attendu.size(); i++)
+                if (meme.test(attendu.get(i).objet(), pile.objet())) {
+                    index = i;
+                    break;
+                }
+            if (index >= 0) {
+                var avant = attendu.get(index);
+                attendu.set(
+                        index,
+                        new PlanRetrait.Stock<>(
+                                avant.objet(),
+                                (int)
+                                        Math.min(
+                                                1_000_000L,
+                                                (long) avant.quantite() + pile.quantite()),
+                                true));
+            } else {
+                attendu.add(pile);
+                recus = Arrays.copyOf(recus, attendu.size());
+            }
+        }
+        return true;
     }
 
     public List<PlanRetrait.Stock<T>> restants() {

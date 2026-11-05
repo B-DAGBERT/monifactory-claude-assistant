@@ -254,3 +254,25 @@ contexte changé, déconnexion, sauvegarde corrompue, écrivains concurrents et 
 Les contrats Java exercent la vraie file, les limites de capacité, la pagination en 320 × 240,
 les transferts avec paquets retardés et les confirmations instables. Ces tests simulent les
 interactions natives ; les délais et corrections du serveur réel restent à vérifier en jeu.
+
+## Réservations EMI et collecte des sorties (shared.32)
+
+La réservation d’un lot est un stock virtuel pour le calcul et le pliage des branches EMI. Dans
+`MemoireCollecte`, cette réservation conserve désormais l’identifiant du résultat dans les demandes
+de recherche. `dansCoffres` alloue d’abord les branches encore à fabriquer, puis les sorties attendues
+sur le stock restant : un même objet de coffre ne peut pas être proposé deux fois. Les acquisitions
+réelles restent gérées séparément et une annulation retire la réservation.
+
+`RechercheEmi` conserve les groupes physiques contenant un résultat attendu et les expose pour le
+contour jaune et l’état « À récupérer ». Cette observation ne touche pas les compteurs reçus.
+`ReceptionLots` répartit les gains réels une seule fois entre les lots automatiques et manuels ;
+les fluides automatiques gardent leurs preuves de sortie natives. La réception manuelle existante
+continue d’écarter les simples déplacements et reprises de stock déjà compté.
+
+Après un envoi limité, `DeclarerFabricationEcran` présente la quantité réellement envoyée et le
+lot complet. `LotFabrication.ajouter` étend la même ligne sans effacer ses réceptions. La confirmation
+revalide l’identité de l’arbre et les besoins encore déclarables ; un double clic ne crée pas un
+second lot. L’arrêt de l’arbre hors pause et le changement de monde/connexion conservent les règles
+de nettoyage précédentes. Les tests Java couvrent lot envoyé/complet, quantité devenue invalide,
+ancien arbre, retrait sur plusieurs coffres, réception partielle, sac, annulation et absence de double
+attribution entre lots identiques. Les interactions finales sont à confirmer dans le jeu réel.

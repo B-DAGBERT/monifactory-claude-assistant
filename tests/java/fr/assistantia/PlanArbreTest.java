@@ -91,9 +91,10 @@ public final class PlanArbreTest {
         var manuel = new MemoireCollecte(machine, 1);
         manuel.actualiser(Map.of());
         manuel.reserver(Map.of("casing", 1));
-        assert manuel.actualiser(Map.of()).equals(Set.of("machine"));
+        assert manuel.actualiser(Map.of()).equals(Set.of("machine", "casing"));
         assert manuel.dansCoffres(List.of(stock("iron", 64, false), stock("casing", 1, false)))
-                .isEmpty();
+                        .equals(List.of(new PlanRetrait.Prise(1, 1)))
+                : "résultat réservé toujours récupérable, aucune matière à reprendre";
         manuel.reserver(Map.of());
         assert manuel.actualiser(Map.of()).contains("iron")
                 : "annulation : aucune acquisition fictive persistante";
@@ -138,6 +139,34 @@ public final class PlanArbreTest {
         assert change.dansCoffres(List.of(stock("copper", 64, false)))
                         .equals(List.of(new PlanRetrait.Prise(0, 6)))
                 : "la réservation n'est pas devenue un crédit";
+        // Lot complet masqué dans EMI : seuls ses résultats restent recherchables.
+        var plaques =
+                new MemoireCollecte(node("plate", 200, 1, false, node("iron", 1, 1, false)), 1);
+        plaques.reserver(Map.of("plate", 200));
+        assert plaques.actualiser(Map.of()).equals(Set.of("plate"));
+        assert plaques.dansCoffres(List.of(stock("iron", 1000, false))).isEmpty();
+        var coffre = List.of(stock("plate", 64, false), stock("plate", 200, false));
+        assert plaques.dansCoffres(coffre).stream().mapToInt(PlanRetrait.Prise::quantite).sum()
+                == 200;
+        // Réception partielle réelle : prendre seulement la suite et ne pas ressusciter le fer.
+        plaques.reserver(Map.of("plate", 136));
+        plaques.actualiser(Map.of("plate", 64));
+        assert plaques.dansCoffres(coffre).stream().mapToInt(PlanRetrait.Prise::quantite).sum()
+                == 136;
+        plaques.reserver(Map.of());
+        assert plaques.actualiser(Map.of("plate", 200)).isEmpty();
+        assert plaques.dansCoffres(coffre).isEmpty();
+        // Seulement 64 en machine sur 128 : le composant fini reste prioritaire dans tous les
+        // coffres.
+        var moitie =
+                new MemoireCollecte(node("plate", 128, 1, false, node("iron", 1, 1, false)), 1);
+        moitie.reserver(Map.of("plate", 64));
+        moitie.actualiser(Map.of());
+        var morceaux =
+                moitie.dansCoffres(List.of(stock("plate", 64, false), stock("plate", 64, false)));
+        assert morceaux.equals(List.of(new PlanRetrait.Prise(0, 64), new PlanRetrait.Prise(1, 64)))
+                : "chaque stock alloué une seule fois, plusieurs coffres possibles";
+
         // Le drawer de fer proche ne doit pas gagner sur le boîtier d'un coffre éloigné.
         suivi = new MemoireCollecte(machine, 1);
         suivi.actualiser(Map.of());

@@ -45,6 +45,10 @@ public final class Reperage {
         VertexConsumer lignes = tampons.getBuffer(Lignes.TRAVERSANTES);
         for (Pont.Repere r : reperes) {
             if (visible(r, dimension)) {
+                boolean resultat = RechercheEmi.resultatPret(r);
+                float rouge = resultat ? 1F : 0.35F;
+                float vert = resultat ? 0.8F : 0.95F;
+                float bleu = resultat ? 0.15F : 1F;
                 BlockPos pos = new BlockPos(r.x(), r.y(), r.z());
                 List<AABB> formes = List.of(new AABB(pos));
                 if (mc.level.hasChunkAt(pos)) {
@@ -57,14 +61,14 @@ public final class Reperage {
                 for (AABB forme : formes) {
                     AABB boite = forme.move(-camera.x, -camera.y, -camera.z);
                     LevelRenderer.renderLineBox(
-                            pose, lignes, boite.inflate(0.025), 0.15F, 0.8F, 1F, 0.25F);
+                            pose, lignes, boite.inflate(0.025), rouge, vert, bleu, 0.25F);
                     LevelRenderer.renderLineBox(
                             pose,
                             lignes,
                             boite.inflate(0.006),
-                            0.35F,
-                            0.95F,
-                            1F,
+                            rouge,
+                            vert,
+                            bleu,
                             0.85F + pulsation * 0.15F);
                 }
             }

@@ -26,6 +26,7 @@ public final class RechercheEmi {
     private static Object connexion;
     private static Set<String> objets = Set.of(), demandes = Set.of();
     private static List<Pont.Repere> reperes = List.of();
+    private static Set<String> resultatsPrets = Set.of();
     private static JsonObject derniereVue;
     private static Map<String, Integer> quantites = Map.of(), fabricationsPrecedentes = Map.of();
 
@@ -53,6 +54,24 @@ public final class RechercheEmi {
 
     public static List<Pont.Repere> reperes() {
         return actif() && InventaireJoueur.synchronise() ? reperes : List.of();
+    }
+
+    public static Map<String, Integer> resultatsDisponibles() {
+        if (!actif() || collecte == null || !InventaireJoueur.synchronise()) return Map.of();
+        Map<String, Integer> resultats = new HashMap<>();
+        quantites.forEach(
+                (id, n) -> {
+                    if (collecte.enFabrication(id)) resultats.put(id, n);
+                });
+        return Map.copyOf(resultats);
+    }
+
+    public static boolean resultatPret(Pont.Repere repere) {
+        return actif() && resultatsPrets.contains(cle(repere));
+    }
+
+    private static String cle(Pont.Repere r) {
+        return r.dimension() + "|" + r.x() + "|" + r.y() + "|" + r.z();
     }
 
     /** Même sélection et mêmes crédits que les contours : aucun recalcul depuis l'objectif. */
@@ -163,6 +182,7 @@ public final class RechercheEmi {
         objets = Set.of();
         quantites = Map.of();
         reperes = List.of();
+        resultatsPrets = Set.of();
         derniereVue = null;
         fin = System.currentTimeMillis() + 600_000;
         actualiserCollecte();
@@ -194,6 +214,7 @@ public final class RechercheEmi {
         // Retirer immédiatement les anciens faisceaux. Une réponse de l'ancienne sélection
         // est rejetée grâce au numéro de requête, même si elle arrive après le transfert.
         reperes = List.of();
+        resultatsPrets = Set.of();
         objets = Set.of();
         quantites = Map.of();
         derniereVue = null;
@@ -232,6 +253,7 @@ public final class RechercheEmi {
         objets = demandes = Set.of();
         quantites = Map.of();
         reperes = List.of();
+        resultatsPrets = Set.of();
         derniereVue = null;
         collecte = null;
         conforme = s -> false;
@@ -305,16 +327,22 @@ public final class RechercheEmi {
         Set<String> utiles = new java.util.LinkedHashSet<>(),
                 visibles = new java.util.LinkedHashSet<>();
         Map<String, Integer> selection = new HashMap<>();
+        Set<String> groupesPrets = new java.util.LinkedHashSet<>();
         for (var prise : collecte.dansCoffres(stocks)) {
             selection.merge(stocks.get(prise.index()).objet(), prise.quantite(), Integer::sum);
             utiles.add(stocks.get(prise.index()).objet());
             visibles.add(groupes.get(prise.index()));
+            if (collecte.enFabrication(stocks.get(prise.index()).objet()))
+                groupesPrets.add(groupes.get(prise.index()));
         }
         List<Pont.Repere> coffres = new ArrayList<>();
         for (String groupe : visibles) coffres.addAll(positions.get(groupe));
         objets = Set.copyOf(utiles);
         quantites = Map.copyOf(selection);
         reperes = List.copyOf(coffres);
+        Set<String> prets = new java.util.LinkedHashSet<>();
+        for (String groupe : groupesPrets) for (var r : positions.get(groupe)) prets.add(cle(r));
+        resultatsPrets = Set.copyOf(prets);
         if (attente)
             informer(
                     coffres.isEmpty()

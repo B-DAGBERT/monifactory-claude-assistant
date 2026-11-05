@@ -132,9 +132,47 @@ public final class MemoireCollecte {
                 arbre == null
                         ? PlanRetrait.calculer(stocks, besoins).prises()
                         : PlanArbre.calculer(arbre, lots, stocks, ids -> ids::contains).prises();
-        return prises.stream()
-                .map(p -> new PlanRetrait.Prise(p.index() - offset, p.quantite()))
+        // Allocation physique unique : la part du lot attendu utilise seulement ce qui
+        // n'a pas déjà été retenu pour les branches encore à fabriquer.
+        Map<Integer, Integer> retenus = new LinkedHashMap<>();
+        for (var prise : prises) {
+            int i = prise.index() - offset;
+            if (i >= 0 && i < coffres.size()) retenus.merge(i, prise.quantite(), Integer::sum);
+        }
+        if (!reserves.isEmpty()) {
+            List<PlanRetrait.Stock<String>> disponibles = new ArrayList<>();
+            for (int i = 0; i < coffres.size(); i++) {
+                var stock = coffres.get(i);
+                disponibles.add(
+                        new PlanRetrait.Stock<>(
+                                stock.objet(),
+                                Math.max(0, stock.quantite() - retenus.getOrDefault(i, 0)),
+                                stock.inventaire()));
+            }
+            var resultats =
+                    reserves.entrySet().stream()
+                            .map(
+                                    e ->
+                                            new PlanRetrait.Besoin<String>(
+                                                    e.getKey()::equals, e.getValue()))
+                            .toList();
+            for (var prise : PlanRetrait.calculer(disponibles, resultats).prises())
+                retenus.merge(prise.index(), prise.quantite(), Integer::sum);
+        }
+        return retenus.entrySet().stream()
+                .map(e -> new PlanRetrait.Prise(e.getKey(), e.getValue()))
                 .toList();
+    }
+
+    /** Les résultats attendus restent recherchables, même si leurs branches EMI sont pliées. */
+    public boolean enFabrication(String id) {
+        return reserves.getOrDefault(id, 0) > 0;
+    }
+
+    private Set<String> avecFabrications(Set<String> manque) {
+        Set<String> result = new LinkedHashSet<>(manque);
+        result.addAll(reserves.keySet());
+        return Set.copyOf(result);
     }
 
     /**
@@ -236,7 +274,7 @@ public final class MemoireCollecte {
             var allocation = PlanArbre.calculer(arbre, lots, stocks, ids -> ids::contains);
             Set<String> manquants = new LinkedHashSet<>();
             for (var ingredient : allocation.manquants()) manquants.addAll(ingredient.variantes());
-            restants = Set.copyOf(manquants);
+            restants = avecFabrications(manquants);
             return restants;
         }
         var allocation = PlanRetrait.calculer(stocks, besoins);
@@ -246,7 +284,7 @@ public final class MemoireCollecte {
             valides[i] |= allocation.fournis().get(i) >= ingredient.quantite();
             if (!valides[i]) manquants.addAll(ingredient.variantes());
         }
-        restants = Set.copyOf(manquants);
+        restants = avecFabrications(manquants);
         return restants;
     }
 }

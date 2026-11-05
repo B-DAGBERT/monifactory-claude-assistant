@@ -103,15 +103,26 @@ public final class MachinesEmi {
         var nouveaux =
                 receptionManuelle.actualiser(
                         inventaire(), attribues, attendusAutomatiques, restants);
-        for (var lot : lots)
-            if (lot.manuel()) {
-                int avant = lot.suivi().totalRecu();
-                nouveaux = lot.suivi().recevoir(nouveaux);
-                if (avant != lot.suivi().totalRecu()) {
-                    lotsVersion++;
-                    InventaireArbreEmi.invalider();
-                }
-            }
+        if (nouveaux.isEmpty()) return;
+        var distribution =
+                fr.assistantia.ReceptionLots.repartir(
+                        nouveaux,
+                        lots.stream()
+                                .map(
+                                        l ->
+                                                new fr.assistantia.ReceptionLots.Source<>(
+                                                        l.suivi(),
+                                                        (java.util.function.Predicate<EmiStack>)
+                                                                s ->
+                                                                        l.manuel()
+                                                                                || !s.getItemStack()
+                                                                                        .isEmpty()))
+                                .toList());
+        if (distribution.change()) {
+            lotsVersion++;
+            InventaireArbreEmi.invalider();
+            actualise = 0;
+        }
     }
 
     private static List<PlanRetrait.Stock<EmiStack>> recevoir(
@@ -135,6 +146,18 @@ public final class MachinesEmi {
         if (player == null || lots.isEmpty()) {
             menuObserve = null;
             return;
+        }
+        var dansCoffres =
+                new java.util.HashMap<>(fr.assistantia.RechercheEmi.resultatsDisponibles());
+        for (var lot : lots) {
+            boolean disponible = false;
+            for (var attendu : lot.suivi().restants()) {
+                String id = attendu.objet().getId().toString();
+                int n = Math.min(attendu.quantite(), dansCoffres.getOrDefault(id, 0));
+                disponible |= n > 0;
+                dansCoffres.put(id, Math.max(0, dansCoffres.getOrDefault(id, 0) - n));
+            }
+            lot.suivi().disponible(disponible);
         }
         try {
             if (menuObserve != player.containerMenu) {
@@ -182,18 +205,19 @@ public final class MachinesEmi {
                 if (lot.ici(machineObservee.position()))
                     lot.suivi()
                             .disponible(
-                                    sorties.stream()
-                                            .anyMatch(
-                                                    s ->
-                                                            lot.suivi().restants().stream()
-                                                                    .anyMatch(
-                                                                            r ->
-                                                                                    ComparaisonEmi
-                                                                                            .meme(
-                                                                                                    s
-                                                                                                            .objet(),
-                                                                                                    r
-                                                                                                            .objet()))));
+                                    lot.suivi().etat() == LotFabrication.Etat.A_RECUPERER
+                                            || sorties.stream()
+                                                    .anyMatch(
+                                                            s ->
+                                                                    lot.suivi().restants().stream()
+                                                                            .anyMatch(
+                                                                                    r ->
+                                                                                            ComparaisonEmi
+                                                                                                    .meme(
+                                                                                                            s
+                                                                                                                    .objet(),
+                                                                                                            r
+                                                                                                                    .objet()))));
         } catch (ReflectiveOperationException | RuntimeException e) {
             machineObservee = null;
         }
@@ -292,6 +316,35 @@ public final class MachinesEmi {
                 .filter(o -> o.recette() == recette)
                 .mapToInt(PlanMachines.Operation::fois)
                 .sum();
+    }
+
+    public static boolean completerLot(int id, EmiRecipe recette, int supplement) {
+        actualiserArbre();
+        if (supplement <= 0 || supplement > declarables(recette)) return false;
+        for (int i = 0; i < lots.size(); i++) {
+            var lot = lots.get(i);
+            if (lot.id() != id || lot.recette() != recette) continue;
+            var sorties = sortiesLot(recette, supplement, !lot.manuel());
+            if (sorties.isEmpty() || !lot.suivi().ajouter(sorties)) return false;
+            lots.set(
+                    i,
+                    new LotMachine(
+                            id,
+                            recette,
+                            PlanMachines.produit(1, (long) lot.fois() + supplement),
+                            lot.emplacement(),
+                            lot.suivi()));
+            lotsVersion++;
+            InventaireArbreEmi.invalider();
+            calculPrecedent = "";
+            actualiserArbre();
+            return true;
+        }
+        return false;
+    }
+
+    public static Object arbreDeclaration() {
+        return actif();
     }
 
     public static boolean declarer(EmiRecipe recette, int fois) {
@@ -426,30 +479,51 @@ public final class MachinesEmi {
                 .sum();
     }
 
-    private static void envoyee(EmiRecipe recipe, int n, BlockPos position) {
-        ajouterLot(recipe, n, position);
+    private static void envoyee(
+            EmiRecipe recipe, int n, int demande, BlockPos position, Screen parent) {
+        recevoir(List.of());
+        receptionManuelle.initialiser(inventaire());
+        int id = ajouterLot(recipe, n, position);
+        actualiserArbre();
+        if (demande > n
+                && recipe.getOutputs().stream()
+                        .anyMatch(
+                                o ->
+                                        !o.getItemStack().isEmpty()
+                                                && PlanMachines.produit(o.getAmount(), demande)
+                                                        > 64))
+            Minecraft.getInstance()
+                    .setScreen(new DeclarerFabricationEcran(parent, recipe, n, demande, id));
     }
 
-    private static void ajouterLot(EmiRecipe recipe, int n, BlockPos position) {
+    private static List<PlanRetrait.Stock<EmiStack>> sortiesLot(
+            EmiRecipe recipe, int n, boolean automatique) {
         List<PlanRetrait.Stock<EmiStack>> sorties = new ArrayList<>();
         for (var output : recipe.getOutputs())
             if (!output.isEmpty()
                     && output.getChance() >= 1
-                    && (position != null || !output.getItemStack().isEmpty()))
+                    && (automatique || !output.getItemStack().isEmpty()))
                 sorties.add(
                         new PlanRetrait.Stock<>(
                                 output.copy(), PlanMachines.produit(output.getAmount(), n), true));
-        if (!sorties.isEmpty())
-            lots.add(
-                    new LotMachine(
-                            ++prochainLot,
-                            recipe,
-                            n,
-                            java.util.Optional.ofNullable(position),
-                            new LotFabrication<>(sorties, ComparaisonEmi::meme)));
+        return List.copyOf(sorties);
+    }
+
+    private static int ajouterLot(EmiRecipe recipe, int n, BlockPos position) {
+        var sorties = sortiesLot(recipe, n, position != null);
+        if (sorties.isEmpty()) return 0;
+        int id = ++prochainLot;
+        lots.add(
+                new LotMachine(
+                        id,
+                        recipe,
+                        n,
+                        java.util.Optional.ofNullable(position),
+                        new LotFabrication<>(sorties, ComparaisonEmi::meme)));
         lotsVersion++;
         InventaireArbreEmi.invalider();
         actualise = 0;
+        return id;
     }
 
     private static String cleStock(List<PlanRetrait.Stock<EmiStack>> stock) {
@@ -529,7 +603,9 @@ public final class MachinesEmi {
         String dim = mc.level == null ? "" : mc.level.dimension().location().toString();
         if (current != arbre || connexion != mc.getConnection() || !dim.equals(dimension)) {
             EnvoiMachine.arreter();
-            if (current == null || connexion != mc.getConnection() || !dim.equals(dimension)) {
+            if ((current == null && !fr.assistantia.PauseObjectifEmi.enPause())
+                    || connexion != mc.getConnection()
+                    || !dim.equals(dimension)) {
                 lots.clear();
                 receptionManuelle.vider();
                 lotsVersion++;
@@ -909,7 +985,13 @@ public final class MachinesEmi {
                         EnvoiMachine.lancer(
                                 ecran,
                                 envoi,
-                                () -> envoyee(op.recette(), envoi.fois(), ui.position()));
+                                () ->
+                                        envoyee(
+                                                op.recette(),
+                                                envoi.fois(),
+                                                op.fois(),
+                                                ui.position(),
+                                                ecran));
                 } catch (ReflectiveOperationException ex) {
                     actualise = 0;
                 }

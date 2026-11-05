@@ -37,9 +37,9 @@ public class GuiGraphics {public void drawCenteredString(Font f,Object text,int 
 """,
     "net.minecraft.client.gui.components.Button": """
 import net.minecraft.network.chat.Component;
-public class Button {public boolean active=true;public final Component title;private final OnPress action;
+public class Button {public boolean active=true,visible=true;public final Component title;private final OnPress action;
  public Button(Component t,OnPress a){title=t;action=a;}public interface OnPress{void onPress(Button b);}
- public void press(){if(active)action.onPress(this);}
+ public void press(){if(active&&visible)action.onPress(this);}public void setX(int x){}public void setWidth(int w){}
  public static Builder builder(Component t,OnPress a){return new Builder(t,a);}
  public record Builder(Component title,OnPress action){public Builder bounds(int x,int y,int w,int h){return this;}public Button build(){return new Button(title,action);}}}
 """,
@@ -65,12 +65,14 @@ public class Screen {protected Minecraft minecraft;protected Font font=new Font(
 """,
     "dev.emi.emi.api.recipe.EmiRecipe": """
 public interface EmiRecipe {java.util.List<Output> getOutputs();record Output(long amount){
- public long getAmount(){return amount;}public net.minecraft.network.chat.Component getName(){return net.minecraft.network.chat.Component.literal("Plate");}}}
+ public long getAmount(){return amount;}public float getChance(){return 1;}public Stack getItemStack(){return new Stack();}public record Stack(){public boolean isEmpty(){return false;}}public net.minecraft.network.chat.Component getName(){return net.minecraft.network.chat.Component.literal("Plate");}}}
 """,
-    "fr.assistantia.PlanMachines": "public class PlanMachines {public static int produit(long n,int q){return (int)(n*q);}}",
+    "fr.assistantia.PlanMachines": "public class PlanMachines {public static int produit(long n,long q){return (int)(n*q);}}",
     "fr.assistantia.compat.emi.MachinesEmi": """
 import dev.emi.emi.api.recipe.EmiRecipe;
 public class MachinesEmi {public static int max=10,calls,last;public static boolean accept=true;
+ public static Object tree=new Object();public static Object arbreDeclaration(){return tree;}
+ public static boolean completerLot(int id,EmiRecipe r,int q){calls++;last=q;return accept;}
  public static int declarables(EmiRecipe r){return max;}public static boolean declarer(EmiRecipe r,int q){calls++;last=q;return accept;}}
 """,
 }
@@ -117,6 +119,19 @@ public class RenderUiSafetyTest {
    assert MachinesEmi.calls==1&&mc.screen==screen;
    MachinesEmi.accept=true;screen.keyPressed(335,0,0);
    assert MachinesEmi.calls==2&&mc.screen==parent:"Failed declaration could not be retried";
+  } else if(args[0].equals("sent") || args[0].equals("all")){
+   MachinesEmi.max=136;
+   screen=new DeclarerFabricationEcran(parent,recipe,64,200,1);mc.screen=screen;screen.init(mc,320,240);
+   assert input(screen).getValue().equals("64");
+   if(args[0].equals("all"))button(screen,"Tout le lot").press();
+   else button(screen,"Juste envoyé").press();
+   screen.tick();button(screen,"Confirmer").press();screen.keyPressed(257,0,0);
+   assert mc.screen==parent;
+   assert MachinesEmi.calls==(args[0].equals("all")?1:0);
+   if(MachinesEmi.calls>0)assert MachinesEmi.last==136:"do not declare the sent 64 twice";
+  } else if(args[0].equals("changed-tree")){
+   MachinesEmi.tree=new Object();screen.tick();screen.keyPressed(257,0,0);
+   assert MachinesEmi.calls==0&&mc.screen==screen;
   } else if(args[0].equals("escape")){
    screen.keyPressed(256,0,0);assert mc.screen==parent&&MachinesEmi.calls==0;
   }
@@ -199,3 +214,8 @@ class RenderUiSafetyTests(unittest.TestCase):
 
     def test_escape_returns_to_follow_up_without_declaration(self):
         self.run_case("escape")
+
+    def test_sent_batch_or_whole_lot_and_stale_tree(self):
+        for case in ("sent", "all", "changed-tree"):
+            with self.subTest(case=case):
+                self.run_case(case)

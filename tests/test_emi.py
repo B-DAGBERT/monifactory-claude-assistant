@@ -122,6 +122,9 @@ class EmiTests(unittest.TestCase):
     def test_machine_send_waits_without_replaying_actions(self):
         self._run_java_contract("SequenceEnvoi")
 
+    def test_pending_outputs_received_once_across_machine_and_manual_lots(self):
+        self._run_java_contract("ReceptionLots")
+
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 
@@ -203,12 +206,18 @@ class EmiTests(unittest.TestCase):
                             "LotFabrication",
                             "ReceptionManuelle",
                             "LotMachine",
+                            "ReceptionLots",
                         }
                         else []
                     ),
                     *(
                         [str(ROOT / "mod/src/main/java/fr/assistantia/LotFabrication.java")]
-                        if name in {"ReceptionManuelle", "LotMachine"}
+                        if name in {"ReceptionManuelle", "LotMachine", "ReceptionLots"}
+                        else []
+                    ),
+                    *(
+                        [str(ROOT / "mod/src/main/java/fr/assistantia/ReceptionManuelle.java")]
+                        if name == "ReceptionLots"
                         else []
                     ),
                     *[

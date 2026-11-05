@@ -226,3 +226,26 @@ seul. Les confirmations déjà enregistrées sont conservées après redémarrag
 Les sauvegardes locales disposent d’une copie `.bak` de leur version précédente valide. Si le
 JSON principal devient illisible, cette copie est utilisée et la récupération apparaît dans le
 diagnostic. Les copies restent personnelles et sont exclues de Git.
+
+## Lots machines et résultats dans les coffres
+
+Quand un envoi ne charge qu’une partie d’un lot de plus de 64 résultats, une fenêtre propose :
+
+- **Juste envoyé** : conserver au suivi la quantité réellement transférée.
+- **Tout le lot** : suivre aussi le surplus que ton stockage alimentera ensuite.
+
+**Confirmer** applique le choix. Le premier envoi est déjà enregistré ; **Tout le lot** agrandit
+la même ligne et ne recompte pas cette première quantité. **Retour** ou Échap garde seulement
+le lot réellement envoyé. Pour une fabrication lancée à la main, saisir le nombre de fabrications
+ou utiliser **Tout le lot** avant de confirmer.
+
+Les quantités en cours servent à masquer leurs ingrédients dans EMI. Elles restent des résultats
+à récupérer pour **Scanner coffres** : avec ce scan activé, un coffre utile contenant un résultat
+attendu prend un **contour jaune**. Les autres coffres utiles gardent leur contour cyan. Ouvrir
+le coffre puis utiliser **Prendre / Tout**, ou récupérer ses résultats normalement.
+
+Le suivi passe à **À récupérer** quand le scan trouve un résultat disponible, puis progresse avec
+les gains réels de l’inventaire, backpack compris. Un lot partiellement récupéré continue à chercher
+le reste ; il devient **Terminé** lorsque toute sa quantité a été reçue. Observer un coffre ne
+valide aucune production. Une pause de l’objectif arrête le repérage et garde les lots tant que le
+monde et la connexion restent les mêmes ; la reprise reste explicite.
