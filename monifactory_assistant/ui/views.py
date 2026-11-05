@@ -248,6 +248,10 @@ def build_mod_view(app):
         "visible": app.visible,
         "recharger": app.bridge.script_outdated(state),
         "statut": app.status,
+        "dimension_actuelle": (state or {}).get("dimension", ""),
+        "demandes": app.request_queue.view()
+        if getattr(app, "request_queue", None) is not None
+        else {"protocole": 1},
         "mise_a_jour": getattr(app, "update_notice", ""),
         "mise_a_jour_id": getattr(app, "update_notice_id", ""),
         "alertes": [],
@@ -495,6 +499,10 @@ def build_mod_view(app):
     ]
     screen = {
         "statut": app.status,
+        "dimension_actuelle": (state or {}).get("dimension", ""),
+        "demandes": app.request_queue.view()
+        if getattr(app, "request_queue", None) is not None
+        else {"protocole": 1},
         "mise_a_jour": getattr(app, "update_notice", ""),
         "mise_a_jour_id": getattr(app, "update_notice_id", ""),
         "question_recue": getattr(app, "question_ack", {}),

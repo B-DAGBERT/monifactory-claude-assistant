@@ -293,8 +293,36 @@ public final class Pont {
 
     /** Transmet une demande et indique si son écriture atomique a réussi. */
     public static synchronized boolean envoyer(JsonObject demande) {
-        dernierEnvoi = Math.max(System.currentTimeMillis(), dernierEnvoi + 1);
-        demande.addProperty("n", dernierEnvoi);
+        if (!demande.has("requete")) {
+            dernierEnvoi = Math.max(System.currentTimeMillis(), dernierEnvoi + 1);
+            demande.addProperty("n", dernierEnvoi);
+            demande.addProperty("requete", java.util.UUID.randomUUID().toString());
+            JsonObject ecran = partie("ecran");
+            if (!demande.has("projet") && !"reglage".equals(texte(demande, "type"))) {
+                JsonObject projets =
+                        ecran.has("projets") && ecran.get("projets").isJsonObject()
+                                ? ecran.getAsJsonObject("projets")
+                                : new JsonObject();
+                if (!texte(projets, "actif").isEmpty())
+                    demande.addProperty("projet", texte(projets, "actif"));
+                demande.addProperty("dimension_envoi", texte(ecran, "dimension_actuelle"));
+            }
+        }
+        JsonObject ecran = partie("ecran");
+        if (ecran.has("demandes")
+                && ecran.get("demandes").isJsonObject()
+                && ecran.getAsJsonObject("demandes").has("protocole")
+                && ecran.getAsJsonObject("demandes").get("protocole").isJsonPrimitive()
+                && ecran.getAsJsonObject("demandes").getAsJsonPrimitive("protocole").isNumber()
+                && ecran.getAsJsonObject("demandes").get("protocole").getAsInt() == 2) {
+            try {
+                FileDemandes.envoyer(DOSSIER, demande);
+                return true;
+            } catch (IOException e) {
+                LOGGER.warn("Assistant : demande non transmise", e);
+                return false;
+            }
+        }
         return ecrireDemande("demande_mod.json", demande);
     }
 

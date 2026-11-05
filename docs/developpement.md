@@ -217,3 +217,40 @@ ne contient aucune copie de leur logique. `test_application_modules.py` vérifie
 sans dépendances de bureau, l’absence de méthodes masquées entre contrôleurs et le chargement réel
 d’un projet en pause après changement de projet et redémarrage. La vérification de parité historique
 continue à comparer le comportement conservé malgré le déplacement des définitions.
+
+## File durable, sauvegardes et rendu (shared.31)
+
+`game/requests.py` lit au plus huit demandes par passage dans `kubejs/assistant/demandes/`.
+`FileDemandes` publie un fichier atomique par UUID et numéro chronologique ; un renvoi conserve
+ces deux valeurs. La file du client est limitée à 128 fichiers. Le protocole 2 est annoncé dans
+`ecran.demandes` ; les anciens couples client/assistant utilisent encore `demande_mod.json`.
+Les réglages IA et le scan EMI gardent leurs canaux indépendants.
+
+Avant chaque exécution, une réservation est écrite dans `reponses_demandes.json`. La confirmation
+et les accusés de question/projet sont enregistrés avant suppression du fichier de demande.
+Un résultat durable est restitué lors d’un renvoi, sans refaire l’action. Une réservation laissée
+par un arrêt devient « interrompue » ; le résultat peut avoir été appliqué et ne doit jamais être
+rejoué automatiquement. Un historique illisible bloque la file plutôt que d’effacer la preuve.
+Les commandes périmées et les contextes projet/dimension différents sont refusés. Les accusés anciens ne remplacent pas ceux d’une demande plus récente. Ce protocole
+privilégie l’absence de double exécution ; il ne promet pas de terminer une action après un crash.
+
+`persistence.py` partage les écritures de sauvegarde : fichier temporaire unique dans le même
+dossier, conservation des permissions, flush/fsync, remplacement atomique, nettoyage et copie
+précédente `.bak` lorsqu’elle contient un JSON valide. Une copie corrompue ne remplace pas un backup
+sain. Les lectures peuvent récupérer la copie ; les projets refusent toute perte silencieuse
+lorsqu’aucune copie n’est lisible. Les chemins restent identiques. Le catalogue des projets et le statut de pause/reprise ne sont publiés en mémoire qu’après sauvegarde réussie. Le canal de réglages IA conserve
+ses vérifications supplémentaires de révision, sauvegarde son ancienne configuration et revalide
+la révision juste avant son écriture atomique dédiée.
+
+Le rendu utilise une horloge monotone distincte de la dernière écriture du plan. `game/snapshots.py`
+partage inventaire, progression, totaux des coffres et machines uniquement pendant un cycle.
+Le contexte est isolé par thread et supprimé en sortie, y compris en cas d’erreur. Aucun cache de
+quantités ne survit au cycle suivant. `diagnostics.py` exporte des données locales limitées ; le
+menu affiche aussi l’état natif du client et le temps du dernier calcul de vue.
+
+`test_reliability.py` couvre rafales ordonnées, budget par passage, doublons, redémarrages avant et
+après dispatch, échec de réservation, échec de confirmation, suppression de fichier retardée,
+contexte changé, déconnexion, sauvegarde corrompue, écrivains concurrents et cache de rendu.
+Les contrats Java exercent la vraie file, les limites de capacité, la pagination en 320 × 240,
+les transferts avec paquets retardés et les confirmations instables. Ces tests simulent les
+interactions natives ; les délais et corrections du serveur réel restent à vérifier en jeu.

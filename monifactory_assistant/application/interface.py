@@ -7,6 +7,9 @@ import tkinter as tk
 import traceback
 
 import monifactory_assistant.providers as ai_provider
+from monifactory_assistant.diagnostics import view as diagnostic_view
+from monifactory_assistant.game.snapshots import render_frame
+from monifactory_assistant.persistence import atomic_json
 from monifactory_assistant.platform.capture import (
     bring_to_front,
     make_non_activating,
@@ -32,20 +35,31 @@ class InterfaceController:
     def set_setting(self, key, value):
         if key not in SETTINGS:
             return
-        self.settings[key] = bool(value)
-        SETTINGS_FILE.write_text(json.dumps(self.settings, indent=1), encoding="utf-8")
+        values = dict(self.settings, **{key: bool(value)})
+        atomic_json(SETTINGS_FILE, values)
+        self.settings = values
         if key == "voix" and not value:
             self.speaker.stop()
         self.refresh(force=True)
 
     def refresh(self, force=False):
         """Recalcule l'affichage du jeu et l'écrit s'il a changé (au plus ~3 fois par seconde)."""
-        now = time.time()
-        if not force and now - self.last_write < 0.3:
+        now = time.monotonic()
+        if not force and now - getattr(self, "last_render", 0) < 0.3:
             if not self.refresh_pending:
                 self.refresh_pending = True
                 self.root.after(300, self.delayed_refresh)
             return
+        self.last_render = now
+        started = time.perf_counter()
+        try:
+            with render_frame(self):
+                self.refresh_views()
+        finally:
+            self.last_render_ms = (time.perf_counter() - started) * 1000
+
+    def refresh_views(self):
+        now = time.time()
         message = self.message if (not self.message_until or now < self.message_until) else ""
         try:
             lines = build_view(
@@ -88,6 +102,7 @@ class InterfaceController:
                 log(traceback.format_exc())
         try:
             mod_view = build_mod_view(self)
+            mod_view["ecran"]["diagnostic"] = diagnostic_view(self)
             if mod_view != self.last_mod_view:
                 self.bridge.write("vue_mod.json", mod_view)
                 self.last_mod_view = mod_view
@@ -99,6 +114,11 @@ class InterfaceController:
             ai_settings = getattr(self, "ai_settings", None)
             if ai_settings is not None and ai_settings.poll(self.bridge, self):
                 self.refresh(force=True)
+            requests = getattr(self, "request_queue", None)
+            if requests is not None and requests.poll(
+                self.dispatch_queued_request, self.restore_request_reply
+            ):
+                self.refresh(force=True)
             path = self.bridge.dir / "demande_mod.json"
             if path.exists() and path.stat().st_mtime != self.mod_request_time:
                 modified = path.stat().st_mtime
@@ -106,21 +126,79 @@ class InterfaceController:
                 self.mod_request_time = modified
                 # Celle d'avant le démarrage est ignorée, sauf si elle est toute récente : posée pendant que
                 # l'assistant était arrêté, juste avant que le joueur le relance depuis le jeu
-                recent = time.time() * 1000 - float(request.get("n") or 0) < 45000
-                if request.get("n") != self.mod_request_n and (
-                    self.mod_request_n is not None or recent
-                ):
+                age = time.time() * 1000 - float(request.get("n") or 0)
+                recent = -5000 <= age < 45000
+                legacy_n = getattr(self, "legacy_request_n", None)
+                if request.get("n") != legacy_n and recent:
                     self.handle_mod_request(request)
                 elif (
-                    self.mod_request_n is None and not recent and request.get("type") == "question"
+                    legacy_n is None
+                    and not recent
+                    and request.get("type") == "question"
+                    and (request.get("n") or 0) >= self.question_ack.get("n", 0)
                 ):
                     self.question_ack = {"n": request.get("n"), "etat": "expiree"}
-                self.mod_request_n = request.get("n")
+                self.legacy_request_n = request.get("n")
+                if isinstance(request.get("n"), (int, float)):
+                    self.mod_request_n = max(self.mod_request_n or 0, request["n"])
         except (OSError, ValueError):
             pass  # fichier en cours d'écriture : on relira au prochain passage
         except Exception:
             log(traceback.format_exc())
         self.root.after(300, self.check_mod_requests)
+
+    def restore_request_reply(self, request, result):
+        n = request.get("n") or 0
+        self.mod_request_n = max(self.mod_request_n or 0, n)
+        if request.get("type") == "question" and n < self.question_ack.get("n", 0):
+            return
+        if request.get("type") == "projet" and n < getattr(self, "project_reply_n", 0):
+            return
+        if request.get("type") == "projet":
+            self.project_reply_n = n
+        if "question" in result:
+            self.question_ack = result["question"]
+        elif request.get("type") == "question":
+            self.question_ack = {
+                "n": request.get("n"),
+                "etat": "expiree" if result.get("etat") == "expiree" else "refusee",
+            }
+        if "projet" in result:
+            self.project_feedback = result["projet"]
+        elif request.get("type") == "projet":
+            self.project_feedback = {
+                "token": request.get("token"),
+                "ok": False,
+                "message": result.get("message", "Action interrompue."),
+            }
+
+    def dispatch_queued_request(self, request):
+        self.mod_request_n = request.get("n")
+        reason = ""
+        if request.get("projet") is not None and request["projet"] != self.projects.active:
+            reason = "Le projet a changé depuis ce clic ; renouvelle ton action."
+        dimension = request.get("dimension_envoi")
+        if dimension and dimension != (self.game or {}).get("dimension"):
+            reason = "Le monde ou la dimension a changé ; renouvelle ton action."
+        if reason:
+            result = {"etat": "refusee", "message": reason}
+            self.restore_request_reply(request, result)
+            return result
+        self.handle_mod_request(request)
+        result = {"etat": "traitee", "message": "Demande prise en compte."}
+        if request.get("type") == "question":
+            result["question"] = dict(self.question_ack)
+            if self.question_ack.get("etat") != "acceptee":
+                result.update(etat="refusee", message="Demande refusée : l’assistant est occupé.")
+        elif request.get("type") == "projet":
+            self.project_reply_n = request.get("n") or 0
+            result["projet"] = dict(self.project_feedback)
+            if not self.project_feedback.get("ok"):
+                result.update(
+                    etat="refusee",
+                    message=self.project_feedback.get("message", "Projet non modifié."),
+                )
+        return result
 
     def handle_mod_request(self, request):
         kind = request.get("type")

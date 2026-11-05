@@ -10,6 +10,7 @@ import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.game.context import describe_quests
 from monifactory_assistant.game.objectives import evaluate, objective_entry
 from monifactory_assistant.game.projects import ProjectStore
+from monifactory_assistant.game.snapshots import frame_value
 from monifactory_assistant.prompts import FACTORY_REQUEST, NEW_PLAN_EXTRA, PLAN_REQUEST
 from monifactory_assistant.providers.responses import parse_plan, readable
 from monifactory_assistant.providers.session import ask_claude, tool_status
@@ -162,6 +163,7 @@ class ProjectsController:
         if self.busy:
             self.notify("Attends la fin de la réponse, puis réessaie.", 4)
             return
+        self.projects.save(dict(self.project_snapshot(), objectif_en_pause=paused))
         self.objective_paused = paused
         self.objective_epoch += 1
         self.last_progress = time.time()
@@ -170,7 +172,6 @@ class ProjectsController:
         self.coach_queue = [
             (text, speak, kind) for text, speak, kind in self.coach_queue if kind != "progression"
         ]
-        self.save_plan()
         self.notify(
             "Objectif en pause. Tes étapes sont conservées."
             if paused
@@ -202,20 +203,28 @@ class ProjectsController:
             self.objectives[index]["etat"] = "en_cours"
 
     def have(self):
-        return {k: int(v) for k, v in (self.game or {}).get("inventaire", {}).items()}
+        return frame_value(
+            self,
+            "inventaire",
+            lambda: {k: int(v) for k, v in (self.game or {}).get("inventaire", {}).items()},
+        )
 
     def progress(self):
         if not self.plan:
             return None
-        return evaluate(
-            self.plan,
-            self.have(),
-            self.reached,
-            self.done_steps,
-            stored=self.storage.totals(),
-            placed=self.storage.placed(),
-            undone=self.undone_steps,
-            obtained=self.obtained,
+        return frame_value(
+            self,
+            "progression",
+            lambda: evaluate(
+                self.plan,
+                self.have(),
+                self.reached,
+                self.done_steps,
+                stored=self.storage.totals(),
+                placed=self.storage.placed(),
+                undone=self.undone_steps,
+                obtained=self.obtained,
+            ),
         )
 
     def target_totals(self):

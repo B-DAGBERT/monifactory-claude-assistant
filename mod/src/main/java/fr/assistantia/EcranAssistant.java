@@ -58,7 +58,7 @@ public class EcranAssistant extends Screen {
     private final List<Button> actionsObjectif = new ArrayList<>();
     private OngletFilons filons;
     private OngletBase base;
-    private Button projets, objectifEmi, masquerMaj, modelesIA;
+    private Button projets, objectifEmi, masquerMaj, modelesIA, diagnostic;
     private EcranConfigurationIA configurationIA;
     private static final AvisMiseAJour AVIS_MAJ =
             new AvisMiseAJour(
@@ -232,6 +232,14 @@ public class EcranAssistant extends Screen {
                                         })
                                 .bounds(MARGE, MARGE + 26, this.width - 2 * MARGE, 20)
                                 .build());
+        diagnostic =
+                addRenderableWidget(
+                        Button.builder(
+                                        Component.literal("Diagnostic…"),
+                                        b -> this.minecraft.setScreen(new EcranDiagnostic(this)))
+                                .bounds(MARGE, MARGE + 26, 100, 20)
+                                .build());
+        diagnostic.visible = false;
         modelesIA.visible = false;
         modelesIA.setTooltip(
                 net.minecraft.client.gui.components.Tooltip.create(
@@ -400,6 +408,7 @@ public class EcranAssistant extends Screen {
         renderBackground(g);
         zones.clear();
         modelesIA.visible = onglet == REGLAGES;
+        diagnostic.visible = onglet == REGLAGES;
         filons.visible(onglet == FILONS);
         base.visible(onglet == BASE);
         actionsObjectif.forEach(b -> b.visible = onglet == OBJECTIF || onglet == PLAN);
@@ -788,7 +797,10 @@ public class EcranAssistant extends Screen {
             GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas, int sx, int sy) {
         modelesIA.setX(x);
         modelesIA.setY(y);
-        modelesIA.setWidth(largeur);
+        modelesIA.setWidth((largeur - 6) / 2);
+        diagnostic.setX(x + (largeur + 6) / 2);
+        diagnostic.setY(y);
+        diagnostic.setWidth((largeur - 6) / 2);
         y += 28;
         JsonArray reglages = new JsonArray();
         JsonObject lumiere = new JsonObject();

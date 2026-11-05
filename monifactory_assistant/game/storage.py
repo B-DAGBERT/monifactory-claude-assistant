@@ -4,6 +4,8 @@ import math
 from collections import defaultdict
 from datetime import datetime
 
+from monifactory_assistant.game.snapshots import frame_value
+
 SHARED_CHESTS = {
     "minecraft:chest",
     "minecraft:trapped_chest",
@@ -165,11 +167,15 @@ class Storage:
         return Storage(kept, containers, [m for m in data.get("machines") or [] if m.get("v") == 2])
 
     def placed(self):
-        """Nombre de machines posées par id de bloc (l'id du bloc est celui de l'objet à poser)."""
-        counts = defaultdict(int)
-        for m in self.machines:
-            counts[m["bloc"]] += 1
-        return counts
+        """Nombre de machines posées, partagé pendant un cycle de rendu."""
+
+        def compute():
+            counts = defaultdict(int)
+            for m in self.machines:
+                counts[m["bloc"]] += 1
+            return counts
+
+        return frame_value(self, "machines", compute)
 
     @staticmethod
     def twins(a, b):
@@ -183,11 +189,14 @@ class Storage:
         )
 
     def totals(self):
-        totals = defaultdict(int)
-        for c in self.containers:
-            for o in c["objets"]:
-                totals[o["item"]] += int(o["n"])
-        return totals
+        def compute():
+            totals = defaultdict(int)
+            for c in self.containers:
+                for o in c["objets"]:
+                    totals[o["item"]] += int(o["n"])
+            return totals
+
+        return frame_value(self, "stocks", compute)
 
     def find(self, item, state):
         """Quantité dans les coffres de la dimension du joueur, et le coffre le plus proche qui en contient."""

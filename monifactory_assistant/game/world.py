@@ -1,10 +1,10 @@
 """Mémoire du monde et description des états des machines."""
 
-import json
 import re
 import time
 
 from monifactory_assistant.game.storage import Storage, distinct_containers
+from monifactory_assistant.persistence import atomic_json, load_json
 from monifactory_assistant.settings import WORLD_FILE
 
 
@@ -18,10 +18,7 @@ class World:
     machines GregTech. Gardé en mémoire : on sait encore ce qu'il y a dans la base quand on s'en éloigne."""
 
     def __init__(self):
-        try:
-            saved = json.loads(WORLD_FILE.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            saved = {}
+        saved = load_json(WORLD_FILE, {})
         self.blocks = saved.get("blocs", {})  # clé "dimension|x|y|z" -> bloc vu par le serveur
         self.players = []
         self.errors = []
@@ -67,9 +64,7 @@ class World:
         self.blocks.update(seen)
         self.players = snapshot.get("joueurs", [])
         self.errors = snapshot.get("erreurs", [])
-        WORLD_FILE.write_text(
-            json.dumps({"blocs": self.blocks}, ensure_ascii=False), encoding="utf-8"
-        )
+        atomic_json(WORLD_FILE, {"blocs": self.blocks})
         return True
 
     def containers(self):

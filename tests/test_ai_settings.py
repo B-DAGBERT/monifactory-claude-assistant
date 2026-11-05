@@ -113,7 +113,12 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(self.config, old)
             self.assertEqual(json.loads(self.path.read_text()), self.local)
             replace(source, target)
-            self.assertEqual(json.loads(self.path.read_text())["providers"]["codex"], self.values)
+            if Path(target) == self.path:
+                self.assertEqual(
+                    json.loads(self.path.read_text())["providers"]["codex"], self.values
+                )
+            else:
+                self.assertEqual(json.loads(Path(target).read_text()), self.local)
 
         request = self.request()
         self.submit(request | {"type": "invalid"})
@@ -124,6 +129,30 @@ class SettingsTests(unittest.TestCase):
         with patch("monifactory_assistant.providers.settings.os.replace", side_effect=commit):
             self.assertTrue(self.settings.poll(self.bridge, self.app))
         self.assertEqual(self.settings.values(), self.values)
+
+    def test_previous_configuration_is_recoverable_after_primary_corruption(self):
+        from monifactory_assistant.persistence import load_json
+
+        self.assertEqual(self.submit()["etat"], "appliquee")
+        self.path.write_text("{interrupted")
+        self.assertEqual(load_json(self.path, strict=True), self.local)
+
+    def test_external_edit_during_backup_is_not_overwritten(self):
+        from monifactory_assistant.persistence import backup_json
+
+        external = dict(self.local, changed_by_user=True)
+
+        def concurrent_edit(path, raw):
+            backup_json(path, raw)
+            self.path.write_text(json.dumps(external))
+
+        before = copy.deepcopy(self.config)
+        with patch(
+            "monifactory_assistant.providers.settings.backup_json", side_effect=concurrent_edit
+        ):
+            self.assertEqual(self.submit()["etat"], "refusee")
+        self.assertEqual(json.loads(self.path.read_text()), external)
+        self.assertEqual(self.config, before)
 
     def test_successful_commit_cannot_be_reported_as_failed_by_cleanup(self):
         with patch(

@@ -140,6 +140,19 @@ class ParityTests(unittest.TestCase):
             "App.action_refaire_objectif",
             "App.action_planifier_usine",
         }
+        compatibility_changes |= {
+            "log",
+            "World.__init__",
+            "World.update",
+            "App.load_places",
+            "App.save_places",
+            "App.set_setting",
+            "App.on_info_ready",
+            "App.have",
+            "App.progress",
+            "Storage.totals",
+            "Storage.placed",
+        }  # Atomic backup/recovery and render-scoped caching: test_reliability.py.
         checked = 0
         for name, code in before.items():
             if name in compatibility_changes:

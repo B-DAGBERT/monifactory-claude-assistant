@@ -28,6 +28,24 @@ public final class SequenceEnvoiTest {
         b.confirme = true;
         for (int i = 0; i < 12; i++) s.tick();
         assert s.reussie();
+        // Une confirmation momentanée suivie d'une correction ne valide pas l'action.
+        a = new Action();
+        b = new Action();
+        s = new SequenceEnvoi(List.of(a, b));
+        s.tick();
+        a.confirme = true;
+        for (int i = 0; i < 6; i++) s.tick();
+        a.confirme = false;
+        for (int i = 0; i < 30; i++) s.tick();
+        assert b.envois == 0 && a.envois == 1;
+        a.confirme = true;
+        for (int i = 0; i < 8; i++) s.tick();
+        assert b.envois == 1 && a.envois == 1;
+        s.annuler("Déconnexion");
+        b.confirme = true;
+        for (int i = 0; i < 100; i++) s.tick();
+        assert !s.reussie() && b.envois == 1
+                : "un paquet tardif ne reprend pas une séquence annulée";
         var refuse = new Action();
         s = new SequenceEnvoi(List.of(refuse));
         for (int i = 0; i < 100; i++) s.tick();

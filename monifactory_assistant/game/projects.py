@@ -1,11 +1,11 @@
 """Local project snapshots, atomically stored alongside the legacy active-plan fields."""
 
 import copy
-import json
-import os
 import shutil
 import uuid
 from pathlib import Path
+
+from monifactory_assistant.persistence import atomic_json, load_json
 
 FIELDS = (
     "objectif_en_pause",
@@ -24,7 +24,7 @@ FIELDS = (
 class ProjectStore:
     def __init__(self, path):
         self.path = Path(path)
-        data = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+        data = load_json(self.path, {}, strict=True)
         if not isinstance(data, dict):
             raise ValueError("Sauvegarde des projets illisible : fichier conservé.")
         self.legacy = "projets" not in data
@@ -61,18 +61,15 @@ class ProjectStore:
         return copy.deepcopy(self.current()["etat"])
 
     def save(self, state):
-        self.current()["etat"] = copy.deepcopy(state)
-        data = dict(state, schema_projets=1, projet_actif=self.active, projets=self.projects)
+        projects = copy.deepcopy(self.projects)
+        next(p for p in projects if p["id"] == self.active)["etat"] = copy.deepcopy(state)
+        data = dict(state, schema_projets=1, projet_actif=self.active, projets=projects)
         if self.legacy and self.path.exists():
             backup = self.path.with_name(self.path.name + ".avant-projets")
             if not backup.exists():
                 shutil.copy2(self.path, backup)
-        temporary = self.path.with_name(self.path.name + ".tmp")
-        with temporary.open("w", encoding="utf-8") as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=1)
-            stream.flush()
-            os.fsync(stream.fileno())
-        temporary.replace(self.path)
+        atomic_json(self.path, data)
+        self.projects = projects
         self.legacy = False
 
     def create(self, ident, name):

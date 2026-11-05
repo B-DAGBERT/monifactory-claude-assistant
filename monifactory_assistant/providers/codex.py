@@ -1,9 +1,9 @@
 """Small adapter between the upstream assistant and the Codex app-server."""
 
-import json
 import threading
 
 from monifactory_assistant.config import HERE, write_json
+from monifactory_assistant.persistence import load_json
 from monifactory_assistant.providers.codex_transport import CLIENT
 
 
@@ -55,7 +55,7 @@ class Conversation:
         self.path = HERE / "session.json"
         self.session_id = None
         try:
-            saved = json.loads(self.path.read_text(encoding="utf-8"))
+            saved = load_json(self.path, {})
             if saved.get("data_dir") == str(data_dir.resolve()):
                 self.session_id = saved.get("thread_id")
         except (OSError, ValueError, AttributeError):

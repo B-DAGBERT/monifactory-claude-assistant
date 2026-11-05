@@ -1,11 +1,11 @@
 """Local configuration; never overwrite it when updating the Git branch."""
 
-import json
 import os
 import shutil
 from pathlib import Path
 
 from monifactory_assistant.paths import ROOT as HERE
+from monifactory_assistant.persistence import atomic_json, load_json
 
 
 def find_codex():
@@ -23,9 +23,9 @@ def load_config():
     config = {}
     for name in ("codex.local.json", "assistant.local.json"):
         path = HERE / name
-        if not path.exists():
+        if not path.exists() and not path.with_name(path.name + ".bak").exists():
             continue
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = load_json(path, {}, strict=True)
         if not isinstance(value, dict):
             raise ValueError(f"{name} doit contenir un objet JSON.")
         config.update(value)
@@ -47,7 +47,4 @@ def minecraft_dir():
 
 
 def write_json(path, value):
-    path = Path(path)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    atomic_json(path, value)

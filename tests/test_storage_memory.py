@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from monifactory_assistant.game.snapshots import frame_value
 from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +27,7 @@ def storage_class():
         if isinstance(node, ast.FunctionDef)
         and node.name in {"__init__", "load", "twins", "totals"}
     ]
-    namespace = {"defaultdict": defaultdict}
+    namespace = {"defaultdict": defaultdict, "frame_value": frame_value}
     exec(compile(ast.Module(body=[cls], type_ignores=[]), "app.py", "exec"), namespace)
     return namespace["Storage"]
 

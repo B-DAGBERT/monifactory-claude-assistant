@@ -21,6 +21,7 @@ from unittest.mock import Mock
 import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.game.emi import objective_tree
 from monifactory_assistant.game.projects import ProjectStore
+from monifactory_assistant.game.snapshots import frame_value
 from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,6 +81,7 @@ def load_logic(path):
     app.body = [n for n in app.body if isinstance(n, ast.FunctionDef) and n.name in METHODS]
     namespace = dict(
         ai_provider=ai_provider,
+        frame_value=frame_value,
         copy=copy,
         ProjectStore=ProjectStore,
         objective_tree=objective_tree,

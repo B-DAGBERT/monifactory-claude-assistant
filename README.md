@@ -27,6 +27,7 @@ Le compte IA se choisit sur chaque poste ; les conversations, coffres et objecti
 | Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                                             |
 | Voir les stocks ou les filons connus      | **Y → Base / Filons**.                                                                                 |
 | Poser une question                        | **Y → Discussion**.                                                                                    |
+| Comprendre un problème                    | **Y → Réglages → Diagnostic…** : connexion, inventaire, EMI, transferts et erreurs.                    |
 | Régler l’affichage et la luminosité       | **Y → Réglages**, onglet le plus à droite.                                                             |
 | Choisir les modèles et la réflexion       | **Y → Réglages → Modèles IA…**, choisir dans la liste puis **Appliquer** pour les prochaines demandes. |
 

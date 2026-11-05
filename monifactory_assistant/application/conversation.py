@@ -10,6 +10,7 @@ from monifactory_assistant.game.context import describe_state, describe_storage
 from monifactory_assistant.game.objectives import item_names, machine_label, needed_machines
 from monifactory_assistant.game.veins import describe_veins
 from monifactory_assistant.game.world import describe_machines, describe_world, machine_color
+from monifactory_assistant.persistence import atomic_json
 from monifactory_assistant.platform.hooks import keyboard
 from monifactory_assistant.prompts import ACTIONS_HELP, INFO_REQUEST
 from monifactory_assistant.providers.responses import (
@@ -97,9 +98,7 @@ class ConversationController:
         self.info_pending.discard(item)
         if card:
             self.infos[item] = card
-            INFO_FILE.write_text(
-                json.dumps(self.infos, ensure_ascii=False, indent=1), encoding="utf-8"
-            )
+            atomic_json(INFO_FILE, self.infos)
         if self.info and self.info["item"] == item:
             if card:
                 self.info.update(card, etat="pret")

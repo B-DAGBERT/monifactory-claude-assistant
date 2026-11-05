@@ -58,6 +58,40 @@ public class Pont {public static JsonObject ecran=new JsonObject(),last;public s
     }
 )
 
+STUBS.update(
+    {
+        "net.minecraftforge.fml.ModList": """
+public class ModList {public static ModList get(){return new ModList();}public java.util.Optional<Container> getModContainerById(String s){return java.util.Optional.of(new Container());}
+ public static class Container {public Info getModInfo(){return new Info();}}public static class Info {public String getVersion(){return "test-shared31";}}}
+""",
+        "fr.assistantia.InventaireJoueur": "public class InventaireJoueur {public static boolean synchronise(){return true;}}",
+        "fr.assistantia.Emi": "public class Emi {public static boolean arbreActif(){return true;}public static boolean present(){return false;}}",
+        "fr.assistantia.RechercheEmi": "public class RechercheEmi {public static boolean actif(){return true;}}",
+        "fr.assistantia.RetraitCoffre": "public class RetraitCoffre {public static boolean occupe(){return false;}}",
+        "fr.assistantia.compat.emi.EnvoiMachine": 'public class EnvoiMachine {public static String statut(){return "";}}',
+    }
+)
+
+DIAGNOSTIC_HARNESS = r"""
+package fr.assistantia;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.client.gui.GuiGraphics;
+public class DiagnosticScreenTest {
+ public static void main(String[] args){
+  Pont.ecran.add("diagnostic",com.google.gson.JsonParser.parseString("{\"sauvegardes\":[{\"fichier\":\"a\",\"message\":\"récupérée\"},{\"fichier\":\"b\",\"message\":\"récupérée\"},{\"fichier\":\"c\",\"message\":\"récupérée\"}]}").getAsJsonObject());
+  Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Réglages"));
+  var s=new EcranDiagnostic(parent);mc.screen=s;s.init(mc,320,240);s.tick();s.render(new GuiGraphics(),0,0,0);
+  for(var w:s.widgets)if(w instanceof Button b){assert b.x>=0&&b.y>=0&&b.x+b.w<=320&&b.y+b.h<=240;if(b.title.getString().equals("Suivant")){assert b.active;b.press();}}
+  s.render(new GuiGraphics(),0,0,0);assert Pont.sends==0;
+  s.keyPressed(256,0,0);assert mc.screen==parent;
+  s.init(mc,640,480);s.render(new GuiGraphics(),0,0,0);assert Pont.sends==0;
+ }
+}
+"""
+
 SCREEN_HARNESS = r"""
 package fr.assistantia;
 import com.google.gson.*;
@@ -240,6 +274,9 @@ class AiSettingsMenuTests(unittest.TestCase):
                 ROOT / "mod/src/main/java/fr/assistantia/EcranChoixModele.java",
                 ROOT / "mod/src/main/java/fr/assistantia/CatalogueModeles.java",
                 ROOT / "mod/src/main/java/fr/assistantia/EcranProjets.java",
+                ROOT / "mod/src/main/java/fr/assistantia/EcranDiagnostic.java",
+                ROOT / "mod/src/main/java/fr/assistantia/FileDemandes.java",
+                ROOT / "tests/java/fr/assistantia/FileDemandesTest.java",
                 harness,
             ],
             classpath,
@@ -251,3 +288,9 @@ class AiSettingsMenuTests(unittest.TestCase):
         project_harness.write_text(PROJECT_HARNESS)
         self.compile([project_harness], classpath)
         self.run_java("fr.assistantia.ProjectScreenTest", classpath)
+
+        diagnostic_harness = self.directory / "DiagnosticScreenTest.java"
+        diagnostic_harness.write_text(DIAGNOSTIC_HARNESS)
+        self.compile([diagnostic_harness], classpath)
+        self.run_java("fr.assistantia.DiagnosticScreenTest", classpath)
+        self.run_java("fr.assistantia.FileDemandesTest", classpath)

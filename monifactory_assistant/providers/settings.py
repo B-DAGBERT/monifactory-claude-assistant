@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from monifactory_assistant import providers
+from monifactory_assistant.persistence import backup_json
 from monifactory_assistant.providers.catalog import ModelCatalog
 
 FIELDS = {"model_question", "effort_question", "model_plan", "effort_plan"}
@@ -145,6 +146,11 @@ class AISettings:
                 handle.write(raw)
                 handle.flush()
                 os.fsync(handle.fileno())
+            if self._read_files() != self.baseline:
+                raise ConfigurationChanged(
+                    "Configuration modifiée en dehors du jeu : relance l’assistant."
+                )
+            backup_json(path, self.baseline[-1])
             if self._read_files() != self.baseline:
                 raise ConfigurationChanged(
                     "Configuration modifiée en dehors du jeu : relance l’assistant."

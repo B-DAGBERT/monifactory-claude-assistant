@@ -11,6 +11,7 @@ from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.veins import find_veins
 from monifactory_assistant.game.world import machine_status
+from monifactory_assistant.persistence import atomic_json, load_json
 from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import (
     CHATTY,
@@ -27,15 +28,10 @@ class GameController:
     """Relevés du jeu, journal, annonces et actions sur le monde."""
 
     def load_places(self):
-        try:
-            self.places = json.loads(PLACES_FILE.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            self.places = {}
+        self.places = load_json(PLACES_FILE, {})
 
     def save_places(self):
-        PLACES_FILE.write_text(
-            json.dumps(self.places, ensure_ascii=False, indent=1), encoding="utf-8"
-        )
+        atomic_json(PLACES_FILE, self.places)
 
     def watch_game(self):
         try:

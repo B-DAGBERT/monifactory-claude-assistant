@@ -204,3 +204,25 @@ Les machines d’un même type apparaissent dans un groupe repliable avec leur q
 des états. Cliquer sur le groupe pour voir chaque emplacement et son propre état. Les tiers différents
 restent séparés ; une machine unique apparaît directement. La recherche et les filtres continuent
 de s’appliquer aux machines du groupe.
+
+## Diagnostic et demandes en attente
+
+**Y → Réglages → Diagnostic…** affiche la version du mod réellement chargée, la révision de
+l’assistant, l’âge du relevé d’inventaire, la synchronisation du backpack, l’état du serveur,
+l’arbre EMI, le scan des coffres, les transferts, la dernière demande et les erreurs relevées.
+Le panneau se rafraîchit automatiquement et possède une pagination. **Retour** ou Échap revient
+aux réglages. L’ouvrir ne lance aucune demande IA.
+
+Avec shared.31 et l’assistant à jour, chaque clic destiné à l’assistant est enregistré séparément.
+Une demande reste valable 45 secondes ; une action liée à un ancien projet ou une ancienne
+dimension est refusée. Les demandes de questions faites pendant une réponse sont refusées,
+pour éviter un second envoi involontaire. Une demande prise en compte n’implique pas que la
+réponse IA ou une fabrication soit terminée.
+
+Après une interruption pendant une action, le diagnostic indique que son résultat est incertain.
+Vérifier son effet dans le jeu avant de la demander de nouveau : l’assistant ne la rejoue pas
+seul. Les confirmations déjà enregistrées sont conservées après redémarrage.
+
+Les sauvegardes locales disposent d’une copie `.bak` de leur version précédente valide. Si le
+JSON principal devient illisible, cette copie est utilisée et la récupération apparaît dans le
+diagnostic. Les copies restent personnelles et sont exclues de Git.

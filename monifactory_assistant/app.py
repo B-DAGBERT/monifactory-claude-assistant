@@ -2,7 +2,6 @@
 
 import ctypes
 import faulthandler
-import json
 import os
 import queue
 import subprocess
@@ -22,12 +21,15 @@ from monifactory_assistant.application.projects import ProjectsController
 from monifactory_assistant.audio import Recorder, Speaker, Transcriber
 from monifactory_assistant.commands.auto_update import notice as update_notice
 from monifactory_assistant.commands.auto_update import notice_key as update_notice_key
+from monifactory_assistant.diagnostics import revision
 from monifactory_assistant.game.bridge import Bridge
 from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.recipes import RecipeIndex
+from monifactory_assistant.game.requests import CommandQueue
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.world import World
 from monifactory_assistant.paths import ROOT as HERE
+from monifactory_assistant.persistence import load_json
 from monifactory_assistant.platform.hooks import keyboard
 from monifactory_assistant.platform.support import SingleInstance
 from monifactory_assistant.providers.session import Conversation
@@ -57,17 +59,16 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.root.withdraw()
         self.events = queue.Queue()
         self.bridge = Bridge(MINECRAFT_DIR)
+        self.request_queue = CommandQueue(self.bridge.dir)
         self.recorder = Recorder()
         self.transcriber = Transcriber() if self.recorder.available else None
         self.speaker = Speaker()
         self.conversation = Conversation(self.bridge.dir)  # Codex gardé ouvert pour tes questions
-        try:
-            saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            saved = {}
+        saved = load_json(SETTINGS_FILE, {})
         self.settings = {
             key: bool(saved.get(key, default)) for key, (_, _, default) in SETTINGS.items()
         }
+        self.diagnostic_revision = revision()
         self.busy = False
         self.popup = self.entry = None
         self.overlay = self.overlay_text = None
@@ -97,10 +98,7 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         )  # fiche « à quoi ça sert » affichée, fiches en rédaction
         self.emi_search = RecipeChestSearch()
         self.search = None  # objets à mettre en surbrillance (« trouve-moi mes torches »)
-        try:
-            self.infos = json.loads(INFO_FILE.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            self.infos = {}
+        self.infos = load_json(INFO_FILE, {})
         self.world = World()  # ce que voit le script serveur
         self.client_storage = Storage([])
         # mod Minecraft : écran de l'assistant, surbrillance, faisceaux
@@ -123,6 +121,13 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.forgotten_keys = set()  # coffres que l'on vient de demander au jeu d'oublier
         self.load_plan()
         self.load_places()
+        # A committed acknowledgement remains visible even if the UI missed the last frame.
+        for row in sorted(self.request_queue.rows.values(), key=lambda item: item["n"]):
+            if "question" in row:
+                self.question_ack = row["question"]
+            if "projet" in row:
+                self.project_feedback = row["projet"]
+                self.project_reply_n = row["n"]
 
         self.discussion_viewer = None
         try:

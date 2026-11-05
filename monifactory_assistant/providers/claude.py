@@ -15,6 +15,7 @@ from collections import deque
 from pathlib import Path
 
 from monifactory_assistant.config import HERE, write_json
+from monifactory_assistant.persistence import load_json
 from monifactory_assistant.providers import find_claude
 
 TOOLS = "Read,Grep,Glob,WebSearch,WebFetch"
@@ -186,7 +187,7 @@ class Conversation:
         self.path = HERE / "session_claude.json"
         self.session_id = None
         try:
-            saved = json.loads(self.path.read_text(encoding="utf-8"))
+            saved = load_json(self.path, {})
             if saved.get("data_dir") == str(self.data_dir.resolve()):
                 self.session_id = saved.get("session_id")
         except (ValueError, OSError, AttributeError):

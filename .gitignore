@@ -44,3 +44,7 @@ session_claude.json.tmp
 # Development formatters
 .ruff_cache/
 node_modules/
+
+# Copies locales de récupération (peuvent contenir des données personnelles)
+/*.json.bak
+/.*.json-*.tmp

@@ -145,7 +145,7 @@ public final class RetraitCoffreTest {
         menu.slots.get(0).item = new ItemStack("tin", 970);
         menu.slots.get(1).item = new ItemStack("tin", 30);
         menu.carried = new ItemStack("tin", 34); // Paquet intermédiaire reçu avec retard.
-        for (int i = 0; i < 15; i++) tick();
+        for (int i = 0; i < 40; i++) tick();
         assert RetraitCoffre.occupe() && mc.gameMode.clicks == clicks
                 : "attendre sans renvoyer ni doubler les clics";
         menu.slots.get(0).item = sourceConfirmee;
