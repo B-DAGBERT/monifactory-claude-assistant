@@ -42,7 +42,10 @@ identiques à la référence historique et sont exclus du formatage automatique.
 Les commandes Gradle directes nécessitent `JAVA_HOME` pointant vers un **JDK 17** ; elles ne
 lisent pas `assistant.local.json`. `python codex_setup.py build` résout, lui, le réglage `java_home`
 et les emplacements détectés. Vérifier `java -version` si Gradle refuse de démarrer.
-La CI exécute ces vérifications sur `main` et les pull requests qui la ciblent.
+Les workflows GitHub Actions ont été supprimés pour préserver le quota. Ces vérifications
+se lancent localement avant de publier sur `main` ; les tests et les outils de compilation
+restent disponibles. La mise à jour de l’assistant depuis `main` fonctionne indépendamment
+de GitHub Actions.
 
 Les scénarios de mise à jour utilisent de vrais dépôts Git temporaires. Les tests des moteurs
 utilisent des CLI simulés : aucun compte IA ni appel facturé n’est nécessaire.
