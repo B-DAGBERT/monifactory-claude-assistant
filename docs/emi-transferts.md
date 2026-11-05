@@ -3,7 +3,7 @@
 ## Le parcours
 
 1. Choisir le craft et ses branches dans **Recipe Tree**, ou importer **Objectif EMI**.
-2. Activer **Scanner coffres**, à droite de Recipe Tree.
+2. Activer **Coffres**, à droite de Recipe Tree.
 3. Ouvrir un coffre entouré en cyan : **Prendre** retire la quantité de l’icône choisie ; **Tout** retire les ingrédients du scan présents ici.
 4. Aller dans une machine entourée en rouge. Choisir le produit, survoler **Envoyer** pour vérifier le lot puis cliquer.
 5. Récupérer le résultat soi-même. Les cibles finales reçues restent acquises après rangement.
@@ -26,7 +26,7 @@ Le client demande périodiquement le contenu via le protocole natif du mod. Le m
 
 Les objets du sac comptent dans **l’arbre natif EMI et sa liste latérale**, même après fermeture, ainsi que pour l’avancement et les retraits dans les coffres. L’arbre se rafraîchit à la réception du relevé ; ses calculs ne modifient pas les sources de transfert. Les cases réelles de la grille de craft restent comptées, et le curseur ainsi qu’un sac ouvert ne sont comptés qu’une fois. Pour un envoi machine, **À sortir du sac** signifie qu’il faut d’abord déplacer les ingrédients dans les poches. Le remplissage natif d’EMI et le bouton **Envoyer** ne prélèvent pas automatiquement dans un sac fermé. Un sac posé au sol reste un stockage du monde, et non un inventaire personnel.
 
-Le bouton **Sac (N)** à côté du suivi ouvre une liste en lecture seule : noms, quantités, recherche
+Le bouton **Sac N** à côté du suivi ouvre une liste en lecture seule : noms, quantités, recherche
 et fond bleu pour les objets déjà portés. La liste conserve les identités NBT distinctes et n’affiche
 aucun ancien stock pendant la synchronisation. Elle n’extrait pas d’ingrédient et ne modifie pas l’arbre.
 Échap et **Retour à EMI** retrouvent l’écran précédent.
@@ -47,7 +47,7 @@ Pendant un envoi, la progression est affichée et les doubles clics sont ignoré
 
 ## Suivi et reprise
 
-Le bouton **Suivi** est placé à côté de **Scanner coffres**, en bas d’EMI. Dans le panneau d’une machine, **En cours de craft** permet directement de déclarer le lot sélectionné. Chaque ligne affiche le produit, le nombre de fabrications et son état :
+Le bouton **Suivi** est placé à côté de **Coffres**, en bas d’EMI. Dans le panneau d’une machine, **En cours de craft** permet directement de déclarer le lot sélectionné. Chaque ligne affiche le produit, le nombre de fabrications et son état :
 
 | État             | Signification                                                                                                                                                 |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -93,3 +93,11 @@ Pour cette version, tester aussi :
 Ces fonctions utilisent le client, les recettes locales et les contenus mémorisés. Aucun appel IA n’est nécessaire pour calculer les retraits ou envoyer un lot.
 
 Les allocations machine sont conservées tant que l’arbre, les stocks et les réservations ne changent pas. Les compatibilités machine sont mises en cache et invalidées régulièrement ou par **Recalculer**.
+
+## Résultats récupérés puis déplacés
+
+Les réceptions réelles d’un lot restent acquises après pose ou rangement. La quantité encore
+attendue diminue au retrait du coffre jaune ; un déplacement ultérieur ne recrée pas le besoin.
+EMI et le suivi reçoivent uniquement le complément hors des poches, après déduction des cibles
+finales déjà comptées. Le stock des remplisseurs et d’Envoyer reste physique.
+Annuler un surplus libère ses réservations sans effacer la partie déjà récupérée.

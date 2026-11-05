@@ -375,6 +375,43 @@ public final class MachinesEmi {
                 .toList();
     }
 
+    /** Historique acquis du craft courant, sans doublon avec les poches ni les cibles finales. */
+    public static List<PlanRetrait.Stock<EmiStack>> creditsAcquis(
+            List<PlanRetrait.Stock<EmiStack>> physiques,
+            List<PlanRetrait.Stock<EmiStack>> dejaCredites) {
+        var mc = Minecraft.getInstance();
+        if (actif() == null
+                || actif() != arbre
+                || mc.level == null
+                || connexion != mc.getConnection()
+                || !dimension.equals(mc.level.dimension().location().toString())) return List.of();
+        var acquis =
+                lots.stream()
+                        .flatMap(l -> l.suivi().obtenus().stream())
+                        .filter(s -> !s.objet().getItemStack().isEmpty())
+                        .toList();
+        return fr.assistantia.ReceptionLots.credits(
+                acquis, physiques, dejaCredites, ComparaisonEmi::meme);
+    }
+
+    /** Acquis hors des poches partagés avec le scan, sans les remettre dans les lots attendus. */
+    public static List<PlanRetrait.Stock<ItemStack>> creditsObjets() {
+        var finaux = CycleArbreEmi.credits();
+        var deja =
+                finaux.stream()
+                        .map(
+                                c ->
+                                        new PlanRetrait.Stock<>(
+                                                EmiStack.of(c.objet()), c.quantite(), true))
+                        .toList();
+        var resultat = new ArrayList<>(finaux);
+        for (var credit : creditsAcquis(inventaire(), deja))
+            resultat.add(
+                    new PlanRetrait.Stock<>(
+                            credit.objet().getItemStack(), credit.quantite(), true));
+        return List.copyOf(resultat);
+    }
+
     /** Réservations temporaires, distinctes de l'avancement réel et des acquisitions du scan. */
     public static java.util.Map<String, Integer> reservationsObjets() {
         var mc = Minecraft.getInstance();
@@ -647,15 +684,20 @@ public final class MachinesEmi {
                 signature = key.toString();
             }
             var stock = inventaire();
-            for (var credit : CycleArbreEmi.credits())
-                stock.add(
-                        new PlanRetrait.Stock<>(
-                                EmiStack.of(credit.objet()), credit.quantite(), true));
+            var finaux =
+                    CycleArbreEmi.credits().stream()
+                            .map(
+                                    c ->
+                                            new PlanRetrait.Stock<>(
+                                                    EmiStack.of(c.objet()), c.quantite(), true))
+                            .toList();
+            stock.addAll(creditsAcquis(stock, finaux));
+            stock.addAll(finaux);
             String cle = signature + "|" + cleStock(stock) + "|" + lotsVersion;
             if (cle.equals(calculPrecedent)) return;
             calculPrecedent = cle;
-            // Seuls les résultats encore en attente sont réservés. Les reçus sont déjà dans le
-            // stock réel.
+            // Les réceptions sorties des poches gardent un crédit de travail accompli.
+            // Les quantités restantes seules restent réservées et recherchées en jaune.
             for (var lot : lots) stock.addAll(lot.suivi().restants());
             toutes = PlanMachines.calculer(root, batches, stock);
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();

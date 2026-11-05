@@ -33,16 +33,9 @@ public final class InventaireArbreEmi {
         natif = ORIGINES.getOrDefault(natif, natif);
         var mc = Minecraft.getInstance();
         if (mc.player == null || !InventaireJoueur.disponible()) return natif;
-        var reservations = MachinesEmi.reservationsArbre();
+        var resultat = composer(InventaireJoueur.piles(), grilles());
+        var reservations = stocksVirtuels(resultat);
         if (InventaireJoueur.sacs().isEmpty() && reservations.isEmpty()) return natif;
-        // Reconstruction depuis la vue commune : un backpack ouvert ne doit pas être ajouté
-        // une deuxième fois aux cases que son handler EMI a déjà comptées.
-        var grilles = new ArrayList<ItemStack>();
-        Set<CraftingContainer> vues = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (var slot : mc.player.containerMenu.slots)
-            if (slot.container instanceof CraftingContainer grille && vues.add(grille))
-                for (int i = 0; i < grille.getContainerSize(); i++) grilles.add(grille.getItem(i));
-        var resultat = composer(InventaireJoueur.piles(), grilles);
         // Conserver les sources fluides qu'un handler natif sait déjà exposer à l'arbre.
         for (var pile : natif.inventory.values())
             if (pile.getItemStack().isEmpty()) {
@@ -57,6 +50,38 @@ public final class InventaireArbreEmi {
         }
         ORIGINES.put(resultat, natif);
         return resultat;
+    }
+
+    private static List<ItemStack> grilles() {
+        var grilles = new ArrayList<ItemStack>();
+        Set<CraftingContainer> vues = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (var slot : Minecraft.getInstance().player.containerMenu.slots)
+            if (slot.container instanceof CraftingContainer grille && vues.add(grille))
+                for (int i = 0; i < grille.getContainerSize(); i++) grilles.add(grille.getItem(i));
+        return grilles;
+    }
+
+    private static List<PlanRetrait.Stock<EmiStack>> stocksVirtuels(EmiPlayerInventory personnels) {
+        var physiques =
+                personnels.inventory.values().stream()
+                        .map(
+                                s ->
+                                        new PlanRetrait.Stock<>(
+                                                s.copy(),
+                                                (int) Math.min(1_000_000L, s.getAmount()),
+                                                true))
+                        .toList();
+        var finaux =
+                CycleArbreEmi.credits().stream()
+                        .map(
+                                c ->
+                                        new PlanRetrait.Stock<>(
+                                                EmiStack.of(c.objet()), c.quantite(), true))
+                        .toList();
+        var resultat = new ArrayList<>(MachinesEmi.reservationsArbre());
+        resultat.addAll(finaux);
+        resultat.addAll(MachinesEmi.creditsAcquis(physiques, finaux));
+        return List.copyOf(resultat);
     }
 
     public static EmiPlayerInventory composer(List<ItemStack> personnels, List<ItemStack> grilles) {
@@ -87,21 +112,27 @@ public final class InventaireArbreEmi {
                 return;
             }
             if (!InventaireJoueur.disponible()) return;
-            var reservations = MachinesEmi.reservationsArbre();
+            var personnels = composer(InventaireJoueur.piles(), grilles());
+            var reservations = stocksVirtuels(personnels);
             var physiques =
-                    InventaireJoueur.piles().stream()
-                            .map(s -> new PlanRetrait.Stock<>(EmiStack.of(s), s.getCount(), true))
+                    personnels.inventory.values().stream()
+                            .map(
+                                    s ->
+                                            new PlanRetrait.Stock<>(
+                                                    s.copy(),
+                                                    (int) Math.min(1_000_000L, s.getAmount()),
+                                                    true))
                             .toList();
             boolean plisChanges = PLIS.actualiser(arbre, physiques, reservations);
             String cle =
-                    InventaireJoueur.piles().stream()
+                    physiques.stream()
                                     .map(
                                             s ->
-                                                    EmiStack.of(s).getId()
+                                                    s.objet().getId()
                                                             + "|"
-                                                            + s.getTag()
+                                                            + s.objet().getNbt()
                                                             + "|"
-                                                            + s.getCount())
+                                                            + s.quantite())
                                     .sorted()
                                     .toList()
                                     .toString()

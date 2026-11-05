@@ -50,9 +50,14 @@ public class CoffresArbreEmi {public static Object arbre=new Object();public sta
 public class ComparaisonEmi {public static dev.emi.emi.api.stack.EmiStack pourInventaire(dev.emi.emi.api.stack.EmiStack s){return s.copy();}
  public static boolean meme(dev.emi.emi.api.stack.EmiStack a,dev.emi.emi.api.stack.EmiStack b){return a.equals(b);}}
 """,
+    "fr.assistantia.compat.emi.CycleArbreEmi": """
+public class CycleArbreEmi {public static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> acquis=java.util.List.of();
+ public static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> credits(){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():acquis;}}
+""",
     "fr.assistantia.compat.emi.MachinesEmi": """
-public class MachinesEmi {public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservations=java.util.List.of();
- public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservationsArbre(){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():reservations;}}
+public class MachinesEmi {public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservations=java.util.List.of(),obtenus=java.util.List.of();
+ public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservationsArbre(){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():reservations;}
+ public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> creditsAcquis(java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> p,java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> c){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():fr.assistantia.ReceptionLots.credits(obtenus,p,c,ComparaisonEmi::meme);}}
 """,
     "dev.emi.emi.api.stack.Comparison": """
 public class Comparison {public static final Comparison DEFAULT_COMPARISON=new Comparison();private static final Comparison NBT=new Comparison();
@@ -122,6 +127,8 @@ class EmiBackpackTreeTests(unittest.TestCase):
                 str(ROOT / name)
                 for name in (
                     "mod/src/main/java/fr/assistantia/PlanRetrait.java",
+                    "mod/src/main/java/fr/assistantia/LotFabrication.java",
+                    "mod/src/main/java/fr/assistantia/ReceptionLots.java",
                     "mod/src/main/java/fr/assistantia/PlanMachines.java",
                     "mod/src/main/java/fr/assistantia/compat/emi/PlisFabricationEmi.java",
                     "mod/src/main/java/fr/assistantia/compat/emi/InventaireArbreEmi.java",

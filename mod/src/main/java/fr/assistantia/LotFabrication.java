@@ -58,6 +58,15 @@ public final class LotFabrication<T> {
         return true;
     }
 
+    /** Réceptions réelles conservées même après déplacement, pose ou annulation du surplus. */
+    public List<PlanRetrait.Stock<T>> obtenus() {
+        List<PlanRetrait.Stock<T>> acquis = new ArrayList<>();
+        for (int i = 0; i < recus.length; i++)
+            if (recus[i] > 0)
+                acquis.add(new PlanRetrait.Stock<>(attendu.get(i).objet(), recus[i], true));
+        return List.copyOf(acquis);
+    }
+
     public List<PlanRetrait.Stock<T>> restants() {
         if (annule) return List.of();
         List<PlanRetrait.Stock<T>> reste = new ArrayList<>();

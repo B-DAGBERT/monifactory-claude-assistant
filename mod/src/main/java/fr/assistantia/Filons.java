@@ -825,6 +825,7 @@ public final class Filons {
             }
             var style = AffichageFilons.style();
             for (boolean visible : new boolean[] {false, true}) {
+                if (!visible && style.surface()) continue;
                 var type = visible ? Lignes.FILONS_VISIBLES : Lignes.FILONS_CACHES;
                 VertexConsumer lignes = buffers.getBuffer(type);
                 for (var b : contours) {

@@ -277,7 +277,7 @@ de nettoyage précédentes. Les tests Java couvrent lot envoyé/complet, quantit
 ancien arbre, retrait sur plusieurs coffres, réception partielle, sac, annulation et absence de double
 attribution entre lots identiques. Les interactions finales sont à confirmer dans le jeu réel.
 
-## Filons et repérage du backpack (shared.33)
+## Filons et repérage du backpack (shared.33 et shared.34)
 
 `StyleFilons` porte le budget de contours (1 à 4 096, défaut 192) et l’intensité. `AffichageFilons`
 les enregistre dans `config/assistantia-filons-visuel.json` par remplacement atomique quand le système
@@ -286,18 +286,45 @@ ne modifie pas `FilonMemoire` : tri par distance et filtrage précèdent la limi
 
 `Filons` utilise un buffer dédié, des lignes fines et deux passes : discrète sans profondeur, puis
 plus lisible avec profondeur. Le bloc visé est exclu. Le rendu ne vide pas le buffer global du jeu.
-`EcranAffichageFilons` conserve sa saisie au redimensionnement. Les actions occasionnelles ouvrent
-`EcranOutilsFilons` ; elles ne rajoutent plus une troisième rangée à la liste.
+`OngletFilons` expose deux boutons cycliques : Surface/Total et budget de contours. Surface ne
+lance que la passe avec profondeur ; Total ajoute une passe traversante atténuée. Les anciennes
+configurations sans champ `surface` démarrent en Surface. Le budget et l’intensité sont conservés
+lors du changement de mode. Les anciens écrans d’affichage et d’entretien ont été retirés,
+ainsi que les boutons globaux de masquage, de vidage et d’arrêt de scan.
 
 `BarreDefilement` centralise le calcul des pixels, le curseur, la molette et le glisser. Les réglages
 conservent leurs boutons fixes et limitent le rendu et les zones cliquables à la fenêtre visible.
 `EcranSac` utilise la même barre et une vue synchronisée des sacs portés. `ListeSac` regroupe les
 quantités par objet et NBT, sans modifier les piles sources. Les quantités non synchronisées sont
 masquées. La recherche et le regroupement sont mis en cache entre deux rafraîchissements.
-`BarreOutilsEmi` évite le chevauchement de Scanner coffres, Suivi et Sac lorsque la place diminue.
+`BarreOutilsEmi` utilise les largeurs mesurées avec la police du jeu. Les boutons ne sont ni tassés
+ni empilés sur les contrôles voisins. Si la rangée complète manque de place, un accès **Aide…**
+ouvre le menu des trois actions. `BoutonOutilEmi` conserve le clic, le focus clavier, les infobulles
+et la narration natifs avec un rendu sobre et un soulignement d’état. Toutes les zones visibles,
+y compris le bouton compact, sont exclues d’EMI et interceptent le clic avant sa liste d’objets.
 
-`test_mining_ui.py` couvre les limites, l’intensité, le défilement, le repli des boutons, les grosses
-piles, les identités NBT, le filtre, le redimensionnement, le retour au parent, le rechargement des
-réglages et l’échec d’enregistrement. Les scénarios de `FilonMemoireTest` vérifient aussi que le
+`test_mining_ui.py` définit les scénarios des limites, modes Surface/Total, budgets cycliques,
+défilement, repli des boutons EMI, grosses piles, identités NBT, filtre, retour au parent,
+rechargement des réglages et échec d’enregistrement. Les scénarios de `FilonMemoireTest` vérifient aussi que le
 budget d’affichage conserve tous les blocs mémorisés. Ces tests sans GPU ne remplacent pas une
 vérification visuelle après redémarrage de Minecraft.
+
+## Acquis après pose ou rangement (shared.34)
+
+`LotFabrication.obtenus` expose seulement les quantités effectivement reçues. `ReceptionLots.credits`
+déduit les stocks physiques et les crédits finaux déjà attribués avant de proposer un complément
+virtuel. `MachinesEmi` utilise ce complément dans sa planification et l’expose au scan par le pont
+optionnel `Emi.creditsFabrication`. Les réservations des résultats encore attendus restent séparées :
+un acquis ne doit pas être recherché une deuxième fois comme sortie de machine.
+
+`InventaireArbreEmi` complète également les calculs natifs et les favoris avec ces acquis, les crédits
+finaux et les réservations. Les vraies grilles sont dédupliquées avant calcul, le cache inclut ces
+quantités et les plis sont actualisés sur leur évolution. Aucun crédit n’est ajouté aux sources
+physiques des remplisseurs ou aux inventaires du jeu. L’historique des lots conserve sa durée de vie
+existante ; il n’est pas exporté comme nouvelle preuve de fabrication.
+
+Les scénarios de `ReceptionLotsTest` et `InventaireArbreEmiTest` couvrent réception partielle,
+déplacement hors inventaire, retour dans les poches, chevauchement des crédits finaux et acquis,
+annulation du surplus et isolation des sources de transfert. La validation shared.34 passe les **280 tests** de la suite complète, le formatage Python et Java,
+le contrôle Markdown et `checkJavaFormat build`. Les tests sans GPU ne remplacent pas
+la vérification visuelle dans Minecraft après redémarrage.

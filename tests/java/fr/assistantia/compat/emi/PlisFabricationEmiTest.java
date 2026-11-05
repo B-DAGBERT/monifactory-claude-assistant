@@ -20,7 +20,7 @@ public final class PlisFabricationEmiTest {
         public FoldState state = FoldState.EXPANDED;
         public List<Node> children;
 
-        Node(String id, long n, Node... enfants) {
+        public Node(String id, long n, Node... enfants) {
             ingredient = EmiStack.of(new ItemStack(id, 1));
             amount = n;
             children = List.of(enfants);
@@ -31,7 +31,7 @@ public final class PlisFabricationEmiTest {
         public Node goal;
         public long batches = 1;
 
-        Tree(Node n) {
+        public Tree(Node n) {
             goal = n;
         }
     }

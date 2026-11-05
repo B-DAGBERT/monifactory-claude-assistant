@@ -347,8 +347,8 @@ public final class Emi {
         if (!pret()) return List.of();
         try {
             return (List<PlanRetrait.Stock<ItemStack>>)
-                    Class.forName("fr.assistantia.compat.emi.CycleArbreEmi")
-                            .getMethod("credits")
+                    Class.forName("fr.assistantia.compat.emi.MachinesEmi")
+                            .getMethod("creditsObjets")
                             .invoke(null);
         } catch (ReflectiveOperationException | LinkageError e) {
             return List.of();

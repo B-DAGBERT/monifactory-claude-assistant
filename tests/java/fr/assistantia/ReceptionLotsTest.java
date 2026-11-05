@@ -36,6 +36,37 @@ public final class ReceptionLotsTest {
         receptions.actualiser(List.of(), List.of());
         var retours = receptions.actualiser(List.of(s("plate", 200)), List.of());
         assert !ReceptionLots.repartir(retours, lots).change();
+        // Une réception ne redevient pas un besoin quand le résultat est posé ou rangé.
+        var acquis = new LotFabrication<>(List.of(s("machine", 200)), String::equals);
+        acquis.recevoir(List.of(s("machine", 64)));
+        assert acquis.restants().equals(List.of(s("machine", 136)));
+        assert acquis.obtenus().equals(List.of(s("machine", 64)));
+        assert ReceptionLots.credits(
+                        acquis.obtenus(), List.of(s("machine", 64)), List.of(), String::equals)
+                .isEmpty();
+        assert ReceptionLots.credits(acquis.obtenus(), List.of(), List.of(), String::equals)
+                .equals(List.of(s("machine", 64)));
+        assert ReceptionLots.credits(
+                                acquis.obtenus(),
+                                List.of(s("machine", 20)),
+                                List.of(s("machine", 30)),
+                                String::equals)
+                        .equals(List.of(s("machine", 14)))
+                : "cibles finales et poches ne sont pas ajoutées deux fois";
+        assert ReceptionLots.credits(
+                        acquis.obtenus(), List.of(), List.of(s("machine", 64)), String::equals)
+                .isEmpty();
+        assert acquis.totalRecu() == 64 && acquis.restants().get(0).quantite() == 136
+                : "le crédit EMI n'est pas une nouvelle réception";
+        acquis.annuler();
+        assert acquis.restants().isEmpty() && acquis.obtenus().equals(List.of(s("machine", 64)))
+                : "annuler le surplus ne retire pas les objets déjà reçus";
+        assert ReceptionLots.credits(
+                        List.of(s("a", 2), s("a", 3), s("b", 4)),
+                        List.of(s("a", 1)),
+                        List.of(s("b", 2)),
+                        String::equals)
+                .equals(List.of(s("a", 4), s("b", 2)));
         // « Tout le lot » agrandit la même ligne, sans perdre la réception du premier envoi.
         var agrandi = new LotFabrication<>(List.of(s("plate", 64)), String::equals);
         agrandi.recevoir(List.of(s("plate", 16)));

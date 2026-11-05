@@ -21,7 +21,7 @@ Le compte IA se choisit sur chaque poste ; les conversations, coffres et objecti
 | Avancer étape par étape                   | **Y → Objectif** ; **Mes projets ▾** pour ouvrir, créer, renommer ou supprimer.                        |
 | Mettre un objectif en attente             | **Objectif / Projet → Mettre en pause**. Le statut apparaît dans les deux onglets.                     |
 | Préparer le craft complet                 | **Objectif EMI**, puis choisir les branches de **Recipe Tree**.                                        |
-| Chercher les ingrédients                  | **Scanner coffres**, à droite de Recipe Tree. Un second clic arrête le scan.                           |
+| Chercher les ingrédients                  | **Coffres**, à droite de Recipe Tree. Un second clic arrête le scan.                                   |
 | Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.                                 |
 | Utiliser une machine                      | Contour rouge, puis **Envoyer** dans sa fenêtre. Récupérer soi-même les sorties.                       |
 | Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                                             |
@@ -33,8 +33,9 @@ Le compte IA se choisit sur chaque poste ; les conversations, coffres et objecti
 
 Le contenu des **Sophisticated Backpacks portés** compte dans les besoins, EMI et l’avancement.
 Les boutons de transfert utilisent les cases accessibles : sortir les ingrédients du sac pour les envoyer.
-**Filons → Affichage…** règle le nombre de blocs surlignés et leur intensité, sans toucher aux relevés.
-Dans EMI, **Sac (N)** indique les objets déjà sur toi dans le backpack et permet de les retrouver.
+**Filons → Vue : Surface / Total** et **Blocs : …** règlent directement la visibilité et le nombre
+de contours, sans toucher aux relevés.
+Dans EMI, **Sac N** indique les objets déjà sur toi dans le backpack et permet de les retrouver.
 
 Le scan, les retraits, le suivi des machines et les filons ne font **aucun appel IA**.
 

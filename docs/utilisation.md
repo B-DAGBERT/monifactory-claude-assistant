@@ -47,7 +47,14 @@ Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur u
 
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 
-Le bouton **Sac (N)**, près de **Scanner coffres** et **Suivi** dans EMI, ouvre la liste des
+La barre près de Recipe Tree propose **Coffres OFF / ON**, **Suivi** et **Sac N**.
+Le soulignement vert signale le scan actif, le bleu les objets présents dans le sac.
+Les boutons restent sur une seule ligne, avec une largeur calculée sur leur texte.
+Si la place manque à côté de la recherche EMI, **Aide…** ouvre les trois actions.
+Échap ou **Retour à EMI** retrouve l’écran précédent. Les infobulles précisent l’action
+et la raison d’un bouton désactivé.
+
+Le bouton **Sac N**, près de **Coffres** et **Suivi** dans EMI, ouvre la liste des
 objets présents dans tes backpacks portés, avec leur quantité et une recherche par nom.
 Le fond bleu rappelle qu’ils sont déjà sur toi. `N` est le nombre de types d’objets ; les grandes
 valeurs sont abrégées. **Retour à EMI** ou Échap ramène au même écran.
@@ -57,8 +64,8 @@ Cette option concerne le **comptage**. **Envoyer** continue à utiliser les case
 
 ## Coffres depuis l’arbre EMI
 
-Choisir l’objectif et ses recettes dans **Recipe Tree**, puis cliquer sur **Scanner coffres**,
-en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton devient **Arrêter scan** :
+Choisir l’objectif et ses recettes dans **Recipe Tree**, puis cliquer sur **Coffres**,
+en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton indique **Coffres ON** :
 un second clic désactive le repérage. Il remplace l’ancien bouton sous chaque recette.
 
 La recherche suit **tout l’arbre choisi**, avec les composants intermédiaires,
@@ -114,7 +121,7 @@ Dans une machine compatible, le panneau de l’assistant, au même style que cel
 - **En cours de craft**, directement dans le panneau machine, réserve les résultats du lot déjà lancé.
   EMI masque les ingrédients des branches entièrement couvertes et garde le produit attendu.
   Les résultats restent à récupérer : cette réservation ne valide pas l’objectif.
-- **Suivi**, près de **Scanner coffres**, conserve l’accès aux étapes, à **Recette** et à **Annuler le lot**.
+- **Suivi**, près de **Coffres**, conserve l’accès aux étapes, à **Recette** et à **Annuler le lot**.
   Récupérer soi-même le résultat dans la machine.
 
 Les fluides proviennent uniquement des seaux et cellules de l’inventaire. Les contenants sont
@@ -129,14 +136,14 @@ Les fabrications envoyées restent réservées dans ce suivi pour éviter de les
 avant la récupération des sorties. Modifier l’arbre actif conserve ces réservations ; arrêter l’arbre les efface.
 Les machines et cuves sans entrées accessibles dans leur interface ne permettent pas cet envoi.
 
-À côté de **Scanner coffres**, **Suivi** affiche les états **À collecter**, **À envoyer / À fabriquer**, **En machine**, **À récupérer** et **Terminé**. **En cours de craft** réserve le nombre de fabrications déjà lancées manuellement. Leurs résultats attendus et leurs ingrédients cessent d’être demandés par le suivi et le scan. **Recalculer** relit les besoins sans effacer l’avancement final ni les lots en attente. **Annuler le lot** libère sa réservation sans retirer les objets de la machine. Le fonctionnement et les limites sont détaillés dans [le guide EMI](emi-transferts.md).
+À côté de **Coffres**, **Suivi** affiche les états **À collecter**, **À envoyer / À fabriquer**, **En machine**, **À récupérer** et **Terminé**. **En cours de craft** réserve le nombre de fabrications déjà lancées manuellement. Leurs résultats attendus et leurs ingrédients cessent d’être demandés par le suivi et le scan. **Recalculer** relit les besoins sans effacer l’avancement final ni les lots en attente. **Annuler le lot** libère sa réservation sans retirer les objets de la machine. Le fonctionnement et les limites sont détaillés dans [le guide EMI](emi-transferts.md).
 
 Les composants transformés ne laissent plus un double crédit de matières premières. Les outils partagés sont prévus une seule fois, et les allers-retours du même résultat dans un coffre ne font plus progresser artificiellement la cible.
 
 ## Récupérer les ingrédients depuis un coffre
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
-**Collecte** suit **les ingrédients du scan actif** : activer **Scanner coffres** pour utiliser
+**Collecte** suit **les ingrédients du scan actif** : activer **Coffres** pour utiliser
 **Prendre / Tout**. Cela fonctionne aussi sans objectif dans l’assistant. Un arbre simplement
 consulté, un objectif seul ou un scan arrêté ne proposent aucun transfert. Le sélecteur montre les objets manquants disponibles dans ce
 coffre, avec la quantité à prendre sur chaque icône ; ses flèches (ou la molette) parcourent les pages.
@@ -168,7 +175,7 @@ Depuis une recette EMI ouverte avec un coffre, la flèche **↓** permet aussi d
 pour le scan actif**. Il n’y a plus de mode « une fabrication » dans les coffres.
 Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habituel ; il se coupe
 dans **Y → Réglages → Remplissage de l’établi**.
-Le bouton **Scanner coffres** prépare le repérage et la liste de retrait, sans déplacer d’objet.
+Le bouton **Coffres** prépare le repérage et la liste de retrait, sans déplacer d’objet.
 
 L’onglet **Objectif** affiche l’objectif, son avancement, les cibles finales et les machines
 nécessaires. Les détails de fabrication sont dans **Objectif EMI**.
@@ -187,18 +194,22 @@ n’est nécessaire.
 ## Filons : scan, marquage et téléportation
 
 Sélectionner un filon puis **Scanner** : le scan vise son centre GregTech, même si tu es
-à la surface. **Arrêter** apparaît pendant le scan. Le scan autour du joueur a été retiré.
+à la surface. Le pourcentage apparaît dans le statut du bas et sur le bouton du filon pendant
+son scan. Le scan ponctuel s’arrête à la fin de son parcours.
 
-Les deux lignes en haut regroupent **recherche / tri**, puis **Épuisés masqués / Affichage… / Options…**.
-**Options…** contient **Tout masquer** et **Vider les relevés**. Le bouton **Arrêter** reste accessible
-pendant un scan ; sur une petite fenêtre, il remplace temporairement Options.
+Les deux lignes en haut regroupent **recherche / tri**, puis **Épuisés masqués / Vue / Blocs**.
+Les boutons **Vue** et **Blocs** changent de valeur à chaque clic, avec sauvegarde locale immédiate :
 
-Dans **Affichage…**, choisir entre **1 et 4 096 blocs surlignés**, ou utiliser les raccourcis
-**64 / 192 / 512 / 1 024**, puis **Appliquer**. Le défaut est **192 blocs**, en mode **Discret**.
-Les blocs les plus proches sont prioritaires. Les contours sont fins, atténués avec la distance,
-et très légers à travers la roche. Le bloc visé garde seulement son contour de minage normal.
-L’intensité peut passer à **Normal** ou **Soutenu**. Les choix sont mémorisés localement ;
-Échap ou Retour sans appliquer abandonne les modifications.
+- **Vue : Surface / Total** : Surface montre les contours visibles ; Total ajoute les minerais
+  derrière la roche. Le bloc visé garde son contour de minage normal.
+- **Blocs : 64 / 192 / 512 / 1 024 / 4 096** : plafond de blocs surlignés simultanément,
+  en donnant la priorité aux plus proches. Le défaut est **192**.
+
+Les modes concernent les blocs déjà relevés, encore présents et chargés dans un rayon de 64 blocs.
+Ils respectent la sélection des types de minerai. L’intensité déjà enregistrée est conservée.
+Le mode Surface est choisi par défaut pour les anciennes configurations. Il n’y a plus de
+sous-menu Affichage/Options, de bouton global Tout masquer, de vidage manuel des relevés ni
+de bouton Arrêter le scan. Chaque filon garde son propre bouton Afficher/Masquer.
 
 Ce plafond concerne seulement l’affichage simultané : il ne réduit ni le scan ni les données enregistrées.
 
@@ -262,7 +273,7 @@ le lot réellement envoyé. Pour une fabrication lancée à la main, saisir le n
 ou utiliser **Tout le lot** avant de confirmer.
 
 Les quantités en cours servent à masquer leurs ingrédients dans EMI. Elles restent des résultats
-à récupérer pour **Scanner coffres** : avec ce scan activé, un coffre utile contenant un résultat
+à récupérer pour **Coffres** : avec ce scan activé, un coffre utile contenant un résultat
 attendu prend un **contour jaune**. Les autres coffres utiles gardent leur contour cyan. Ouvrir
 le coffre puis utiliser **Prendre / Tout**, ou récupérer ses résultats normalement.
 
@@ -271,3 +282,10 @@ les gains réels de l’inventaire, backpack compris. Un lot partiellement récu
 le reste ; il devient **Terminé** lorsque toute sa quantité a été reçue. Observer un coffre ne
 valide aucune production. Une pause de l’objectif arrête le repérage et garde les lots tant que le
 monde et la connexion restent les mêmes ; la reprise reste explicite.
+
+Un résultat réellement récupéré reste **acquis pour le craft en cours**, même après l’avoir posé
+ou rangé ailleurs. Exemple : 64 récupérés sur 200 laissent **136 à récupérer** ; déplacer ensuite
+ces 64 objets ne relance pas leur fabrication. EMI, le suivi machine et la recherche partagent
+ce crédit. Les objets encore dans les poches ou le backpack ne sont jamais ajoutés deux fois.
+Les crédits servent au calcul du travail déjà fait ; ils ne deviennent pas des cases transférables
+ni des objets disponibles pour Envoyer. Ils suivent la durée de vie du craft et de ses lots.

@@ -16,7 +16,10 @@ public final class AffichageFilons {
     private static StyleFilons charger() {
         try {
             var j = JsonParser.parseString(Files.readString(FICHIER)).getAsJsonObject();
-            return new StyleFilons(j.get("maximum").getAsInt(), j.get("intensite").getAsInt());
+            return new StyleFilons(
+                    j.get("maximum").getAsInt(),
+                    j.get("intensite").getAsInt(),
+                    !j.has("surface") || j.get("surface").getAsBoolean());
         } catch (Exception e) {
             return StyleFilons.defaut();
         }
@@ -32,6 +35,7 @@ public final class AffichageFilons {
             var j = new JsonObject();
             j.addProperty("maximum", nouveau.maximum());
             j.addProperty("intensite", nouveau.intensite());
+            j.addProperty("surface", nouveau.surface());
             Files.createDirectories(FICHIER.getParent());
             tmp = Files.createTempFile(FICHIER.getParent(), ".filons-visuel-", ".tmp");
             Files.writeString(tmp, j.toString());

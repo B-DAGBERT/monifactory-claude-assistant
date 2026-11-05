@@ -105,6 +105,26 @@ public class InventaireArbreEmiTest {
         tick();
         assert EmiFavorites.updates == changements + 1;
         changements = EmiFavorites.updates;
+        // La réservation doit être testée sur un vrai contrat d'arbre, avec ses champs natifs.
+        CoffresArbreEmi.arbre =
+                new PlisFabricationEmiTest.Tree(new PlisFabricationEmiTest.Node("machine", 2));
+        // Déjà récupéré puis posé : reste acquis dans EMI, pas dans le stock transférable.
+        MachinesEmi.obtenus =
+                List.of(new PlanRetrait.Stock<>(EmiStack.of(s("machine", 2)), 2, true));
+        assert n(InventaireArbreEmi.completer(original), "machine") == 2;
+        assert n(original, "machine") == 0;
+        InventaireJoueur.piles = List.of(s("iron", 2), s("machine", 1));
+        assert n(InventaireArbreEmi.completer(original), "machine") == 2
+                : "un reçu revenu dans les poches n'est pas doublé";
+        CycleArbreEmi.acquis = List.of(new PlanRetrait.Stock<>(s("machine", 1), 1, true));
+        assert n(InventaireArbreEmi.completer(original), "machine") == 2
+                : "pas de doublon avec la progression finale";
+        InventaireJoueur.piles = List.of(s("iron", 2));
+        CycleArbreEmi.acquis = List.of(new PlanRetrait.Stock<>(s("machine", 2), 2, true));
+        assert n(InventaireArbreEmi.completer(original), "machine") == 2;
+        tick();
+        assert n(EmiFavorites.last, "machine") == 2 : "favoris rafraîchis après pose";
+        changements = EmiFavorites.updates;
         CoffresArbreEmi.arbre = null;
         tick();
         assert EmiFavorites.updates == changements : "un arbre arrêté n'est jamais réactivé";

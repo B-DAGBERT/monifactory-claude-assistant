@@ -100,14 +100,25 @@ public class MiningUiTest {
   }else if(c.equals("style")){
    var d=StyleFilons.defaut();assert d.maximum()==192&&d.intensite()==0;
    assert new StyleFilons(-2,-4).maximum()==1&&new StyleFilons(99999,7).maximum()==4096;
-   assert d.alpha(0,true)<.3&&d.alpha(0,false)<.05;
+   assert d.surface()&&d.alpha(0,true)<.3&&d.alpha(0,false)==0;
+   var total=d.vueSuivante();assert !total.surface()&&total.alpha(0,false)>.1&&total.alpha(0,false)<total.alpha(0,true);
+   assert total.vueSuivante().equals(d);
+   assert d.budgetSuivant().maximum()==512&&d.budgetSuivant().surface();
+   assert new StyleFilons(4096,1,false).budgetSuivant().equals(new StyleFilons(64,1,false));
+   assert new StyleFilons(256,2,false).budgetSuivant().equals(new StyleFilons(512,2,false));
    assert d.alpha(0,true)>d.alpha(32*32,true)&&d.alpha(65*65,true)==0;
    assert new StyleFilons(10,2).alpha(0,true)>d.alpha(0,true);
   }else if(c.equals("toolbar")){
-   for(int room=20;room<1500;room++){
-    var b=BarreOutilsEmi.calculer(46,218,room);var zones=List.of(b.scan(),b.suivi(),b.sac());
-    for(var z:zones){assert z.x()>=46&&z.y()>=0&&z.y()+z.hauteur()<=238;assert z.x()+z.largeur()<=46+room;}
-    for(int i=0;i<3;i++)for(int j=i+1;j<3;j++){var a=zones.get(i);var z=zones.get(j);assert a.x()+a.largeur()<=z.x()||z.x()+z.largeur()<=a.x()||a.y()+a.hauteur()<=z.y()||z.y()+z.hauteur()<=a.y();}
+   for(int room=-10;room<1500;room++)for(var widths:List.of(new int[]{80,42,52,48},new int[]{120,65,83,60},new int[]{30,25,29,30})){
+    var b=BarreOutilsEmi.calculer(46,218,room,widths[0],widths[1],widths[2],widths[3]);
+    var zones=java.util.stream.Stream.of(b.scan(),b.suivi(),b.sac(),b.menu()).filter(Objects::nonNull).toList();
+    if(room<20){assert zones.isEmpty();continue;}
+    boolean compact=room<widths[0]+widths[1]+widths[2]+8;
+    assert zones.size()==(compact?1:3);
+    assert (b.menu()!=null)==compact;
+    if(!compact)assert b.scan().largeur()==widths[0]&&b.suivi().largeur()==widths[1]&&b.sac().largeur()==widths[2]:"never squeeze labels";
+    for(var z:zones){assert z.x()>=46&&z.y()==218&&z.hauteur()==20:"one row, never over other mod controls";assert z.x()+z.largeur()<=46+room;}
+    for(int i=0;i<zones.size();i++)for(int j=i+1;j<zones.size();j++){var a=zones.get(i);var z=zones.get(j);assert a.x()+a.largeur()<=z.x()||z.x()+z.largeur()<=a.x();}
    }
   }else if(c.equals("bag")){
    var a=new ItemStack("Étain",128,"a");var b=new ItemStack("Étain",64,"a");var autre=new ItemStack("Étain",2,"b");
@@ -116,19 +127,16 @@ public class MiningUiTest {
    assert l.get(0).pile()!=a&&a.getCount()==128&&b.getCount()==64;
    assert ListeSac.lire(List.of(a),"cuivre").isEmpty();
   }else if(c.startsWith("config")){
-   var mc=new Minecraft();var parent=new Screen(Component.literal("Filons"));var s=new EcranAffichageFilons(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
-   input(s).setValue("256");s.init(mc,640,360);bounds(s);assert input(s).getValue().equals("256");
-   input(s).setValue("0");s.tick();assert !button(s,"Appliquer").active;
-   input(s).setValue("4097");s.tick();assert !button(s,"Appliquer").active;
-   input(s).setValue("abc");assert input(s).getValue().equals("4097");
-   input(s).setValue("512");s.tick();button(s,"Appliquer").press();
-   if(c.equals("config-fail")){assert mc.screen==s&&Filons.invalidations==0&&AffichageFilons.style().maximum()==192;}
-   else {assert mc.screen==parent&&AffichageFilons.style().maximum()==512&&Filons.invalidations==1;
-    assert Files.readString(Path.of(System.getProperty("test.config"),"assistantia-filons-visuel.json")).contains("512");
-    var autre=new EcranAffichageFilons(parent);autre.init(mc,320,240);assert input(autre).getValue().equals("512");input(autre).setValue("64");autre.keyPressed(256,0,0);assert AffichageFilons.style().maximum()==512;
+   boolean ok=AffichageFilons.sauver(new StyleFilons(512,1,false));
+   if(c.equals("config-fail")){assert !ok&&Filons.invalidations==0&&AffichageFilons.style().maximum()==192;}
+   else {assert ok&&AffichageFilons.style().equals(new StyleFilons(512,1,false))&&Filons.invalidations==1;
+    String json=Files.readString(Path.of(System.getProperty("test.config"),"assistantia-filons-visuel.json"));
+    assert json.contains("512")&&json.contains("\"surface\":false");
    }
   }else if(c.equals("load")){
-   assert AffichageFilons.style().maximum()==512&&AffichageFilons.style().intensite()==1;
+   assert AffichageFilons.style().maximum()==512&&AffichageFilons.style().intensite()==1&&AffichageFilons.style().surface();
+  }else if(c.equals("load-total")){
+   assert AffichageFilons.style().equals(new StyleFilons(1024,2,false));
   }else if(c.equals("corrupt")){
    assert AffichageFilons.style().equals(StyleFilons.defaut());
   }else if(c.equals("bag-screen")){
@@ -178,7 +186,6 @@ class MiningUiTests(unittest.TestCase):
             "BarreDefilement",
             "BarreOutilsEmi",
             "ListeSac",
-            "EcranAffichageFilons",
             "EcranSac",
         ]
         sources = [ROOT / f"mod/src/main/java/fr/assistantia/{name}.java" for name in names]
@@ -233,13 +240,13 @@ class MiningUiTests(unittest.TestCase):
     def test_soft_style_distance_and_limits(self):
         self.run_case("style")
 
-    def test_toolbar_wrap_without_overlap(self):
+    def test_toolbar_measured_labels_or_single_compact_menu(self):
         self.run_case("toolbar")
 
     def test_backpack_grouping_nbt_big_counts_search(self):
         self.run_case("bag")
 
-    def test_display_settings_resize_save_escape(self):
+    def test_display_settings_save_mode_and_budget(self):
         self.run_case("config")
 
     def test_display_settings_save_failure_preserves_active_style(self):
@@ -247,6 +254,9 @@ class MiningUiTests(unittest.TestCase):
 
     def test_display_settings_reloaded_next_launch(self):
         self.run_case("load", initial='{"maximum":512,"intensite":1}')
+
+    def test_display_total_mode_reloaded(self):
+        self.run_case("load-total", initial='{"maximum":1024,"intensite":2,"surface":false}')
 
     def test_corrupt_display_settings_default(self):
         self.run_case("corrupt", initial="{broken")

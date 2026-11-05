@@ -7,7 +7,7 @@ import fr.assistantia.PlanRetrait;
 import java.lang.reflect.Field;
 import java.util.*;
 
-/** Pliage réversible des seules branches dont les résultats sont déjà en fabrication. */
+/** Pliage réversible des branches dont les résultats sont en fabrication ou déjà acquis. */
 final class PlisFabricationEmi {
     private record Pli(Field champ, Object avant, Object impose) {}
 
