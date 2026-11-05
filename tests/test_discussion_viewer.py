@@ -9,13 +9,12 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from monifactory_assistant.ui.discussion import DiscussionViewer, recent_history
+from tests.app_source import application_tree
 
 
 class ConnectionDisplayTests(unittest.TestCase):
     def test_answer_clears_writer_warning_and_applies_actions_only_once(self):
-        source = ast.parse(
-            Path(__file__).resolve().parents[1].joinpath("monifactory_assistant/app.py").read_text()
-        )
+        source = application_tree()
         app = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "App")
         app.body = [
             n

@@ -1,0 +1,364 @@
+"""Relevés du jeu, journal et actions sur le monde."""
+
+import json
+import math
+import threading
+import time
+import traceback
+from datetime import datetime
+
+from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
+from monifactory_assistant.game.storage import Storage
+from monifactory_assistant.game.veins import find_veins
+from monifactory_assistant.game.world import machine_status
+from monifactory_assistant.runtime import log
+from monifactory_assistant.settings import (
+    CHATTY,
+    COACH,
+    COACH_LEVELS,
+    JOURNAL_FILE,
+    PLACES_FILE,
+    SEARCH_MINUTES,
+    USEFUL,
+)
+
+
+class GameController:
+    """Relevés du jeu, journal, annonces et actions sur le monde."""
+
+    def load_places(self):
+        try:
+            self.places = json.loads(PLACES_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self.places = {}
+
+    def save_places(self):
+        PLACES_FILE.write_text(
+            json.dumps(self.places, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
+
+    def watch_game(self):
+        try:
+            state = self.bridge.state()
+            if state and not self.game:
+                log("Jeu connecté")
+                self.on_game_connected()
+            elif self.game and not state:
+                self.game_lost_at = time.time()
+            if not state and self.session_open and time.time() - self.game_lost_at > 60:
+                self.session_open = False
+                self.journal("session", "Fin de la partie")
+            self.game = state
+            self.check_craftable()
+            if state:
+                self.check_game(state)
+                self.check_death(state)
+                self.previous_state = state
+            self.flush_coach()
+        except Exception:
+            log(traceback.format_exc())
+        self.refresh()
+        self.root.after(1000, self.watch_game)
+
+    def check_game(self, state):
+        self.check_quests()
+        for error in state.get("erreurs", []):
+            if error not in self.logged_errors:
+                self.logged_errors.add(error)
+                log("Erreur dans le jeu : " + error)
+
+        if time.time() - self.veins_read > 5:
+            self.veins, self.veins_read = find_veins(self.bridge), time.time()
+            self.check_new_veins()
+        client = (
+            Storage.load(self.bridge) or self.client_storage
+        )  # coffres et machines ouverts par le joueur
+        self.client_storage = client
+        snapshot = self.bridge.read("monde.json")  # ce que voit le script serveur
+        if snapshot and snapshot.get("t", 0) > self.world.last_t:
+            if self.world.update(snapshot):
+                for error in self.world.errors:
+                    if error not in self.logged_errors:
+                        self.logged_errors.add(error)
+                        log("Erreur sur le serveur : " + error)
+        storage = self.world.merged(client) if self.world.blocks else client
+        self.check_new_machines(storage)
+        text = storage.as_text()
+        if text != self.storage_text:
+            if self.storage_text is not None:
+                self.check_removed_chests(storage)
+                if state.get("coffre_ouvert"):
+                    chest = next(
+                        (c for c in storage.containers if c["cle"] == state["coffre_ouvert"]), None
+                    )
+                    if chest:
+                        self.notify(f"Coffre mémorisé : {len(chest['objets'])} sortes d'objets.", 4)
+            self.bridge.write_text("stockage.txt", text)
+            self.storage_text = text
+        self.storage = storage
+
+        if (
+            self.guide
+            and self.guide.get("x") is not None
+            and self.guide.get("z") is not None
+            and math.dist((self.guide["x"], self.guide["z"]), (state["x"], state["z"])) < 3
+        ):
+            self.notify(f"Tu es arrivé : {self.guide['label']}.", 8, speak=True)
+            self.guide = None
+
+        self.update_objective_progress()
+
+    def journal(self, kind, text):
+        with JOURNAL_FILE.open("a", encoding="utf-8") as f:
+            f.write(
+                json.dumps({"t": time.time(), "type": kind, "texte": text}, ensure_ascii=False)
+                + "\n"
+            )
+
+    def journal_tail(self, count=40):
+        try:
+            lines = JOURNAL_FILE.read_text(encoding="utf-8").splitlines()[-count:]
+        except OSError:
+            return []
+        events = []
+        for line in lines:
+            try:
+                events.append(json.loads(line))
+            except ValueError:
+                pass
+        return events
+
+    def describe_journal(self, count=30):
+        events = self.journal_tail(count)
+        if not events:
+            return ""
+        return "Journal récent de la partie :\n" + "\n".join(
+            f"{datetime.fromtimestamp(e['t']):%d/%m %H:%M} {e['type']} : {e['texte']}"
+            for e in events
+        )
+
+    def check_craftable(self):
+        """Relit les recettes quand le jeu les a réexportées, ou que le mod a écrit quelle machine fait quoi."""
+        try:
+            changed = (self.bridge.dir / "recettes_info.json").stat().st_mtime
+        except OSError:
+            return
+        machines = self.bridge.dir / "machines_recettes.txt"
+        if machines.exists():
+            changed = (changed, machines.stat().st_mtime)
+        if changed != self.craftable_read:
+            self.craftable_read = changed
+            threading.Thread(target=self.load_recipes, daemon=True).start()
+
+    def load_recipes(self):
+        self.craftable = load_craftable(self.bridge.dir)
+        self.recipe_index = RecipeIndex(self.bridge.dir)
+
+    def on_game_connected(self):
+        if self.session_open:
+            return
+        self.session_open = True
+        self.journal("session", "Début de la partie")
+        if not self.plan:
+            # Pas d'objectif en arrivant : l'assistant prépare le suivant du plan (ou un nouveau plan s'il n'y en a pas)
+            epoch = self.objective_epoch
+            self.root.after(25000, lambda: self.auto_next_objective(epoch))
+
+    def check_quests(self):
+        """Quêtes terminées depuis la dernière lecture (quetes.json est réécrit toutes les 10 s)."""
+        if time.time() - self.quests_read < 10:
+            return
+        self.quests_read = time.time()
+        quests = self.bridge.read("quetes.json")
+        if not quests:
+            return
+        titles = set(quests.get("terminees_titres") or [])
+        if self.quest_titles is not None:
+            for title in sorted(titles - self.quest_titles):
+                self.journal("quête", title)
+                self.last_progress = time.time()
+                self.coach(
+                    f"Quête terminée : {title.split(' > ')[-1]} !",
+                    USEFUL,
+                    key="quête " + title,
+                    kind="progression",
+                )
+        self.quest_titles = titles
+
+    def check_new_machines(self, storage):
+        keys = {m["cle"]: m for m in storage.machines}
+        if self.known_machines is not None:
+            for key in keys.keys() - self.known_machines:
+                m = keys[key]
+                self.journal("machine", f"{m['nom']} en {int(m['x'])} {int(m['y'])} {int(m['z'])}")
+                self.coach(f"Machine retenue : {m['nom']}.", CHATTY, kind="progression")
+        self.known_machines = set(keys)
+
+    def check_new_veins(self):
+        materials = {v["minerai"]: v for v in self.veins}
+        if self.known_veins is not None:
+            for material in materials.keys() - self.known_veins:
+                v = materials[material]
+                name = material.replace("_", " ").title()
+                self.journal("filon", f"{name} en {int(v['x'])} {int(v['y'])} {int(v['z'])}")
+                self.coach(
+                    f"Nouveau filon repéré : {name}, en {int(v['x'])} {int(v['y'])} {int(v['z'])}. "
+                    "Je le garde en mémoire.",
+                    USEFUL,
+                    kind="progression",
+                )
+        self.known_veins = set(materials)
+
+    def coach(self, text, level=USEFUL, cooldown=0, key=None, speak=True, kind="progression"):
+        """kind : la famille du message, que le joueur peut couper dans les réglages (progression)."""
+        if COACH_LEVELS.get(COACH, 1) < level or not self.settings.get(kind, True):
+            return
+        key = key or text
+        if time.time() - self.coach_times.get(key, 0) < cooldown:
+            return
+        self.coach_times[key] = time.time()
+        if self.objective_paused and kind == "progression":
+            return
+        self.coach_queue.append((text, speak, kind))
+        self.flush_coach()
+
+    def flush_coach(self):
+        """Le coach ne coupe jamais la parole : il attend que tu aies fini de parler et que Codex ait répondu."""
+        if not self.coach_queue or self.busy or self.recorder.stream is not None or self.popup:
+            return
+        text, speak, _kind = self.coach_queue.pop(0)
+        self.add_history("claude", text)
+        self.notify(text, 15, speak=speak)
+
+    def check_death(self, state):
+        """Retient l'endroit de la mort, sans message : « ramène-moi à ma dernière mort »."""
+        before = self.previous_state
+        if not before or not state.get("mort") or before.get("mort"):
+            return
+        self.places["dernière mort"] = {
+            "x": int(state["x"]),
+            "y": int(state["y"]),
+            "z": int(state["z"]),
+            "dimension": state["dimension"],
+        }
+        self.save_places()
+        self.journal("mort", f"en {int(state['x'])} {int(state['y'])} {int(state['z'])}")
+
+    def check_removed_chests(self, storage):
+        """Signale les coffres qui ont disparu de la mémoire du jeu (cassés, ou oubliés à la demande)."""
+        keys = {c["cle"] for c in storage.raw}
+        for chest in self.storage.raw:
+            if chest["cle"] in keys:
+                continue
+            broken = chest["cle"] not in self.forgotten_keys
+            self.forgotten_keys.discard(chest["cle"])
+            self.removed_chests.append((time.time(), chest, broken))
+            if broken and not any(Storage.twins(chest, c) for _, c, _ in self.removed_chests[:-1]):
+                self.notify(
+                    f"Coffre en {int(chest['x'])} {int(chest['y'])} {int(chest['z'])} oublié : "
+                    "il n'est plus là.",
+                    8,
+                )
+        self.removed_chests = [r for r in self.removed_chests if time.time() - r[0] < 1800]
+
+    def machine_at(self, request):
+        """L'état en direct de la machine regardée, vu par le serveur (vide pour un objet ou un bloc ordinaire)."""
+        if request.get("origine") != "bloc" or not self.world.active:
+            return ""
+        position = (request.get("x"), request.get("y"), request.get("z"))
+        machine = next(
+            (
+                m
+                for m in self.world.machines()
+                if (int(m["x"]), int(m["y"]), int(m["z"])) == position
+            ),
+            None,
+        )
+        return machine_status(machine) if machine else ""
+
+    def send_command(self, action, **data):
+        self.bridge.write("commande.json", {"n": str(time.time_ns()), "action": action, **data})
+
+    def action_oublier_coffre(self, action):
+        chests = self.storage.containers
+        if action.get("proche") and self.game:
+            nearby = [c for c in chests if c["dimension"] == self.game["dimension"]]
+            target = min(
+                nearby,
+                key=lambda c: math.dist(
+                    (c["x"], c["y"], c["z"]), (self.game["x"], self.game["y"], self.game["z"])
+                ),
+                default=None,
+            )
+        else:
+            position = (int(action.get("x", 0)), int(action.get("y", 0)), int(action.get("z", 0)))
+            target = next(
+                (
+                    c
+                    for c in self.storage.raw
+                    if (int(c["x"]), int(c["y"]), int(c["z"])) == position
+                ),
+                None,
+            )
+        if target is None:
+            self.notify("Je ne trouve pas ce coffre dans ma mémoire.", 6)
+            return
+        keys = [
+            c["cle"]
+            for c in self.storage.raw
+            if c["cle"] == target["cle"] or Storage.twins(c, target)
+        ]
+        self.forgotten_keys |= set(keys)
+        self.send_command("oublier_coffres", cles=keys)
+
+    def action_memoriser_lieu(self, action):
+        if not self.game:
+            return
+        name = str(action.get("nom") or "lieu")
+        self.places[name] = {
+            "x": int(self.game["x"]),
+            "y": int(self.game["y"]),
+            "z": int(self.game["z"]),
+            "dimension": self.game["dimension"],
+        }
+        self.save_places()
+        self.journal(
+            "lieu",
+            f"{name} en {self.places[name]['x']} {self.places[name]['y']} {self.places[name]['z']}",
+        )
+
+    def action_oublier_lieu(self, action):
+        self.places.pop(str(action.get("nom")), None)
+        self.save_places()
+
+    def action_guider(self, action):
+        place = self.places.get(str(action.get("nom")))
+        if place:
+            self.guide = {
+                "label": str(action["nom"]),
+                "x": place["x"],
+                "y": place["y"],
+                "z": place["z"],
+            }
+        elif action.get("x") is not None or action.get("y") is not None:
+            self.guide = {
+                "label": str(action.get("label") or "Destination"),
+                "x": action.get("x"),
+                "y": action.get("y"),
+                "z": action.get("z"),
+            }
+
+    def action_arreter_guidage(self, _action):
+        self.guide = None
+
+    def action_surligner(self, action):
+        patterns = [str(p) for p in action.get("objets") or [] if p][:80]
+        if patterns:
+            self.search = {
+                "label": str(action.get("label") or "Recherche"),
+                "objets": patterns,
+                "fin": time.time() + SEARCH_MINUTES * 60,
+            }
+
+    def action_effacer_surbrillance(self, _action):
+        self.search = None

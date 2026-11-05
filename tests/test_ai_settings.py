@@ -17,6 +17,7 @@ from unittest.mock import Mock, patch
 from monifactory_assistant import providers
 from monifactory_assistant.providers import claude, codex
 from monifactory_assistant.providers.settings import AISettings
+from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -317,7 +318,7 @@ class SettingsTests(unittest.TestCase):
 
 
 def app_logic():
-    source = ast.parse((ROOT / "monifactory_assistant/app.py").read_text())
+    source = application_tree()
     app = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "App")
     app.body = [
         n

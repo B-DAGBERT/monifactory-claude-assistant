@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 from monifactory_assistant.game.emi_search import RecipeChestSearch, chest_search
 from monifactory_assistant.game.storage import distinct_containers
+from tests.app_source import application_tree
 
 
 class EmiSearchTests(unittest.TestCase):
@@ -119,8 +120,7 @@ class EmiSearchTests(unittest.TestCase):
         self.assertEqual(self.find(chests=records)["total_coffres"], 2)
 
     def test_world_merge_keeps_adjacent_identical_chests_for_outlines(self):
-        root = Path(__file__).resolve().parents[1]
-        tree = ast.parse((root / "monifactory_assistant/app.py").read_text())
+        tree = application_tree()
         nodes = [
             n for n in tree.body if isinstance(n, ast.ClassDef) and n.name in {"Storage", "World"}
         ]

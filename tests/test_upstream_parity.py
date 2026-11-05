@@ -10,6 +10,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from tests.app_source import application_tree
+
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM_REVISION = "1a6a514160d772e4846e453fe3755bab8dbcc133"
 
@@ -58,7 +60,7 @@ class ParityTests(unittest.TestCase):
 
     def test_gameplay_functions_preserved(self):
         before = methods(upstream("assistant_mc.py"))
-        after = methods((ROOT / "monifactory_assistant/app.py").read_text())
+        after = methods(ast.unparse(application_tree()))
         compatibility_changes = {
             "find_claude",
             "tool_status",

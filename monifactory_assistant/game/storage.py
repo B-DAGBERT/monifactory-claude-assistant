@@ -1,6 +1,8 @@
 """Physical chest identities shared by stock totals and EMI search."""
 
 import math
+from collections import defaultdict
+from datetime import datetime
 
 SHARED_CHESTS = {
     "minecraft:chest",
@@ -136,3 +138,74 @@ def latest_remembered_containers(containers, twins):
         else:
             nonstandard.append(chest)
     return kept
+
+
+class Storage:
+    """Coffres mémorisés par le jeu (stockage.json) : ce qu'il y a dedans et où ils sont."""
+
+    def __init__(self, containers, raw=None, machines=None):
+        self.containers = containers
+        self.raw = containers if raw is None else raw  # avec les deux moitiés des grands coffres
+        self.machines = machines or []  # blocs à interface ouverts au moins une fois
+
+    @staticmethod
+    def load(bridge):
+        """Les coffres mémorisés, ou None si le fichier est illisible pour l'instant (le jeu est en train de
+        l'écrire) : il ne faut surtout pas croire que tous les coffres ont disparu."""
+        data = bridge.read("stockage.json")
+        if data is None:
+            return None if (bridge.dir / "stockage.json").exists() else Storage([])
+        # Les coffres mémorisés par une version plus ancienne du script du jeu sont faussés : ignorés
+        containers = [c for c in data.get("conteneurs") or [] if c.get("v") == 2]
+        # Un grand coffre occupe deux blocs côte à côte : selon le côté ouvert, le jeu le mémorise à l'une
+        # ou l'autre position. On ne garde que la plus récente des deux.
+        from monifactory_assistant.game.storage import latest_remembered_containers
+
+        kept = latest_remembered_containers(containers, Storage.twins)
+        return Storage(kept, containers, [m for m in data.get("machines") or [] if m.get("v") == 2])
+
+    def placed(self):
+        """Nombre de machines posées par id de bloc (l'id du bloc est celui de l'objet à poser)."""
+        counts = defaultdict(int)
+        for m in self.machines:
+            counts[m["bloc"]] += 1
+        return counts
+
+    @staticmethod
+    def twins(a, b):
+        """Les deux moitiés d'un même grand coffre."""
+        return (
+            str(a.get("nom", "")).startswith("Large")
+            and a["bloc"] == b["bloc"]
+            and a["dimension"] == b["dimension"]
+            and a["y"] == b["y"]
+            and abs(a["x"] - b["x"]) + abs(a["z"] - b["z"]) == 1
+        )
+
+    def totals(self):
+        totals = defaultdict(int)
+        for c in self.containers:
+            for o in c["objets"]:
+                totals[o["item"]] += int(o["n"])
+        return totals
+
+    def find(self, item, state):
+        """Quantité dans les coffres de la dimension du joueur, et le coffre le plus proche qui en contient."""
+        total, nearest, nearest_distance = 0, None, None
+        for c in self.containers:
+            count = sum(int(o["n"]) for o in c["objets"] if o["item"] == item)
+            if not count or c["dimension"] != state["dimension"]:
+                continue
+            total += count
+            distance = math.dist((c["x"], c["z"]), (state["x"], state["z"]))
+            if nearest is None or distance < nearest_distance:
+                nearest, nearest_distance = c, distance
+        return total, nearest
+
+    def as_text(self):
+        lines = []
+        for c in self.containers:
+            date = datetime.fromtimestamp(c["t"] / 1000).strftime("%d/%m %H:%M")
+            where = f"{int(c['x'])} {int(c['y'])} {int(c['z'])} | {c['dimension']} | {c['bloc']} ({c['nom']})"
+            lines += [f"{o['item']} | {int(o['n'])} | {where} | {date}" for o in c["objets"]]
+        return "\n".join(lines) + "\n"

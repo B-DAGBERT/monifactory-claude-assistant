@@ -87,3 +87,177 @@ def prepare_import(instance, dry_run=False):
         "fichier": str(target),
         "simulation": dry_run,
     }
+
+
+STONE_PREFIXES = (
+    "deepslate_",
+    "tuff_",
+    "andesite_",
+    "diorite_",
+    "granite_",
+    "red_granite_",
+    "marble_",
+    "basalt_",
+    "netherrack_",
+    "endstone_",
+    "sand_",
+    "red_sand_",
+    "gravel_",
+    "blackstone_",
+    "calcite_",
+    "stone_",
+)
+
+
+def ore_material(block):
+    """« gtceu:deepslate_galena_ore » -> « galena » : le minerai, quelle que soit la pierre qui l'entoure."""
+    name = block.split(":")[-1].removesuffix("_ore")
+    for prefix in STONE_PREFIXES:
+        name = name.removeprefix(prefix)
+    return name
+
+
+def find_veins(bridge, radius=24):
+    """Regroupe les minerais vus ou minés par le joueur en filons (même minerai, à moins de radius blocs)."""
+    # Le mod scanne et revérifie les blocs chargés ; sa mémoire est séparée par monde.
+    scanned = bridge.read("filons_mod.json")
+    data = (
+        scanned
+        if isinstance(scanned, dict) and scanned.get("v") == 1 and scanned.get("monde")
+        else bridge.read("filons.json")
+    )
+    blocks = (data or {}).get("blocs") or []
+    if isinstance(scanned, dict) and scanned.get("source") == "gregtech":
+        # Les gisements existent indépendamment des relevés de blocs, y compris sans scan.
+        releves = {}
+        for block in blocks:
+            key = (block.get("filon"), ore_material(block["bloc"]))
+            counts = releves.setdefault(key, [0, 0])
+            counts[1 if block.get("mine") else 0] += 1
+        veins = []
+        for g in scanned.get("gisements", []):
+            for material in sorted({ore_material(item) for item in g.get("composition", [])}):
+                present, mined = releves.get((g["id"], material), (0, 0))
+                veins.append(
+                    {
+                        "minerai": material,
+                        "gisement": g.get("nom", g.get("definition", "")),
+                        "dimension": g["dimension"],
+                        "x": g["x"],
+                        "y": g["y"],
+                        "z": g["z"],
+                        "vus": present,
+                        "mines": mined,
+                        "t": scanned.get("t", 0),
+                        "partiel": True,
+                        "epuise": bool(g.get("epuise") or g.get("epuise_manuel")),
+                        "epuise_manuel": bool(g.get("epuise_manuel")),
+                    }
+                )
+        return veins
+    if data is scanned and isinstance(scanned, dict):
+        # L'ancre stable du scanner évite un regroupement quadratique de 20 000 positions.
+        grouped = {}
+        for b in blocks:
+            anchor = b.get("ancre") or b
+            material = ore_material(b["bloc"])
+            key = (b["dimension"], anchor["x"], anchor["y"], anchor["z"], material)
+            vein = grouped.setdefault(
+                key,
+                {
+                    "minerai": material,
+                    "dimension": b["dimension"],
+                    "x": b["x"],
+                    "y": b["y"],
+                    "z": b["z"],
+                    "vus": 0,
+                    "mines": 0,
+                    "t": b["t"],
+                },
+            )
+            if not b.get("mine") and not vein["vus"]:
+                vein.update(x=b["x"], y=b["y"], z=b["z"])
+            vein["mines" if b.get("mine") else "vus"] += 1
+            vein["t"] = max(vein["t"], b["t"])
+        return list(grouped.values())
+    veins = []
+    for b in sorted(blocks, key=lambda b: b["t"]):
+        material = ore_material(b["bloc"])
+        vein = next(
+            (
+                v
+                for v in veins
+                if v["minerai"] == material
+                and v["dimension"] == b["dimension"]
+                and math.dist((v["x"], v["y"], v["z"]), (b["x"], b["y"], b["z"])) <= radius
+            ),
+            None,
+        )
+        if vein is None:
+            vein = {
+                "minerai": material,
+                "dimension": b["dimension"],
+                "x": b["x"],
+                "y": b["y"],
+                "z": b["z"],
+                "vus": 0,
+                "mines": 0,
+                "t": b["t"],
+            }
+            veins.append(vein)
+        vein["mines" if b.get("mine") else "vus"] += 1
+        vein["t"] = max(vein["t"], b["t"])
+    return veins
+
+
+def describe_veins(veins, state, limit=25):
+    if not veins:
+        return "Filons repérés : aucun pour l'instant."
+
+    def distance(v):
+        return (
+            math.dist((v["x"], v["z"]), (state["x"], state["z"]))
+            if state and v["dimension"] == state["dimension"]
+            else 1e9
+        )
+
+    parts = []
+    for v in sorted(veins, key=distance)[:limit]:
+        position = f"{int(v['x'])} {int(v['y'])} {int(v['z'])} ({v['dimension']})"
+        if v.get("partiel"):
+            etat = (
+                "marqué épuisé par le joueur"
+                if v.get("epuise_manuel")
+                else "épuisé selon GregTech"
+                if v.get("epuise")
+                else "quantité totale restante inconnue"
+            )
+            parts.append(
+                f"{v.get('gisement', '')} : {v['minerai']} en {position}, {etat}, "
+                f"{v['vus']} blocs compatibles observés à proximité (limites du gisement non vérifiées)"
+            )
+        else:
+            parts.append(
+                f"{v['minerai']} en {position}, {v['vus']} blocs encore là, {v['mines']} minés"
+            )
+    return "Filons repérés (les plus proches d'abord) : " + " ; ".join(parts)
+
+
+def nearest_vein(item, veins, state):
+    """Le filon connu le plus proche dont le minerai figure dans l'id de l'objet (galena -> raw_galena)."""
+    if not state:
+        return None
+    path = item.split(":")[-1]
+    candidates = [
+        v
+        for v in veins
+        if v["vus"]
+        and not v.get("epuise")  # épuisé selon GregTech ou marqué par le joueur, comme dans le mod
+        and v["minerai"] in path
+        and v["dimension"] == state["dimension"]
+    ]
+    return min(
+        candidates,
+        key=lambda v: math.dist((v["x"], v["z"]), (state["x"], state["z"])),
+        default=None,
+    )

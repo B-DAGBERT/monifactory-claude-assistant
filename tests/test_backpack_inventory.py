@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from monifactory_assistant.game.inventory import personal_inventory, recent_state
+from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -148,7 +149,7 @@ class BackpackInventoryTests(unittest.TestCase):
         )
 
     def test_bridge_uses_snapshot_without_modifying_last_raw_frame(self):
-        tree = ast.parse((ROOT / "monifactory_assistant/app.py").read_text())
+        tree = application_tree()
         bridge = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Bridge")
         bridge.body = [
             m for m in bridge.body if isinstance(m, ast.FunctionDef) and m.name == "state"

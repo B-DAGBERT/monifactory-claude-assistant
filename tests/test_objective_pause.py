@@ -21,6 +21,7 @@ from unittest.mock import Mock
 import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.game.emi import objective_tree
 from monifactory_assistant.game.projects import ProjectStore
+from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,7 +57,7 @@ METHODS = {
 
 
 def load_logic(path):
-    source = ast.parse((ROOT / "monifactory_assistant/app.py").read_text())
+    source = application_tree()
     functions = [
         n
         for n in source.body

@@ -2,7 +2,15 @@
 
 ## Repères
 
-- `monifactory_assistant/app.py` coordonne le jeu, les objectifs, la voix et l’interface.
+- `monifactory_assistant/app.py` assemble les composants, branche les raccourcis et supervise le processus.
+- `application/projects.py` gère les projets, leur pause, la progression et la préparation des objectifs.
+- `application/game.py` suit les relevés du monde, les quêtes, le journal et les actions de jeu.
+- `application/conversation.py` traite les questions, les fiches et les événements vocaux.
+- `application/interface.py` gère les fenêtres locales, les réglages et les demandes du menu Minecraft.
+- `game/bridge.py`, `recipes.py`, `world.py`, `context.py` et `objectives.py` isolent les échanges et calculs du jeu.
+- `ui/views.py` construit les données du HUD et des menus ; `audio.py` contient la chaîne micro, transcription et voix.
+- `platform/capture.py` et `hooks.py` isolent la capture, le focus et le choix des raccourcis natifs.
+- `settings.py` conserve les constantes et chemins historiques ; `prompts.py` contient les instructions IA.
 - `providers/` isole les deux moteurs : le choix de l’un ne charge pas l’autre.
 - `commands/` contient les commandes exécutées par les lanceurs Mac et Windows.
 - `paths.py` définit la racine des données et celle du code. Ne pas déduire le dossier des sauvegardes depuis l’emplacement d’un module.
@@ -184,3 +192,28 @@ Les tests couvrent suppression active/secondaire/dernière, conservation de la p
 échec disque, requêtes répétées, cache absent/corrompu/remplacé, données privées exclues, ainsi que les
 écrans réels via contrats Minecraft : sélection, confirmation, Échap, attente conservée, recherche,
 redimensionnement et limites en 320 × 240. Les contrôles en jeu restent à effectuer après redémarrage.
+
+## Découpage de l’application
+
+`App` compose quatre contrôleurs par héritage explicite. Ils partagent le même état et la même
+boucle d’événements Tk : les déplacements n’ajoutent ni service, ni copie de l’inventaire, ni
+seconde source de progression. Chaque méthode reste définie dans un seul contrôleur. Les
+contrôleurs s’appellent par `self`, et ne s’importent pas entre eux. Aucun module de domaine ne
+réimporte `app.py`.
+
+Les calculs des besoins et des étapes sont dans `game/objectives.py` ; les vues JSON restent dans
+`ui/views.py`. Les réponses structurées et la session commune aux deux moteurs sont isolées dans
+`providers/responses.py` et `providers/session.py`. La reconnaissance vocale conserve ses imports
+lourds différés. Les modules de jeu peuvent être importés sans Tk, capture, micro ou moteur IA.
+Les constantes de données utilisent toujours `paths.ROOT`, même après déplacement d’un module.
+
+Pour modifier une fonctionnalité, commencer par son contrôleur puis son calcul de domaine ;
+garder dans `app.py` uniquement l’initialisation, le branchement et le lancement. Les anciens
+noms de commandes, formats JSON, chemins, modèles et réglages sont conservés.
+
+Les tests ciblés qui injectent un environnement sans interface lisent les définitions de production
+avec `tests/app_source.py`. Ce lecteur rassemble les méthodes réellement héritées par `App` ; il
+ne contient aucune copie de leur logique. `test_application_modules.py` vérifie aussi les imports
+sans dépendances de bureau, l’absence de méthodes masquées entre contrôleurs et le chargement réel
+d’un projet en pause après changement de projet et redémarrage. La vérification de parité historique
+continue à comparer le comportement conservé malgré le déplacement des définitions.

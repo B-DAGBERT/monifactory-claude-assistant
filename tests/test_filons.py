@@ -10,12 +10,14 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from tests.app_source import application_tree
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class FilonsTests(unittest.TestCase):
     def setUp(self):
-        tree = ast.parse((ROOT / "monifactory_assistant/app.py").read_text())
+        tree = application_tree()
         nodes = [
             n
             for n in tree.body

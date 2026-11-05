@@ -10,11 +10,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from tests.app_source import application_tree
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def storage_class():
-    tree = ast.parse((ROOT / "monifactory_assistant/app.py").read_text())
+    tree = application_tree()
     cls = next(
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Storage"
     )

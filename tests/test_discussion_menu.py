@@ -13,12 +13,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from tests.app_source import application_tree
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class DiscussionMenuTests(unittest.TestCase):
     def setUp(self):
-        source = ast.parse((ROOT / "monifactory_assistant/app.py").read_text())
+        source = application_tree()
         app = next(n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "App")
         app.body = [
             n
