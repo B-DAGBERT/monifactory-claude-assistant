@@ -210,6 +210,58 @@ else:
         self.assertEqual(args[args.index("--tools") + 1], "Read,Grep,Glob,WebSearch,WebFetch")
         self.assertNotIn("--bare", args)  # bare mode skips the user's subscription login
 
+    def test_stream_callback_failure_discards_old_reply_before_next_question(self):
+        chat = self.chat()
+
+        def broken_preview(_):
+            raise ValueError("display unavailable")
+
+        with self.assertRaisesRegex(ValueError, "display unavailable"):
+            chat.ask("hello", on_preview=broken_preview)
+        self.assertIsNone(chat.proc)
+        self.assertEqual(chat.ask("suite"), "Réponse : suite")
+        self.assertEqual(self.sent(), ["hello", "suite"])
+
+    def test_voice_receives_only_one_successful_final_answer(self):
+        lines = queue.Queue()
+        for event in (
+            {"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": "partial"}}},
+            {"type": "result", "is_error": False, "result": "final"},
+        ):
+            lines.put(json.dumps(event))
+        spoken = Mock()
+        self.assertEqual(claude.read_reply(lines, on_text=spoken), "final")
+        spoken.assert_called_once_with("final")
+
+    def test_fast_stream_is_throttled_but_the_complete_preview_is_delivered(self):
+        lines = queue.Queue()
+        for _ in range(200):
+            lines.put(
+                json.dumps(
+                    {
+                        "type": "stream_event",
+                        "event": {"delta": {"type": "text_delta", "text": "a"}},
+                    }
+                )
+            )
+        lines.put(json.dumps({"type": "result", "is_error": False, "result": "a" * 200}))
+        previews = []
+        with patch.object(claude.time, "monotonic", return_value=10.0):
+            self.assertEqual(claude.read_reply(lines, on_preview=previews.append), "a" * 200)
+        self.assertEqual(previews, ["a", "a" * 200])
+
+    def test_failed_partial_answer_is_never_spoken(self):
+        lines = queue.Queue()
+        for event in (
+            {"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": "partial"}}},
+            {"type": "result", "is_error": True, "result": "quota"},
+        ):
+            lines.put(json.dumps(event))
+        spoken = Mock()
+        with self.assertRaisesRegex(RuntimeError, "quota"):
+            claude.read_reply(lines, on_text=spoken)
+        spoken.assert_not_called()
+
     def test_invalid_lines_cannot_extend_deadline_forever(self):
         class Noise:
             def get(self, timeout):

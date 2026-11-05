@@ -106,6 +106,7 @@ def close(proc):
 
 def read_reply(lines, on_text=None, on_tool=None, timeout=420, on_preview=None, on_session=None):
     deadline, text = time.monotonic() + timeout, ""
+    last_preview, shown = 0.0, ""
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -136,9 +137,9 @@ def read_reply(lines, on_text=None, on_tool=None, timeout=420, on_preview=None, 
             delta = inner.get("delta", {})
             if delta.get("type") == "text_delta":
                 text += delta.get("text", "")
-                callback = on_preview or on_text
-                if callback:
-                    callback(text)
+                if on_preview and time.monotonic() - last_preview >= 0.12:
+                    on_preview(text)
+                    shown, last_preview = text, time.monotonic()
         elif kind == "assistant" and on_tool:
             for block in event.get("message", {}).get("content", []):
                 if block.get("type") == "tool_use":
@@ -152,7 +153,10 @@ def read_reply(lines, on_text=None, on_tool=None, timeout=420, on_preview=None, 
             answer = (event.get("result") or "").strip()
             if not answer:
                 raise RuntimeError("Claude n'a pas renvoyé de réponse lisible.")
-            if on_preview and on_text:
+            # Match Codex: voice/actions see only the successfully completed answer.
+            if on_preview and answer != shown:
+                on_preview(answer)
+            if on_text:
                 on_text(answer)
             return answer
 
@@ -226,6 +230,8 @@ class Conversation:
                 return read_reply(
                     self.lines, on_text, on_tool, self.timeout, on_preview, self._save_session
                 )
-            except (OSError, RuntimeError):
+            except Exception:
+                # A consumer callback failure must not leave the old reply queued for
+                # the next question. Never replay a request already sent to the CLI.
                 self.stop()
                 raise  # no retry: a partial answer may already have consumed quota or proposed actions

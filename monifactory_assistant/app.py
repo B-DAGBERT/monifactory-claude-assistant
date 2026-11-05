@@ -49,8 +49,9 @@ from monifactory_assistant.commands.auto_update import notice_key as update_noti
 from monifactory_assistant.config import minecraft_dir
 from monifactory_assistant.game.emi import objective_tree
 from monifactory_assistant.game.emi_search import RecipeChestSearch
-from monifactory_assistant.game.inventory import personal_inventory
+from monifactory_assistant.game.inventory import personal_inventory, recent_state
 from monifactory_assistant.game.projects import ProjectStore
+from monifactory_assistant.game.storage import distinct_containers
 from monifactory_assistant.paths import PACKAGE_ROOT
 from monifactory_assistant.paths import ROOT as HERE
 from monifactory_assistant.platform.support import SingleInstance
@@ -387,14 +388,13 @@ class Bridge:
 
     def state(self):
         """Dernier état du jeu s'il date de moins de 5 s (jeu lancé, dans un monde), sinon None."""
+        now = time.time() * 1000
         state = self.read("etat.json")
-        if state:  # le jeu écrit sans précaution : une lecture ratée garde l'état précédent
+        # Une écriture partielle ou une trame invalide ne remplace pas la dernière vue saine.
+        if recent_state(state, now):
             self.last_state = state
-        state = self.last_state
-        if state and time.time() * 1000 - state.get("t", 0) < 5000:
-            return personal_inventory(
-                state, self.read("inventaire_joueur.json"), time.time() * 1000
-            )
+        if recent_state(self.last_state, now):
+            return personal_inventory(self.last_state, self.read("inventaire_joueur.json"), now)
         return None
 
 
@@ -417,11 +417,9 @@ class Storage:
         containers = [c for c in data.get("conteneurs") or [] if c.get("v") == 2]
         # Un grand coffre occupe deux blocs côte à côte : selon le côté ouvert, le jeu le mémorise à l'une
         # ou l'autre position. On ne garde que la plus récente des deux.
-        kept = []
-        for c in sorted(containers, key=lambda c: -c["t"]):
-            if any(Storage.twins(c, k) for k in kept):
-                continue
-            kept.append(c)
+        from monifactory_assistant.game.storage import latest_remembered_containers
+
+        kept = latest_remembered_containers(containers, Storage.twins)
         return Storage(kept, containers, [m for m in data.get("machines") or [] if m.get("v") == 2])
 
     def placed(self):
@@ -738,22 +736,10 @@ class World:
         return True
 
     def containers(self):
-        """Les coffres, sans compter deux fois un grand coffre (ses deux moitiés montrent le même contenu)."""
-        kept = []
-        for b in self.blocks.values():
-            if not b["objets"] or b.get("etat") is not None:
-                continue
-            if any(
-                k["bloc"] == b["bloc"]
-                and k["dimension"] == b["dimension"]
-                and k["y"] == b["y"]
-                and abs(k["x"] - b["x"]) + abs(k["z"] - b["z"]) == 1
-                and k["objets"] == b["objets"]
-                for k in kept
-            ):
-                continue
-            kept.append(b)
-        return kept
+        """Ne regrouper que les doubles coffres connus, jamais les stockages indépendants."""
+        return distinct_containers(
+            b for b in self.blocks.values() if b["objets"] and b.get("etat") is None
+        )
 
     def machines(self):
         return [b for b in self.blocks.values() if b.get("etat") is not None]

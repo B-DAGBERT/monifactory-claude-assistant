@@ -25,3 +25,15 @@ def personal_inventory(state, snapshot, now_ms):
     ):
         return state
     return {**state, "inventaire": dict(items)}
+
+
+def recent_state(state, now_ms):
+    """A future, stale or malformed frame cannot keep a disconnected game active."""
+    if not isinstance(state, dict):
+        return False
+    stamp = state.get("t")
+    return (
+        isinstance(stamp, (int, float))
+        and not isinstance(stamp, bool)
+        and 0 <= now_ms - stamp < 5000
+    )

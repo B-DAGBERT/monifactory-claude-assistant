@@ -1,5 +1,6 @@
 package fr.assistantia;
 
+import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
@@ -20,6 +21,10 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * de loin.
  */
 public final class Reperage {
+    // Un tampon propre évite de vider les dessins des coffres et des autres mods.
+    private static final MultiBufferSource.BufferSource TAMPONS =
+            MultiBufferSource.immediate(new BufferBuilder(1024));
+
     private Reperage() {}
 
     @SubscribeEvent
@@ -35,7 +40,7 @@ public final class Reperage {
         String dimension = mc.level.dimension().location().toString();
         Vec3 camera = event.getCamera().getPosition();
         PoseStack pose = event.getPoseStack();
-        MultiBufferSource.BufferSource tampons = mc.renderBuffers().bufferSource();
+        MultiBufferSource.BufferSource tampons = TAMPONS;
         float pulsation = (float) (0.65 + 0.35 * Math.sin(System.currentTimeMillis() / 220.0));
         VertexConsumer lignes = tampons.getBuffer(Lignes.TRAVERSANTES);
         for (Pont.Repere r : reperes) {
@@ -83,21 +88,24 @@ public final class Reperage {
                                             Math.sqrt(dx * dx + dy * dy + dz * dz)
                                                     / 8); // lisible de loin
             pose.pushPose();
-            pose.translate(dx, dy, dz);
-            pose.mulPose(mc.getEntityRenderDispatcher().cameraOrientation());
-            pose.scale(-echelle, -echelle, echelle);
-            font.drawInBatch(
-                    r.texte(),
-                    -font.width(r.texte()) / 2F,
-                    0,
-                    0xFF9FEFFF,
-                    false,
-                    pose.last().pose(),
-                    tampons,
-                    Font.DisplayMode.SEE_THROUGH,
-                    0x70000000,
-                    LightTexture.FULL_BRIGHT);
-            pose.popPose();
+            try {
+                pose.translate(dx, dy, dz);
+                pose.mulPose(mc.getEntityRenderDispatcher().cameraOrientation());
+                pose.scale(-echelle, -echelle, echelle);
+                font.drawInBatch(
+                        r.texte(),
+                        -font.width(r.texte()) / 2F,
+                        0,
+                        0xFF9FEFFF,
+                        false,
+                        pose.last().pose(),
+                        tampons,
+                        Font.DisplayMode.SEE_THROUGH,
+                        0x70000000,
+                        LightTexture.FULL_BRIGHT);
+            } finally {
+                pose.popPose();
+            }
         }
         tampons.endBatch();
     }

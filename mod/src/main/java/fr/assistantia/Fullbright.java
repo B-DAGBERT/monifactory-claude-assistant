@@ -82,7 +82,8 @@ public final class Fullbright {
         try {
             if (mc.level != null && applique) {
                 mc.gameRenderer.lightTexture().tick();
-                mc.gameRenderer.lightTexture().updateLightTexture(mc.getFrameTime());
+                LiaisonTexture.preserver(
+                        () -> mc.gameRenderer.lightTexture().updateLightTexture(mc.getFrameTime()));
             }
         } catch (Exception e) {
             erreur = "L’éclairage normal sera rétabli au prochain rafraîchissement.";
@@ -123,7 +124,7 @@ public final class Fullbright {
                     }
                 }
             applique = true;
-            if (change) texture.upload();
+            if (change) LiaisonTexture.preserver(texture::upload);
         } catch (Exception e) {
             actif = false;
             restaurer();

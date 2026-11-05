@@ -6,7 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from monifactory_assistant.ui.discussion import DiscussionViewer, recent_history
 
@@ -97,6 +97,31 @@ class ViewerTests(unittest.TestCase):
         state = json.loads(self.request()[2])
         self.assertEqual(state["messages"][0]["text"], "nouveau message")
         self.assertEqual(state["notice"], "Erreur de connexion")
+
+    def test_unchanged_file_is_not_reparsed_and_online_status_still_expires(self):
+        self.write_view()
+        real_loads = json.loads
+        with patch("monifactory_assistant.ui.discussion.json.loads", wraps=real_loads) as loads:
+            first = self.viewer.snapshot()
+            self.assertTrue(first["online"])
+            with patch(
+                "monifactory_assistant.ui.discussion.time.time", return_value=time.time() + 60
+            ):
+                self.assertFalse(self.viewer.snapshot()["online"])
+            self.assertEqual(loads.call_count, 1)
+            self.write_view("new")
+            self.assertEqual(self.viewer.snapshot()["messages"][0]["text"], "new")
+            self.assertEqual(loads.call_count, 2)
+
+    def test_atomic_replacement_is_read_even_with_same_timestamp_and_size(self):
+        self.write_view("old")
+        self.viewer.snapshot()
+        stat = self.path.stat()
+        replacement = self.root / "replacement.json"
+        replacement.write_text(self.path.read_text().replace("old", "new"))
+        os.utime(replacement, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+        replacement.replace(self.path)
+        self.assertEqual(self.viewer.snapshot()["messages"][0]["text"], "new")
 
     def test_writer_conflict_remains_visible_after_temporary_notice_expires(self):
         self.write_view()

@@ -3,12 +3,14 @@
 import math
 import re
 
+from monifactory_assistant.game.storage import grouped_containers, position
+
 ITEM = re.compile(r"[a-z0-9_.-]+:[a-z0-9_./-]+\Z")
 
 
 def chest_search(request, containers, state, now):
     """The client validates the world token again before rendering these results."""
-    if not isinstance(request, dict) or not request.get("actif") or not state:
+    if not isinstance(request, dict) or not request.get("actif") or not isinstance(state, dict):
         return None
     try:
         end = float(request["fin"])
@@ -32,22 +34,19 @@ def chest_search(request, containers, state, now):
     for chest in containers:
         if not isinstance(chest, dict) or chest.get("dimension") != dimension:
             continue
-        position = tuple(chest.get(k) for k in ("dimension", "x", "y", "z"))
-        if any(
-            not isinstance(chest.get(k), (int, float)) or not math.isfinite(chest[k])
-            for k in ("x", "y", "z")
-        ):
+        coordinates = position(chest)
+        if coordinates is None:
             continue
-        previous = latest.get(position)
+        previous = latest.get(coordinates)
 
         def timestamp(c):
             value = c.get("t", 0)
             return value if isinstance(value, (int, float)) and math.isfinite(value) else 0
 
         if previous is None or timestamp(chest) >= timestamp(previous):
-            latest[position] = chest
+            latest[coordinates] = chest
     chests = []
-    for chest in latest.values():
+    for chest, stock in grouped_containers(latest.values()):
         if chest.get("dimension") != dimension:
             continue
         hits = {}
@@ -61,8 +60,10 @@ def chest_search(request, containers, state, now):
                 isinstance(key, str)
                 and key in wanted
                 and isinstance(count, (int, float))
+                and not isinstance(count, bool)
                 and math.isfinite(count)
-                and count > 0
+                and 0 < count <= 1_000_000_000
+                and int(count) == count
             ):
                 hits[key] = hits.get(key, 0) + int(count)
         if not hits:
@@ -76,7 +77,7 @@ def chest_search(request, containers, state, now):
                 "dimension": dimension,
                 "n": sum(hits.values()),
                 "objets": hits,
-                "stock": f"{dimension}|{chest['x']}|{chest['y']}|{chest['z']}",
+                "stock": stock,
                 "bloc": chest.get("bloc", ""),
                 "texte": ", ".join(
                     f"{key.split(':')[-1].replace('_', ' ')} ×{count}" for key, count in best[:2]
@@ -84,31 +85,12 @@ def chest_search(request, containers, state, now):
                 + (" …" if len(best) > 2 else ""),
             }
         )
-    # Les deux moitiés d'un coffre vanilla exposent le même inventaire. Garder les
-    # deux contours, mais une seule réserve pour le parcours descendant du client.
-    grouped = []
-    for chest in chests:
-        if chest["bloc"] in {"minecraft:chest", "minecraft:trapped_chest"}:
-            twin = next(
-                (
-                    other
-                    for other in grouped
-                    if other["bloc"] == chest["bloc"]
-                    and other["y"] == chest["y"]
-                    and abs(other["x"] - chest["x"]) + abs(other["z"] - chest["z"]) == 1
-                    and other["objets"] == chest["objets"]
-                ),
-                None,
-            )
-            if twin is not None:
-                chest["stock"] = twin["stock"]
-                continue
-        grouped.append(chest)
-    chests.sort(
-        key=lambda c: math.dist(
-            (c["x"], c["y"], c["z"]), (state.get("x", 0), state.get("y", 0), state.get("z", 0))
-        )
-    )
+    # Invalid or incomplete player coordinates must not break the assistant's whole view.
+    origin = []
+    for axis in ("x", "y", "z"):
+        value = state.get(axis, 0)
+        origin.append(value if isinstance(value, (int, float)) and math.isfinite(value) else 0)
+    chests.sort(key=lambda c: math.dist((c["x"], c["y"], c["z"]), origin))
     count = len(chests)
     return {
         "n": number,
@@ -134,7 +116,7 @@ class RecipeChestSearch:
         path = bridge.dir / "recherche_emi.json"
         try:
             stat = path.stat()
-            stamp = (stat.st_mtime_ns, stat.st_size)
+            stamp = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
             if stamp != self.stamp:
                 request = bridge.read("recherche_emi.json")
                 if request is None:

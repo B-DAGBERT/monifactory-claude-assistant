@@ -1,256 +1,63 @@
 # Assistant Monifactory — Claude et Codex
 
-Un assistant dans Minecraft pour comprendre les blocs, préparer ses crafts, retrouver ses objets
-et avancer étape par étape dans Monifactory. **main** est la branche commune et la source des mises à jour.
-Claude ou Codex se choisit localement ; tes réglages, conversations, objectifs et coffres restent sur ton poste.
+Un assistant dans Minecraft pour comprendre un bloc, suivre un objectif, préparer ses crafts dans
+EMI et retrouver ses ingrédients. Les deux moteurs utilisent **le même mod et la branche `main`**.
+Le compte IA se choisit sur chaque poste ; les conversations, coffres et objectifs restent locaux.
 
 ## Démarrer
 
-1. Installer Python 3.12 avec Tk, Git, Java 17 et le CLI de Claude ou Codex connecté à ton compte.
+1. Installer Python 3.12 avec Tk, Git, un JDK 17 et le CLI de Claude ou Codex connecté.
 2. Ouvrir **Choisir IA.command** sur Mac ou **Choisir IA.bat** sur Windows.
 3. Fermer Minecraft, puis lancer **Installer Mac.command** ou **Installer.bat**.
 4. Lancer **Lancer Mac.command** ou **Lancer assistant.bat**, puis Minecraft.
-5. Dans le jeu : **Y** ouvre l’assistant, **I** explique le bloc ou l’objet.
+5. **Y** ouvre l’assistant ; **I** explique le bloc ou l’objet.
 
-Pour les versions suivantes, lancer **l’assistant avant Minecraft** : il vérifie `main` et installe
-les nouveautés automatiquement, avec sauvegarde. S’il détecte le jeu ouvert, il reporte
-l’installation et affiche un message dans le menu. Sans réseau, la version locale démarre.
-Une installation existante doit utiliser **Mettre à jour** une première fois pour activer ce mécanisme.
+[Installation détaillée, configuration et dépannage](docs/installation.md)
 
-- [Installation, configuration et mises à jour](docs/installation.md)
-- [Fonctionnement de Codex et suivi en lecture seule](docs/codex.md)
-- [Collecte EMI, machines et suivi des fabrications](docs/emi-transferts.md)
-- [Organisation du code et développement](docs/developpement.md)
-- [Description historique de la version Claude](docs/historique-claude.md)
+## Trouver la bonne fonction
 
-## Discussion dans Minecraft
+| Besoin                                    | Où aller                                                                         |
+| ----------------------------------------- | -------------------------------------------------------------------------------- |
+| Avancer étape par étape                   | **Y → Objectif** ; changer de projet dans le sélecteur.                          |
+| Mettre un objectif en attente             | **Objectif → Mettre en pause**. La reprise reste manuelle.                       |
+| Préparer le craft complet                 | **Objectif EMI**, puis choisir les branches de **Recipe Tree**.                  |
+| Chercher les ingrédients                  | **Scanner coffres**, à droite de Recipe Tree. Un second clic arrête le scan.     |
+| Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.           |
+| Utiliser une machine                      | Contour rouge, puis **Envoyer** dans sa fenêtre. Récupérer soi-même les sorties. |
+| Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                       |
+| Voir les stocks ou les filons connus      | **Y → Base / Filons**.                                                           |
+| Poser une question                        | **Y → Discussion**.                                                              |
+| Régler l’affichage et la luminosité       | **Y → Réglages**, onglet le plus à droite.                                       |
 
-Dans **Y → Discussion**, les questions et les réponses sont séparées, avec un bouton **Copier**
-pour chaque message. La molette, la barre de défilement et Page précédente / Page suivante
-permettent de relire l’historique. **Derniers messages** ramène à la réponse en cours.
+Le contenu des **Sophisticated Backpacks portés** compte dans les besoins, EMI et l’avancement.
+Les boutons de transfert utilisent les cases accessibles : sortir les ingrédients du sac pour les envoyer.
+Le scan, les retraits, le suivi des machines et les filons ne font **aucun appel IA**.
 
-Le brouillon reste disponible quand tu fermes le menu ou redimensionnes le jeu, pendant cette
-session Minecraft. Il est effacé uniquement après réception par l’assistant. Un second envoi
-est bloqué pendant la transmission et la réponse ; tu peux préparer la question suivante.
-Le statut indique la transmission, la recherche ou une erreur. Ces fonctions sont locales et
-ne déclenchent aucun appel IA supplémentaire.
+## Guides
 
-Après cette mise à jour, relancer **l’assistant et Minecraft** pour activer la nouvelle discussion.
+- [Utilisation des menus, objectifs et filons](docs/utilisation.md)
+- [Collecte EMI, machines, backpack et limites du suivi](docs/emi-transferts.md)
+- [Conversation Codex et panneau en lecture seule](docs/codex.md)
+- [Partager une fonctionnalité avec un collègue](docs/collaboration.md)
+- [Organisation du code, formatage et tests](docs/developpement.md)
+- [Corrections et validation de la version shared.28](docs/audit-shared28.md)
+- [Documentation historique de la version Claude](docs/historique-claude.md)
 
-## Objectif dans EMI
+## Mises à jour
 
-Dans **Y → Objectif** ou **Plan**, **Objectif EMI** met le craft demandé dans l’arbre
-EMI : toutes les cibles avec leurs quantités, et les recettes intermédiaires choisies par
-l’assistant. Le livre « Objectif » est une racine virtuelle qui regroupe les cibles ; il
-n’est pas un objet à fabriquer. Clique sur les branches pour suivre leurs recettes dans EMI.
+Lancer **l’assistant avant Minecraft** : il vérifie `main` et installe les nouveautés validées avec
+sauvegarde. Si le jeu est ouvert, l’installation automatique est reportée. Sans réseau, la version
+locale démarre. Le bouton **Masquer** ferme l’avis de cette version.
 
-La synchronisation se fait au clic, sans appel IA. Après un changement d’objectif ou de
-projet, clique à nouveau sur **Objectif EMI**. Réouvrir le même objectif conserve les choix
-et les branches de l’arbre tant que les cibles et leur avancement n’ont pas changé. Si
-l’avancement a changé, l’import explicite reconstruit uniquement ce qu’il reste à obtenir. Les favoris et
-les recettes par défaut d’EMI ne sont pas modifiés.
-
-**Mettre en pause** arrête aussi l’arbre EMI actif, le scan des coffres, ses surbrillances et
-un éventuel transfert en cours. Cela s’applique aussi à une pause demandée dans la discussion.
-**Objectif EMI** reste désactivé pendant la pause. Après **Reprendre**, clique sur **Objectif EMI**
-pour retrouver les choix de recettes conservés pendant cette session, puis réactive le scan si
-nécessaire. Rien ne redémarre automatiquement. Tu peux toujours choisir un autre craft directement
-dans EMI pendant que ton objectif reste en pause.
-
-Si la recette indiquée manque ou si plusieurs recettes sont possibles sans choix dans le
-plan, un message indique les objets concernés : choisis leurs recettes directement dans EMI.
-L’import retire les cibles déjà obtenues, rangées ou posées, et tient compte de l’avancement
-partiel. Le stock encore dans ton inventaire est inclus dans la quantité envoyée pour qu’EMI
-le déduise lui-même, une seule fois. L’assistant conserve le suivi des coffres et machines posées. Échap revient à l’inventaire, puis au menu
-assistant. Il faut relancer **l’assistant et Minecraft** après installation de cette version.
-
-## Backpack comme inventaire
-
-Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans l’arbre natif EMI et sa liste latérale, les besoins du scan, la planification des machines et l’avancement des objectifs. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
-
-La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
-
-Cette option concerne le **comptage**. **Envoyer** continue à utiliser les cases accessibles de l’inventaire : le suivi indique **À sortir du sac** lorsque les ingrédients nécessaires sont dans le backpack. Le mod ne les extrait pas automatiquement.
-
-## Coffres depuis l’arbre EMI
-
-Choisir l’objectif et ses recettes dans **Recipe Tree**, puis cliquer sur **Scanner coffres**,
-en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton devient **Arrêter scan** :
-un second clic désactive le repérage. Il remplace l’ancien bouton sous chaque recette.
-
-La recherche suit **tout l’arbre choisi**, avec les composants intermédiaires,
-les matières premières, les variantes et les quantités pour le nombre de lots de l’arbre.
-Les outils réutilisables ne sont pas multipliés par le nombre de fabrications. Les fluides
-et les différences de NBT ne sont pas suivis par la mémoire des coffres. Si tu modifies
-l’arbre ou ses quantités après activation, le scan se recalcule automatiquement en conservant les objets acquis et les fabrications en machine.
-
-La recherche réserve les stocks **de haut en bas de l’arbre**, en tenant compte de tous les
-coffres connus de la dimension. Un composant disponible dans un coffre masque les matières
-premières de sa branche, même si leur drawer est plus proche. Si la quantité disponible ne
-suffit pas, seules les matières premières de la quantité manquante restent utiles. Les stocks
-communs à plusieurs branches ne sont pas comptés plusieurs fois. Un composant simplement
-repéré n’est pas considéré comme récupéré : si son coffre se vide, la recherche s’adapte.
-
-Les objets manquants sont surlignés dans les inventaires et les coffres connus qui en contiennent
-ont un contour cyan lumineux visible à travers les murs. Les ingrédients récupérés restent
-validés pour cette recherche, même s’ils sont ensuite consommés, rangés ou perdus.
-La recherche reste active après fermeture d’EMI, pendant dix minutes au maximum, et s’efface
-à la déconnexion ou au changement de dimension. Elle utilise les contenus mémorisés,
-sans appel IA ni scan du monde : ouvrir un coffre actualise son contenu.
-Tous les stockages connus de la dimension sont examinés, sans limite à 16 coffres.
-Seules les sources utiles sont signalées, en préférant les plus proches à niveau égal dans l’arbre.
-
-Le panneau en haut à gauche garde uniquement le **plan**, l’**objectif** et son **avancement**.
-Dans le menu de l’assistant, **Masquer** ferme l’avis de mise à jour et mémorise ce choix
-localement, y compris après redémarrage. Une nouvelle version peut afficher un nouvel avis.
-
-Quand toutes les cibles finales de l’arbre sont obtenues dans les quantités demandées, le mod
-réinitialise l’arbre EMI, le scan, les contours et les transferts. La détection fonctionne aussi
-avec Maj-clic et avec un résultat pris sur le curseur. Les cibles reçues en plusieurs lots
-restent comptées après rangement ou utilisation ; il n’est pas nécessaire de détenir toute
-la quantité à la fois. L’aperçu dans la case de résultat ne compte pas comme un objet fabriqué. Un composant intermédiaire ne termine jamais le craft principal.
-Sans craft actif (arbre présent et mode fabrication EMI activé), aucun bouton de transfert n’est affiché, y compris la flèche dans les recettes
-EMI ouvertes depuis un coffre. Effacer ou remplacer l’arbre coupe aussi l’ancien scan.
-
-## Utiliser les machines de l’arbre EMI
-
-Avec un craft EMI actif, les machines GregTech compatibles des chunks chargés, à moins de
-48 blocs, sont entourées en **rouge**. Les recettes suivent les branches choisies dans EMI et
-les composants déjà présents dans l’inventaire sont déduits. Un objectif IA seul ne déclenche
-pas ce repérage.
-
-Dans une machine compatible, le panneau de l’assistant, au même style que celui des coffres, propose les recettes utiles :
-
-- Choisir le produit à préparer. Le titre indique les fabrications possibles et restantes.
-- Survoler **Envoyer** pour voir les ingrédients, le circuit et les volumes de fluide.
-- Cliquer **Envoyer** pour déposer un lot réalisable, limité par le stock et la place disponible.
-  Les entrées existantes sont déduites, les sorties ne sont pas touchées. Le circuit programmable
-  est réglé lorsqu’il dispose de son sélecteur GregTech natif. Sa configuration vient de la
-  recette GregTech, pas du NBT factice affiché par EMI. Pour reconnaître l’objet Programmed
-  Circuit, son NBT est ignoré ; cette exception ne s’applique pas aux autres objets.
-- **Suivi** affiche les étapes et les lots envoyés. Sélectionner une recette pour **En cours de craft** si elle a déjà été lancée manuellement, ou un lot pour **Annuler le lot**. **Recette** ouvre son détail EMI. Récupérer soi-même le résultat dans la machine.
-
-Les fluides proviennent uniquement des seaux et cellules de l’inventaire. Les contenants sont
-vidés par le clic natif GregTech puis rendus à l’inventaire. Le volume réel est affiché avant
-l’envoi : par exemple, un seau de 1 000 mB peut dépasser un besoin de 144 mB. Les fluides déjà
-présents dans les cuves d’entrée sont déduits. Les réservoirs voisins ne sont pas sollicités.
-
-Le bouton affiche l’avancement de l’envoi, attend la confirmation des transferts et ignore les doubles clics. Fermer l’interface,
-arrêter le craft ou mettre son objectif en pause interrompt la séquence. Une machine occupée,
-un ingrédient manquant ou une entrée incompatible désactive l’envoi avec le motif au survol.
-Les fabrications envoyées restent réservées dans ce suivi pour éviter de les proposer à nouveau
-avant la récupération des sorties. Changer l’arbre ou arrêter son suivi remet ces réservations à zéro.
-Les machines et cuves sans entrées accessibles dans leur interface ne permettent pas cet envoi.
-
-À côté de **Scanner coffres**, **Suivi** affiche les états **À collecter**, **À envoyer / À fabriquer**, **En machine**, **À récupérer** et **Terminé**. **En cours de craft** réserve le nombre de fabrications déjà lancées manuellement. Leurs résultats attendus et leurs ingrédients cessent d’être demandés par le suivi et le scan. **Recalculer** relit les besoins sans effacer l’avancement final ni les lots en attente. **Annuler le lot** libère sa réservation sans retirer les objets de la machine. Le fonctionnement et les limites sont détaillés dans [le guide EMI](docs/emi-transferts.md).
-
-Les composants transformés ne laissent plus un double crédit de matières premières. Les outils partagés sont prévus une seule fois, et les allers-retours du même résultat dans un coffre ne font plus progresser artificiellement la cible.
-
-## Récupérer les ingrédients depuis un coffre
-
-Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
-**Collecte** suit **les ingrédients du scan actif** : activer **Scanner coffres** pour utiliser
-**Prendre / Tout**. Cela fonctionne aussi sans objectif dans l’assistant. Un arbre simplement
-consulté, un objectif seul ou un scan arrêté ne proposent aucun transfert. Le sélecteur montre les objets manquants disponibles dans ce
-coffre, avec la quantité à prendre sur chaque icône ; ses flèches (ou la molette) parcourent les pages.
-
-Le panneau ne recouvre jamais le coffre : il se place au-dessus quand il y a la place, sinon en
-bloc large et bas sur le côté le plus libre, et EMI range ses listes d’objets autour de lui. Il se coupe dans
-**Y → Réglages → Retrait depuis les coffres**, indépendamment du remplissage de l’établi.
-
-- **Prendre** récupère la quantité manquante de l’objet sélectionné.
-- **Tout** prend tous les objets sélectionnés par le scan et disponibles dans ce coffre,
-  en se limitant aux quantités manquantes. Les objets sans rapport restent dans le coffre.
-
-Les quantités suivent les branches encore nécessaires et le nombre de fabrications choisi dans EMI.
-Un composant déjà possédé couvre sa branche : ses matières premières ne sont plus recherchées.
-Le retrait utilise les quantités réservées par le scan dans tous les coffres connus : il ne
-recalcule pas un nouvel arbre à partir du seul coffre ouvert. Si un composant prêt a été retenu
-ailleurs, le bouton ne prend pas les matières ni les outils pour le refaire ici. Par exemple, un boîtier récupéré ne fait plus
-chercher son fer dans les drawers. Une branche validée reste éteinte après consommation du composant.
-L’inventaire, l’équipement et le curseur sont déduits par le scan. La mémoire des coffres
-regroupe les objets par identifiant, sans distinguer leur NBT. Dans le coffre ouvert, le retrait
-vérifie les variantes EMI et conserve les données des piles ; seul le Programmed Circuit ignore
-le NBT factice. Un coffre mémorisé peut donc être signalé sans proposer de retrait si sa variante
-n’est pas compatible.
-Le retrait fonctionne même si le coffre ne fournit qu’une partie des ingrédients. Les outils
-réutilisables ne sont pas multipliés ; fluides, upgrades, filtres et grilles de craft sont ignorés.
-Sans scan actif ou sans objet sélectionné disponible, le panneau n’apparaît pas.
-
-Depuis une recette EMI ouverte avec un coffre, la flèche **↓** permet aussi de **tout récupérer
-pour le scan actif**. Il n’y a plus de mode « une fabrication » dans les coffres.
-Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habituel ; il se coupe
-dans **Y → Réglages → Remplissage de l’établi**.
-Le bouton **Scanner coffres** prépare le repérage et la liste de retrait, sans déplacer d’objet.
-
-L’onglet **Objectif** affiche l’objectif, son avancement, les cibles finales et les machines
-nécessaires. Les détails de fabrication sont dans **Objectif EMI**.
-
-Les transferts utilisent les clics du jeu, avec le mécanisme natif de Sophisticated Storage
-pour ses coffres, sans commande ni installation serveur. Un transfert réussi est silencieux.
-Les clics répétés sont bloqués pendant le transfert ; fermer le coffre l’arrête.
-Les mises à jour d’objets sans rapport (par exemple la charge d’un outil électrique) n’interrompent
-pas le retrait. Après un déplacement, le mod attend jusqu’à trois secondes la synchronisation du
-serveur, sans renvoyer les clics. Si le contenu reste incohérent, il s’arrête et consigne le slot
-concerné dans le journal. Les retraits partiels réduisent le nombre de clics envoyés. Si l’inventaire
-est plein, le retrait s’arrête en conservant les objets déjà récupérés. Le stock est lu directement
-dans le coffre ouvert ; la sélection vient du scan et des coffres mémorisés. Aucun appel IA
-n’est nécessaire.
-
-## Filons : scan, marquage et téléportation
-
-Sélectionner un filon puis **Scanner** : le scan vise son centre GregTech, même si tu es
-à la surface. **Arrêter** apparaît pendant le scan. Le scan autour du joueur a été retiré.
-
-Le cache garde jusqu’à **100 000 blocs par monde**. Au plafond, les nouvelles observations
-remplacent par lots les relevés de blocs minés, puis les blocs les moins récemment revus hors
-de la zone scannée. Les blocs présents dans cette zone sont protégés. Les filons GregTech,
-les choix d’affichage et les marquages « épuisé » restent conservés ; un ancien filon peut
-être rescanné pour retrouver ses blocs. Il s’agit toujours de relevés partiels, pas du total du gisement.
-
-Dans la fiche d’un filon, **Épuisé** ajoute un marquage personnel, enregistré pour le monde actif.
-Il disparaît de la liste si les épuisés sont masqués. Pour annuler, choisir **Épuisés visibles**,
-sélectionner le filon, puis **Rétablir**. Les relevés et le journal GregTech restent conservés.
-
-**TP** cherche le point libre le plus proche au-dessus du filon, dans un voisinage de 8 blocs
-horizontalement. Si aucun point libre n’est connu, la TP vise directement un bloc au-dessus
-du centre, même en zone non chargée : **l’arrivée peut être dans la roche**. Aucun bloc n’est
-creusé ou supprimé. Les commandes / permissions opérateur restent nécessaires.
-
-## Organisation
-
-```text
-monifactory_assistant/      Application Python
-  app.py                   Interface, progression et coordination du jeu
-  commands/                Installation, mise à jour et choix de l’IA
-  providers/               Adaptateurs Claude/Codex et transport Codex
-  game/                    Projets et import des anciens relevés de filons
-  platform/                Raccourcis Mac et voix Windows
-  ui/                      Suivi de discussion en lecture seule
-    web/                   HTML, CSS et JavaScript du panneau
-mod/                       Mod Java Forge, sources et compilation Gradle
-jeu/                       Script KubeJS client
-serveur/                   Script KubeJS serveur facultatif
-tests/                     Tests Python et scénarios Java
-docs/                      Guides utilisateur et développeur
-config/                    Exemple de configuration locale
-```
-
-Les lanceurs restent à la racine. Les quatre petits fichiers Python à côté sont des points d’entrée
-compatibles avec les anciennes installations. Les données personnelles existantes gardent leur
-emplacement pour préserver les sauvegardes ; elles sont exclues de Git.
+Un changement du mod Java demande de **quitter complètement puis relancer Minecraft**.
+Changer de monde ou recharger les ressources ne recharge pas le mod. Après une modification Python,
+relancer aussi l’assistant. Une installation ancienne peut nécessiter **Mettre à jour** une première fois.
 
 ## Développer
 
-Créer une branche depuis `main`, puis proposer ses changements vers `main` après validation.
+Le code Python est dans `monifactory_assistant/`, le mod Forge dans `mod/`, les tests dans `tests/`
+et les guides dans `docs/`. Les lanceurs restent à la racine pour les installations existantes.
 
-```sh
-python -m pip install -r requirements-dev.txt
-python -m ruff format .
-python -m ruff check .
-python -m unittest discover -s tests -v
-python codex_setup.py build
-```
-
-Le panneau web et les guides se formatent avec `npm ci` puis `npm run format`.
-Voir le [guide de développement](docs/developpement.md) pour les vérifications complètes.
+Travailler sur une branche issue de `main`, valider, fusionner puis publier sur `main`.
+Les commandes et le parcours à deux sont dans [le guide de collaboration](docs/collaboration.md).
+Ne jamais ajouter les configurations privées, sessions, journaux ou données de jeu au dépôt.

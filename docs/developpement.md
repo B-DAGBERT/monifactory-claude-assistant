@@ -7,7 +7,7 @@
 - `commands/` contient les commandes exécutées par les lanceurs Mac et Windows.
 - `paths.py` définit la racine des données et celle du code. Ne pas déduire le dossier des sauvegardes depuis l’emplacement d’un module.
 - `ui/discussion.py` sert uniquement le suivi en lecture seule ; ses fichiers sont dans `ui/web/`.
-- `game/` contient les projets et les imports de filons. Le journal GregTech du client reste la source des filons.
+- `game/` contient les projets, la mémoire des stockages, les relevés d’inventaire, les échanges EMI et les imports de filons. Le journal GregTech du client reste la source des filons.
 - `mod/src/main/java/fr/assistantia/` contient les écrans et fonctions Forge.
 - `jeu/` et `serveur/` conservent les scripts KubeJS d’origine, vérifiés par les tests de parité.
 
@@ -39,6 +39,9 @@ python codex_setup.py build
 Utiliser `python -m ruff format --check .` et `npm run format:check` pour contrôler sans modifier.
 Le Java se vérifie avec `bash mod/gradlew -p mod checkJavaFormat`. Les scripts KubeJS restent
 identiques à la référence historique et sont exclus du formatage automatique.
+Les commandes Gradle directes nécessitent `JAVA_HOME` pointant vers un **JDK 17** ; elles ne
+lisent pas `assistant.local.json`. `python codex_setup.py build` résout, lui, le réglage `java_home`
+et les emplacements détectés. Vérifier `java -version` si Gradle refuse de démarrer.
 La CI exécute ces vérifications sur `main` et les pull requests qui la ciblent.
 
 Les scénarios de mise à jour utilisent de vrais dépôts Git temporaires. Les tests des moteurs
@@ -82,3 +85,55 @@ Le fichier `inventaire_joueur.json` exporte une vue complète ; `game/inventory.
 Les tests couvrent annulation, réception partielle, crédits temporaires, changement de branche, quantité de cible modifiée et lecture du backpack dans le stock natif de l’arbre. `test_emi_backpack_tree.py` exerce l’adaptateur avec des contrats d’API : la présentation et l’application des mixins doivent aussi être vérifiées après redémarrage du jeu réel.
 
 `LotMachine` représente explicitement une position connue ou une déclaration manuelle. Toutes les comparaisons avec la machine ouverte passent par `ici` ; aucun lot manuel ne possède de coordonnées fictives. Le panneau neutralise une erreur locale sans propager l’exception au rendu du jeu. Le test de régression rejoue une déclaration suivie de l’ouverture d’une machine, puis une réception partielle et une annulation.
+
+## Audit de stabilité shared.28
+
+`game/storage.py` centralise l’identité des stocks pour le relevé serveur et le scan EMI. Le
+regroupement de doubles coffres compare leur inventaire complet, pas seulement les ingrédients
+recherchés, et consulte les quatre voisins par index. Les stockages indépendants gardent chacun
+leur quantité. Les doubles coffres vanilla et Sophisticated Storage sont reconnus ; les barrels
+et drawers ne sont jamais fusionnés. Sans propriété de moitié dans l’ancien relevé serveur,
+deux coffres simples voisins au contenu parfaitement identique restent un cas ambigu. Les deux positions d’un double coffre restent visibles pour les contours.
+
+`Bridge.state` conserve seulement une trame récente et valide. Une écriture partielle, une date
+invalide ou future ne remplace pas le dernier état sain et ne maintient pas artificiellement un
+monde connecté. Le suivi Discussion met en cache un fichier inchangé mais recalcule toujours son
+état en ligne ; le remplacement atomique du fichier invalide le cache.
+
+Le mode gamma restaure la liaison de texture via `LiaisonTexture` dans un bloc `finally`.
+`Reperage` et `Guidage` utilisent des buffers dédiés réutilisables ; ne pas appeler `endBatch()` sur
+le buffer global depuis un rendu secondaire. Le filtrage et le tri de Base sont recalculés au
+changement de relevé ou de filtre, plutôt qu’à chaque image.
+
+Une requête IA en attente n’est pas propriétaire du tour déjà en cours : son délai expiré ne doit
+pas arrêter ce tour. Une erreur d’un consommateur de réponse abandonne sa propre séquence sans
+réutiliser des fragments pour la question suivante. Les aperçus Claude sont limités à environ huit
+par seconde ; le texte final est toujours transmis après succès, avant la lecture vocale.
+
+Les tests de rendu utilisent des contrats de l’API et des états déterministes. Ils vérifient le
+rétablissement de la texture, la saisie conservée au redimensionnement et la déclaration unique
+d’un lot. Ils ne mesurent pas les FPS et ne remplacent pas une vérification avec les shaders,
+les mods de rendu et un serveur réels. Voir [le bilan de validation](audit-shared28.md).
+
+`OrigineFabrication` utilise `ReceptionSortie` pour rapprocher les paquets objets reçus dans un
+ordre différent. Le calcul se limite aux types de sortie connus ou en attente ; les objets sans
+rapport d’un gros backpack ne sont pas comparés entre eux. Un craft déjà prouvé est exclu du
+rapprochement. Les attentes d’un lot automatique sont également exclues des gains manuels.
+
+`SuiviFabrication` peut corriger un gain provisoirement considéré comme un retour d’objet lorsqu’une
+preuve arrive ensuite. Cette correction restaure aussi la dette de retour de l’ancien objet rangé.
+La fenêtre est bornée à vingt observations : une preuve trop ancienne n’est pas réattribuée. Les
+tests rejouent les deux ordres de paquets, la réception partielle et les retours ultérieurs.
+
+Dans `SacsPortes`, un échec d’envoi natif libère le marqueur d’attente ; la prochaine lecture peut
+réessayer après le délai existant. Une vraie requête encore en vol n’est jamais dupliquée.
+
+Le chargement des relevés ouverts (`Storage.load`) conserve sa règle historique de priorité par
+date pour les moitiés de grands coffres, même lorsque leur contenu mémorisé diffère. L’index des
+voisins remplace seulement le parcours de tous les stockages déjà retenus. Les régressions couvrent
+les relevés vides récents et l’indépendance des stockages simples.
+
+`ReceptionManuelle` conserve les sorties d’objets déjà possédés pour déduire leurs retours, avec
+les preuves restantes après attribution aux lots automatiques. Ajouter un nouveau lot ne doit
+pas oublier les retours attendus des lots précédents. Les tests vérifient les rangements/reprises,
+les fabrications successives prouvées et les preuves tardives sans double attribution.

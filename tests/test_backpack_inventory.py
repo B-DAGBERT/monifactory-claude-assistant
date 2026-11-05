@@ -10,14 +10,14 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from monifactory_assistant.game.inventory import personal_inventory
+from monifactory_assistant.game.inventory import personal_inventory, recent_state
 
 ROOT = Path(__file__).resolve().parents[1]
 
 STUBS = {
     "com.mojang.logging.LogUtils": """
-public class LogUtils {public static Logger getLogger(){return new Logger();}
- public static class Logger {public void warn(String s,Throwable e){throw new AssertionError(s,e);}}}
+public class LogUtils {public static boolean expectedFailure;public static Logger getLogger(){return new Logger();}
+ public static class Logger {public void warn(String s,Throwable e){if(!expectedFailure)throw new AssertionError(s,e);}}}
 """,
     "net.minecraft.resources.ResourceLocation": """
 public record ResourceLocation(String value) {public String getNamespace(){return value.split(":")[0];} public String toString(){return value;}}
@@ -155,6 +155,7 @@ class BackpackInventoryTests(unittest.TestCase):
         ]
         namespace = {
             "personal_inventory": personal_inventory,
+            "recent_state": recent_state,
             "time": SimpleNamespace(time=lambda: 100.5),
         }
         exec(

@@ -41,6 +41,51 @@ public class OrigineFabricationTest {
         OrigineFabrication.actualiser(List.of(s(2)));
         assert OrigineFabrication.receptions().get(0).quantite() == 2;
         assert OrigineFabrication.totaux().get("plate") == 2;
+        // Les paquets du menu et de l'inventaire peuvent arriver dans un ordre différent.
+        OrigineFabrication.vider();
+        output.item = new ItemStack("plate", 3);
+        OrigineFabrication.actualiser(List.of());
+        output.item = new ItemStack("plate", 1);
+        OrigineFabrication.actualiser(List.of());
+        assert OrigineFabrication.receptions().isEmpty();
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().size() == 1
+                        && OrigineFabrication.receptions().get(0).quantite() == 2
+                : "sortie reçue avant l'inventaire : conserver la preuve";
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().isEmpty() : "une preuve n'est livrée qu'une fois";
+        OrigineFabrication.vider();
+        output.item = new ItemStack("plate", 3);
+        OrigineFabrication.actualiser(List.of());
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().isEmpty();
+        output.item = new ItemStack("plate", 1);
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().size() == 1
+                        && OrigineFabrication.receptions().get(0).quantite() == 2
+                : "inventaire reçu avant la sortie : conserver la preuve";
+        assert OrigineFabrication.totaux().get("plate") == 2;
+        // Un changement de menu ne rapproche jamais deux machines différentes.
+        OrigineFabrication.vider();
+        output.item = new ItemStack("plate", 3);
+        OrigineFabrication.actualiser(List.of());
+        output.item = new ItemStack("plate", 1);
+        OrigineFabrication.actualiser(List.of());
+        mc.player.containerMenu = new ChestMenu();
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().isEmpty();
+        // Un gain déjà validé par l'événement de craft ne redevient pas une sortie machine.
+        OrigineFabrication.vider();
+        output.item = new ItemStack("plate", 3);
+        OrigineFabrication.actualiser(List.of());
+        OrigineFabrication.craft(
+                new PlayerEvent.ItemCraftedEvent(mc.player, new ItemStack("plate", 1)));
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.totaux().get("plate") == 2;
+        output.item = new ItemStack("plate", 1);
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().isEmpty()
+                : "le même gain ne valide pas deux origines";
         OrigineFabrication.vider();
         GregTechMachines.outputSlots = List.of();
         OrigineFabrication.actualiser(List.of());

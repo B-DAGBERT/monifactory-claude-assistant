@@ -10,10 +10,17 @@ class SingleInstance:
     def __enter__(self):
         self.handle = None
         if os.name == "nt":
-            self.handle = ctypes.windll.kernel32.CreateMutexW(
-                None, False, "AssistantMinecraftCodex"
-            )
-            return ctypes.windll.kernel32.GetLastError() != 183
+            # ctypes defaults to a 32-bit int result, which truncates HANDLE on Win64.
+            self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            self.kernel.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+            self.kernel.CreateMutexW.restype = ctypes.c_void_p
+            self.kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+            self.kernel.CloseHandle.restype = ctypes.c_int
+            self.handle = self.kernel.CreateMutexW(None, False, "AssistantMinecraftCodex")
+            error = ctypes.get_last_error()
+            if not self.handle:
+                raise ctypes.WinError(error)
+            return error != 183
         import fcntl
 
         self.handle = (HERE / "assistant.lock").open("a")
@@ -25,6 +32,7 @@ class SingleInstance:
 
     def __exit__(self, *_):
         if os.name == "nt":
-            ctypes.windll.kernel32.CloseHandle(self.handle)
+            if self.handle:
+                self.kernel.CloseHandle(self.handle)
         else:
             self.handle.close()

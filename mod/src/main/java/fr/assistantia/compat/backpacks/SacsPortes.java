@@ -200,7 +200,13 @@ public final class SacsPortes {
                 r.requete = maintenant;
                 r.revisionRequete = revision;
                 r.attente = true;
-                lecteur.demander(id);
+                try {
+                    lecteur.demander(id);
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    // L'envoi a échoué : aucune réponse ne viendra libérer cette attente.
+                    r.attente = false;
+                    throw e;
+                }
             }
         }
         boolean complet = r.revisionRecue == revision && maintenant - r.recu < 8000;

@@ -110,6 +110,39 @@ public final class SuiviFabricationTest {
                 : "reprendre le même objet n'est pas une production";
         suivi.quantites(List.of(besoin("machine", 1)));
         assert suivi.actualiser(List.of()) : "réduire la cible conserve les acquisitions";
+        suivi = new SuiviFabrication<>(List.of(besoin("machine", 2)), false);
+        suivi.actualiser(List.of(stack("machine", 1)));
+        suivi.actualiser(List.of());
+        assert !suivi.actualiser(List.of(stack("machine", 1)))
+                : "gain seul : peut encore être un retour de coffre";
+        assert suivi.actualiser(List.of(stack("machine", 1)), List.of(stack("machine", 1)))
+                : "preuve de sortie arrivée un tick après le gain : nouvelle production";
+        assert suivi.obtenus().equals(List.of(stack("machine", 2)));
+        assert suivi.actualiser(List.of(stack("machine", 1)));
+        assert suivi.obtenus().equals(List.of(stack("machine", 2)))
+                : "la preuve tardive ne se répète pas";
+        suivi = new SuiviFabrication<>(List.of(besoin("machine", 3)), false);
+        suivi.actualiser(List.of(stack("machine", 1)));
+        suivi.actualiser(List.of());
+        suivi.actualiser(List.of(stack("machine", 1)));
+        suivi.actualiser(List.of(stack("machine", 1)), List.of(stack("machine", 1)));
+        assert !suivi.actualiser(List.of(stack("machine", 2)))
+                : "après preuve tardive, reprendre l'ancien objet rangé ne produit rien";
+        assert suivi.obtenus().equals(List.of(stack("machine", 2)));
+        suivi = new SuiviFabrication<>(List.of(besoin("machine", 3)), false);
+        suivi.actualiser(List.of(stack("machine", 1)));
+        suivi.actualiser(List.of(stack("machine", 2)));
+        suivi.actualiser(List.of(stack("machine", 2)), List.of(stack("machine", 1)));
+        assert suivi.obtenus().equals(List.of(stack("machine", 2)))
+                : "un gain déjà compté n'est pas crédité une deuxième fois par sa preuve tardive";
+        suivi = new SuiviFabrication<>(List.of(besoin("machine", 3)), false);
+        suivi.actualiser(List.of(stack("machine", 1)));
+        suivi.actualiser(List.of());
+        suivi.actualiser(List.of(stack("machine", 1)));
+        for (int i = 0; i < 22; i++) suivi.actualiser(List.of(stack("machine", 1)));
+        suivi.actualiser(List.of(stack("machine", 1)), List.of(stack("machine", 1)));
+        assert suivi.obtenus().equals(List.of(stack("machine", 1)))
+                : "un vieux retour sans rapport ne reçoit pas de preuve récente";
         System.out.println(
                 "Fin de craft : quantités, piles, intermédiaires, variantes, cibles multiples,"
                         + " objets déjà possédés et nouveau suivi OK");

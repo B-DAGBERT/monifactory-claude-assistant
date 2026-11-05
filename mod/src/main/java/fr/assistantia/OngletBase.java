@@ -19,6 +19,10 @@ public final class OngletBase {
     private int decalage, x, y, largeur, bas, lignes, total;
     private long dernierClic;
     private boolean actif;
+    private JsonArray source;
+    private List<JsonObject> machines = List.of();
+    private String filtreTexte = "";
+    private int filtreCategorie = -1, alertes;
 
     public void init(Consumer<AbstractWidget> ajout) {
         recherche = new EditBox(mc.font, 0, 0, 100, 18, Component.literal("Chercher une machine"));
@@ -57,6 +61,40 @@ public final class OngletBase {
                 .toLowerCase(Locale.ROOT);
     }
 
+    private void actualiser(JsonObject vue) {
+        JsonArray liste = Pont.liste(vue, "machines");
+        if (liste.equals(source) && filtreTexte.equals(texte) && filtreCategorie == categorie) {
+            source = liste;
+            return;
+        }
+        // Pont publie un nouveau relevé ; aucune normalisation ni aucun tri à refaire par image.
+        source = liste;
+        filtreTexte = texte;
+        filtreCategorie = categorie;
+        machines = new ArrayList<>();
+        alertes = 0;
+        String requete = normaliser(texte);
+        for (var element : liste) {
+            var m = element.getAsJsonObject();
+            String couleur = Pont.texte(m, "couleur");
+            boolean alerte = couleur.equals("rouge") || couleur.equals("jaune");
+            if (alerte) alertes++;
+            if ((categorie == 1 && !alerte) || (categorie == 2 && !couleur.equals("vert")))
+                continue;
+            if (normaliser(Pont.texte(m, "nom")).contains(requete)) machines.add(m);
+        }
+        machines.sort(
+                Comparator.<JsonObject>comparingInt(
+                                m ->
+                                        switch (Pont.texte(m, "couleur")) {
+                                            case "rouge" -> 0;
+                                            case "jaune" -> 1;
+                                            case "vert" -> 2;
+                                            default -> 3;
+                                        })
+                        .thenComparing(m -> Pont.texte(m, "nom")));
+    }
+
     public void render(
             GuiGraphics g, JsonObject vue, int x, int y, int largeur, int bas, int mx, int my) {
         visible(true);
@@ -77,27 +115,7 @@ public final class OngletBase {
                 Tooltip.create(
                         Component.literal(
                                 "Filtrer : toutes les machines, alertes / attente ou machines en marche.")));
-        var machines = new ArrayList<JsonObject>();
-        int alertes = 0;
-        for (var element : Pont.liste(vue, "machines")) {
-            var m = element.getAsJsonObject();
-            String couleur = Pont.texte(m, "couleur");
-            boolean alerte = couleur.equals("rouge") || couleur.equals("jaune");
-            if (alerte) alertes++;
-            if ((categorie == 1 && !alerte) || (categorie == 2 && !couleur.equals("vert")))
-                continue;
-            if (normaliser(Pont.texte(m, "nom")).contains(normaliser(texte))) machines.add(m);
-        }
-        machines.sort(
-                Comparator.<JsonObject>comparingInt(
-                                m ->
-                                        switch (Pont.texte(m, "couleur")) {
-                                            case "rouge" -> 0;
-                                            case "jaune" -> 1;
-                                            case "vert" -> 2;
-                                            default -> 3;
-                                        })
-                        .thenComparing(m -> Pont.texte(m, "nom")));
+        actualiser(vue);
         String resume =
                 Pont.liste(vue, "machines").size()
                         + " machines · "

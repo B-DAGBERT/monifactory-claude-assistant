@@ -1,5 +1,6 @@
 package fr.assistantia;
 
+import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -13,6 +14,10 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * filon, base...), rouge ou jaune, plus court, au-dessus d'une machine qui a un problème.
  */
 public final class Guidage {
+    // Un tampon propre évite de vider les dessins des coffres et des autres mods.
+    private static final MultiBufferSource.BufferSource TAMPONS =
+            MultiBufferSource.immediate(new BufferBuilder(1024));
+
     private Guidage() {}
 
     @SubscribeEvent
@@ -21,14 +26,14 @@ public final class Guidage {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        var cibles = new java.util.ArrayList<>(Pont.cibles());
+        var cibles = Pont.cibles();
         if (mc.level == null || mc.player == null || cibles.isEmpty()) {
             return;
         }
         String dimension = mc.level.dimension().location().toString();
         Vec3 camera = event.getCamera().getPosition();
         PoseStack pose = event.getPoseStack();
-        MultiBufferSource.BufferSource tampons = mc.renderBuffers().bufferSource();
+        MultiBufferSource.BufferSource tampons = TAMPONS;
         long temps = mc.level.getGameTime();
         for (Pont.Cible c : cibles) {
             if (c.dimension() != null && !c.dimension().equals(dimension)) {
@@ -40,20 +45,23 @@ public final class Guidage {
                 continue; // arrivé : le faisceau gênerait
             }
             pose.pushPose();
-            pose.translate(c.x() - camera.x, c.y() + 1 - camera.y, c.z() - camera.z);
-            BeaconRenderer.renderBeaconBeam(
-                    pose,
-                    tampons,
-                    BeaconRenderer.BEAM_LOCATION,
-                    event.getPartialTick(),
-                    1.0F,
-                    temps,
-                    0,
-                    c.hauteur(),
-                    c.couleur(),
-                    0.15F,
-                    0.2F);
-            pose.popPose();
+            try {
+                pose.translate(c.x() - camera.x, c.y() + 1 - camera.y, c.z() - camera.z);
+                BeaconRenderer.renderBeaconBeam(
+                        pose,
+                        tampons,
+                        BeaconRenderer.BEAM_LOCATION,
+                        event.getPartialTick(),
+                        1.0F,
+                        temps,
+                        0,
+                        c.hauteur(),
+                        c.couleur(),
+                        0.15F,
+                        0.2F);
+            } finally {
+                pose.popPose();
+            }
         }
         tampons.endBatch();
     }

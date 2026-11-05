@@ -3,12 +3,14 @@
 import ast
 import copy
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
 from monifactory_assistant.game.emi_search import RecipeChestSearch, chest_search
+from monifactory_assistant.game.storage import distinct_containers
 
 
 class EmiSearchTests(unittest.TestCase):
@@ -122,14 +124,16 @@ class EmiSearchTests(unittest.TestCase):
         nodes = [
             n for n in tree.body if isinstance(n, ast.ClassDef) and n.name in {"Storage", "World"}
         ]
-        namespace = {}
+        namespace = {"distinct_containers": distinct_containers}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "storage_test", "exec"), namespace)
         world = object.__new__(namespace["World"])
         a = {**self.chest(1, "minecraft:oak_planks", 3), "cle": "a", "bloc": "test:chest"}
         b = {**a, "cle": "b", "x": 2}
         world.blocks = {"a": a, "b": b}
         merged = world.merged(namespace["Storage"]([]))
-        self.assertEqual(len(merged.containers), 1)  # Old totals behavior remains unchanged.
+        self.assertEqual(
+            len(merged.containers), 2
+        )  # Independent modded chests each contribute stock.
         self.assertEqual(len(merged.raw), 2)  # Both physical positions stay visible.
         self.assertEqual(self.find(chests=merged.raw)["total_coffres"], 2)
 
@@ -177,3 +181,60 @@ class EmiSearchTests(unittest.TestCase):
             self.assertEqual(result["n"], 124)
             self.assertEqual(result["coffres"][0]["n"], 3)
             self.assertEqual(question.read_bytes(), original)
+
+    def test_same_recipe_ingredients_do_not_merge_different_inventories(self):
+        a = {**self.chest(1, "minecraft:oak_planks", 8), "bloc": "minecraft:chest"}
+        b = copy.deepcopy(a)
+        b["x"] = 2
+        b["objets"].append({"item": "minecraft:diamond", "n": 1})
+        result = self.find(chests=[a, b])["coffres"]
+        self.assertNotEqual(result[0]["stock"], result[1]["stock"])
+        self.assertEqual(len(distinct_containers([a, b])), 2)
+
+    def test_pairs_do_not_collapse_three_chests_into_one_stock(self):
+        a = {**self.chest(1, "minecraft:oak_planks", 8), "bloc": "minecraft:chest"}
+        chests = [a, {**a, "x": 0}, {**a, "x": 2}]
+        result = self.find(chests=chests)["coffres"]
+        self.assertEqual(len({c["stock"] for c in result}), 2)
+        self.assertEqual(len(distinct_containers(chests)), 2)
+
+    def test_double_inventory_slot_order_does_not_duplicate_the_stock(self):
+        a = {**self.chest(1, "minecraft:oak_planks", 8), "bloc": "minecraft:chest"}
+        a["objets"].append({"item": "minecraft:diamond", "n": 1})
+        b = {**a, "x": 2, "objets": list(reversed(a["objets"]))}
+        self.assertEqual(len(distinct_containers([a, b])), 1)
+
+    def test_invalid_player_coordinates_keep_chest_search_available(self):
+        for value in (None, "loading", float("nan"), float("inf")):
+            self.assertEqual(self.find(state={**self.state, "x": value})["total_coffres"], 2)
+
+    def test_supported_double_chests_share_stock_but_barrels_do_not(self):
+        for block, total in (
+            ("sophisticatedstorage:chest", 1),
+            ("sophisticatedstorage:netherite_chest", 1),
+            ("sophisticatedstorage:barrel", 2),
+            ("sophisticatedstorage:limited_1_barrel", 2),
+            ("functionalstorage:oak_1", 2),
+            ("test:chest", 2),
+        ):
+            with self.subTest(block=block):
+                a = {**self.chest(1, "minecraft:oak_planks", 8), "bloc": block}
+                b = {**a, "x": 2}
+                result = self.find(chests=[a, b])["coffres"]
+                self.assertEqual(len({c["stock"] for c in result}), total)
+                self.assertEqual(len(distinct_containers([a, b])), total)
+
+    def test_atomic_request_replacement_with_same_date_and_size_is_seen(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "recherche_emi.json"
+            path.write_text(json.dumps(self.request))
+            bridge = SimpleNamespace(dir=path.parent, read=lambda _: json.loads(path.read_text()))
+            service = RecipeChestSearch()
+            storage = SimpleNamespace(containers=self.chests)
+            self.assertEqual(service.view(bridge, storage, self.state, 1000)["n"], 123)
+            stat = path.stat()
+            replacement = path.with_suffix(".new")
+            replacement.write_text(json.dumps({**self.request, "n": 124}))
+            os.utime(replacement, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+            replacement.replace(path)
+            self.assertEqual(service.view(bridge, storage, self.state, 1000)["n"], 124)

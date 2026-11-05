@@ -289,6 +289,8 @@ class PersistentCodex:
         acquired = False
         turn_id = None
         turn_lock = None
+        submitted = False
+        completed = False
         try:
             ident = self.load_thread(session_id, data_dir, model, instructions, ephemeral)
             if on_thread:
@@ -302,6 +304,8 @@ class PersistentCodex:
             mailbox = queue.Queue()
             with self.lock:
                 self.listeners[ident] = mailbox
+            # A timeout while waiting for another turn must never stop its process.
+            submitted = True
             response = self.request(
                 "turn/start",
                 {
@@ -367,6 +371,7 @@ class PersistentCodex:
                     turn = params.get("turn", {})
                     if turn.get("id") != turn_id:
                         continue
+                    completed = True
                     if turn.get("status") != "completed":
                         raise RuntimeError(
                             str(
@@ -383,7 +388,11 @@ class PersistentCodex:
                     if on_text:
                         on_text(answer)
                     return answer.strip(), ident
-        except TimeoutError:
+        except Exception:
+            # A failed consumer callback can leave unread events and a running turn too.
+            # Only abandon requests submitted by this call; queued callers own no turn.
+            if not submitted or completed:
+                raise
             if ident and turn_id:
                 try:
                     self.request(

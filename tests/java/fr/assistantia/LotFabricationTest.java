@@ -38,5 +38,26 @@ public class LotFabricationTest {
         for (int i = 0; i < 22; i++) sorties.actualiser(List.of(), List.of());
         assert sorties.actualiser(List.of(s("acid", 500)), List.of()).isEmpty()
                 : "une sortie ancienne ne crédite pas un retrait sans rapport";
+        sorties = new ReceptionSortie<String>(String::equals);
+        sorties.actualiser(List.of(), List.of(s("acid", 1000)));
+        sorties.actualiser(List.of(), List.of());
+        assert sorties.actualiser(List.of(s("acid", 1000)), List.of())
+                        .equals(List.of(s("acid", 1000)))
+                : "une sortie entièrement vidée reste connue jusqu'à l'arrivée du gain";
+        int[] comparaisons = {0};
+        sorties =
+                new ReceptionSortie<String>(
+                        (x, y) -> {
+                            comparaisons[0]++;
+                            return x.equals(y);
+                        });
+        var grandSac = new ArrayList<PlanRetrait.Stock<String>>();
+        for (int i = 0; i < 250; i++) grandSac.add(s("autre_" + i, 64));
+        sorties.actualiser(grandSac, List.of(s("acid", 1000)));
+        grandSac.add(s("acid", 500));
+        assert sorties.actualiser(grandSac, List.of(s("acid", 500)))
+                .equals(List.of(s("acid", 500)));
+        assert comparaisons[0] < 5000
+                : "les objets sans rapport du backpack ne sont pas comparés entre eux";
     }
 }

@@ -167,6 +167,7 @@ class MachineInputTests(unittest.TestCase):
                     "PlanRetrait",
                     "PlanMachines",
                     "SequenceEnvoi",
+                    "ReceptionSortie",
                     "compat/emi/EnvoiMachine",
                     "compat/emi/OrigineFabrication",
                     "compat/emi/ComparaisonEmi",

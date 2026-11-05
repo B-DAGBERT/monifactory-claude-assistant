@@ -154,6 +154,41 @@ class PersistentTests(unittest.TestCase):
         self.assertTrue(any(r.get("method") == "thread/unsubscribe" for r in rows))
         self.assertEqual(self.client.loaded, {})
 
+    def test_waiting_for_busy_thread_does_not_kill_its_running_turn(self):
+        _, session = self.call()
+        turn_lock = self.client.thread_locks[session]
+        turn_lock.acquire()
+        try:
+            with self.assertRaisesRegex(TimeoutError, "déjà en cours"):
+                self.call(session=session, timeout=0.02)
+            self.assertIsNotNone(self.client.proc)
+            self.assertIsNone(self.client.proc.poll())
+            self.assertEqual(sum(r.get("method") == "turn/start" for r in self.requests()), 1)
+        finally:
+            turn_lock.release()
+        self.assertEqual(self.call(session=session), ("hello", session))
+        self.assertEqual(self.client.starts, 1)
+
+    def test_stream_callback_failure_stops_turn_without_replaying(self):
+        def broken_preview(_):
+            raise ValueError("display unavailable")
+
+        with self.assertRaisesRegex(ValueError, "display unavailable"):
+            self.call(on_preview=broken_preview)
+        self.assertIsNone(self.client.proc)
+        self.assertEqual(sum(r.get("method") == "turn/start" for r in self.requests()), 1)
+        self.assertEqual(self.client.listeners, {})
+
+    def test_completed_callback_failure_keeps_idle_connection(self):
+        def broken_voice(_):
+            raise ValueError("voice unavailable")
+
+        with self.assertRaisesRegex(ValueError, "voice unavailable"):
+            self.call(on_text=broken_voice)
+        self.assertIsNotNone(self.client.proc)
+        self.assertIsNone(self.client.proc.poll())
+        self.assertEqual(self.client.listeners, {})
+
     def test_metrics_have_no_message_contents(self):
         path = self.root / "timings.json"
         self.call("secret test question", metrics_path=path)

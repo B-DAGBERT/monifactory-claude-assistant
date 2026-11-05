@@ -36,21 +36,37 @@ public final class ReceptionSortie<T> {
 
     public List<PlanRetrait.Stock<T>> actualiser(
             List<PlanRetrait.Stock<T>> maintenant, List<PlanRetrait.Stock<T>> disponibles) {
+        return actualiser(maintenant, disponibles, List.of());
+    }
+
+    /** Un gain déjà confirmé par un craft ne peut pas aussi valider une sortie machine. */
+    public List<PlanRetrait.Stock<T>> actualiser(
+            List<PlanRetrait.Stock<T>> maintenant,
+            List<PlanRetrait.Stock<T>> disponibles,
+            List<PlanRetrait.Stock<T>> dejaAttribues) {
         tick++;
         List<PlanRetrait.Stock<T>> preuves = new ArrayList<>();
         gains.removeIf(m -> tick - m.tick > 20 || m.quantite == 0);
         retraits.removeIf(m -> tick - m.tick > 20 || m.quantite == 0);
         if (initialise) {
             List<T> objets = new ArrayList<>();
-            for (var liste : List.of(stock, sorties, maintenant, disponibles))
+            // Seules les sorties connues peuvent prouver une réception. Éviter une comparaison
+            // quadratique de tous les objets sans rapport d'un grand backpack.
+            for (var liste : List.of(sorties, disponibles))
                 for (var s : liste)
                     if (objets.stream().noneMatch(o -> meme.test(o, s.objet())))
                         objets.add(s.objet());
+            for (var mouvements : List.of(gains, retraits))
+                for (var mouvement : mouvements)
+                    if (objets.stream().noneMatch(o -> meme.test(o, mouvement.objet)))
+                        objets.add(mouvement.objet);
             for (T objet : objets) {
                 int gain = compte(maintenant, objet) - compte(stock, objet);
                 int retire = compte(sorties, objet) - compte(disponibles, objet);
-                if (gain > 0) gains.add(new Mouvement<>(objet, gain, tick));
-                else if (gain < 0)
+                if (gain > 0) {
+                    int libre = Math.max(0, gain - compte(dejaAttribues, objet));
+                    if (libre > 0) gains.add(new Mouvement<>(objet, libre, tick));
+                } else if (gain < 0)
                     for (var g : gains)
                         if (meme.test(g.objet, objet)) {
                             int n = Math.min(g.quantite, -gain);

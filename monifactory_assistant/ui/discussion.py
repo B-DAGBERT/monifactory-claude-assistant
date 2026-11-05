@@ -56,6 +56,7 @@ class DiscussionViewer:
             "updated_at": 0,
         }
         self.lock = threading.Lock()
+        self.source_signature = None
         viewer = self
         self.html = (Path(__file__).parent / "web/index.html").read_bytes()
         self.script = (Path(__file__).parent / "web/app.js").read_bytes()
@@ -129,6 +130,10 @@ class DiscussionViewer:
         # Only the game's display is exposed, never recipes, credentials or arbitrary files.
         with self.lock:
             try:
+                stat = self.source.stat()
+                signature = (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+                if signature == self.source_signature:
+                    return self._state()
                 with self.source.open(encoding="utf-8") as handle:
                     view = json.loads(handle.read(8 * 1024 * 1024))
                 screen = view["ecran"]
@@ -144,13 +149,18 @@ class DiscussionViewer:
                     "busy": bool(screen.get("occupe")),
                     "connection_error": str(screen.get("erreur_connexion") or ""),
                     "notice": str((view.get("bulle") or {}).get("texte") or ""),
-                    "updated_at": self.source.stat().st_mtime,
+                    "updated_at": stat.st_mtime,
                 }
+                # Cache only a readable snapshot. Failed/partial writes are retried.
+                self.source_signature = signature
             except (OSError, ValueError, KeyError, TypeError, AttributeError):
                 pass  # A partial file write must not erase the previous readable display.
-            result = dict(self.last_state)
-            result["online"] = time.time() - result["updated_at"] < 30
-            return result
+            return self._state()
+
+    def _state(self):
+        result = dict(self.last_state)
+        result["online"] = time.time() - result["updated_at"] < 30
+        return result
 
     def close(self):
         if self.thread.is_alive():

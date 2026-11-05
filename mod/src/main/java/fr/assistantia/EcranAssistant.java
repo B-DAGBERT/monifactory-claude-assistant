@@ -303,6 +303,11 @@ public class EcranAssistant extends Screen {
     }
 
     @Override
+    public void tick() {
+        saisie.tick();
+    }
+
+    @Override
     public boolean keyPressed(int touche, int scancode, int modificateurs) {
         if ((touche == GLFW.GLFW_KEY_ENTER || touche == GLFW.GLFW_KEY_KP_ENTER)
                 && saisie.isFocused()) {
@@ -426,7 +431,7 @@ public class EcranAssistant extends Screen {
         g.fill(MARGE - 4, haut - 4, this.width - MARGE + 4, bas, FOND);
         boolean actif = Pont.assistantActif();
         relancer.visible = !actif && !Pont.relanceEnCours() && onglet != FILONS;
-        relancer.setY(onglet == DISCUSSION ? haut + 12 : MARGE);
+        relancer.setY(onglet == DISCUSSION ? haut + 12 : haut);
         if (onglet != FILONS && onglet != DISCUSSION && actif) {
             lanceurInconnu = false;
             String statut = Pont.texte(ecran, "statut");
@@ -438,7 +443,7 @@ public class EcranAssistant extends Screen {
                             : boutonsOnglets.get(boutonsOnglets.size() - 1).getX()
                                     + boutonsOnglets.get(boutonsOnglets.size() - 1).getWidth()
                                     + 8;
-            droite = this.font.plainSubstrByWidth(droite, this.width - MARGE - debut);
+            droite = this.font.plainSubstrByWidth(droite, Math.max(0, this.width - MARGE - debut));
             g.drawString(
                     this.font,
                     droite,
@@ -459,11 +464,12 @@ public class EcranAssistant extends Screen {
             int fin = relancer.visible ? relancer.getX() - 6 : this.width - MARGE;
             g.drawString(
                     this.font,
-                    arret,
-                    fin - this.font.width(arret),
-                    MARGE + 5,
+                    this.font.plainSubstrByWidth(arret, Math.max(0, fin - MARGE)),
+                    MARGE,
+                    haut + 5,
                     Pont.relanceEnCours() ? Hud.GRIS : Hud.ROUGE,
                     false);
+            haut += 24;
         }
         projets.visible = onglet == OBJECTIF || onglet == PLAN;
         if (projets.visible) {

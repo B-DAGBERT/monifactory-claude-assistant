@@ -145,6 +145,41 @@ public class SacsPortesTest {
         lecteur.lire(p, base, lecteur, 14000);
         assert SBPPacketHandler.requested.size() == demandes
                 : "réponse tardive : pas de requêtes concurrentes ambiguës";
+        // Un échec d'envoi ne doit pas laisser une requête fantôme en attente pour toujours.
+        int[] tentatives = {0};
+        var instable =
+                new SacsPortes(
+                        new SacsPortes.Lecteur() {
+                            public List<ItemStack> portes(Player joueur) {
+                                return List.of();
+                            }
+
+                            public List<ItemStack> ouvert(Player joueur, UUID id) {
+                                return null;
+                            }
+
+                            public CompoundTag donnees(UUID id) {
+                                return new CompoundTag();
+                            }
+
+                            public void demander(UUID id) {
+                                if (++tentatives[0] == 1)
+                                    throw new IllegalStateException("envoi indisponible");
+                            }
+                        });
+        com.mojang.logging.LogUtils.expectedFailure = true;
+        try {
+            assert !instable.lire(p, List.of(sac(A)), connexion, 15000).synchronise();
+        } finally {
+            com.mojang.logging.LogUtils.expectedFailure = false;
+        }
+        instable.lire(p, List.of(sac(A)), connexion, 15100);
+        assert tentatives[0] == 1 : "pas de boucle de requêtes à chaque tick après l'échec";
+        instable.lire(p, List.of(sac(A)), connexion, 15600);
+        assert tentatives[0] == 2 : "une requête jamais envoyée doit pouvoir être retentée";
+        instable.accepter(A, contenu(item("iron", 12)));
+        e = instable.lire(p, List.of(sac(A)), connexion, 15650);
+        assert e.synchronise() && nombre(e.objets(), "iron") == 12;
         // Sans backpack, aucun accès au contenu des autres sacs n'est demandé.
         lecteur.vider();
         p.extra = List.of();

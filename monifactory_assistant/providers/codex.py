@@ -100,8 +100,9 @@ class Conversation:
 
     def _save_thread(self, ident):
         # Save before the first turn: a timeout must not silently discard the conversation.
-        self.session_id = ident
-        write_json(self.path, {"data_dir": str(self.data_dir.resolve()), "thread_id": ident})
+        if ident != self.session_id:
+            write_json(self.path, {"data_dir": str(self.data_dir.resolve()), "thread_id": ident})
+            self.session_id = ident
 
     def stop(self):
         CLIENT.close()

@@ -88,14 +88,21 @@ public final class MachinesEmi {
         var player = Minecraft.getInstance().player;
         if (player == null) return;
         List<PlanRetrait.Stock<EmiStack>> restants = gains;
+        List<PlanRetrait.Stock<EmiStack>> attendusAutomatiques = new ArrayList<>();
         try {
             var ui = GregTechMachines.ouvrir(player.containerMenu);
-            if (ui != null) restants = recevoir(gains, ui.position());
+            if (ui != null) {
+                for (var lot : lots)
+                    if (lot.ici(ui.position())) attendusAutomatiques.addAll(lot.suivi().restants());
+                restants = recevoir(gains, ui.position());
+            }
         } catch (ReflectiveOperationException | RuntimeException e) {
             // Les lots envoyés automatiquement exigent une preuve de leur machine.
         }
         var attribues = receptionManuelle.soustraire(gains, restants);
-        var nouveaux = receptionManuelle.actualiser(inventaire(), attribues);
+        var nouveaux =
+                receptionManuelle.actualiser(
+                        inventaire(), attribues, attendusAutomatiques, restants);
         for (var lot : lots)
             if (lot.manuel()) {
                 int avant = lot.suivi().totalRecu();
@@ -281,6 +288,8 @@ public final class MachinesEmi {
         actualiserArbre();
         int max = declarables(recette);
         if (fois < 1 || fois > max) return false;
+        // Terminer l'observation des anciens lots avant d'établir le point de départ du nouveau.
+        recevoir(List.of());
         // Point de départ physique : les objets déjà possédés ne valident pas ce nouveau lot.
         receptionManuelle.initialiser(inventaire());
         ajouterLot(recette, fois, null);
@@ -478,7 +487,7 @@ public final class MachinesEmi {
             EnvoiMachine.arreter();
             if (current == null || connexion != mc.getConnection() || !dim.equals(dimension)) {
                 lots.clear();
-                receptionManuelle.initialiser(List.of());
+                receptionManuelle.vider();
                 lotsVersion++;
             }
             menuObserve = null;

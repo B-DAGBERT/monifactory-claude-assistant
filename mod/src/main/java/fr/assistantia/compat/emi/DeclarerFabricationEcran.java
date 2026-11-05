@@ -7,6 +7,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 /** Déclarer un travail déjà lancé, sans déplacer ni valider artificiellement ses résultats. */
 public final class DeclarerFabricationEcran extends Screen {
@@ -14,7 +15,8 @@ public final class DeclarerFabricationEcran extends Screen {
     private final EmiRecipe recette;
     private EditBox nombre;
     private Button confirmer;
-    private String erreur = "";
+    private String erreur = "", brouillon = "1";
+    private boolean valide;
 
     public DeclarerFabricationEcran(Screen parent, EmiRecipe recette) {
         super(Component.literal("En cours de craft"));
@@ -28,7 +30,12 @@ public final class DeclarerFabricationEcran extends Screen {
         nombre = new EditBox(font, x, y, 80, 20, Component.literal("Nombre de fabrications"));
         nombre.setMaxLength(7);
         nombre.setFilter(s -> s.isEmpty() || s.matches("[0-9]{1,7}"));
-        nombre.setValue("1");
+        nombre.setValue(brouillon);
+        nombre.setResponder(
+                s -> {
+                    brouillon = s;
+                    erreur = "";
+                });
         addRenderableWidget(nombre);
         addRenderableWidget(
                 Button.builder(
@@ -40,13 +47,7 @@ public final class DeclarerFabricationEcran extends Screen {
                         .build());
         confirmer =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal("Confirmer"),
-                                        b -> {
-                                            if (MachinesEmi.declarer(recette, quantite()))
-                                                minecraft.setScreen(parent);
-                                            else erreur = "Besoins modifiés · vérifie la quantité";
-                                        })
+                        Button.builder(Component.literal("Confirmer"), b -> confirmer())
                                 .bounds(x, y + 66, 97, 20)
                                 .build());
         addRenderableWidget(
@@ -65,10 +66,32 @@ public final class DeclarerFabricationEcran extends Screen {
         }
     }
 
+    private void confirmer() {
+        if (valide || quantite() <= 0 || quantite() > MachinesEmi.declarables(recette)) return;
+        valide = true;
+        if (MachinesEmi.declarer(recette, quantite())) minecraft.setScreen(parent);
+        else {
+            valide = false;
+            erreur = "Besoins modifiés · vérifie la quantité";
+        }
+    }
+
     @Override
     public void tick() {
+        if (nombre != null) nombre.tick();
         if (confirmer != null)
-            confirmer.active = quantite() > 0 && quantite() <= MachinesEmi.declarables(recette);
+            confirmer.active =
+                    !valide && quantite() > 0 && quantite() <= MachinesEmi.declarables(recette);
+    }
+
+    @Override
+    public boolean keyPressed(int touche, int scancode, int modificateurs) {
+        if (nombre.isFocused()
+                && (touche == GLFW.GLFW_KEY_ENTER || touche == GLFW.GLFW_KEY_KP_ENTER)) {
+            confirmer();
+            return true;
+        }
+        return super.keyPressed(touche, scancode, modificateurs);
     }
 
     @Override

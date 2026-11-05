@@ -1,6 +1,7 @@
 package fr.assistantia.compat.emi;
 
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.ReceptionSortie;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -12,7 +13,9 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 /** Preuves locales : événement de craft + gain réel, ou baisse d'une sortie machine + gain réel. */
 public final class OrigineFabrication {
     private static final List<ItemStack> crafts = new ArrayList<>();
-    private static List<PlanRetrait.Stock<ItemStack>> precedent = List.of(), sorties = List.of();
+    private static List<PlanRetrait.Stock<ItemStack>> precedent = List.of();
+    private static ReceptionSortie<ItemStack> receptionSortie =
+            new ReceptionSortie<>(ItemStack::isSameItemSameTags);
     private static AbstractContainerMenu menu;
     private static List<Slot> slotsSortie = List.of();
     private static int age;
@@ -37,7 +40,8 @@ public final class OrigineFabrication {
     public static void vider() {
         crafts.clear();
         totalFabrique.clear();
-        precedent = sorties = receptions = List.of();
+        precedent = receptions = List.of();
+        receptionSortie = new ReceptionSortie<>(ItemStack::isSameItemSameTags);
         slotsSortie = List.of();
         menu = null;
         age = 0;
@@ -63,7 +67,7 @@ public final class OrigineFabrication {
         AbstractContainerMenu ouvert = player.containerMenu;
         if (ouvert != menu) {
             menu = ouvert;
-            sorties = List.of();
+            receptionSortie = new ReceptionSortie<>(ItemStack::isSameItemSameTags);
             try {
                 slotsSortie = GregTechMachines.sorties(ouvert);
             } catch (ReflectiveOperationException | RuntimeException e) {
@@ -84,10 +88,13 @@ public final class OrigineFabrication {
             vus.add(item);
             int gain = Math.max(0, compte(inventaire, item) - compte(precedent, item));
             boolean craft = crafts.stream().anyMatch(s -> s.getItem() == item.getItem());
-            int retire = Math.max(0, compte(sorties, item) - compte(maintenant, item));
-            int prouve = craft ? gain : Math.min(gain, retire);
-            if (prouve > 0) gains.add(new PlanRetrait.Stock<>(item.copy(), prouve, true));
+            if (craft && gain > 0) gains.add(new PlanRetrait.Stock<>(item.copy(), gain, true));
         }
+        // Le serveur peut synchroniser les poches et le slot de sortie dans deux ticks.
+        // Les gains de craft sont exclus du rapprochement pour rester crédités une seule fois.
+        var fabriques = List.copyOf(gains);
+        if (!slotsSortie.isEmpty())
+            gains.addAll(receptionSortie.actualiser(inventaire, maintenant, fabriques));
         receptions = List.copyOf(gains);
         for (var gain : gains) {
             var id =
@@ -99,8 +106,9 @@ public final class OrigineFabrication {
                         gain.quantite(),
                         (a, b) -> (int) Math.min(1_000_000_000L, (long) a + b));
         }
-        if (!gains.isEmpty() || ++age > 20) crafts.clear();
+        crafts.removeIf(
+                item -> fabriques.stream().anyMatch(s -> s.objet().getItem() == item.getItem()));
+        if (++age > 20) crafts.clear();
         precedent = List.copyOf(inventaire);
-        sorties = List.copyOf(maintenant);
     }
 }
