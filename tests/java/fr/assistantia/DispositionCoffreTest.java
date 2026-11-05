@@ -87,6 +87,26 @@ public final class DispositionCoffreTest {
         verifier("écran plein", d, 320, 240, plein, 10);
         assert d.chevauche() : d;
 
+        // Libellé machine long : entier, sur toutes les positions et jusqu'à 320x240.
+        for (int l = 320; l <= 640; l += 80)
+            for (int h = 240; h <= 400; h += 40)
+                for (int objets : new int[] {1, 5, 25})
+                    for (Zone coffre :
+                            List.of(
+                                    new Zone((l - 176) / 2, 60, 176, 166),
+                                    new Zone((l - 176) / 2, 4, 176, h - 8),
+                                    new Zone(2, 2, l - 4, h - 4))) {
+                        d = DispositionCoffre.calculer(l, h, coffre, objets, 46, 104);
+                        verifier("machine avec libellé complet", d, l, h, coffre, objets);
+                        assert d.prendre().largeur() >= 46 && d.tout().largeur() >= 104
+                                : "En cours de craft doit rester lisible " + d;
+                        assert DispositionCoffre.calculer(l, h, coffre, objets)
+                                        .equals(
+                                                DispositionCoffre.calculer(
+                                                        l, h, coffre, objets, 46, 34))
+                                : "disposition historique des coffres conservée";
+                    }
+
         // Balayage : jamais sur le coffre tant qu'une place existe.
         for (int l = 200; l <= 640; l += 40)
             for (int h = 160; h <= 400; h += 30)

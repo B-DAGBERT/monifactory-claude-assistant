@@ -180,6 +180,7 @@ class Conversation:
         self.data_dir, self.system_prompt = Path(data_dir), system_prompt
         self.model, self.effort, self.timeout = model, effort, timeout
         self.proc = self.lines = None
+        self.running_settings = None
         self.errors = deque(maxlen=20)
         self.lock = threading.RLock()
         self.path = HERE / "session_claude.json"
@@ -190,6 +191,10 @@ class Conversation:
                 self.session_id = saved.get("session_id")
         except (ValueError, OSError, AttributeError):
             pass
+
+    def configure(self, model, effort):
+        with self.lock:
+            self.model, self.effort = model, effort
 
     def _save_session(self, ident):
         if ident != self.session_id:
@@ -206,10 +211,16 @@ class Conversation:
         with self.lock:
             close(self.proc)
             self.proc = self.lines = None
+            self.running_settings = None
 
     def ask(self, prompt, on_text=None, on_tool=None, on_preview=None):
         with self.lock:
-            if self.proc is None or self.proc.poll() is not None:
+            settings = (self.model, self.effort)
+            if (
+                self.proc is None
+                or self.proc.poll() is not None
+                or self.running_settings != settings
+            ):
                 self.stop()
                 self.proc, self.lines, self.errors = start(
                     command(
@@ -221,6 +232,7 @@ class Conversation:
                         self.session_id,
                     )
                 )
+                self.running_settings = settings
             try:
                 self.proc.stdin.write(
                     json.dumps({"type": "user", "message": {"role": "user", "content": prompt}})

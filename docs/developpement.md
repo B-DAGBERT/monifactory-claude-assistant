@@ -60,7 +60,7 @@ locales ou des commits non publiés. Ne pas utiliser de reset forcé pour contou
 - `SuiviFabrication` conserve les acquisitions finales et déduit les retours d’objets déjà sortis. `OrigineFabrication` rapproche les gains réels des événements de craft et des sorties natives ; ne jamais compter l’aperçu de résultat. `CycleArbreEmi` exporte les totaux absolus dans `fabrication_emi.json`, rattachés au projet et à la version du plan. Python les applique par maximum, sans rejouer une hausse à chaque lecture.
 - `LotFabrication` distingue réservation et récupération réelle. `ReceptionSortie` rapproche les notifications séparées des cuves et des contenants. `MachinesEmi` garde seulement les sorties encore attendues dans son stock réservé. `SuiviEmiEcran` regroupe les états, le recalcul et l’annulation ; annuler ne déplace aucun objet.
 - Les allocations de `MachinesEmi` sont invalidées par une modification de l’arbre, des stocks ou des lots. Le cache des compatibilités machine est également vidé lors d’un changement de contexte, toutes les 100 ticks et sur recalcul explicite.
-- `ConfigurationCircuit` lit les ingrédients natifs GregTech, y compris un `SizedIngredient`. `ComparaisonEmi` limite l’exception NBT au Programmed Circuit.
+- `ConfigurationCircuit` lit les ingrédients natifs GregTech, y compris un `SizedIngredient`. Le réglage est contrôlé via `getCircuitInventory`, sans setter ni repli vers un circuit physique. `ComparaisonEmi.circuitVirtuel` ne retire que les catalyseurs circuits des recettes GT, jamais une cible racine ni un circuit consommé. Pour le stock natif EMI, les outils `IGTTool` conservent la comparaison par défaut ; leur matériau et leur type sont portés par l’Item. Les comparaisons explicites EMI restent inchangées.
 - `SequenceEnvoi` attend une confirmation stable avant l’action suivante. `EnvoiMachine` valide l’interface, les sources, les entrées et les cuves ; il n’effectue aucun nouvel essai automatique après un refus.
 - `game/emi.py` exporte l’avancement conservé uniquement lors d’un import explicite. Ne pas reprendre un objectif en pause.
 
@@ -137,3 +137,23 @@ les relevés vides récents et l’indépendance des stockages simples.
 les preuves restantes après attribution aux lots automatiques. Ajouter un nouveau lot ne doit
 pas oublier les retours attendus des lots précédents. Les tests vérifient les rangements/reprises,
 les fabrications successives prouvées et les preuves tardives sans double attribution.
+
+## Réglages IA en jeu
+
+Le sous-écran **Modèles IA…** utilise un canal séparé, `configuration_ia.json`, afin qu’un réglage
+ne remplace pas une question dans `demande_mod.json`. La demande contient un numéro unique, le
+moteur actif, la révision du formulaire et les quatre valeurs `model_question`, `effort_question`,
+`model_plan`, `effort_plan`. L’accusé dans `ecran.configuration_ia.reponse` doit correspondre au
+numéro envoyé ; écrire le fichier n’est pas une confirmation de sauvegarde.
+
+La sauvegarde est locale et atomique, sans essai IA. Le service refuse une demande périmée, un
+formulaire obsolète, un changement de moteur ou un changement pendant un travail. Les fichiers
+modifiés par un autre outil ne sont pas écrasés. Le chargement ne publie que les noms de modèles,
+les efforts et les états du formulaire ; aucune autre clé de configuration n’est exportée au jeu.
+
+Les appels de plan et de fiche relisent leurs réglages à chaque nouvelle demande. La conversation
+Codex conserve son thread et passe explicitement le modèle et l’effort à chaque `turn/start`,
+conformément à la [documentation officielle OpenAI](https://learn.chatgpt.com/docs/app-server).
+Claude conserve son identifiant de session et renouvelle son processus au prochain appel lorsque
+ses paramètres ont changé. Les objectifs, leur pause et les crédits de fabrication ne sont pas
+concernés par ce canal.

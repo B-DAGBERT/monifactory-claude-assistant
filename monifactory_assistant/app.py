@@ -55,6 +55,7 @@ from monifactory_assistant.game.storage import distinct_containers
 from monifactory_assistant.paths import PACKAGE_ROOT
 from monifactory_assistant.paths import ROOT as HERE
 from monifactory_assistant.platform.support import SingleInstance
+from monifactory_assistant.providers.settings import AISettings
 from monifactory_assistant.ui.discussion import DiscussionViewer, recent_history
 
 # ---------------- Réglages ----------------
@@ -65,13 +66,6 @@ HOTKEY_TYPE = "shift+f8"
 HOTKEY_NEW = "ctrl+f8"
 HOTKEY_HIDE = "f9"
 HOTKEY_VOICE = "f10"
-MODEL_PLAN = ai_provider.model("plan")
-MODEL_QUESTION = ai_provider.model("question")
-MODEL_QUICK = ai_provider.model("quick")
-# Réflexion avant de répondre : "low" (rapide), "medium", "high"... ; réglable dans
-# assistant.local.json (providers > moteur > effort_question, effort_plan).
-EFFORT_QUESTION = ai_provider.effort("question", "low")
-EFFORT_PLAN = ai_provider.effort("plan", "medium")
 COACH = "normal"  # "calme" : aucune annonce ; "normal" ; "bavard" : il commente tout
 SEARCH_MINUTES = 10  # durée de la surbrillance demandée (« trouve-moi mes torches »)
 # Réglages modifiables dans le jeu (écran Y > Réglages) et gardés dans reglages.json :
@@ -1975,6 +1969,9 @@ def build_mod_view(app):
         "joueurs": [f"{p['nom']} en {p['x']} {p['y']} {p['z']}" for p in app.world.players],
         "serveur": app.world.active,
     }
+    ai_settings = getattr(app, "ai_settings", None)
+    if ai_settings is not None:
+        screen["configuration_ia"] = ai_settings.view(app)
     if plan and progress:
         current = next((i for i, done in enumerate(progress["etapes"]) if not done), None)
         screen["objectif"] = plan["objectif"]
@@ -2044,10 +2041,15 @@ def ask_claude(prompt, data_dir, model, on_text=None, on_tool=None, effort=None)
 class Conversation:
     def __init__(self, data_dir):
         self.impl = ai_provider.conversation(
-            data_dir, SYSTEM_PROMPT, MODEL_QUESTION, EFFORT_QUESTION, TIMEOUT
+            data_dir,
+            SYSTEM_PROMPT,
+            ai_provider.model("question"),
+            ai_provider.effort("question", "low"),
+            TIMEOUT,
         )
 
     def ask(self, *args, **kwargs):
+        self.impl.configure(ai_provider.model("question"), ai_provider.effort("question", "low"))
         return self.impl.ask(*args, **kwargs)
 
     def restart(self):
@@ -2444,6 +2446,7 @@ class App:
         self.question_ack = {}
         self.update_notice = update_notice()
         self.update_notice_id = update_notice_key()
+        self.ai_settings = AISettings(HERE)
         # journal et coach
         self.session_open = False
         self.game_lost_at = 0
@@ -3167,6 +3170,9 @@ class App:
 
     def check_mod_requests(self):
         try:
+            ai_settings = getattr(self, "ai_settings", None)
+            if ai_settings is not None and ai_settings.poll(self.bridge, self):
+                self.refresh(force=True)
             path = self.bridge.dir / "demande_mod.json"
             if path.exists() and path.stat().st_mtime != self.mod_request_time:
                 modified = path.stat().st_mtime
@@ -3283,7 +3289,12 @@ class App:
             prompt = INFO_REQUEST.format(nom=name, item=item) + (
                 f"\n\nDéjà trouvé dans le pack :\n{known}" if known else ""
             )
-            answer = ask_claude(prompt, self.bridge.dir, MODEL_QUESTION, effort=EFFORT_QUESTION)
+            answer = ask_claude(
+                prompt,
+                self.bridge.dir,
+                ai_provider.model("question"),
+                effort=ai_provider.effort("question", "low"),
+            )
             self.events.put(("info_ready", item, parse_info(answer), None))
         except Exception as e:
             log(traceback.format_exc())
@@ -3577,8 +3588,8 @@ class App:
             answer = ask_claude(
                 prompt,
                 self.bridge.dir,
-                MODEL_PLAN,
-                effort=EFFORT_PLAN,
+                ai_provider.model("plan"),
+                effort=ai_provider.effort("plan", "medium"),
                 on_tool=lambda name, data: self.events.put(("status", tool_status(name, data))),
             )
             self.events.put(("plan_ready", parse_plan(answer), request, index, new_plan))

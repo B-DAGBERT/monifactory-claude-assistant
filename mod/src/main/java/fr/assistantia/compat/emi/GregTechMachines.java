@@ -18,6 +18,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.fluids.capability.templates.FluidTank;
+import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.registries.ForgeRegistries;
 
 /** Accès optionnel aux vraies entrées GregTech, sans dépendance serveur supplémentaire. */
 public final class GregTechMachines {
@@ -114,6 +116,16 @@ public final class GregTechMachines {
         BlockPos pos = (BlockPos) appeler(machine, "getPos");
         Map<?, ?> slots = (Map<?, ?>) appeler(ui, "getSlotMap");
         List<Slot> entrees = new ArrayList<>();
+        IItemHandler inventaireCircuit = inventaireCircuit(machine);
+        Object stockageCircuit = inventaireCircuit;
+        if (inventaireCircuit != null) {
+            try {
+                stockageCircuit =
+                        champ(inventaireCircuit.getClass(), "storage").get(inventaireCircuit);
+            } catch (NoSuchFieldException ignored) {
+                // Les anciens handlers exposent directement leurs cases.
+            }
+        }
         Object circuit = null;
         for (var e : slots.entrySet()) {
             Object w = e.getValue();
@@ -121,9 +133,18 @@ public final class GregTechMachines {
                 circuit = w;
                 continue;
             }
-            if (w.getClass().getName().contains("Phantom")) continue;
-            if ("INPUT".equals(String.valueOf(appeler(w, "getIngredientIO"))))
-                entrees.add((Slot) e.getKey());
+            if (w.getClass().getName().contains("Phantom")
+                    || w.getClass().getName().contains("Ghost")) continue;
+            Slot slot = (Slot) e.getKey();
+            if (inventaireCircuit != null) {
+                try {
+                    Object handler = appeler(slot, "getItemHandler");
+                    if (handler == inventaireCircuit || handler == stockageCircuit) continue;
+                } catch (NoSuchMethodException ignored) {
+                    // Case vanilla : aucun handler de circuit virtuel.
+                }
+            }
+            if ("INPUT".equals(String.valueOf(appeler(w, "getIngredientIO")))) entrees.add(slot);
         }
         entrees.sort(Comparator.comparingInt(s -> s.index));
         List<Cuve> cuves = new ArrayList<>();
@@ -224,15 +245,52 @@ public final class GregTechMachines {
         return ConfigurationCircuit.lire(recette(r));
     }
 
+    private static IItemHandler inventaireCircuit(Object machine)
+            throws ReflectiveOperationException {
+        try {
+            Object inventaire = appeler(machine, "getCircuitInventory");
+            if (inventaire == null) return null;
+            if (inventaire instanceof IItemHandler handler) return handler;
+            throw new IllegalStateException("Inventaire du circuit inaccessible");
+        } catch (NoSuchMethodException absent) {
+            return null;
+        }
+    }
+
+    /**
+     * Valeur du réglage natif (0..32), ou -1 si vide/désactivé. Une lecture inconnue échoue :
+     * l'absence de GhostCircuitSlotWidget ne signifie jamais qu'il faut un circuit physique.
+     */
+    public static int circuitConfigure(Interface ui) throws ReflectiveOperationException {
+        try {
+            if (Boolean.FALSE.equals(appeler(ui.machine(), "isCircuitSlotEnabled"))) return -1;
+        } catch (NoSuchMethodException ignored) {
+            // Ancienne interface disposant seulement d'un GhostCircuitSlotWidget.
+        }
+        ItemStack valeur;
+        IItemHandler inventaire = inventaireCircuit(ui.machine());
+        if (inventaire != null) {
+            if (inventaire.getSlots() < 1)
+                throw new IllegalStateException("Emplacement du circuit inaccessible");
+            valeur = inventaire.getStackInSlot(0);
+        } else if (ui.circuit() != null) {
+            valeur = (ItemStack) appeler(ui.circuit(), "getItem");
+        } else {
+            throw new IllegalStateException("Réglage du circuit inaccessible dans cette machine");
+        }
+        if (valeur.isEmpty()) return -1;
+        var id = ForgeRegistries.ITEMS.getKey(valeur.getItem());
+        if (id == null || !id.toString().equals("gtceu:programmed_circuit")) return -1;
+        int configuration = circuit(valeur);
+        if (configuration < 0 || configuration > 32)
+            throw new IllegalStateException("Valeur du circuit invalide");
+        return configuration;
+    }
+
     public static int circuit(ItemStack item) throws ReflectiveOperationException {
         return (int)
                 Class.forName("com.gregtechceu.gtceu.common.item.IntCircuitBehaviour")
                         .getMethod("getCircuitConfiguration", ItemStack.class)
-                        .invoke(null, item);
-    }
-
-    public static void reglerCircuit(Object widget, int valeur)
-            throws ReflectiveOperationException {
-        widget.getClass().getMethod("setCircuitValue", int.class).invoke(widget, valeur);
+                        .invoke(null, item.copy());
     }
 }

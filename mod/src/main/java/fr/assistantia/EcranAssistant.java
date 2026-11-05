@@ -58,7 +58,8 @@ public class EcranAssistant extends Screen {
     private final List<Button> actionsObjectif = new ArrayList<>();
     private OngletFilons filons;
     private OngletBase base;
-    private Button projets, objectifEmi, masquerMaj;
+    private Button projets, objectifEmi, masquerMaj, modelesIA;
+    private EcranConfigurationIA configurationIA;
     private static final AvisMiseAJour AVIS_MAJ =
             new AvisMiseAJour(
                     net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR
@@ -220,6 +221,22 @@ public class EcranAssistant extends Screen {
                                         b -> this.minecraft.setScreen(new EcranProjets(this)))
                                 .bounds(MARGE, MARGE + 26, 120, 18)
                                 .build());
+        modelesIA =
+                addRenderableWidget(
+                        Button.builder(
+                                        Component.literal("Modèles IA…"),
+                                        b -> {
+                                            if (configurationIA == null)
+                                                configurationIA = new EcranConfigurationIA(this);
+                                            this.minecraft.setScreen(configurationIA);
+                                        })
+                                .bounds(MARGE, MARGE + 26, this.width - 2 * MARGE, 20)
+                                .build());
+        modelesIA.visible = false;
+        modelesIA.setTooltip(
+                net.minecraft.client.gui.components.Tooltip.create(
+                        Component.literal(
+                                "Choisir les modèles et la réflexion pour les discussions, fiches, plans et objectifs.")));
         base = new OngletBase();
         base.init(w -> addRenderableWidget(w));
         filons = new OngletFilons();
@@ -322,6 +339,7 @@ public class EcranAssistant extends Screen {
     public boolean mouseClicked(double x, double y, int bouton) {
         if (onglet == DISCUSSION && discussion.cliquer(x, y, bouton)) return true;
         if (onglet == FILONS && filons.cliquer(x, y, bouton)) return true;
+        if (onglet == BASE && base.clic(x, y, bouton)) return true;
         for (Zone z : zones) {
             if (x < z.x()
                     || x >= z.x() + z.l()
@@ -381,6 +399,7 @@ public class EcranAssistant extends Screen {
     public void render(GuiGraphics g, int sourisX, int sourisY, float partialTick) {
         renderBackground(g);
         zones.clear();
+        modelesIA.visible = onglet == REGLAGES;
         filons.visible(onglet == FILONS);
         base.visible(onglet == BASE);
         actionsObjectif.forEach(b -> b.visible = onglet == OBJECTIF || onglet == PLAN);
@@ -765,6 +784,10 @@ public class EcranAssistant extends Screen {
 
     private void reglages(
             GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas, int sx, int sy) {
+        modelesIA.setX(x);
+        modelesIA.setY(y);
+        modelesIA.setWidth(largeur);
+        y += 28;
         JsonArray reglages = new JsonArray();
         JsonObject lumiere = new JsonObject();
         lumiere.addProperty("cle", Fullbright.CLE);

@@ -298,6 +298,13 @@ public final class Pont {
         return ecrireDemande("demande_mod.json", demande);
     }
 
+    /** Les réglages disposent de leur canal : ne jamais écraser une question en attente. */
+    public static synchronized boolean envoyerConfigurationIa(JsonObject demande) {
+        dernierEnvoi = Math.max(System.currentTimeMillis(), dernierEnvoi + 1);
+        demande.addProperty("n", dernierEnvoi);
+        return ecrireDemande("configuration_ia.json", demande);
+    }
+
     /** Canal indépendant : une recherche EMI ne remplace jamais une question en attente. */
     static boolean envoyerRechercheEmi(JsonObject demande) {
         return ecrireDemande("recherche_emi.json", demande);

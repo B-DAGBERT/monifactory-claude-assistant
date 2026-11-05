@@ -107,7 +107,10 @@ public final class MachinesEmi {
             if (lot.manuel()) {
                 int avant = lot.suivi().totalRecu();
                 nouveaux = lot.suivi().recevoir(nouveaux);
-                if (avant != lot.suivi().totalRecu()) lotsVersion++;
+                if (avant != lot.suivi().totalRecu()) {
+                    lotsVersion++;
+                    InventaireArbreEmi.invalider();
+                }
             }
     }
 
@@ -120,6 +123,7 @@ public final class MachinesEmi {
                 gains = lot.suivi().recevoir(gains);
                 if (avant != lot.suivi().totalRecu()) {
                     lotsVersion++;
+                    InventaireArbreEmi.invalider();
                     actualise = 0;
                 }
             }
@@ -214,6 +218,7 @@ public final class MachinesEmi {
                 .filter(l -> l.id() == id && l.suivi().annulable())
                 .forEach(l -> l.suivi().annuler());
         lotsVersion++;
+        InventaireArbreEmi.invalider();
         actualise = 0;
         calculPrecedent = "";
         actualiserArbre();
@@ -244,15 +249,20 @@ public final class MachinesEmi {
                             o.fois(),
                             !fr.assistantia.InventaireJoueur.synchronise()
                                     ? "Lecture du sac…"
-                                    : pret
-                                            ? (!ingredientsDisponibles(o.recette(), disponibles)
-                                                    ? "À sortir du sac"
-                                                    : estGT(o.recette())
-                                                            ? "À envoyer"
-                                                            : "À fabriquer")
-                                            : "À collecter",
+                                    : circuitARegler(o.recette())
+                                            ? "Circuit à régler"
+                                            : pret
+                                                    ? (!ingredientsDisponibles(
+                                                                    o.recette(), disponibles)
+                                                            ? "À sortir du sac"
+                                                            : estGT(o.recette())
+                                                                    ? "À envoyer"
+                                                                    : "À fabriquer")
+                                                    : "À collecter",
                             false,
-                            o.recette().getCategory().getName().getString()));
+                            circuitARegler(o.recette())
+                                    ? plan.probleme()
+                                    : o.recette().getCategory().getName().getString()));
         }
         for (var lot : lots)
             if (lot.suivi().etat() != LotFabrication.Etat.ANNULE)
@@ -298,6 +308,20 @@ public final class MachinesEmi {
         return true;
     }
 
+    /** Stock de calcul temporaire pour EMI ; jamais ajouté à l'inventaire réel ni aux preuves. */
+    public static List<PlanRetrait.Stock<EmiStack>> reservationsArbre() {
+        var mc = Minecraft.getInstance();
+        if (actif() == null
+                || actif() != arbre
+                || mc.level == null
+                || connexion != mc.getConnection()
+                || !dimension.equals(mc.level.dimension().location().toString())) return List.of();
+        return lots.stream()
+                .flatMap(l -> l.suivi().restants().stream())
+                .map(s -> new PlanRetrait.Stock<>(s.objet().copy(), s.quantite(), true))
+                .toList();
+    }
+
     /** Réservations temporaires, distinctes de l'avancement réel et des acquisitions du scan. */
     public static java.util.Map<String, Integer> reservationsObjets() {
         var mc = Minecraft.getInstance();
@@ -333,10 +357,10 @@ public final class MachinesEmi {
         var outils = new java.util.HashMap<String, Integer>();
         for (int index = 0; index < ingredients.size(); index++) {
             var i = ingredients.get(index);
-            if (i.isEmpty() || i.getEmiStacks().stream().anyMatch(ComparaisonEmi::circuit))
-                continue;
+            boolean catalyst = index >= r.getInputs().size() || i.getChance() == 0;
+            if (i.isEmpty() || ComparaisonEmi.circuitVirtuel(r, i, catalyst)) continue;
             int besoin = PlanMachines.produit(i.getAmount(), 1);
-            if (index >= r.getInputs().size() || i.getChance() == 0) {
+            if (catalyst) {
                 String key =
                         i.getEmiStacks().stream()
                                 .map(v -> v.getId() + "|" + v.getNbt())
@@ -424,6 +448,7 @@ public final class MachinesEmi {
                             java.util.Optional.ofNullable(position),
                             new LotFabrication<>(sorties, ComparaisonEmi::meme)));
         lotsVersion++;
+        InventaireArbreEmi.invalider();
         actualise = 0;
     }
 
@@ -438,10 +463,29 @@ public final class MachinesEmi {
     private static PlanMachines.Noeud<EmiStack, EmiRecipe> lire(
             Object node, Set<Object> chemin, StringBuilder key, int depth, int[] count)
             throws ReflectiveOperationException {
+        return lire(node, chemin, key, depth, count, null);
+    }
+
+    private static PlanMachines.Noeud<EmiStack, EmiRecipe> lire(
+            Object node,
+            Set<Object> chemin,
+            StringBuilder key,
+            int depth,
+            int[] count,
+            EmiRecipe parent)
+            throws ReflectiveOperationException {
         if (node == null || depth > 128 || ++count[0] > 4096 || !chemin.add(node))
             throw new IllegalArgumentException("Arbre invalide");
         var type = node.getClass();
         var ingredient = (EmiIngredient) type.getField("ingredient").get(node);
+        boolean reusable =
+                type.getField("catalyst").getBoolean(node)
+                        || type.getField("consumeChance").getFloat(node) == 0;
+        if (ComparaisonEmi.circuitVirtuel(parent, ingredient, reusable)) {
+            // Supprimer toute la branche de configuration, pas les vrais outils de la recette.
+            chemin.remove(node);
+            return null;
+        }
         var variantes =
                 ingredient.getEmiStacks().stream()
                         .filter(
@@ -455,9 +499,6 @@ public final class MachinesEmi {
         var recipe = (EmiRecipe) type.getField("recipe").get(node);
         long amount = type.getField("amount").getLong(node),
                 divisor = type.getField("divisor").getLong(node);
-        boolean reusable =
-                type.getField("catalyst").getBoolean(node)
-                        || type.getField("consumeChance").getFloat(node) == 0;
         key.append(recipe == null ? "-" : recipe.getId())
                 .append(':')
                 .append(amount)
@@ -468,7 +509,10 @@ public final class MachinesEmi {
         List<PlanMachines.Noeud<EmiStack, EmiRecipe>> enfants = new ArrayList<>();
         Object raw = type.getField("children").get(node);
         if (raw instanceof List<?> nodes)
-            for (Object child : nodes) enfants.add(lire(child, chemin, key, depth + 1, count));
+            for (Object child : nodes) {
+                var enfant = lire(child, chemin, key, depth + 1, count, recipe);
+                if (enfant != null) enfants.add(enfant);
+            }
         chemin.remove(node);
         return new PlanMachines.Noeud<>(
                 s -> variantes.stream().anyMatch(v -> ComparaisonEmi.meme(s, v)),
@@ -489,6 +533,7 @@ public final class MachinesEmi {
                 lots.clear();
                 receptionManuelle.vider();
                 lotsVersion++;
+                InventaireArbreEmi.invalider();
             }
             menuObserve = null;
             toutes = List.of();
@@ -667,7 +712,9 @@ public final class MachinesEmi {
                             ecran.width,
                             ecran.height,
                             PanneauAssistant.occupee(ecran),
-                            locales.size());
+                            locales.size(),
+                            46,
+                            104);
             page = Math.min(page, (locales.size() - 1) / disposition.parPage());
         } catch (ReflectiveOperationException | RuntimeException e) {
             // Un panneau indisponible ne doit jamais interrompre le rendu du jeu entier.
@@ -745,7 +792,7 @@ public final class MachinesEmi {
                                         op.fois() > 0
                                                 ? op.fois()
                                                         + " fabrications restantes · Clic : choisir"
-                                                : "Lot envoyé · Suivi pour voir le détail")
+                                                : "Lot en cours · récupère le résultat à sa sortie")
                                 .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
             }
         }
@@ -759,7 +806,15 @@ public final class MachinesEmi {
                 true,
                 mx,
                 my);
-        PanneauAssistant.bouton(g, font, d.tout(), "Suivi", libre, false, mx, my);
+        PanneauAssistant.bouton(
+                g,
+                font,
+                d.tout(),
+                "En cours de craft",
+                libre && selected.fois() > 0 && declarables(selected.recette()) > 0,
+                false,
+                mx,
+                my);
         if (d.pages()) {
             PanneauAssistant.bouton(g, font, d.precedent(), "‹", libre && page > 0, false, mx, my);
             PanneauAssistant.bouton(
@@ -786,7 +841,15 @@ public final class MachinesEmi {
             tooltip =
                     List.of(
                             Component.literal(
-                                    "Voir les états, recalculer ou annuler une réservation"));
+                                    selected.fois() <= 0
+                                            ? "Déjà déclaré. Le suivi global d'EMI permet d'annuler cette réservation."
+                                            : EnvoiMachine.occupe()
+                                                    ? "Attends la fin de l'envoi."
+                                                    : !fr.assistantia.InventaireJoueur.synchronise()
+                                                            ? "Lecture du sac en cours…"
+                                                            : declarables(selected.recette()) == 0
+                                                                    ? "Déclaration manuelle disponible pour les recettes avec un résultat objet garanti."
+                                                                    : "Déclarer une quantité déjà lancée. Les ingrédients ne seront plus demandés ; récupère ensuite le résultat."));
         if (tooltip != null) g.renderComponentTooltip(font, tooltip, mx, my);
     }
 
@@ -801,10 +864,21 @@ public final class MachinesEmi {
         return recu + "/" + total;
     }
 
+    private static boolean circuitARegler(EmiRecipe recette) {
+        var selection = selection();
+        return selection != null
+                && selection.recette() == recette
+                && plan != null
+                && plan.probleme().startsWith("Circuit machine");
+    }
+
     private static String etatSelection() {
         var op = selection();
         if (op == null) return "À collecter";
-        if (op.fois() > 0) return plan != null && plan.possible() ? "À envoyer" : "À collecter";
+        if (op.fois() > 0) {
+            if (circuitARegler(op.recette())) return "Circuit à régler";
+            return plan != null && plan.possible() ? "À envoyer" : "À collecter";
+        }
         return lots.stream()
                 .filter(l -> l.recette() == op.recette() && l.suivi().annulable())
                 .map(l -> l.suivi().etat().texte)
@@ -842,9 +916,10 @@ public final class MachinesEmi {
             }
         } else if (d.tout().contient(x, y)) {
             var op = selection();
-            if (op != null) {
+            if (op != null && op.fois() > 0 && declarables(op.recette()) > 0) {
                 PanneauAssistant.son();
-                Minecraft.getInstance().setScreen(new SuiviEmiEcran(ecran));
+                Minecraft.getInstance()
+                        .setScreen(new DeclarerFabricationEcran(ecran, op.recette()));
             }
         } else if (d.pages() && d.precedent().contient(x, y)) page = Math.max(0, page - 1);
         else if (d.pages() && d.suivant().contient(x, y))

@@ -28,6 +28,7 @@ Le compte IA se choisit sur chaque poste ; les conversations, coffres et objecti
 | Voir les stocks ou les filons connus      | **Y → Base / Filons**.                                                           |
 | Poser une question                        | **Y → Discussion**.                                                              |
 | Régler l’affichage et la luminosité       | **Y → Réglages**, onglet le plus à droite.                                       |
+| Choisir les modèles et la réflexion       | **Y → Réglages → Modèles IA…** ; **Appliquer** pour les prochaines demandes.     |
 
 Le contenu des **Sophisticated Backpacks portés** compte dans les besoins, EMI et l’avancement.
 Les boutons de transfert utilisent les cases accessibles : sortir les ingrédients du sac pour les envoyer.

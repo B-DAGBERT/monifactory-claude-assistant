@@ -65,7 +65,7 @@ class ParityTests(unittest.TestCase):
             "parse_info",
             "parse_plan",
             "App.start_question",
-            "App.check_mod_requests",  # question acknowledgements, tested by test_discussion_menu.py
+            "App.check_mod_requests",  # question acknowledgements and dedicated AI settings; test_discussion_menu.py/test_ai_settings.py
             "App.open_popup",
             "clean_env",
             "claude_command",
@@ -126,7 +126,8 @@ class ParityTests(unittest.TestCase):
             "App.set_objective_paused",
             "App.handle_project_request",
             "App.watch_game",
-            "App.work_info",  # réflexion réglable (effort_question)
+            "App.work_info",  # réflexion réglable à chaud (effort_question)
+            "App.work_plan",  # per-request model/effort from in-game settings; test_ai_settings.py
         }
         compatibility_changes |= {
             "App.on_game_connected",

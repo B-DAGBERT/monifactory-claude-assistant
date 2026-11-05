@@ -101,11 +101,15 @@ Dans une machine compatible, le panneau de l’assistant, au même style que cel
 - Choisir le produit à préparer. Le titre indique les fabrications possibles et restantes.
 - Survoler **Envoyer** pour voir les ingrédients, le circuit et les volumes de fluide.
 - Cliquer **Envoyer** pour déposer un lot réalisable, limité par le stock et la place disponible.
-  Les entrées existantes sont déduites, les sorties ne sont pas touchées. Le circuit programmable
-  est réglé lorsqu’il dispose de son sélecteur GregTech natif. Sa configuration vient de la
-  recette GregTech, pas du NBT factice affiché par EMI. Pour reconnaître l’objet Programmed
-  Circuit, son NBT est ignoré ; cette exception ne s’applique pas aux autres objets.
-- **Suivi** affiche les étapes et les lots envoyés. Sélectionner une recette pour **En cours de craft** si elle a déjà été lancée manuellement, ou un lot pour **Annuler le lot**. **Recette** ouvre son détail EMI. Récupérer soi-même le résultat dans la machine.
+  Les entrées existantes sont déduites, les sorties ne sont pas touchées. Le **Circuit setting**
+  est vérifié comme réglage virtuel de la machine : aucun circuit physique à collecter ou à envoyer.
+  Si le numéro est incorrect, **Circuit à régler** indique le numéro requis au survol. Le mod ne
+  modifie pas ce réglage à ta place et n’utilise pas le NBT factice de l’aperçu EMI.
+- **En cours de craft**, directement dans le panneau machine, réserve les résultats du lot déjà lancé.
+  EMI masque les ingrédients des branches entièrement couvertes et garde le produit attendu.
+  Les résultats restent à récupérer : cette réservation ne valide pas l’objectif.
+- **Suivi**, près de **Scanner coffres**, conserve l’accès aux étapes, à **Recette** et à **Annuler le lot**.
+  Récupérer soi-même le résultat dans la machine.
 
 Les fluides proviennent uniquement des seaux et cellules de l’inventaire. Les contenants sont
 vidés par le clic natif GregTech puis rendus à l’inventaire. Le volume réel est affiché avant
@@ -193,3 +197,10 @@ sélectionner le filon, puis **Rétablir**. Les relevés et le journal GregTech 
 horizontalement. Si aucun point libre n’est connu, la TP vise directement un bloc au-dessus
 du centre, même en zone non chargée : **l’arrivée peut être dans la roche**. Aucun bloc n’est
 creusé ou supprimé. Les commandes / permissions opérateur restent nécessaires.
+
+## Machines regroupées dans Base
+
+Les machines d’un même type apparaissent dans un groupe repliable avec leur quantité et un résumé
+des états. Cliquer sur le groupe pour voir chaque emplacement et son propre état. Les tiers différents
+restent séparés ; une machine unique apparaît directement. La recherche et les filtres continuent
+de s’appliquer aux machines du groupe.

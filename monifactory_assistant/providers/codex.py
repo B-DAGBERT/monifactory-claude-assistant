@@ -61,6 +61,10 @@ class Conversation:
         except (OSError, ValueError, AttributeError):
             pass
 
+    def configure(self, model, effort):
+        with self.lock:
+            self.model, self.effort = model, effort
+
     def prepare(self):
         """Claim the saved thread for the mod, without creating a thread or sending a turn."""
         with self.lock:

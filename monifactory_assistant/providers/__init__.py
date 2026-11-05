@@ -12,6 +12,7 @@ DEFAULTS = {
     "claude": {"plan": "sonnet", "question": "sonnet", "quick": "haiku"},
 }
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
+EFFORTS_BY_PROVIDER = {"codex": EFFORTS, "claude": EFFORTS}
 
 
 def provider(config=None):
@@ -38,7 +39,7 @@ def effort(kind, default, config=None):
     """Réflexion choisie pour ce moteur (effort_plan, effort_question), sinon celle du code."""
     config = CONFIG if config is None else config
     value = config.get("providers", {}).get(provider(config), {}).get("effort_" + kind)
-    return value if value in EFFORTS else default
+    return value if value in EFFORTS_BY_PROVIDER[provider(config)] else default
 
 
 def find_claude():

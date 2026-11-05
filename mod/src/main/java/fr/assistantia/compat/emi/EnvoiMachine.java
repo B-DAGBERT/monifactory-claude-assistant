@@ -105,9 +105,31 @@ public final class EnvoiMachine {
                                                         .isEqual(v));
     }
 
-    private static boolean circuit(EmiIngredient i) {
-        return i.getEmiStacks().stream()
-                .anyMatch(v -> v.getId().toString().equals("gtceu:programmed_circuit"));
+    private static int circuitRequis(EmiRecipe recipe) throws ReflectiveOperationException {
+        var tous = ingredients(recipe);
+        for (int i = 0; i < tous.size(); i++) {
+            var ingredient = tous.get(i);
+            boolean outil = i >= recipe.getInputs().size() || ingredient.getChance() == 0;
+            if (ComparaisonEmi.circuitVirtuel(recipe, ingredient, outil))
+                return GregTechMachines.configurationCircuit(recipe);
+        }
+        return -1;
+    }
+
+    private static String problemeCircuit(GregTechMachines.Interface ui, int requis) {
+        if (requis < 0) return "";
+        try {
+            int actuel = GregTechMachines.circuitConfigure(ui);
+            return actuel == requis
+                    ? ""
+                    : "Circuit machine : régler sur "
+                            + requis
+                            + " (actuel : "
+                            + (actuel < 0 ? "aucun" : actuel)
+                            + ")";
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return "Circuit machine : lecture indisponible (requis : " + requis + ")";
+        }
     }
 
     public static Plan preparer(AbstractContainerScreen<?> screen, EmiRecipe recipe, int demande) {
@@ -119,10 +141,18 @@ public final class EnvoiMachine {
                 return vide("Machine en cours de fabrication");
             if (!screen.getMenu().getCarried().isEmpty())
                 return vide("Pose l’objet tenu par la souris");
+            final int circuit;
+            try {
+                circuit = circuitRequis(recipe);
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                return vide("Circuit machine : configuration de la recette illisible");
+            }
+            String erreurCircuit = problemeCircuit(ui, circuit);
+            if (!erreurCircuit.isEmpty()) return vide(erreurCircuit);
             Plan dernier = vide("Ingrédients manquants");
             // Un lot borné par les piles et les cuves. Le reste restera proposé ensuite.
             for (int n = Math.min(64, demande); n >= 1; n--) {
-                dernier = calculer(screen.getMenu(), ui, recipe, n);
+                dernier = calculer(screen.getMenu(), ui, recipe, n, circuit);
                 if (dernier.possible()) return dernier;
             }
             return dernier;
@@ -136,7 +166,11 @@ public final class EnvoiMachine {
     }
 
     private static Plan calculer(
-            AbstractContainerMenu menu, GregTechMachines.Interface ui, EmiRecipe recipe, int n)
+            AbstractContainerMenu menu,
+            GregTechMachines.Interface ui,
+            EmiRecipe recipe,
+            int n,
+            int circuitRequis)
             throws ReflectiveOperationException {
         List<SequenceEnvoi.Action> actions = new ArrayList<>();
         actions.add(
@@ -146,6 +180,8 @@ public final class EnvoiMachine {
                                 GregTechMachines.compatible(ui.machine(), recipe)
                                         && !GregTechMachines.occupe(ui.machine()),
                                 "Machine modifiée ou déjà en cours de fabrication");
+                        String erreurCircuit = problemeCircuit(ui, circuitRequis);
+                        verifier(erreurCircuit.isEmpty(), erreurCircuit);
                     }
 
                     public boolean confirmee() {
@@ -153,6 +189,7 @@ public final class EnvoiMachine {
                     }
                 });
         List<String> details = new ArrayList<>();
+        if (circuitRequis >= 0) details.add("Circuit machine : " + circuitRequis + " · vérifié");
         List<Slot> joueurs =
                 menu.slots.stream()
                         .filter(EnvoiMachine::personnel)
@@ -170,6 +207,7 @@ public final class EnvoiMachine {
             var ingredient = tous.get(k);
             if (ingredient.isEmpty()) continue;
             boolean outil = k >= recipe.getInputs().size() || ingredient.getChance() == 0;
+            if (ComparaisonEmi.circuitVirtuel(recipe, ingredient, outil)) continue;
             int besoin = PlanMachines.produit(ingredient.getAmount(), outil ? 1 : n);
             if (outil) {
                 String key =
@@ -188,24 +226,6 @@ public final class EnvoiMachine {
                 outilsDemandes.merge(key, besoin, Math::max);
                 besoin = Math.max(0, besoin - deja);
                 if (besoin == 0) continue;
-            }
-            if (circuit(ingredient) && ui.circuit() != null) {
-                int valeur = GregTechMachines.configurationCircuit(recipe);
-                actions.add(
-                        new SequenceEnvoi.Action() {
-                            public void envoyer() throws Exception {
-                                GregTechMachines.reglerCircuit(ui.circuit(), valeur);
-                            }
-
-                            public boolean confirmee() throws Exception {
-                                ItemStack s =
-                                        (ItemStack)
-                                                GregTechMachines.appeler(ui.circuit(), "getItem");
-                                return !s.isEmpty() && GregTechMachines.circuit(s) == valeur;
-                            }
-                        });
-                details.add("Circuit : " + valeur);
-                continue;
             }
             if (ingredient.getEmiStacks().stream().anyMatch(s -> !s.getItemStack().isEmpty())) {
                 items.add(new PlanRetrait.Besoin<>(s -> accepte(ingredient, s), besoin));

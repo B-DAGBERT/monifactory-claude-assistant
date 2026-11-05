@@ -50,8 +50,8 @@ Les valeurs de `assistant.local.json` ont priorité. Exemple :
 ```
 
 `effort_plan` et `effort_question` règlent la réflexion avant de répondre : `low`, `medium`, `high`,
-`xhigh` ou `max`. Plus elle est élevée, plus la réponse est soignée et lente. Sans réglage, les plans
-utilisent `medium` et les questions `low`.
+`xhigh` ou `max`, selon ce que le modèle accepte. Une valeur plus élevée demande davantage de
+réflexion et peut allonger le traitement. Sans réglage, les plans utilisent `medium` et les questions `low`.
 Les anciens `model_plan`, `model_question` et `model_quick` à la racine concernent uniquement Codex.
 Ils ne sont jamais envoyés à Claude. Le chemin de l’instance peut être défini par `minecraft_dir`,
 et celui du JDK 17 qui compile le mod par `java_home` (utile sur Windows, où le Java de CurseForge
@@ -63,6 +63,39 @@ Claude démarre à la première demande, garde son processus pour les suivantes 
 sauvegardée après redémarrage. Une erreur ou un délai dépassé ne renvoie jamais automatiquement
 une question. Ctrl+F8 remet à zéro uniquement la conversation du moteur actif.
 Projets, objectifs, pause, fiches et mémoire des coffres restent communs sur chaque installation.
+
+## Configurer les modèles dans Minecraft
+
+Dans **Y → Réglages → Modèles IA…**, le moteur actif est affiché avec deux profils :
+
+| Profil               | Utilisation                                          | Valeurs Codex par défaut          |
+| -------------------- | ---------------------------------------------------- | --------------------------------- |
+| Discussion et fiches | Questions écrites/vocales et nouvelles fiches avec I | `gpt-5.6-sol`, réflexion `low`    |
+| Plans et objectifs   | Génération d’un nouveau plan ou objectif             | `gpt-6.1-sol`, réflexion `medium` |
+
+Modifier le nom exact du modèle et le niveau de réflexion, puis cliquer **Appliquer**. Attendre le
+message de confirmation : **Enregistrement…** signifie seulement que la demande est en cours.
+**Défauts** remplit le formulaire avec les valeurs du moteur actif ; il faut encore appliquer.
+**Retour** ou Échap revient aux réglages sans envoyer le brouillon.
+
+Après confirmation, les prochaines demandes utilisent les nouveaux choix **sans redémarrer
+l’assistant**. La conversation et son historique sont conservés. Une demande déjà en cours empêche
+l’application du changement ; attendre sa fin puis appliquer. Le réglage reste enregistré dans
+`assistant.local.json`, uniquement pour le moteur actif. Les autres paramètres et le moteur du
+collègue ne sont pas modifiés.
+
+Le menu vérifie la forme du nom et les niveaux de réflexion proposés, sans lancer de requête IA.
+L’accès réel dépend du modèle et du compte ; un nom accepté dans le formulaire ne prouve pas cet
+accès. Les anciennes fiches mémorisées restent locales. La réflexion règle l’effort de traitement ;
+ce menu ne règle pas le mode Fast ou le service prioritaire.
+
+Changer de moteur Claude/Codex reste dans **Choisir IA**, puis nécessite de relancer l’assistant.
+Si le fichier de configuration a été modifié par un autre outil pendant que l’assistant tourne,
+le menu refuse de l’écraser et demande une relance pour charger ces modifications.
+
+L’installation initiale de ce menu nécessite le mod **shared.29** et l’assistant correspondant :
+redémarrer les deux après mise à jour. Les changements de modèle faits ensuite dans ce menu ne
+nécessitent plus de redémarrage.
 
 ## Suivre la discussion dans Codex en lecture seule
 

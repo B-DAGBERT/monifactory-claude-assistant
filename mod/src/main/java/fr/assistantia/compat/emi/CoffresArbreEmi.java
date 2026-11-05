@@ -1,6 +1,7 @@
 package fr.assistantia.compat.emi;
 
 import com.mojang.logging.LogUtils;
+import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.ArbreCollecte;
@@ -315,10 +316,30 @@ public final class CoffresArbreEmi {
     private static ArbreCollecte.Noeud lire(
             Object node, Set<Object> chemin, int[] count, int depth, List<EmiStack> variantes)
             throws ReflectiveOperationException {
+        return lire(node, chemin, count, depth, variantes, null);
+    }
+
+    private static ArbreCollecte.Noeud lire(
+            Object node,
+            Set<Object> chemin,
+            int[] count,
+            int depth,
+            List<EmiStack> variantes,
+            EmiRecipe parent)
+            throws ReflectiveOperationException {
         if (node == null || depth > 128 || ++count[0] > 4096 || !chemin.add(node))
             throw new IllegalArgumentException("Arbre EMI invalide ou trop grand");
         Class<?> type = node.getClass();
         EmiIngredient ingredient = (EmiIngredient) type.getField("ingredient").get(node);
+        boolean catalystDeclare =
+                type.getField("catalyst").getBoolean(node)
+                        || type.getField("consumeChance").getFloat(node) == 0;
+        if (ComparaisonEmi.circuitVirtuel(parent, ingredient, catalystDeclare)) {
+            // Réglage de la machine : ni objet à trouver, ni sous-recette à fabriquer.
+            chemin.remove(node);
+            return null;
+        }
+        EmiRecipe recette = (EmiRecipe) type.getField("recipe").get(node);
         Set<String> ids = new LinkedHashSet<>();
         boolean outil = true;
         for (EmiStack stack : ingredient.getEmiStacks()) {
@@ -336,15 +357,14 @@ public final class CoffresArbreEmi {
                             || !stack.getRemainder().isEmpty()
                                     && stack.getRemainder().getItemStack().is(item.getItem());
         }
-        boolean catalyst =
-                type.getField("catalyst").getBoolean(node)
-                        || outil && !ids.isEmpty()
-                        || type.getField("consumeChance").getFloat(node) == 0;
+        boolean catalyst = catalystDeclare || outil && !ids.isEmpty();
         List<ArbreCollecte.Noeud> children = new ArrayList<>();
         Object raw = type.getField("children").get(node);
         if (raw instanceof List<?> nodes)
-            for (Object child : nodes)
-                children.add(lire(child, chemin, count, depth + 1, variantes));
+            for (Object child : nodes) {
+                var enfant = lire(child, chemin, count, depth + 1, variantes, recette);
+                if (enfant != null) children.add(enfant);
+            }
         chemin.remove(node);
         return new ArbreCollecte.Noeud(
                 ids,

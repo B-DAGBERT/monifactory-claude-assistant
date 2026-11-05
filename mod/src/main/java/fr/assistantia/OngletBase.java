@@ -20,7 +20,12 @@ public final class OngletBase {
     private long dernierClic;
     private boolean actif;
     private JsonArray source;
-    private List<JsonObject> machines = List.of();
+    private static final Set<String> GROUPES_OUVERTS = new HashSet<>();
+    private final GroupesMachines<JsonObject> groupes = new GroupesMachines<>(GROUPES_OUVERTS);
+    private final List<ZoneGroupe> zones = new ArrayList<>();
+
+    private record ZoneGroupe(String type, int y) {}
+
     private String filtreTexte = "";
     private int filtreCategorie = -1, alertes;
 
@@ -71,7 +76,7 @@ public final class OngletBase {
         source = liste;
         filtreTexte = texte;
         filtreCategorie = categorie;
-        machines = new ArrayList<>();
+        List<GroupesMachines.Machine<JsonObject>> machines = new ArrayList<>();
         alertes = 0;
         String requete = normaliser(texte);
         for (var element : liste) {
@@ -81,18 +86,26 @@ public final class OngletBase {
             if (alerte) alertes++;
             if ((categorie == 1 && !alerte) || (categorie == 2 && !couleur.equals("vert")))
                 continue;
-            if (normaliser(Pont.texte(m, "nom")).contains(requete)) machines.add(m);
+            String nom = Pont.texte(m, "nom");
+            if (!normaliser(nom).contains(requete)) continue;
+            String type = Pont.texte(m, "item");
+            if (type.isBlank()) type = "nom:" + normaliser(nom);
+            int priorite =
+                    switch (couleur) {
+                        case "rouge" -> 0;
+                        case "jaune" -> 1;
+                        case "vert" -> 2;
+                        default -> 3;
+                    };
+            machines.add(
+                    new GroupesMachines.Machine<>(
+                            type,
+                            nom,
+                            Pont.texte(m, "dimension") + "|" + position(m),
+                            priorite,
+                            m));
         }
-        machines.sort(
-                Comparator.<JsonObject>comparingInt(
-                                m ->
-                                        switch (Pont.texte(m, "couleur")) {
-                                            case "rouge" -> 0;
-                                            case "jaune" -> 1;
-                                            case "vert" -> 2;
-                                            default -> 3;
-                                        })
-                        .thenComparing(m -> Pont.texte(m, "nom")));
+        groupes.actualiser(machines);
     }
 
     public void render(
@@ -116,6 +129,7 @@ public final class OngletBase {
                         Component.literal(
                                 "Filtrer : toutes les machines, alertes / attente ou machines en marche.")));
         actualiser(vue);
+        zones.clear();
         String resume =
                 Pont.liste(vue, "machines").size()
                         + " machines · "
@@ -126,52 +140,21 @@ public final class OngletBase {
                 mc.font, mc.font.plainSubstrByWidth(resume, largeur), x, y + 25, Hud.GRIS, false);
         int debut = y + 40;
         lignes = Math.max(0, (bas - 15 - debut) / 30);
-        total = machines.size();
+        total = groupes.lignes().size();
         decalage = Math.min(decalage, Math.max(0, total - lignes));
         for (int i = 0; i < lignes && decalage + i < total; i++) {
-            var m = machines.get(decalage + i);
+            var ligne = groupes.lignes().get(decalage + i);
             int ly = debut + i * 30;
             boolean survol = mx >= x && mx < x + largeur && my >= ly && my < ly + 28;
-            g.fill(x, ly, x + largeur, ly + 28, survol ? 0x60404A53 : 0x30303840);
-            g.fill(x, ly, x + 2, ly + 28, 0xFF000000 | Hud.couleur(Pont.texte(m, "couleur")));
-            g.renderItem(Pont.objet(Pont.texte(m, "item")), x + 6, ly + 6);
-            g.drawString(
-                    mc.font,
-                    mc.font.plainSubstrByWidth(Pont.texte(m, "nom"), largeur - 32),
-                    x + 28,
-                    ly + 3,
-                    Hud.BLANC,
-                    false);
-            String etat = Pont.texte(m, "etat");
-            long vu = (long) Pont.nombre(m, "vu", 0);
-            boolean ancien = vu == 0 || System.currentTimeMillis() - vu > 30000;
-            g.drawString(
-                    mc.font,
-                    mc.font.plainSubstrByWidth(
-                            (ancien ? "Dernier relevé : " : "") + etat, largeur - 32),
-                    x + 28,
-                    ly + 16,
-                    ancien ? Hud.GRIS : Hud.couleur(Pont.texte(m, "couleur")),
-                    false);
-            if (survol) {
-                String detail =
-                        Pont.texte(m, "nom")
-                                + "\n"
-                                + etat
-                                + "\nX "
-                                + (int) Pont.nombre(m, "x", 0)
-                                + " · Y "
-                                + (int) Pont.nombre(m, "y", 0)
-                                + " · Z "
-                                + (int) Pont.nombre(m, "z", 0)
-                                + "\n"
-                                + Pont.texte(m, "dimension")
-                                + (ancien
-                                        ? "\nRelevé ancien : approche-toi pour actualiser."
-                                        : "\nObservation récente.");
-                g.renderTooltip(
-                        mc.font,
-                        mc.font.split(Component.literal(detail), Math.min(largeur, 320)),
+            if (ligne.entete()) {
+                dessinerGroupe(g, ligne.groupe(), ly, survol, mx, my);
+            } else {
+                dessinerMachine(
+                        g,
+                        ligne.machine().valeur(),
+                        ligne.groupe().machines().size() > 1,
+                        ly,
+                        survol,
                         mx,
                         my);
             }
@@ -189,10 +172,12 @@ public final class OngletBase {
                     Hud.GRIS,
                     false);
         String statut =
-                (total == 0 ? "0" : (decalage + 1) + "–" + Math.min(total, decalage + lignes))
+                (total == 0 || lignes == 0
+                                ? "0"
+                                : (decalage + 1) + "–" + Math.min(total, decalage + lignes))
                         + " / "
                         + total
-                        + " · "
+                        + " lignes · "
                         + (Pont.vrai(vue, "serveur")
                                 ? "liaison serveur active"
                                 : "derniers relevés conservés");
@@ -217,6 +202,132 @@ public final class OngletBase {
                     mx,
                     my);
         }
+    }
+
+    private static String position(JsonObject m) {
+        return "X "
+                + (int) Pont.nombre(m, "x", 0)
+                + " · Y "
+                + (int) Pont.nombre(m, "y", 0)
+                + " · Z "
+                + (int) Pont.nombre(m, "z", 0);
+    }
+
+    private void dessinerGroupe(
+            GuiGraphics g,
+            GroupesMachines.Groupe<JsonObject> groupe,
+            int ly,
+            boolean survol,
+            int mx,
+            int my) {
+        zones.add(new ZoneGroupe(groupe.type(), ly));
+        var representant = groupe.machines().get(0).valeur();
+        boolean ouvert = groupes.ouvert(groupe.type());
+        g.fill(x, ly, x + largeur, ly + 28, survol ? 0x80404A53 : 0x50303840);
+        g.fill(
+                x,
+                ly,
+                x + 2,
+                ly + 28,
+                0xFF000000 | Hud.couleur(Pont.texte(representant, "couleur")));
+        g.renderItem(Pont.objet(Pont.texte(representant, "item")), x + 6, ly + 6);
+        String quantite = "× " + groupe.machines().size();
+        int lQuantite = mc.font.width(quantite);
+        g.drawString(mc.font, quantite, x + largeur - lQuantite - 6, ly + 3, Hud.OR, false);
+        g.drawString(
+                mc.font,
+                mc.font.plainSubstrByWidth(
+                        (ouvert ? "− " : "+ ") + groupe.nom(), largeur - lQuantite - 40),
+                x + 28,
+                ly + 3,
+                Hud.BLANC,
+                false);
+        int marche = groupe.enMarche(), aVerifier = groupe.alertes();
+        List<String> etats = new ArrayList<>();
+        if (marche > 0) etats.add(marche + " en marche");
+        if (aVerifier > 0) etats.add(aVerifier + " à vérifier");
+        String resume =
+                etats.isEmpty()
+                        ? groupe.machines().size() + " emplacements"
+                        : String.join(" · ", etats);
+        g.drawString(
+                mc.font,
+                mc.font.plainSubstrByWidth(resume, largeur - 32),
+                x + 28,
+                ly + 16,
+                Hud.GRIS,
+                false);
+        if (survol) {
+            String detail =
+                    groupe.nom()
+                            + " · "
+                            + quantite
+                            + "\n"
+                            + resume
+                            + (ouvert
+                                    ? "\nCliquer pour replier les emplacements."
+                                    : "\nCliquer pour voir chaque emplacement et son état.");
+            g.renderTooltip(
+                    mc.font,
+                    mc.font.split(Component.literal(detail), Math.min(largeur, 320)),
+                    mx,
+                    my);
+        }
+    }
+
+    private void dessinerMachine(
+            GuiGraphics g, JsonObject m, boolean enfant, int ly, boolean survol, int mx, int my) {
+        int gauche = x + (enfant ? 10 : 0), espace = largeur - (enfant ? 10 : 0);
+        g.fill(gauche, ly, x + largeur, ly + 28, survol ? 0x60404A53 : 0x30303840);
+        g.fill(gauche, ly, gauche + 2, ly + 28, 0xFF000000 | Hud.couleur(Pont.texte(m, "couleur")));
+        g.renderItem(Pont.objet(Pont.texte(m, "item")), gauche + 6, ly + 6);
+        g.drawString(
+                mc.font,
+                mc.font.plainSubstrByWidth(
+                        enfant ? position(m) : Pont.texte(m, "nom"), espace - 32),
+                gauche + 28,
+                ly + 3,
+                Hud.BLANC,
+                false);
+        String etat = Pont.texte(m, "etat");
+        long vu = (long) Pont.nombre(m, "vu", 0);
+        boolean ancien = vu == 0 || System.currentTimeMillis() - vu > 30000;
+        g.drawString(
+                mc.font,
+                mc.font.plainSubstrByWidth((ancien ? "Dernier relevé : " : "") + etat, espace - 32),
+                gauche + 28,
+                ly + 16,
+                ancien ? Hud.GRIS : Hud.couleur(Pont.texte(m, "couleur")),
+                false);
+        if (survol) {
+            String detail =
+                    Pont.texte(m, "nom")
+                            + "\n"
+                            + etat
+                            + "\n"
+                            + position(m)
+                            + "\n"
+                            + Pont.texte(m, "dimension")
+                            + (ancien
+                                    ? "\nRelevé ancien : approche-toi pour actualiser."
+                                    : "\nObservation récente.");
+            g.renderTooltip(
+                    mc.font,
+                    mc.font.split(Component.literal(detail), Math.min(largeur, 320)),
+                    mx,
+                    my);
+        }
+    }
+
+    public boolean clic(double mx, double my, int bouton) {
+        if (!actif || bouton != 0 || mx < x || mx >= x + largeur) return false;
+        for (var zone : zones)
+            if (my >= zone.y() && my < zone.y() + 28) {
+                if (groupes.basculer(zone.type(), System.currentTimeMillis()))
+                    recherche.setFocused(false);
+                return true;
+            }
+        return false;
     }
 
     public boolean defiler(double mx, double my, double delta) {

@@ -136,8 +136,21 @@ public final class DispositionCoffre {
      */
     public static Disposition calculer(
             int largeurEcran, int hauteurEcran, Zone occupee, int objets) {
+        return calculer(largeurEcran, hauteurEcran, occupee, objets, PRENDRE, TOUT);
+    }
+
+    /** Des libellés longs côté machine sans changer les panneaux des coffres. */
+    public static Disposition calculer(
+            int largeurEcran,
+            int hauteurEcran,
+            Zone occupee,
+            int objets,
+            int largeurPrendre,
+            int largeurTout) {
         objets = Math.max(1, objets);
-        Disposition bandeau = bandeau(largeurEcran, objets);
+        largeurPrendre = Math.max(PRENDRE, largeurPrendre);
+        largeurTout = Math.max(TOUT, largeurTout);
+        Disposition bandeau = bandeau(largeurEcran, objets, largeurPrendre, largeurTout);
         int x = Math.max(MARGE, Math.min(occupee.x(), largeurEcran - largeur(bandeau) - MARGE));
         int y = occupee.y() - ECART - hauteur(bandeau);
         if (y >= MARGE) return bandeau.placer(x, y, false);
@@ -145,7 +158,14 @@ public final class DispositionCoffre {
         int droite = largeurEcran - occupee.droite() - ECART - MARGE;
         boolean aGauche = colonnes(gauche) >= colonnes(droite);
         int colonnes = colonnes(aGauche ? gauche : droite);
-        Disposition bloc = colonnes >= 2 ? bloc(hauteurEcran, objets, colonnes) : null;
+        int minimum =
+                largeurPrendre == PRENDRE && largeurTout == TOUT
+                        ? 0
+                        : Math.max(largeurPrendre, largeurTout);
+        Disposition bloc =
+                colonnes >= 2 && colonnes * ICONE - 2 >= minimum
+                        ? bloc(hauteurEcran, objets, colonnes, largeurPrendre, largeurTout)
+                        : null;
         if (bloc != null) {
             int bx = aGauche ? occupee.x() - ECART - largeur(bloc) : occupee.droite() + ECART;
             int by = Math.max(MARGE, Math.min(occupee.y(), hauteurEcran - hauteur(bloc) - MARGE));
@@ -168,8 +188,9 @@ public final class DispositionCoffre {
     }
 
     /** Une ligne : titre sur deux lignes, icônes, flèches, Prendre et Tout. Construit en (0, 0). */
-    private static Disposition bandeau(int largeurEcran, int objets) {
-        int fixe = BARRE + BORD + TITRE + ECART + ECART + PRENDRE + 2 + TOUT + BORD;
+    private static Disposition bandeau(
+            int largeurEcran, int objets, int largeurPrendre, int largeurTout) {
+        int fixe = BARRE + BORD + TITRE + ECART + ECART + largeurPrendre + 2 + largeurTout + BORD;
         int place = largeurEcran - 2 * MARGE - fixe;
         int colonnes = Math.max(1, Math.min(Math.min(objets, COLONNES_MAX), place / ICONE));
         boolean pages = objets > colonnes;
@@ -184,8 +205,8 @@ public final class DispositionCoffre {
             suivant = new Zone(bx + FLECHE + 2, by, FLECHE, BOUTON);
             bx += 2 * FLECHE + 2 + ECART;
         }
-        Zone prendre = new Zone(bx, by, PRENDRE, BOUTON);
-        Zone tout = new Zone(prendre.droite() + 2, by, TOUT, BOUTON);
+        Zone prendre = new Zone(bx, by, largeurPrendre, BOUTON);
+        Zone tout = new Zone(prendre.droite() + 2, by, largeurTout, BOUTON);
         return new Disposition(
                 new Zone(0, 0, tout.droite() + BORD, BORD + 18 + BORD),
                 titre,
@@ -204,9 +225,10 @@ public final class DispositionCoffre {
      * Sur le côté : titre et flèches, deux lignes d'icônes au plus (quatre si le côté est étroit),
      * puis Prendre et Tout côte à côte quand la largeur le permet. Construit en (0, 0).
      */
-    private static Disposition bloc(int hauteurEcran, int objets, int colonnes) {
+    private static Disposition bloc(
+            int hauteurEcran, int objets, int colonnes, int largeurPrendre, int largeurTout) {
         int interieur = colonnes * ICONE - 2;
-        boolean cote = interieur >= PRENDRE + 2 + TOUT;
+        boolean cote = interieur >= largeurPrendre + 2 + largeurTout;
         int fixe = BORD + LIGNE + 1 + (cote ? BOUTON : 2 * BOUTON + 2) + BORD;
         int maximum =
                 Math.min(
@@ -227,8 +249,8 @@ public final class DispositionCoffre {
         int by = grille.y() + lignes * ICONE;
         Zone prendre, tout;
         if (cote) {
-            prendre = new Zone(gx, by, interieur - TOUT - 2, BOUTON);
-            tout = new Zone(gx + interieur - TOUT, by, TOUT, BOUTON);
+            prendre = new Zone(gx, by, interieur - largeurTout - 2, BOUTON);
+            tout = new Zone(gx + interieur - largeurTout, by, largeurTout, BOUTON);
         } else {
             prendre = new Zone(gx, by, interieur, BOUTON);
             tout = new Zone(gx, by + BOUTON + 2, interieur, BOUTON);

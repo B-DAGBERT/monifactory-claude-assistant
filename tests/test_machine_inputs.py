@@ -89,6 +89,8 @@ public class EmiStack implements EmiIngredient {
     public static EmiStack of(ItemStack s){return new EmiStack(s.copy(),s.getCount());}
     public static EmiStack of(Fluid f,Object tag,long n){return new EmiStack(f,n);}
     public ItemStack getItemStack(){return key instanceof ItemStack s?s:ItemStack.EMPTY;}
+    public EmiStack copy(){var s=new EmiStack(key instanceof ItemStack i?i.copy():key,amount);s.chance=chance;return s;}
+    public EmiStack comparison(java.util.function.Function<Comparison,Comparison> f){f.apply(Comparison.DEFAULT_COMPARISON);return this;}
     public Object getNbt(){return null;} public Object getKey(){return key;} public Object getId(){return key instanceof ItemStack s?s.id:((Fluid)key).id();}
     public net.minecraft.network.chat.Component getName(){return net.minecraft.network.chat.Component.literal(getId().toString());}
     public boolean isEqual(EmiStack b){return key instanceof ItemStack s&&b.key instanceof ItemStack t?ItemStack.isSameItemSameTags(s,t):key.equals(b.key);}
@@ -97,7 +99,18 @@ public class EmiStack implements EmiIngredient {
 }
 """,
         "dev.emi.emi.api.recipe.EmiRecipe": """
-public record EmiRecipe(java.util.List<dev.emi.emi.api.stack.EmiIngredient> getInputs,java.util.List<dev.emi.emi.api.stack.EmiIngredient> getCatalysts){}
+public class EmiRecipe {
+ private final java.util.List<dev.emi.emi.api.stack.EmiIngredient> inputs,catalysts;
+ public EmiRecipe(java.util.List<dev.emi.emi.api.stack.EmiIngredient> i,java.util.List<dev.emi.emi.api.stack.EmiIngredient> c){inputs=i;catalysts=c;}
+ public java.util.List<dev.emi.emi.api.stack.EmiIngredient> getInputs(){return inputs;}
+ public java.util.List<dev.emi.emi.api.stack.EmiIngredient> getCatalysts(){return catalysts;}
+}
+""",
+        "dev.emi.emi.api.stack.Comparison": "public class Comparison {public static final Comparison DEFAULT_COMPARISON=new Comparison();public static Comparison compareNbt(){return new Comparison();}}",
+        "com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe": """
+public class GTEmiRecipe extends dev.emi.emi.api.recipe.EmiRecipe {
+ public GTEmiRecipe(java.util.List<dev.emi.emi.api.stack.EmiIngredient> i,java.util.List<dev.emi.emi.api.stack.EmiIngredient> c){super(i,c);}
+}
 """,
         "com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient": "public class IntCircuitIngredient {private final int configuration;public IntCircuitIngredient(int n){configuration=n;}}",
         "com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient": "public record SizedIngredient(Object getInner) {}",
@@ -113,7 +126,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.fluids.capability.templates.FluidTank;
 import net.minecraftforge.fluids.FluidUtil;
 public class GregTechMachines {
-    public static Interface ui;public static boolean busy;public static int configuration=7;
+    public static Interface ui;public static boolean busy;public static int configuration=7,machineCircuit=-2;
     public static List<Slot> outputSlots=List.of();
     public static List<Slot> sorties(AbstractContainerMenu menu)throws ReflectiveOperationException{return outputSlots;}
     public record Content(Object content) {}
@@ -128,7 +141,8 @@ public class GregTechMachines {
     public static boolean compatible(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return true;}
     public static boolean occupe(Object m){return busy;}
     public static int circuit(ItemStack s){return s.tag;}
-    public static void reglerCircuit(Object w,int v){((ItemStack)w).tag=v;((ItemStack)w).count=1;}
+    public static int circuitConfigure(Interface ui) throws ReflectiveOperationException {return machineCircuit!=-2?machineCircuit:ui.circuit() instanceof ItemStack s&&!s.isEmpty()?s.tag:-1;}
+    public static void reglerCircuit(Object w,int v){throw new AssertionError("Le réglage machine ne doit pas être modifié");}
     public static Object appeler(Object w,String name){return w;}
     public static class Cuve {
         public FluidTank tank=new FluidTank(16000);public int calls;

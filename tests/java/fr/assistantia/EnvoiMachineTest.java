@@ -31,6 +31,7 @@ public final class EnvoiMachineTest {
         ArbreEmi.tree = new Object();
         GregTechMachines.busy = false;
         GregTechMachines.configuration = 7;
+        GregTechMachines.machineCircuit = -2;
         RetraitCoffre.busy = false;
         for (int i = 0; i < 8; i++)
             menu.slots.add(new Slot(i < 2 ? new Object() : mc.player.getInventory(), i));
@@ -186,6 +187,9 @@ public final class EnvoiMachineTest {
                         && menu.slots.get(1).item.tag == 2
                         && menu.slots.get(1).item.count == 1
                 : "circuit physique reconnu sans fake NBT, réutilisé sans double comptage";
+        var virtualCircuit =
+                new com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe(
+                        withCircuit.getInputs(), withCircuit.getCatalysts());
         setup();
         menu.slots.get(2).item = new ItemStack("tin", 4);
         var ghost = new ItemStack("gtceu:programmed_circuit", 1);
@@ -193,14 +197,47 @@ public final class EnvoiMachineTest {
         GregTechMachines.ui =
                 new GregTechMachines.Interface(
                         new Object(), menu.slots.subList(0, 2), List.of(), ghost);
-        p = EnvoiMachine.preparer(screen, withCircuit, 4);
-        assert p.possible() && p.details().contains("Circuit : 7") : p.probleme();
+        p = EnvoiMachine.preparer(screen, virtualCircuit, 4);
+        assert !p.possible()
+                        && p.probleme().contains("régler sur 7")
+                        && p.probleme().contains("actuel : 1")
+                : p.probleme();
+        assert ghost.tag == 1 && mc.gameMode.clicks == 0 : "vérifier sans modifier le circuit";
+        ghost.tag = 7;
+        p = EnvoiMachine.preparer(screen, virtualCircuit, 4);
+        assert p.possible() && p.details().contains("Circuit machine : 7 · vérifié") : p.probleme();
         EnvoiMachine.lancer(screen, p, () -> done++);
         finish();
-        assert done == 1 && ghost.tag == 7 : "configuration native, pas le NBT factice 99";
+        assert done == 1 && ghost.tag == 7 && menu.slots.get(1).item.isEmpty()
+                : "circuit virtuel déjà configuré, aucun objet circuit demandé ni transféré";
+        setup();
+        menu.slots.get(2).item = new ItemStack("tin", 4);
+        menu.slots.get(3).item = actualCircuit;
+        p = EnvoiMachine.preparer(screen, virtualCircuit, 4);
+        assert !p.possible() && p.probleme().startsWith("Circuit machine")
+                : "un circuit physique ne remplace pas la configuration virtuelle";
+        GregTechMachines.machineCircuit = 7;
+        p = EnvoiMachine.preparer(screen, virtualCircuit, 4);
+        assert p.possible() && GregTechMachines.ui.circuit() == null
+                : "lecture native sans GhostCircuitSlotWidget (CircuitFancyConfigurator)";
+        EnvoiMachine.lancer(screen, p, () -> done++);
+        finish();
+        assert done == 1
+                        && menu.slots.get(3).item == actualCircuit
+                        && menu.slots.get(1).item.isEmpty()
+                : "le circuit physique reste dans l'inventaire";
+        setup();
+        menu.slots.get(2).item = new ItemStack("tin", 4);
+        GregTechMachines.machineCircuit = 7;
+        p = EnvoiMachine.preparer(screen, virtualCircuit, 4);
+        EnvoiMachine.lancer(screen, p, () -> done++);
+        GregTechMachines.machineCircuit = 2;
+        finish();
+        assert done == 0 && mc.gameMode.clicks == 0
+                : "un réglage modifié après prévisualisation bloque l'envoi";
         GregTechMachines.configuration = 99;
-        assert !EnvoiMachine.preparer(screen, withCircuit, 4).possible()
-                : "configuration invalide refusée";
+        assert !EnvoiMachine.preparer(screen, virtualCircuit, 4).possible()
+                : "configuration de recette invalide refusée";
         setup();
         var tagged = new ItemStack("tool", 1);
         tagged.tag = 42;

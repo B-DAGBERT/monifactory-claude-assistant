@@ -87,9 +87,29 @@ public class InventaireArbreEmiTest {
         mc.screen = null;
         tick();
         assert EmiFavorites.updates == 3 : "fermeture prise en compte dans la liste latérale";
+        // Les fabrications en cours comptent dans le calcul EMI, jamais dans les vrais stocks.
+        InventaireJoueur.sacs = List.of();
+        InventaireJoueur.piles = List.of(s("iron", 2));
+        MachinesEmi.reservations =
+                List.of(new PlanRetrait.Stock<>(EmiStack.of(s("machine", 2)), 2, true));
+        var reserve = InventaireArbreEmi.completer(original);
+        assert n(reserve, "machine") == 2 && n(original, "machine") == 0;
+        assert n(InventaireArbreEmi.completer(reserve), "machine") == 2
+                : "le mixin favoris ne double pas les réservations déjà ajoutées";
+        assert InventaireJoueur.piles.size() == 1 : "aucun crédit réel de fabrication";
+        int changements = EmiFavorites.updates;
+        // Pas de faux MaterialTree dans ce test : le pliage est couvert séparément.
+        MachinesEmi.reservations = List.of();
+        assert InventaireArbreEmi.completer(reserve) == original
+                : "annulation : repartir du stock natif, sans résultats virtuels résiduels";
+        tick();
+        assert EmiFavorites.updates == changements + 1;
+        changements = EmiFavorites.updates;
         CoffresArbreEmi.arbre = null;
         tick();
-        assert EmiFavorites.updates == 3 : "un arbre arrêté n'est jamais réactivé";
+        assert EmiFavorites.updates == changements : "un arbre arrêté n'est jamais réactivé";
+        assert InventaireArbreEmi.completer(reserve) == original
+                : "arrêt de l'arbre : retirer aussi une ancienne vue enrichie encore référencée";
         assert n(original, "plate") == 0 : "aucun objet injecté dans les sources de transfert";
     }
 }

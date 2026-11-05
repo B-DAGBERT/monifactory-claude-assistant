@@ -2,6 +2,8 @@ package fr.assistantia;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.mojang.logging.LogUtils;
+import java.lang.reflect.Method;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -30,7 +32,7 @@ public final class AideEcran {
      * Une fabrication possible ici : la recette EMI, ce qu'elle fait, combien il en faut, combien
      * sont possibles.
      */
-    private record Proposition(
+    public record Proposition(
             Object recette, ItemStack produit, String nom, int fois, int possibles) {
         int aFaire() {
             return Math.max(1, Math.min(fois, possibles));
@@ -44,6 +46,9 @@ public final class AideEcran {
     private static String cle =
             ""; // propositions de l'assistant + inventaire sur lesquels la liste est calculée
     private static int x, y; // coin de la zone : nom, icônes, puis boutons
+    private static long prochainCalcul, dernierAvis;
+    private static Method propositionsArbre;
+    private static boolean erreurArbreSignalee;
 
     private AideEcran() {}
 
@@ -64,6 +69,8 @@ public final class AideEcran {
         }
         ecranActuel = conteneur;
         cle = "";
+        prochainCalcul = 0;
+        propositions = List.of();
         x = conteneur.getGuiLeft();
         y = Math.max(2, conteneur.getGuiTop() - 52);
         remplir =
@@ -89,11 +96,33 @@ public final class AideEcran {
     }
 
     private static void agir(boolean toutFaire) {
-        Proposition p = choisie();
-        if (p != null && ecranActuel != null) {
-            Emi.remplir(p.recette(), ecranActuel, toutFaire ? p.aFaire() : 1);
-            cle = ""; // la grille et l'inventaire changent : on recalcule
+        if (ecranActuel == null || !autorise()) return;
+        Proposition demandee = choisie();
+        if (demandee == null) return;
+        // L'arbre ou les réservations peuvent changer depuis la dernière image.
+        // Garder la recette cliquée : ne jamais lui substituer le premier nouveau choix.
+        propositions = calculer(ecranActuel, stock(ecranActuel));
+        Proposition courante = null;
+        for (Proposition p : propositions)
+            if (p.recette() == demandee.recette()) {
+                courante = p;
+                break;
+            }
+        cle = "";
+        if (courante == null) {
+            informer("Recette modifiée ou ingrédients indisponibles · choix actualisés.");
+            return;
         }
+        if (!Emi.remplir(courante.recette(), ecranActuel, toutFaire ? courante.aFaire() : 1))
+            informer("Remplissage impossible · vérifie les ingrédients et la grille.");
+    }
+
+    private static void informer(String message) {
+        long maintenant = System.nanoTime();
+        if (maintenant - dernierAvis < 2_000_000_000L) return;
+        dernierAvis = maintenant;
+        var joueur = Minecraft.getInstance().player;
+        if (joueur != null) joueur.displayClientMessage(Component.literal(message), true);
     }
 
     /** Ce que la grille et l'inventaire contiennent (sans la case du résultat), par objet. */
@@ -107,11 +136,43 @@ public final class AideEcran {
         return stock;
     }
 
-    /**
-     * Les fabrications proposées par l'assistant que cet écran sait remplir et que le stock permet.
-     */
+    private static boolean autorise() {
+        for (JsonElement element : Pont.liste(Pont.partie("ecran"), "reglages")) {
+            JsonObject reglage = element.getAsJsonObject();
+            if ("remplir".equals(Pont.texte(reglage, "cle"))) return Pont.vrai(reglage, "valeur");
+        }
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Proposition> propositionsArbre(
+            AbstractContainerScreen<?> ecran, Map<Item, Integer> stock) {
+        try {
+            if (propositionsArbre == null)
+                propositionsArbre =
+                        Class.forName("fr.assistantia.compat.emi.AtelierEmi")
+                                .getMethod(
+                                        "propositions",
+                                        AbstractContainerScreen.class,
+                                        Map.class,
+                                        int.class);
+            return (List<Proposition>) propositionsArbre.invoke(null, ecran, stock, MAX);
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
+            if (!erreurArbreSignalee) {
+                LogUtils.getLogger().warn("Assistant : propositions d’établi EMI indisponibles", e);
+                erreurArbreSignalee = true;
+            }
+            // Ne pas substituer les crafts d'un ancien objectif à un arbre illisible.
+            return List.of();
+        }
+    }
+
+    /** Arbre EMI actif en priorité ; propositions historiques seulement sans arbre actif. */
     private static List<Proposition> calculer(
             AbstractContainerScreen<?> ecran, Map<Item, Integer> stock) {
+        if (!autorise()) return List.of();
+        List<Proposition> arbre = propositionsArbre(ecran, stock);
+        if (arbre != null) return arbre;
         List<Proposition> liste = new ArrayList<>();
         for (JsonElement e : Pont.liste(Pont.vue(), "fabrications")) {
             JsonObject f = e.getAsJsonObject();
@@ -146,9 +207,12 @@ public final class AideEcran {
         }
         Map<Item, Integer> stock = stock(ecranActuel);
         String nouvelleCle = Pont.liste(Pont.vue(), "fabrications") + "|" + stock;
-        if (!nouvelleCle.equals(cle)) {
-            cle = nouvelleCle;
+        long maintenant = System.nanoTime();
+        if (!nouvelleCle.equals(cle) || maintenant >= prochainCalcul) {
             propositions = calculer(ecranActuel, stock);
+            cle = nouvelleCle;
+            // L'arbre, ses réservations et le chargement EMI évoluent sans changer le stock.
+            prochainCalcul = maintenant + 250_000_000L;
         }
         Proposition p = choisie();
         remplir.visible = tout.visible = p != null;
@@ -164,7 +228,7 @@ public final class AideEcran {
         tout.setTooltip(
                 net.minecraft.client.gui.components.Tooltip.create(
                         Component.literal(
-                                "Remplir pour l’objectif avec les ingrédients disponibles")));
+                                "Remplir pour la recette avec les ingrédients disponibles")));
         GuiGraphics g = event.getGuiGraphics();
         Font font = Minecraft.getInstance().font;
         int largeur = Math.max(ecranActuel.getXSize(), propositions.size() * ICONE);
@@ -206,7 +270,7 @@ public final class AideEcran {
                                                     + survolee.aFaire()
                                                     + " possible maintenant, "
                                                     + survolee.fois()
-                                                    + " à faire pour l'objectif")
+                                                    + " à faire pour la recette")
                                     .withStyle(s -> s.withColor(Hud.GRIS)),
                             Component.literal("Clic : la choisir")
                                     .withStyle(s -> s.withColor(Hud.BLEU))),

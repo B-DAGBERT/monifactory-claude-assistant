@@ -1,9 +1,9 @@
 package fr.assistantia.compat.emi;
 
 import dev.emi.emi.api.recipe.EmiPlayerInventory;
-import dev.emi.emi.api.stack.Comparison;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.InventaireJoueur;
+import fr.assistantia.PlanRetrait;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.inventory.CraftingContainer;
@@ -19,12 +19,22 @@ public final class InventaireArbreEmi {
     private static Object ecran, connexion;
     private static int ticks;
     private static boolean erreurSignalee;
+    private static Object arbrePrecedent;
+    private static final PlisFabricationEmi PLIS = new PlisFabricationEmi();
+    private static final Map<EmiPlayerInventory, EmiPlayerInventory> ORIGINES = new WeakHashMap<>();
+
+    public static void invalider() {
+        precedent = "";
+        ticks = 9;
+    }
 
     public static EmiPlayerInventory completer(EmiPlayerInventory natif) {
+        // Le mixin des favoris peut repasser sur une vue déjà enrichie : repartir de sa source.
+        natif = ORIGINES.getOrDefault(natif, natif);
         var mc = Minecraft.getInstance();
-        if (mc.player == null
-                || !InventaireJoueur.disponible()
-                || InventaireJoueur.sacs().isEmpty()) return natif;
+        if (mc.player == null || !InventaireJoueur.disponible()) return natif;
+        var reservations = MachinesEmi.reservationsArbre();
+        if (InventaireJoueur.sacs().isEmpty() && reservations.isEmpty()) return natif;
         // Reconstruction depuis la vue commune : un backpack ouvert ne doit pas être ajouté
         // une deuxième fois aux cases que son handler EMI a déjà comptées.
         var grilles = new ArrayList<ItemStack>();
@@ -40,6 +50,12 @@ public final class InventaireArbreEmi {
                 resultat.inventory.merge(
                         copie, copie, (a, c) -> a.copy().setAmount(a.getAmount() + c.getAmount()));
             }
+        for (var reserve : reservations) {
+            var pile = ComparaisonEmi.pourInventaire(reserve.objet()).setAmount(reserve.quantite());
+            resultat.inventory.merge(
+                    pile, pile, (a, b) -> a.copy().setAmount(a.getAmount() + b.getAmount()));
+        }
+        ORIGINES.put(resultat, natif);
         return resultat;
     }
 
@@ -50,13 +66,7 @@ public final class InventaireArbreEmi {
         for (var source : List.of(personnels, grilles))
             for (var item : source) {
                 if (item.isEmpty()) continue;
-                var pile =
-                        EmiStack.of(item.copy())
-                                .comparison(
-                                        c ->
-                                                c == Comparison.DEFAULT_COMPARISON
-                                                        ? Comparison.compareNbt()
-                                                        : c);
+                var pile = ComparaisonEmi.pourInventaire(EmiStack.of(item.copy()));
                 resultat.inventory.merge(
                         pile, pile, (a, b) -> a.copy().setAmount(a.getAmount() + b.getAmount()));
             }
@@ -67,21 +77,49 @@ public final class InventaireArbreEmi {
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || ++ticks % 10 != 0) return;
         var mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) {
-            precedent = "";
-            connexion = null;
-            ecran = null;
-            return;
-        }
-        if (!InventaireJoueur.disponible() || CoffresArbreEmi.arbreActif() == null) return;
-        String cle =
-                InventaireJoueur.piles().stream()
-                        .map(s -> EmiStack.of(s).getId() + "|" + s.getTag() + "|" + s.getCount())
-                        .sorted()
-                        .toList()
-                        .toString();
-        if (cle.equals(precedent) && ecran == mc.screen && connexion == mc.getConnection()) return;
+        Object arbre = CoffresArbreEmi.arbreActif();
         try {
+            if (mc.player == null || mc.level == null || arbre == null) {
+                PLIS.actualiser(null, List.of(), List.of());
+                precedent = "";
+                connexion = arbrePrecedent = null;
+                ecran = null;
+                return;
+            }
+            if (!InventaireJoueur.disponible()) return;
+            var reservations = MachinesEmi.reservationsArbre();
+            var physiques =
+                    InventaireJoueur.piles().stream()
+                            .map(s -> new PlanRetrait.Stock<>(EmiStack.of(s), s.getCount(), true))
+                            .toList();
+            boolean plisChanges = PLIS.actualiser(arbre, physiques, reservations);
+            String cle =
+                    InventaireJoueur.piles().stream()
+                                    .map(
+                                            s ->
+                                                    EmiStack.of(s).getId()
+                                                            + "|"
+                                                            + s.getTag()
+                                                            + "|"
+                                                            + s.getCount())
+                                    .sorted()
+                                    .toList()
+                                    .toString()
+                            + reservations.stream()
+                                    .map(
+                                            s ->
+                                                    s.objet().getId()
+                                                            + "|"
+                                                            + s.objet().getNbt()
+                                                            + "|"
+                                                            + s.quantite())
+                                    .sorted()
+                                    .toList();
+            if (!plisChanges
+                    && cle.equals(precedent)
+                    && arbrePrecedent == arbre
+                    && ecran == mc.screen
+                    && connexion == mc.getConnection()) return;
             // EMI n'invalide pas toujours sa liste lorsque seul le contenu du sac a changé.
             Class.forName("dev.emi.emi.runtime.EmiFavorites")
                     .getMethod("updateSynthetic", EmiPlayerInventory.class)
@@ -94,13 +132,14 @@ public final class InventaireArbreEmi {
                     && mc.screen.getClass().getName().equals("dev.emi.emi.screen.BoMScreen"))
                 mc.screen.getClass().getMethod("recalculateTree").invoke(mc.screen);
             precedent = cle;
+            arbrePrecedent = arbre;
             ecran = mc.screen;
             connexion = mc.getConnection();
         } catch (ReflectiveOperationException | RuntimeException e) {
             if (!erreurSignalee) {
                 com.mojang.logging.LogUtils.getLogger()
                         .warn(
-                                "Assistant : inventaire du backpack dans l'arbre EMI indisponible",
+                                "Assistant : inventaire et fabrications dans l'arbre EMI indisponibles",
                                 e);
                 erreurSignalee = true;
             }

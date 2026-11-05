@@ -39,10 +39,20 @@ public class TickEvent {public enum Phase {START,END} public static class Client
 """,
     "fr.assistantia.InventaireJoueur": """
 public class InventaireJoueur {public static boolean sync=true;public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
- public static boolean disponible(){return sync;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return piles;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}}
+ public static java.util.List<net.minecraft.world.item.ItemStack> sacs;
+ public static boolean disponible(){return sync;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return sacs==null?piles:sacs;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}}
 """,
     "fr.assistantia.compat.emi.CoffresArbreEmi": """
 public class CoffresArbreEmi {public static Object arbre=new Object();public static Object arbreActif(){return arbre;}}
+""",
+    "dev.emi.emi.api.stack.EmiIngredient": "public interface EmiIngredient {java.util.List<EmiStack> getEmiStacks();}",
+    "fr.assistantia.compat.emi.ComparaisonEmi": """
+public class ComparaisonEmi {public static dev.emi.emi.api.stack.EmiStack pourInventaire(dev.emi.emi.api.stack.EmiStack s){return s.copy();}
+ public static boolean meme(dev.emi.emi.api.stack.EmiStack a,dev.emi.emi.api.stack.EmiStack b){return a.equals(b);}}
+""",
+    "fr.assistantia.compat.emi.MachinesEmi": """
+public class MachinesEmi {public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservations=java.util.List.of();
+ public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservationsArbre(){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():reservations;}}
 """,
     "dev.emi.emi.api.stack.Comparison": """
 public class Comparison {public static final Comparison DEFAULT_COMPARISON=new Comparison();private static final Comparison NBT=new Comparison();
@@ -50,9 +60,10 @@ public class Comparison {public static final Comparison DEFAULT_COMPARISON=new C
 """,
     "dev.emi.emi.api.stack.EmiStack": """
 import net.minecraft.world.item.ItemStack;
-public class EmiStack {private final ItemStack item;private long n;
+public class EmiStack implements EmiIngredient {private final ItemStack item;private long n;
  public EmiStack(ItemStack s){item=s.copy();n=s.getCount();}public static EmiStack of(ItemStack s){return new EmiStack(s);}
  public EmiStack copy(){return new EmiStack(item).setAmount(n);}public long getAmount(){return n;}
+ public java.util.List<EmiStack> getEmiStacks(){return java.util.List.of(this);}public net.minecraft.nbt.CompoundTag getNbt(){return item.getTag();}
  public EmiStack setAmount(long value){n=value;return this;}
  public EmiStack comparison(java.util.function.Function<Comparison,Comparison> c){c.apply(Comparison.DEFAULT_COMPARISON);return this;}
  public net.minecraft.resources.ResourceLocation getId(){return new net.minecraft.resources.ResourceLocation(item.id);}
@@ -110,7 +121,11 @@ class EmiBackpackTreeTests(unittest.TestCase):
             files.extend(
                 str(ROOT / name)
                 for name in (
+                    "mod/src/main/java/fr/assistantia/PlanRetrait.java",
+                    "mod/src/main/java/fr/assistantia/PlanMachines.java",
+                    "mod/src/main/java/fr/assistantia/compat/emi/PlisFabricationEmi.java",
                     "mod/src/main/java/fr/assistantia/compat/emi/InventaireArbreEmi.java",
+                    "tests/java/fr/assistantia/compat/emi/PlisFabricationEmiTest.java",
                     "tests/java/fr/assistantia/InventaireArbreEmiTest.java",
                 )
             )
@@ -122,6 +137,13 @@ class EmiBackpackTreeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             result = subprocess.run(
                 [java, "-ea", "-cp", directory, "fr.assistantia.InventaireArbreEmiTest"],
+                text=True,
+                capture_output=True,
+                timeout=15,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            result = subprocess.run(
+                [java, "-ea", "-cp", directory, "fr.assistantia.compat.emi.PlisFabricationEmiTest"],
                 text=True,
                 capture_output=True,
                 timeout=15,
