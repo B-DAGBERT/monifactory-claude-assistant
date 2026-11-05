@@ -57,6 +57,7 @@ public class CycleArbreEmi {public static java.util.List<fr.assistantia.PlanRetr
     "fr.assistantia.compat.emi.MachinesEmi": """
 public class MachinesEmi {public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservations=java.util.List.of(),obtenus=java.util.List.of();
  public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservationsArbre(){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():reservations;}
+ public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> completerOutils(java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> deja){return java.util.List.of();}
  public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> creditsAcquis(java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> p,java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> c){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():fr.assistantia.ReceptionLots.credits(obtenus,p,c,ComparaisonEmi::meme);}}
 """,
     "dev.emi.emi.api.stack.Comparison": """

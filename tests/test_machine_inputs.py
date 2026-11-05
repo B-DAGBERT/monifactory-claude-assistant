@@ -38,6 +38,12 @@ STUBS["net.minecraft.client.Minecraft"] = (
 STUBS["net.minecraft.network.chat.Component"] = """
 public record Component(String text){public static Component literal(String s){return new Component(s);} public String getString(){return text;}}
 """
+STUBS["dev.emi.emi.bom.MaterialNode"] = """
+public class MaterialNode {public dev.emi.emi.api.stack.EmiIngredient ingredient;
+ public java.util.List<MaterialNode> children=new java.util.ArrayList<>();public boolean catalyst;
+ public float consumeChance=1;public long amount;
+ public MaterialNode(dev.emi.emi.api.stack.EmiIngredient i){ingredient=i;amount=i.getAmount();}}
+"""
 STUBS.update(
     {
         "net.minecraft.world.level.material.Fluid": "public record Fluid(String id) {}",
@@ -71,7 +77,7 @@ public class FluidUtil {
     public static Result tryEmptyContainer(ItemStack s,FluidTank t,int max,Object player,boolean execute){
         var f=getFluidContained(s).orElse(FluidStack.EMPTY);
         if(f.isEmpty()||(!t.isEmpty()&&!t.getFluid().isFluidEqual(f))||t.capacity-t.getFluidAmount()<s.amount)return new Result(false,s);
-        var empty=s.copy();empty.count=1;empty.amount=0;empty.fluid="";empty.id="empty_cell";
+        var empty=s.copy();empty.count=1;empty.amount=0;empty.fluid="";empty.id=s.id.equals("water_bucket")?"bucket":"empty_cell";
         if(execute)t.setFluid(new FluidStack(f.getFluid(),t.getFluidAmount()+s.amount));
         return new Result(true,empty);
     }
@@ -186,6 +192,7 @@ class MachineInputTests(unittest.TestCase):
                     "compat/emi/OrigineFabrication",
                     "compat/emi/ComparaisonEmi",
                     "compat/emi/ConfigurationCircuit",
+                    "compat/emi/CatalyseursArbreEmi",
                 )
             ]
             sources.append(str(ROOT / "tests/java/fr/assistantia/EnvoiMachineTest.java"))

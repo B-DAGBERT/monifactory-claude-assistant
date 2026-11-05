@@ -16,13 +16,14 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 /** Recherche explicite d'une recette, locale et distincte de l'objectif et de la discussion. */
 public final class RechercheEmi {
+    private static java.util.function.LongSupplier horloge = System::currentTimeMillis;
     private static String recette = "", monde = "", dimension = "";
     private static long numero, fin, dernierClic, envoye;
     private static boolean attente, inventaireEnAttente;
     private static MemoireCollecte collecte;
     private static java.util.function.Predicate<net.minecraft.world.item.ItemStack> conforme =
             s -> false;
-    private static int ticks;
+    private static int ticks, reessais;
     private static Object connexion;
     private static Set<String> objets = Set.of(), demandes = Set.of();
     private static List<Pont.Repere> reperes = List.of();
@@ -32,16 +33,19 @@ public final class RechercheEmi {
 
     private RechercheEmi() {}
 
-    public static boolean actif() {
+    private static boolean contexteValide() {
         Minecraft mc = Minecraft.getInstance();
         return !recette.isEmpty()
                 && Emi.arbreActif()
                 && mc.level != null
                 && mc.player != null
                 && mc.getConnection() == connexion
-                && System.currentTimeMillis() < fin
                 && mc.level.dimension().location().toString().equals(dimension)
                 && Filons.monde().equals(monde);
+    }
+
+    public static boolean actif() {
+        return contexteValide() && horloge.getAsLong() < fin;
     }
 
     public static boolean selectionnee(String id) {
@@ -107,6 +111,7 @@ public final class RechercheEmi {
                 });
         fabricationsPrecedentes = cumul;
         collecte.reserver(Emi.reservationsFabrication());
+        collecte.outilsMachines(Emi.outilsMachines());
         Set<String> restants = collecte.actualiser(inventaire(), preuves);
         if (collecte.version() != version) derniereVue = null;
         if (inventaireEnAttente || !restants.equals(demandes)) {
@@ -129,7 +134,7 @@ public final class RechercheEmi {
             MemoireCollecte suivi,
             java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte) {
         Set<String> ingredients = suivi.tous();
-        long now = System.currentTimeMillis();
+        long now = horloge.getAsLong();
         if (now - dernierClic < 650) return;
         dernierClic = now;
         if (selectionnee(id)) {
@@ -184,7 +189,7 @@ public final class RechercheEmi {
         reperes = List.of();
         resultatsPrets = Set.of();
         derniereVue = null;
-        fin = System.currentTimeMillis() + 600_000;
+        fin = horloge.getAsLong() + 600_000;
         actualiserCollecte();
     }
 
@@ -207,7 +212,12 @@ public final class RechercheEmi {
     }
 
     private static void transmettre() {
-        long now = System.currentTimeMillis();
+        transmettre(false);
+    }
+
+    private static void transmettre(boolean nouvelEssai) {
+        if (!nouvelEssai) reessais = 0;
+        long now = horloge.getAsLong();
         numero = Math.max(now, numero + 1);
         envoye = now;
         attente = !demandes.isEmpty();
@@ -229,9 +239,9 @@ public final class RechercheEmi {
         demandes.stream().sorted().forEach(items::add);
         demande.add("objets", items);
         if (!Pont.envoyerRechercheEmi(demande)) {
-            informer("Recherche non transmise. Réessaie.");
-            // Pas de retour à une ancienne liste d'ingrédients déjà validés.
-            attente = false;
+            if (reessais == 0) informer("Recherche non transmise · nouvel essai automatique.");
+            // Garder la demande en attente, sans restaurer une ancienne sélection.
+            attente = !demandes.isEmpty();
         }
         if (demandes.isEmpty())
             informer("Ingrédients récupérés : repérage terminé pour cette recherche.");
@@ -239,7 +249,7 @@ public final class RechercheEmi {
 
     public static void arreter() {
         JsonObject demande = new JsonObject();
-        demande.addProperty("n", Math.max(System.currentTimeMillis(), numero + 1));
+        demande.addProperty("n", Math.max(horloge.getAsLong(), numero + 1));
         demande.addProperty("actif", false);
         Pont.envoyerRechercheEmi(demande);
         vider(); // arrêt immédiat, même si l'assistant est arrêté
@@ -267,6 +277,15 @@ public final class RechercheEmi {
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || recette.isEmpty()) return;
+        long maintenant = horloge.getAsLong();
+        if (contexteValide()
+                && maintenant >= fin - 120_000
+                && !RetraitCoffre.occupe()
+                && !Emi.envoiMachineEnCours()) {
+            // Renouveler seulement le scan déjà choisi, jamais un objectif mis en pause.
+            fin = maintenant + 600_000;
+            transmettre();
+        }
         if (!actif()) {
             vider();
             return;
@@ -279,12 +298,14 @@ public final class RechercheEmi {
         if (collecte == null || !InventaireJoueur.synchronise()) return;
         if (demandes.isEmpty())
             return; // Garder la recherche validée, sans revenir au guidage de l'objectif.
-        if (attente && System.currentTimeMillis() - envoye > 8000) {
-            informer("L’assistant n’a pas répondu à la recherche EMI. Relance-le puis réessaie.");
-            vider();
+        if (RetraitCoffre.occupe() || Emi.envoiMachineEnCours()) return;
+        long delai = Math.min(30_000L, 8_000L << Math.min(reessais, 2));
+        if (attente && horloge.getAsLong() - envoye > delai) {
+            reessais++;
+            if (reessais == 1) informer("Recherche retardée · nouvel essai automatique.");
+            transmettre(true);
             return;
         }
-        if (RetraitCoffre.occupe() || Emi.envoiMachineEnCours()) return;
         JsonObject vue = Pont.partie("recherche_emi");
         if (vue == derniereVue
                 || (long) Pont.nombre(vue, "n", 0) != numero
@@ -350,5 +371,6 @@ public final class RechercheEmi {
                             : coffres.size()
                                     + " stockage(s) utile(s) à l’arbre. Composants prêts à récupérer en priorité.");
         attente = false;
+        reessais = 0;
     }
 }

@@ -55,6 +55,11 @@ se lancent localement avant de publier sur `main` ; les tests et les outils de c
 restent disponibles. La mise à jour de l’assistant depuis `main` fonctionne indépendamment
 de GitHub Actions.
 
+Les [scénarios EMI à la demande](scenarios.md) se lancent avec **Tester Mac.command**, **Tester.bat**
+ou `python -m monifactory_assistant.commands.scenarios basique|complexe|tous`.
+Ils compilent seulement les contrats Java temporaires, sans reconstruire ni installer le mod.
+Les rapports de chaque cas sont conservés dans `.runtime/scenarios/`.
+
 Les scénarios de mise à jour utilisent de vrais dépôts Git temporaires. Les tests des moteurs
 utilisent des CLI simulés : aucun compte IA ni appel facturé n’est nécessaire.
 
@@ -328,3 +333,28 @@ déplacement hors inventaire, retour dans les poches, chevauchement des crédits
 annulation du surplus et isolation des sources de transfert. La validation shared.34 passe les **280 tests** de la suite complète, le formatage Python et Java,
 le contrôle Markdown et `checkJavaFormat build`. Les tests sans GPU ne remplacent pas
 la vérification visuelle dans Minecraft après redémarrage.
+
+## Collecte longue et catalyseurs (shared.37)
+
+Le scan choisi reste lié à la connexion, au monde et à l’arbre actifs. `RechercheEmi` renouvelle son
+bail de dix minutes avant expiration et reprend une réponse manquante après 8, 16 puis 30 secondes,
+sans répéter de transfert. Une pause, un arrêt explicite ou un changement de contexte ne relance rien.
+Le contrôleur utilise une horloge remplaçable dans les tests pour rejouer les délais immédiatement.
+
+`World.merged` arbitre d’abord toutes les observations d’une position selon leur date, avant de
+classer coffres et machines. À égalité, le serveur gagne. Une disparition dans sa zone est mémorisée
+avec une date et un stock vide : le script omet les coffres vides, et leur ancienne ouverture ne doit
+pas les ressusciter. Une ouverture ultérieure peut remplacer cette absence. La fusion n’écrit rien.
+
+Le mixin optionnel `CatalyseursArbreEmiMixin` complète `MaterialNode.defineRecipe` après sa construction
+native. Il ajoute uniquement les catalyseurs physiques séparés des recettes GT, marque leur usage
+réutilisable et conserve la résolution native des sous-recettes. Il ignore les circuits virtuels et
+évite les doublons avec une entrée déjà non consommée. Il ne modifie pas les objets recette.
+
+`MachinesEmi` conserve au plus 64 relevés d’entrées de machines ouvertes. Seuls les outils réutilisables
+compatibles avec les opérations de l’arbre servent de disponibilité temporaire à EMI et au scan.
+Ils n’attribuent aucun résultat, ne deviennent pas un crédit acquis et ne sont pas ajoutés aux sources
+de clic. La lecture réelle de la machine ouverte reste obligatoire avant envoi. Un relevé est mis à
+jour à la réouverture, supprimé pour une machine cassée/remplacée dans un chunk chargé et vidé lors
+d’un changement de connexion/dimension. Le client ne garantit pas le contenu d’une machine fermée
+modifiée à distance par un autre joueur.

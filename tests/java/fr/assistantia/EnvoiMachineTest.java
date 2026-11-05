@@ -239,6 +239,92 @@ public final class EnvoiMachineTest {
         assert !EnvoiMachine.preparer(screen, virtualCircuit, 4).possible()
                 : "configuration de recette invalide refusée";
         setup();
+        var mold = item("mold_ingot", 1);
+        var alloy = new EmiRecipe(List.of(item("tin", 1)), List.of(mold));
+        menu.slots.get(2).item = new ItemStack("tin", 64);
+        p = EnvoiMachine.preparer(screen, alloy, 64);
+        assert !p.possible()
+                        && p.probleme().contains("mold_ingot")
+                        && p.probleme().contains("non consommé")
+                : p.probleme();
+        assert menu.slots.get(2).item.count == 64 && mc.gameMode.clicks == 0;
+        // Moule récupéré dans un coffre : une seule unité pour tout le lot.
+        menu.slots.get(3).item = new ItemStack("mold_ingot", 1);
+        launch(alloy, 64);
+        finish();
+        assert done == 1
+                && menu.slots.get(0).item.count == 64
+                && menu.slots.get(1).item.id.equals("mold_ingot")
+                && menu.slots.get(1).item.count == 1
+                && menu.slots.get(3).item.isEmpty();
+        setup();
+        menu.slots.get(1).item = new ItemStack("mold_ingot", 1);
+        menu.slots.get(2).item = new ItemStack("tin", 64);
+        menu.slots.get(3).item = new ItemStack("mold_ingot", 1);
+        launch(alloy, 64);
+        finish();
+        assert done == 1 && menu.slots.get(1).item.count == 1 && menu.slots.get(3).item.count == 1
+                : "un moule installé n'est pas transféré à nouveau";
+        setup();
+        // Chaque seau plein est consommé ; son seau vide reste un vrai objet, réutilisable.
+        for (int cycle = 1; cycle <= 3; cycle++) {
+            var bucket = new ItemStack("water_bucket", 1);
+            bucket.fluid = "water";
+            bucket.amount = 1000;
+            menu.slots.get(2).item = bucket;
+            menu.slots.get(3).item = new ItemStack("tin", 2);
+            var resetClick = EnvoiMachine.class.getDeclaredField("dernierClic");
+            resetClick.setAccessible(true);
+            resetClick.setLong(null, 0);
+            launch(recipe(item("tin", 2), EmiStack.of(new Fluid("water"), null, 1000)), 1);
+            finish();
+            assert done == cycle
+                    && menu.slots.get(2).item.id.equals("bucket")
+                    && menu.slots.get(2).item.count == 1
+                    && menu.getCarried().isEmpty();
+            assert menu.slots.stream()
+                            .filter(s -> s.item.id.equals("bucket") && !s.item.isEmpty())
+                            .count()
+                    == 1;
+            // Le serveur réalise la recette, puis le joueur remplit le même seau.
+            menu.slots.get(0).item = ItemStack.EMPTY;
+            GregTechMachines.ui
+                    .cuves()
+                    .get(0)
+                    .tank
+                    .setFluid(net.minecraftforge.fluids.FluidStack.EMPTY);
+        }
+        // L'arbre EMI doit inclure les catalyseurs GT séparés, sans circuit virtuel.
+        var gtAlloy =
+                new com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe(
+                        List.of(item("tin", 1)), List.of(mold, catalyst));
+        var node = new dev.emi.emi.bom.MaterialNode(item("ingot", 1));
+        node.children.add(new dev.emi.emi.bom.MaterialNode(item("tin", 1)));
+        CatalyseursArbreEmi.completer(node, gtAlloy);
+        assert node.children.size() == 2
+                && node.children.get(1).catalyst
+                && node.children.get(1).consumeChance == 0
+                && node.children
+                        .get(1)
+                        .ingredient
+                        .getEmiStacks()
+                        .get(0)
+                        .getId()
+                        .toString()
+                        .equals("mold_ingot");
+        CatalyseursArbreEmi.completer(node, gtAlloy);
+        assert node.children.size() == 2 : "aucun doublon au recalcul du même arbre";
+        var natif = new dev.emi.emi.bom.MaterialNode(item("ingot", 1));
+        var deja = new dev.emi.emi.bom.MaterialNode(mold);
+        deja.consumeChance = 0;
+        natif.children.add(deja);
+        CatalyseursArbreEmi.completer(natif, gtAlloy);
+        assert natif.children.size() == 1 : "moule déjà déclaré en entrée non consommée";
+        var manuel = new dev.emi.emi.bom.MaterialNode(item("ingot", 1));
+        CatalyseursArbreEmi.completer(manuel, alloy);
+        assert manuel.children.isEmpty()
+                : "ne pas changer les catalyseurs non GT (postes de craft, etc.)";
+        setup();
         var tagged = new ItemStack("tool", 1);
         tagged.tag = 42;
         menu.slots.get(2).item = new ItemStack("tool", 1);

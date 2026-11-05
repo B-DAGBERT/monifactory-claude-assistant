@@ -45,6 +45,7 @@ Le scan, les retraits, le suivi des machines et les filons ne font **aucun appel
 - [Collecte EMI, machines, backpack et limites du suivi](docs/emi-transferts.md)
 - [Conversation Codex et panneau en lecture seule](docs/codex.md)
 - [Partager une fonctionnalité avec un collègue](docs/collaboration.md)
+- [Scénarios EMI basiques et complexes à la demande](docs/scenarios.md)
 - [Organisation du code, formatage et tests](docs/developpement.md)
 - [Corrections et validation de la version shared.28](docs/audit-shared28.md)
 - [Documentation historique de la version Claude](docs/historique-claude.md)

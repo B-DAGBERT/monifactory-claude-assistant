@@ -6,6 +6,7 @@
   "client": [
     "ContenuSacMixin",
     "InventaireFavorisEmiMixin",
-    "InventaireEcranArbreEmiMixin"
+    "InventaireEcranArbreEmiMixin",
+    "CatalyseursArbreEmiMixin"
   ]
 }

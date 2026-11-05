@@ -330,6 +330,19 @@ public final class Emi {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    public static Map<String, Integer> outilsMachines() {
+        if (!pret()) return Map.of();
+        try {
+            return (Map<String, Integer>)
+                    Class.forName("fr.assistantia.compat.emi.MachinesEmi")
+                            .getMethod("outilsObjets")
+                            .invoke(null);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return Map.of();
+        }
+    }
+
     public static boolean envoiMachineEnCours() {
         if (!pret()) return false;
         try {

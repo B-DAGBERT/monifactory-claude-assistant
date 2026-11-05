@@ -200,6 +200,7 @@ public final class EnvoiMachine {
         joueurs.forEach(s -> simulation.put(s, s.getItem().copy()));
         List<FluidTank> cuves = ui.cuves().stream().map(GregTechMachines.Cuve::simulation).toList();
         var items = new ArrayList<PlanRetrait.Besoin<ItemStack>>();
+        var nomsItems = new ArrayList<String>();
         var tous = ingredients(recipe);
         Map<String, Integer> fluidesDemandes = new HashMap<>();
         Map<String, Integer> outilsDemandes = new HashMap<>();
@@ -229,6 +230,9 @@ public final class EnvoiMachine {
             }
             if (ingredient.getEmiStacks().stream().anyMatch(s -> !s.getItemStack().isEmpty())) {
                 items.add(new PlanRetrait.Besoin<>(s -> accepte(ingredient, s), besoin));
+                nomsItems.add(
+                        ingredient.getEmiStacks().get(0).getName().getString()
+                                + (outil ? " (non consommé)" : ""));
                 details.add(
                         besoin + " × " + ingredient.getEmiStacks().get(0).getName().getString());
                 continue;
@@ -326,7 +330,18 @@ public final class EnvoiMachine {
             stocks.add(new PlanRetrait.Stock<>(item, item.getCount(), !personnel(s)));
         }
         var allocation = PlanRetrait.calculer(stocks, items);
-        if (allocation.manquants() > 0) return vide("Ingrédients manquants dans ton inventaire");
+        if (allocation.manquants() > 0) {
+            var manquants = new ArrayList<String>();
+            for (int i = 0; i < items.size(); i++) {
+                int nManquant = items.get(i).quantite() - allocation.fournis().get(i);
+                if (nManquant > 0) manquants.add(nManquant + " × " + nomsItems.get(i));
+            }
+            return new Plan(
+                    0,
+                    List.of(),
+                    List.copyOf(details),
+                    "À collecter : " + String.join(", ", manquants));
+        }
         Map<Slot, ItemStack> destinations = new IdentityHashMap<>();
         ui.entrees().forEach(s -> destinations.put(s, s.getItem().copy()));
         for (var prise : allocation.prises()) {

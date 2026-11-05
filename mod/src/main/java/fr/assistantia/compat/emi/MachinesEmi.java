@@ -50,6 +50,14 @@ public final class MachinesEmi {
     private static final List<LotMachine> lots = new ArrayList<>();
     private static List<PlanMachines.Operation<EmiRecipe>> toutes = List.of();
     private static String calculPrecedent = "";
+
+    private record EntreesConnues(Object machine, List<PlanRetrait.Stock<EmiStack>> objets) {}
+
+    private static final java.util.Map<BlockPos, EntreesConnues> entreesConnues =
+            new java.util.LinkedHashMap<>();
+    private static long entreesVersion, outilsVersion = -1;
+    private static List<PlanMachines.Operation<EmiRecipe>> operationsOutils;
+    private static List<PlanRetrait.Stock<EmiStack>> outilsConnus = List.of();
     private static long lotsVersion;
     private static int prochainLot;
     private static final fr.assistantia.ReceptionManuelle<EmiStack> receptionManuelle =
@@ -261,7 +269,9 @@ public final class MachinesEmi {
         if (actif() == null) return List.of();
         List<Ligne> lignes = new ArrayList<>();
         var stock = inventaire();
+        stock.addAll(completerOutils(stock));
         var disponibles = inventaire(false);
+        disponibles.addAll(completerOutils(disponibles));
         for (var o : toutes) {
             if (o.recette().getId() != null
                     && o.recette().getId().getNamespace().equals("assistantia")) continue;
@@ -410,6 +420,96 @@ public final class MachinesEmi {
                     new PlanRetrait.Stock<>(
                             credit.objet().getItemStack(), credit.quantite(), true));
         return List.copyOf(resultat);
+    }
+
+    private static void retenirEntrees(GregTechMachines.Interface ui) {
+        var objets =
+                ui.entrees().stream()
+                        .filter(net.minecraft.world.inventory.Slot::isActive)
+                        .map(s -> s.getItem().copy())
+                        .filter(s -> !s.isEmpty())
+                        .map(s -> new PlanRetrait.Stock<>(EmiStack.of(s), s.getCount(), true))
+                        .toList();
+        var precedent =
+                entreesConnues.put(
+                        ui.position().immutable(), new EntreesConnues(ui.machine(), objets));
+        if (precedent == null
+                || !precedent.objets().equals(objets)
+                || precedent.machine() != ui.machine()) {
+            if (entreesConnues.size() > 64)
+                entreesConnues.remove(entreesConnues.keySet().iterator().next());
+            entreesVersion++;
+            calculPrecedent = "";
+            InventaireArbreEmi.invalider();
+            actualiserArbre();
+        }
+    }
+
+    private static List<PlanRetrait.Stock<EmiStack>> outilsMachines() {
+        var mc = Minecraft.getInstance();
+        if (actif() == null
+                || mc.level == null
+                || connexion != mc.getConnection()
+                || !dimension.equals(mc.level.dimension().location().toString())) return List.of();
+        if (entreesConnues
+                .entrySet()
+                .removeIf(
+                        e ->
+                                mc.level.hasChunkAt(e.getKey())
+                                        && GregTechMachines.machine(
+                                                        mc.level.getBlockEntity(e.getKey()))
+                                                != e.getValue().machine())) entreesVersion++;
+        if (outilsVersion == entreesVersion && operationsOutils == toutes) return outilsConnus;
+        var resultat = new ArrayList<PlanRetrait.Stock<EmiStack>>();
+        for (var entree : entreesConnues.values())
+            for (var objet : entree.objets()) {
+                boolean utile =
+                        toutes.stream()
+                                .anyMatch(
+                                        op -> {
+                                            if (!compatible(entree.machine(), op.recette()))
+                                                return false;
+                                            var ingredients =
+                                                    new ArrayList<>(op.recette().getInputs());
+                                            ingredients.addAll(op.recette().getCatalysts());
+                                            for (int i = 0; i < ingredients.size(); i++) {
+                                                var ingredient = ingredients.get(i);
+                                                boolean reutilisable =
+                                                        i >= op.recette().getInputs().size()
+                                                                || ingredient.getChance() == 0;
+                                                if (reutilisable
+                                                        && !ComparaisonEmi.circuitVirtuel(
+                                                                op.recette(), ingredient, true)
+                                                        && ingredient.getEmiStacks().stream()
+                                                                .anyMatch(
+                                                                        v ->
+                                                                                ComparaisonEmi.meme(
+                                                                                        objet
+                                                                                                .objet(),
+                                                                                        v)))
+                                                    return true;
+                                            }
+                                            return false;
+                                        });
+                if (utile) resultat.add(objet);
+            }
+        outilsConnus = List.copyOf(resultat);
+        outilsVersion = entreesVersion;
+        operationsOutils = toutes;
+        return outilsConnus;
+    }
+
+    public static List<PlanRetrait.Stock<EmiStack>> completerOutils(
+            List<PlanRetrait.Stock<EmiStack>> deja) {
+        return fr.assistantia.ReceptionLots.credits(
+                outilsMachines(), deja, List.of(), ComparaisonEmi::meme);
+    }
+
+    public static java.util.Map<String, Integer> outilsObjets() {
+        var outils = new java.util.HashMap<String, Integer>();
+        for (var s : outilsMachines())
+            outils.merge(s.objet().getId().toString(), s.quantite(), Integer::sum);
+        return java.util.Map.copyOf(outils);
     }
 
     /** Réservations temporaires, distinctes de l'avancement réel et des acquisitions du scan. */
@@ -638,6 +738,10 @@ public final class MachinesEmi {
                     || connexion != mc.getConnection()
                     || !dim.equals(dimension)) {
                 lots.clear();
+                entreesConnues.clear();
+                entreesVersion++;
+                outilsConnus = List.of();
+                operationsOutils = null;
                 receptionManuelle.vider();
                 lotsVersion++;
                 InventaireArbreEmi.invalider();
@@ -687,6 +791,7 @@ public final class MachinesEmi {
                             .toList();
             stock.addAll(creditsAcquis(stock, finaux));
             stock.addAll(finaux);
+            stock.addAll(completerOutils(stock));
             String cle = signature + "|" + cleStock(stock) + "|" + lotsVersion;
             if (cle.equals(calculPrecedent)) return;
             calculPrecedent = cle;
@@ -793,6 +898,7 @@ public final class MachinesEmi {
                 disposition = null;
                 return;
             }
+            retenirEntrees(ui);
             var precedent = selection();
             List<PlanMachines.Operation<EmiRecipe>> visibles =
                     new ArrayList<>(
@@ -921,7 +1027,7 @@ public final class MachinesEmi {
                 g,
                 font,
                 d.prendre(),
-                "Envoyer",
+                circuitARegler(selected.recette()) ? "Circuit" : "Envoyer",
                 libre && plan != null && plan.possible(),
                 true,
                 mx,
@@ -952,6 +1058,10 @@ public final class MachinesEmi {
             tooltip.add(Component.literal(titre));
             if (plan != null) {
                 if (!plan.probleme().isEmpty()) tooltip.add(Component.literal(plan.probleme()));
+                if (circuitARegler(selected.recette()))
+                    tooltip.add(
+                            Component.literal(
+                                    "Règle le numéro dans la configuration de la machine. Aucun envoi avant confirmation du bon réglage."));
                 for (String s : plan.details()) tooltip.add(Component.literal(s));
             }
             if (!EnvoiMachine.statut().isEmpty())

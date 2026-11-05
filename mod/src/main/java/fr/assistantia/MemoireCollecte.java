@@ -24,7 +24,7 @@ public final class MemoireCollecte {
     private final Set<String> tous;
     private Map<String, Integer> dernierInventaire = Map.of();
     private Set<String> restants;
-    private Map<String, Integer> reserves = Map.of();
+    private Map<String, Integer> reserves = Map.of(), outilsMachines = Map.of();
     private boolean reservationModifiee;
 
     /** Recalcul d'un arbre modifié : conserver les acquisitions encore pertinentes. */
@@ -49,8 +49,22 @@ public final class MemoireCollecte {
         }
     }
 
+    /** Disponibilité temporaire des outils installés, distincte d'un résultat à récupérer. */
+    public void outilsMachines(Map<String, Integer> quantites) {
+        var nouveaux = new LinkedHashMap<String, Integer>();
+        quantites.forEach(
+                (id, n) -> {
+                    if (tous.contains(id) && n > 0) nouveaux.put(id, Math.min(n, 1_000_000));
+                });
+        if (!outilsMachines.equals(nouveaux)) {
+            outilsMachines = Map.copyOf(nouveaux);
+            reservationModifiee = true;
+        }
+    }
+
     private List<PlanRetrait.Stock<String>> stocksPlanifies() {
         var credits = new LinkedHashMap<>(observes);
+        outilsMachines.forEach((id, n) -> credits.merge(id, n, Math::max));
         if (arbre != null && !reserves.isEmpty())
             deduireReservations(arbre, credits, new LinkedHashSet<>());
         reserves.forEach(

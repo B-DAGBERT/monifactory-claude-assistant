@@ -81,6 +81,9 @@ public final class InventaireArbreEmi {
         var resultat = new ArrayList<>(MachinesEmi.reservationsArbre());
         resultat.addAll(finaux);
         resultat.addAll(MachinesEmi.creditsAcquis(physiques, finaux));
+        var deja = new ArrayList<>(physiques);
+        deja.addAll(resultat);
+        resultat.addAll(MachinesEmi.completerOutils(deja));
         return List.copyOf(resultat);
     }
 

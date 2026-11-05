@@ -60,7 +60,15 @@ class World:
                 and cz0 <= b["z"] // 16 <= cz1
                 and key not in seen
             ):
-                del self.blocks[key]
+                # Le script omet aussi les coffres devenus vides. Garder une absence
+                # datée empêche un ancien relevé client de les ressusciter.
+                self.blocks[key] = {
+                    **b,
+                    "t": snapshot["t"],
+                    "objets": [],
+                    "etat": None,
+                    "absent": True,
+                }
         self.blocks.update(seen)
         self.players = snapshot.get("joueurs", [])
         self.errors = snapshot.get("erreurs", [])
@@ -76,17 +84,32 @@ class World:
     def machines(self):
         return [b for b in self.blocks.values() if b.get("etat") is not None]
 
-    def merged(self, storage):
-        """Les coffres et machines vus par le serveur, complétés par ceux que le joueur a ouverts ailleurs."""
-        keys = set(self.blocks)
-        containers = self.containers() + [c for c in storage.containers if c["cle"] not in keys]
-        machines = self.machines() + [m for m in storage.machines if m["cle"] not in keys]
-        return Storage(
-            containers,
-            [b for b in self.blocks.values() if b.get("etat") is None]
-            + [c for c in storage.raw if c["cle"] not in keys],
-            machines,
+    @staticmethod
+    def _date(observation):
+        value = observation.get("t", 0)
+        return (
+            value
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value < 1e16
+            else 0
         )
+
+    @classmethod
+    def _fusion(cls, serveur, client):
+        observations = {}
+        for c in [*serveur, *client]:
+            key = (c.get("dimension"), c.get("x"), c.get("y"), c.get("z"))
+            ancien = observations.get(key)
+            # À date identique, conserver le relevé serveur ; sinon le plus récent gagne.
+            if ancien is None or cls._date(c) > cls._date(ancien):
+                observations[key] = c
+        return list(observations.values())
+
+    def merged(self, storage):
+        """Même coffre physique : le relevé complet le plus récent, y compris vide, gagne."""
+        observations = self._fusion(self.blocks.values(), [*storage.raw, *storage.machines])
+        raw = [b for b in observations if b.get("etat") is None]
+        machines = [b for b in observations if b.get("etat") is not None and not b.get("absent")]
+        return Storage(distinct_containers(c for c in raw if c.get("objets")), raw, machines)
 
 
 def machine_status(m):

@@ -42,8 +42,8 @@ LDLib déportés. Cliquer sur une icône sélectionne ce produit et ouvre sa rec
 à la même machine en conservant la sélection ; cela ne change pas l’arbre de fabrication actif.
 
 - Le panneau indique les fabrications possibles / restantes. Les quantités détaillées sont au survol ; **Suivi → Recette** ouvre la recette EMI.
-- Les entrées déjà remplies sont déduites. Les outils et catalyseurs ne sont pas multipliés par le nombre de fabrications.
-- Le **Circuit setting** des recettes GregTech est un réglage virtuel, jamais un ingrédient à collecter ou à envoyer. Le numéro requis vient de la vraie recette ; le mod vérifie le réglage natif de la machine, y compris lorsqu’elle utilise le menu de configuration latéral. En cas de différence, **Circuit à régler** indique le numéro attendu et le numéro actuel au survol. Régler soi-même la machine pour activer **Envoyer**. Un réglage illisible bloque l’envoi ; il ne déclenche jamais une demande de circuit physique. Un circuit demandé comme produit final ou comme objet consommé reste un objet normal.
+- Les entrées déjà remplies sont déduites. Les outils et catalyseurs ne sont pas multipliés par le nombre de fabrications. Un moule manquant est nommé dans **À collecter** et apparaît dans l’arbre EMI : le scan peut le retrouver ou sa branche permet de préparer sa fabrication. Ouvrir une fois la machine permet de reconnaître le moule déjà installé ; cet outil sert de disponibilité temporaire, sans valider un craft. Son relevé se met à jour à la réouverture.
+- Le **Circuit setting** des recettes GregTech est un réglage virtuel, jamais un ingrédient à collecter ou à envoyer. Le numéro requis vient de la vraie recette ; le mod vérifie le réglage natif de la machine, y compris lorsqu’elle utilise le menu de configuration latéral. En cas de différence, **Circuit à régler** indique le numéro attendu et le numéro actuel au survol. Le bouton **Circuit** remplace **Envoyer** et reste inactif. Régler soi-même la machine pour activer **Envoyer** ; le bon réglage est relu avant le premier transfert. Un réglage illisible bloque l’envoi ; il ne déclenche jamais une demande de circuit physique. Un circuit demandé comme produit final ou comme objet consommé reste un objet normal.
 - Les fluides viennent uniquement des contenants de l’inventaire. Le clic natif vide le contenant puis le rend. Un seau de 1 000 mB peut dépasser le besoin : le volume réellement envoyé est indiqué au survol.
 - Les sorties ne sont jamais récupérées automatiquement. Les fabrications envoyées sont réservées pour éviter les doublons ; elles ne sont pas déclarées terminées avant récupération du résultat.
 
@@ -105,3 +105,10 @@ attendue diminue au retrait du coffre jaune ; un déplacement ultérieur ne recr
 EMI et le suivi reçoivent uniquement le complément hors des poches, après déduction des cibles
 finales déjà comptées. Le stock des remplisseurs et d’Envoyer reste physique.
 Annuler un surplus libère ses réservations sans effacer la partie déjà récupérée.
+
+## Scénarios reproductibles
+
+**Tester Mac.command** / **Tester.bat** proposent les jeux basique et complexe, sans toucher à la partie.
+Voir [les parcours, commandes et limites](scenarios.md). Le scan des coffres se renouvelle tant qu’il
+reste choisi et que l’arbre est actif ; une longue fabrication ne l’arrête plus après dix minutes.
+Un retard de l’assistant relance seulement la recherche, jamais les clics d’un transfert.
