@@ -23,15 +23,15 @@ import java.util.Map;
 /**
  * Le tableau de bord de l'assistant (touche Y), en onglets : - Objectif : l'objectif en cours, son
  * avancement, ses cibles et les machines nécessaires (clic : recette dans EMI, clic droit : fiche «
- * à quoi ça sert ») ; - Plan : l'objectif principal et la liste de ses objectifs (faits, en cours,
- * à venir) ; - Base : les machines vues par le serveur ; Discussion ; Réglages : chaque option avec
- * son état. Une question s'écrit en bas, quel que soit l'onglet.
+ * à quoi ça sert ») ; - Projet : l'objectif principal et la liste de ses objectifs (faits, en
+ * cours, à venir) ; - Base : les machines vues par le serveur ; Discussion ; Réglages : chaque
+ * option avec son état. Une question s'écrit en bas, quel que soit l'onglet.
  */
 public class EcranAssistant extends Screen {
     private static final int FOND = 0xD00D1013, MARGE = 10, LIGNE = 10;
     // Toujours ajouter les nouveaux onglets avant Réglages, qui reste tout à droite.
     private static final String[] ONGLETS = {
-        "Objectif", "Plan", "Base", "Discussion", "Filons", "Réglages"
+        "Objectif", "Projet", "Base", "Discussion", "Filons", "Réglages"
     };
     private static final int OBJECTIF = 0,
             PLAN = 1,
@@ -236,7 +236,7 @@ public class EcranAssistant extends Screen {
         modelesIA.setTooltip(
                 net.minecraft.client.gui.components.Tooltip.create(
                         Component.literal(
-                                "Choisir les modèles et la réflexion pour les discussions, fiches, plans et objectifs.")));
+                                "Choisir les modèles et la réflexion pour les discussions, fiches, projets et objectifs.")));
         base = new OngletBase();
         base.init(w -> addRenderableWidget(w));
         filons = new OngletFilons();
@@ -499,14 +499,15 @@ public class EcranAssistant extends Screen {
             projets.setMessage(
                     Component.literal(
                             this.font.plainSubstrByWidth(
-                                    "Projet : "
-                                            + (nomProjet.isEmpty() ? "Mes projets" : nomProjet)
-                                            + "  ▾",
+                                    "Mes projets ▾ · "
+                                            + (Pont.vrai(ecran, "objectif_en_pause")
+                                                    ? "EN PAUSE · "
+                                                    : "")
+                                            + (nomProjet.isEmpty() ? "Aucun objectif" : nomProjet),
                                     this.width - 2 * MARGE - 16)));
             projets.setTooltip(
                     net.minecraft.client.gui.components.Tooltip.create(
-                            Component.literal(
-                                    "Choisir, créer ou renommer un projet. Les autres objectifs et plans sont conservés.")));
+                            Component.literal("Ouvrir, créer, renommer ou supprimer un projet.")));
             haut += 24;
         }
         boolean enPause = Pont.vrai(ecran, "objectif_en_pause");
@@ -533,9 +534,7 @@ public class EcranAssistant extends Screen {
             g.drawString(
                     this.font,
                     this.font.plainSubstrByWidth(
-                            enPause
-                                    ? "Objectif en pause · progression conservée"
-                                    : "Objectif actif",
+                            enPause ? "EN PAUSE · progression conservée" : "Objectif actif",
                             this.width - 2 * MARGE - 128),
                     MARGE,
                     haut + 5,
@@ -576,8 +575,8 @@ public class EcranAssistant extends Screen {
         if (objectif.isEmpty()) {
             ecrire(
                     g,
-                    "Pas d'objectif en cours : « Objectif suivant » prend le prochain objectif de ton plan, "
-                            + "le sélecteur « Projet » permet d’en créer un autre.",
+                    "Pas d'objectif en cours : « Objectif suivant » prend le prochain objectif de ton projet, "
+                            + "le bouton « Mes projets » permet d’en créer un autre.",
                     x,
                     y,
                     largeur,
@@ -588,7 +587,7 @@ public class EcranAssistant extends Screen {
         if (!titrePlan.isEmpty()) {
             g.drawString(
                     this.font,
-                    this.font.plainSubstrByWidth("Plan : " + titrePlan, largeur),
+                    this.font.plainSubstrByWidth("Projet : " + titrePlan, largeur),
                     x,
                     y,
                     Hud.GRIS,
@@ -666,7 +665,7 @@ public class EcranAssistant extends Screen {
                 false);
     }
 
-    // ---------- Onglet Plan ----------
+    // ---------- Onglet Projet ----------
 
     private void plan(GuiGraphics g, JsonObject ecran, int x, int y, int largeur, int bas) {
         JsonObject plan = partie(ecran, "plan");
@@ -674,7 +673,7 @@ public class EcranAssistant extends Screen {
         if (objectifs.isEmpty()) {
             ecrire(
                     g,
-                    "Pas encore de plan. Sélecteur « Projet » → Créer : l'assistant choisit ton prochain grand objectif "
+                    "Pas encore d’objectifs. Mes projets → Nouveau projet : l’assistant prépare ta progression "
                             + "dans un projet séparé, sans perdre tes autres objectifs.",
                     x,
                     y,
@@ -685,7 +684,8 @@ public class EcranAssistant extends Screen {
         String titre = Pont.texte(plan, "titre");
         g.drawString(
                 this.font,
-                "✦ Plan : " + (titre.isEmpty() ? "en cours" : titre),
+                this.font.plainSubstrByWidth(
+                        "Projet : " + (titre.isEmpty() ? "en cours" : titre), largeur),
                 x,
                 y,
                 Hud.OR,
@@ -731,7 +731,9 @@ public class EcranAssistant extends Screen {
             int couleur =
                     "fait".equals(etat)
                             ? Hud.VERT
-                            : "en_cours".equals(etat) ? Hud.JAUNE : Hud.BLANC;
+                            : ("en_cours".equals(etat) || "en_pause".equals(etat))
+                                    ? Hud.JAUNE
+                                    : Hud.BLANC;
             String texte =
                     marque
                             + Pont.texte(o, "titre")
@@ -750,7 +752,7 @@ public class EcranAssistant extends Screen {
                 this.font,
                 this.font.plainSubstrByWidth(
                         "« Objectif suivant » : passer au prochain objectif "
-                                + "du plan · « Mes projets » : en choisir un autre",
+                                + "du projet · « Mes projets » : en choisir un autre",
                         largeur),
                 x,
                 bas - 10,

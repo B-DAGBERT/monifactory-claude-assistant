@@ -48,6 +48,8 @@ public class EditBox {private String value="";private java.util.function.Consume
         "fr.assistantia.Pont": """
 import com.google.gson.*;
 public class Pont {public static JsonObject ecran=new JsonObject(),last;public static boolean actif=true;public static int sends;
+ public static String texte(JsonObject j,String k){return j.has(k)?j.get(k).getAsString():"";}
+ public static boolean envoyer(JsonObject j){sends++;last=j.deepCopy();return true;}
  public static void rafraichir(){}public static JsonObject partie(String s){return ecran;}public static boolean assistantActif(){return actif;}
  public static boolean vrai(JsonObject j,String k){return j.has(k)&&j.get(k).getAsBoolean();}
  public static JsonArray liste(JsonObject j,String k){return j.has(k)?j.getAsJsonArray(k):new JsonArray();}
@@ -64,41 +66,93 @@ import net.minecraft.client.gui.components.*;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 public class ConfigurationScreenTest {
- static EditBox field(EcranConfigurationIA s,int n){return (EditBox)s.widgets.stream().filter(w->w instanceof EditBox).toList().get(n);}
- static Button button(EcranConfigurationIA s,String name){return (Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals(name)).findFirst().orElseThrow();}
+ static Button button(Screen s,String name){return (Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals(name)).findFirst().orElseThrow();}
  static EtatConfigurationIA state(EcranConfigurationIA s)throws Exception{var f=EcranConfigurationIA.class.getDeclaredField("etat");f.setAccessible(true);return (EtatConfigurationIA)f.get(s);}
+ static void bounds(Screen s){for(var w:s.widgets){if(w instanceof Button b)assert b.x>=0&&b.y>=0&&b.w>0&&b.x+b.w<=s.width&&b.y+b.h<=s.height:"button bounds";}}
+ static void choose(Minecraft mc,EcranConfigurationIA s,String from,String to){
+   button(s,from).press();var picker=(EcranChoixModele)mc.screen;picker.init(mc,320,240);bounds(picker);
+   button(picker,to).press();assert mc.screen==s; s.init(mc,320,240);
+ }
  public static void main(String[] args)throws Exception {
   var json=JsonParser.parseString("{\"moteur\":\"codex\",\"nom\":\"Codex\",\"revision\":\"a\",\"modifiable\":true,\"valeurs\":{\"model_question\":\"model-q\",\"effort_question\":\"low\",\"model_plan\":\"model-p\",\"effort_plan\":\"medium\"},\"defauts\":{\"model_question\":\"default-q\",\"effort_question\":\"low\",\"model_plan\":\"default-p\",\"effort_plan\":\"medium\"},\"efforts\":[\"low\",\"medium\",\"high\",\"xhigh\",\"max\"]}").getAsJsonObject();
+  json.add("modeles", JsonParser.parseString("[{\"id\":\"model-q\",\"nom\":\"Readable Q\",\"efforts\":[\"low\",\"medium\"]},{\"id\":\"new-q\",\"nom\":\"New readable\",\"efforts\":[\"medium\",\"high\"]}]"));
   Pont.ecran.add("configuration_ia",json);
   Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Réglages"));
-  var s=new EcranConfigurationIA(parent);mc.screen=s;s.init(mc,320,240);
-  assert field(s,0).getValue().equals("model-q");assert field(s,1).getValue().equals("model-p");
-  for(var w:s.widgets) {
-   if(w instanceof Button b)assert b.x>=0&&b.y>=0&&b.w>0&&b.x+b.w<=320&&b.y+b.h<=240:"button bounds";
-   if(w instanceof EditBox e)assert e.x>=0&&e.y>=0&&e.w>0&&e.x+e.w<=320&&e.y+e.h<=240:"field bounds";
-  }
+  var s=new EcranConfigurationIA(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
+  assert button(s,"Readable Q ▾")!=null;assert button(s,"model-p ▾")!=null;
+  assert s.widgets.stream().noneMatch(w->w instanceof EditBox):"no model name typing required";
+  choose(mc,s,"Readable Q ▾","New readable");
+  assert state(s).brouillon().modelQuestion().equals("new-q");
+  assert state(s).brouillon().effortQuestion().equals("medium"):"adapt incompatible effort on explicit selection";
+  assert Pont.sends==0:"picking does not apply";
   if(args[0].equals("draft")) {
-   field(s,0).setValue("new-q");s.init(mc,640,480);assert field(s,0).getValue().equals("new-q");
+   s.init(mc,640,480);assert button(s,"New readable ▾")!=null;
    s.keyPressed(256,0,0);assert mc.screen==parent&&Pont.sends==0;
-   s.init(mc,320,240);assert field(s,0).getValue().equals("new-q");
-   button(s,"Défauts").press();assert field(s,0).getValue().equals("default-q")&&Pont.sends==0;
+   s.init(mc,320,240);assert button(s,"New readable ▾")!=null;
+   Thread.sleep(700);button(s,"Défauts").press();assert button(s,"default-q ▾")!=null&&Pont.sends==0;
+   Thread.sleep(700);button(s,"default-q ▾").press();var picker=(EcranChoixModele)mc.screen;picker.init(mc,320,240);
+   var search=(EditBox)picker.widgets.stream().filter(w->w instanceof EditBox).findFirst().orElseThrow();
+   search.setValue("absent");assert picker.widgets.stream().noneMatch(w->w instanceof Button b&&b.visible&&b.title.getString().equals("New readable"));
+   search.setValue("New");button(picker,"New readable").press();assert mc.screen==s&&Pont.sends==0;
    return;
   }
-  field(s,0).setValue("new-q");Pont.actif=false;s.tick();assert !button(s,"Appliquer").active;
-  s.keyPressed(257,0,0);assert Pont.sends==0;
-  Pont.actif=true;s.tick();button(s,"Appliquer").press();s.keyPressed(257,0,0);
+  Pont.actif=false;s.tick();assert !button(s,"Appliquer").active;
+  button(s,"Appliquer").press();assert Pont.sends==0;
+  Pont.actif=true;s.tick();Thread.sleep(700);s.tick();button(s,"Appliquer").press();button(s,"En cours…").press();
   assert Pont.sends==1&&state(s).attente();
   s.keyPressed(256,0,0);assert mc.screen==parent;
   s=new EcranConfigurationIA(parent);s.init(mc,320,240);mc.screen=s;
-  assert field(s,0).getValue().equals("new-q")&&state(s).attente():"full reopening keeps pending submission";
-  s.keyPressed(257,0,0);assert Pont.sends==1;
+  assert button(s,"New readable ▾")!=null&&state(s).attente():"full reopening keeps pending submission";
+  button(s,"En cours…").press();assert Pont.sends==1;
   assert Pont.last.get("revision").getAsString().equals("a");
   assert Pont.last.getAsJsonObject("valeurs").get("model_question").getAsString().equals("new-q");
   var ack=new JsonObject();ack.addProperty("n",1000);ack.addProperty("etat","appliquee");ack.addProperty("message","ok");json.add("reponse",ack);
   s.tick();assert state(s).attente():"foreign acknowledgement";
   ack.addProperty("n",1001);ack.addProperty("etat","refusee");json.addProperty("revision","b");
-  s.tick();assert !state(s).attente()&&state(s).perimee()&&field(s,0).getValue().equals("new-q");
+  s.tick();assert !state(s).attente()&&state(s).perimee()&&button(s,"New readable ▾")!=null;
   assert button(s,"Actualiser").visible&&state(s).message(true).contains("Refusé");
+ }
+}
+"""
+
+PROJECT_HARNESS = r"""
+package fr.assistantia;
+import com.google.gson.*;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.*;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+public class ProjectScreenTest {
+ static Button button(Screen s,String name){return (Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals(name)).findFirst().orElseThrow();}
+ static void ready(EcranProjets s)throws Exception {
+  for(String name:new String[]{"ouvert","dernierClic"}){var f=EcranProjets.class.getDeclaredField(name);f.setAccessible(true);f.setLong(s,0);}
+  s.tick();
+ }
+ static void bounds(Screen s){for(var w:s.widgets)if(w instanceof Button b)assert b.x>=0&&b.y>=0&&b.w>0&&b.x+b.w<=s.width&&b.y+b.h<=s.height;}
+ public static void main(String[] args)throws Exception {
+  Pont.ecran=JsonParser.parseString("{\"projets\":{\"actif\":\"a\",\"liste\":[{\"id\":\"a\",\"nom\":\"Projet A\",\"actif\":true,\"pause\":true,\"objectif\":\"LV\",\"faits\":1,\"total\":4},{\"id\":\"b\",\"nom\":\"Projet B\",\"actif\":false,\"pause\":false,\"objectif\":\"Ferme\",\"faits\":0,\"total\":3}]}}").getAsJsonObject();
+  Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Objectif"));
+  var s=new EcranProjets(parent);mc.screen=s;s.init(mc,320,240);ready(s);bounds(s);
+  assert !button(s,"Ouvert").active;
+  button(s,"Projet B").press();assert button(s,"Ouvrir").active;
+  button(s,"Supprimer…").press();assert Pont.sends==0;bounds(s);
+  s.keyPressed(256,0,0);assert mc.screen==s:"escape returns to project list";ready(s);
+  button(s,"Supprimer…").press();ready(s);button(s,"Supprimer").press();button(s,"Supprimer").press();
+  assert Pont.sends==1;
+  assert Pont.last.get("id").getAsString().equals("b");
+  assert Pont.last.get("confirmation").getAsString().equals("Projet B");
+  s.onClose();s.onClose();assert mc.screen==parent;
+  s=new EcranProjets(parent);mc.screen=s;s.init(mc,320,240);ready(s);
+  assert !button(s,"Supprimer…").active:"reopening cannot duplicate deletion";
+  var p=Pont.ecran.getAsJsonObject("projets");var ack=new JsonObject();ack.addProperty("ok",true);ack.addProperty("token","foreign");p.add("retour",ack);
+  s.tick();assert !button(s,"Supprimer…").active;
+  ack.addProperty("token",Pont.last.get("token").getAsString());p.getAsJsonArray("liste").remove(1);
+  s.tick();ready(s);assert button(s,"Supprimer…").active&&mc.screen==s;
+  button(s,"Renommer").press();ready(s);
+  var field=(EditBox)s.widgets.stream().filter(w->w instanceof EditBox).findFirst().orElseThrow();field.setValue("Nouveau nom");
+  s.init(mc,640,480);ready(s);bounds(s);
+  assert s.widgets.stream().anyMatch(w->w instanceof EditBox e&&e.getValue().equals("Nouveau nom"));
+  button(s,"Enregistrer").press();assert Pont.sends==2&&Pont.last.get("action").getAsString().equals("renommer");
  }
 }
 """
@@ -183,9 +237,17 @@ class AiSettingsMenuTests(unittest.TestCase):
             [
                 *fixtures,
                 ROOT / "mod/src/main/java/fr/assistantia/EcranConfigurationIA.java",
+                ROOT / "mod/src/main/java/fr/assistantia/EcranChoixModele.java",
+                ROOT / "mod/src/main/java/fr/assistantia/CatalogueModeles.java",
+                ROOT / "mod/src/main/java/fr/assistantia/EcranProjets.java",
                 harness,
             ],
             classpath,
         )
         self.run_java("fr.assistantia.ConfigurationScreenTest", classpath, "draft")
         self.run_java("fr.assistantia.ConfigurationScreenTest", classpath, "submit")
+
+        project_harness = self.directory / "ProjectScreenTest.java"
+        project_harness.write_text(PROJECT_HARNESS)
+        self.compile([project_harness], classpath)
+        self.run_java("fr.assistantia.ProjectScreenTest", classpath)

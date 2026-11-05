@@ -160,3 +160,27 @@ conformément à la [documentation officielle OpenAI](https://learn.chatgpt.com/
 Claude conserve son identifiant de session et renouvelle son processus au prochain appel lorsque
 ses paramètres ont changé. Les objectifs, leur pause et les crédits de fabrication ne sont pas
 concernés par ce canal.
+
+## Projets et catalogue des modèles (shared.30)
+
+`ProjectStore.delete` exige l’identifiant et la confirmation du nom affiché. Les écritures restent
+atomiques ; un échec restaure le catalogue et l’objectif actifs. La suppression d’un projet secondaire
+ne réinitialise ni les compteurs ni la pause du projet ouvert. Le dernier projet supprimé est remplacé
+par un brouillon dont l’identifiant est neuf, pour qu’une ancienne requête ne puisse pas le supprimer.
+`EcranProjets` conserve la demande en attente même après fermeture ; les actions sont désactivées
+jusqu’à l’accusé exact. Renommer et supprimer restent dans la liste, ouvrir et créer reviennent au
+panneau parent. Les champs `plan` et `model_plan` restent compatibles avec les anciennes sauvegardes ;
+seuls leurs libellés visibles deviennent « Projet ».
+
+`providers/catalog.py` lit uniquement les métadonnées publiques du cache local Codex : identifiant,
+nom affiché et efforts supportés. Il conserve l’ordre, exclut les modèles masqués et ne transmet ni
+identité du compte ni instructions internes. Les lectures sont limitées par délai et signature du
+fichier ; une écriture partielle déclenche un repli vers la configuration connue. Les alias Claude
+proviennent de la [configuration officielle Claude Code](https://code.claude.com/docs/en/model-config).
+La liste ne vérifie pas les droits d’accès et ne lance aucune inférence. `CatalogueModeles` et
+`EcranChoixModele` présentent ce catalogue et ajustent uniquement le brouillon sur choix explicite.
+
+Les tests couvrent suppression active/secondaire/dernière, conservation de la pause, reprise après
+échec disque, requêtes répétées, cache absent/corrompu/remplacé, données privées exclues, ainsi que les
+écrans réels via contrats Minecraft : sélection, confirmation, Échap, attente conservée, recherche,
+redimensionnement et limites en 320 × 240. Les contrôles en jeu restent à effectuer après redémarrage.

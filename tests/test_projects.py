@@ -237,3 +237,107 @@ class ProjectRequestTests(unittest.TestCase):
         self.assertEqual(a.project_snapshot(), before)
         self.assertEqual(ProjectStore(self.path).current()["nom"], "Mon LV")
         a.start_objective.assert_not_called()
+
+    def test_delete_inactive_and_rename_inactive_preserve_active_progress_and_pause(self):
+        a = self.app
+        self.request()
+        self.request("choisir", "principal", token="back")
+        a.set_objective_paused(True)
+        before = copy.deepcopy(a.project_snapshot())
+        self.request("renommer", "ferme", name="Ferme renommée", token="rename-other")
+        self.assertEqual(a.projects.find("ferme")["nom"], "Ferme renommée")
+        a.handle_project_request(
+            {
+                "action": "supprimer",
+                "id": "ferme",
+                "origine": "principal",
+                "confirmation": "Ferme renommée",
+                "token": "delete-other",
+            }
+        )
+        self.assertTrue(a.project_feedback["ok"])
+        self.assertEqual(a.project_snapshot(), before)
+        self.assertEqual([p["id"] for p in a.projects.projects], ["principal"])
+        self.assertEqual(ProjectStore(self.path).snapshot(), before)
+
+    def test_delete_active_restores_paused_other_project_without_ai(self):
+        a = self.app
+        a.set_objective_paused(True)
+        a.done_steps = {0, 1}
+        self.request()
+        a.start_objective.reset_mock()
+        request = {
+            "action": "supprimer",
+            "id": "ferme",
+            "origine": "ferme",
+            "confirmation": "Une ferme",
+            "token": "delete-active",
+        }
+        a.handle_project_request(request)
+        self.assertTrue(a.project_feedback["ok"])
+        self.assertEqual(a.projects.active, "principal")
+        self.assertTrue(a.objective_paused)
+        self.assertEqual(a.done_steps, {0, 1})
+        a.handle_project_request(request)
+        self.assertTrue(a.project_feedback["ok"])
+        self.assertEqual(len(a.projects.projects), 1)
+        a.start_objective.assert_not_called()
+        restored = ProjectStore(self.path)
+        self.assertTrue(restored.snapshot()["objectif_en_pause"])
+
+    def test_delete_last_creates_empty_draft_and_late_retry_cannot_delete_it(self):
+        a = self.app
+        request = {
+            "action": "supprimer",
+            "id": "principal",
+            "origine": "principal",
+            "confirmation": a.projects.current()["nom"],
+            "token": "delete-last",
+        }
+        a.handle_project_request(request)
+        self.assertTrue(a.project_feedback["ok"])
+        self.assertNotEqual(a.projects.active, "principal")
+        empty_id = a.projects.active
+        self.assertIsNone(a.plan)
+        self.assertEqual(a.done_steps, set())
+        restored = ProjectStore(self.path)
+        self.assertEqual(restored.active, empty_id)
+        a.start_objective.assert_not_called()
+        a.project_feedback = {}  # restart / lost acknowledgement
+        a.handle_project_request(request)
+        self.assertFalse(a.project_feedback["ok"])
+        self.assertEqual(a.projects.active, empty_id)
+        self.assertEqual(len(a.projects.projects), 1)
+
+    def test_delete_requires_matching_confirmation_and_rolls_back_io_error(self):
+        a = self.app
+        a.set_objective_paused(True)
+        before = copy.deepcopy(a.project_snapshot())
+        request = {
+            "action": "supprimer",
+            "id": "principal",
+            "origine": "principal",
+            "token": "delete-unconfirmed",
+        }
+        a.handle_project_request(request)
+        self.assertFalse(a.project_feedback["ok"])
+        self.assertEqual(a.project_snapshot(), before)
+        original = a.save_plan
+        calls = 0
+
+        def fail_commit():
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("Disque plein")
+            original()
+
+        a.save_plan = fail_commit
+        a.handle_project_request(
+            {**request, "token": "delete-failure", "confirmation": a.projects.current()["nom"]}
+        )
+        self.assertFalse(a.project_feedback["ok"])
+        self.assertEqual(a.projects.active, "principal")
+        self.assertEqual(a.project_snapshot(), before)
+        self.assertEqual(ProjectStore(self.path).snapshot(), before)
+        self.assertEqual(len(a.projects.projects), 1)

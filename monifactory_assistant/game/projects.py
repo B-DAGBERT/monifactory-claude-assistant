@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import shutil
+import uuid
 from pathlib import Path
 
 FIELDS = (
@@ -87,6 +88,23 @@ class ProjectStore:
         if not any(p["id"] == ident for p in self.projects):
             raise ValueError("Ce projet n'existe plus.")
         self.active = ident
+
+    def find(self, ident):
+        project = next((p for p in self.projects if p["id"] == ident), None)
+        if project is None:
+            raise ValueError("Ce projet n'existe plus.")
+        return project
+
+    def delete(self, ident, confirmation):
+        project = self.find(ident)
+        if confirmation != project["nom"]:
+            raise ValueError("Le projet a changé : confirme à nouveau sa suppression.")
+        self.projects.remove(project)
+        if not self.projects:
+            # Never reuse the deleted identifier: a delayed retry cannot delete the new draft.
+            self.create(str(uuid.uuid4()), "Mon projet")
+        elif self.active == ident:
+            self.active = self.projects[0]["id"]
 
     def catalog(self, current_state):
         entries = []

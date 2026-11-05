@@ -131,7 +131,7 @@ Les règles de progression et détails des fonctions du jeu restent décrits dan
 
 ## Mettre l'objectif en pause
 
-Dans **Y → Objectif** (ou **Plan**), cliquer sur **Mettre en pause**. Le bouton devient
+Dans **Y → Objectif** (ou **Projet**), cliquer sur **Mettre en pause**. Le bouton devient
 **Reprendre** et l'état « En pause » reste visible. Aucune requête IA n'est nécessaire.
 Les étapes, compteurs et recettes sont conservés, même après fermeture de l'assistant.
 Les objets obtenus pendant la pause restent comptés pour la reprise. Les rappels de
@@ -224,14 +224,21 @@ La molette fait défiler la liste ou les minerais selon la zone survolée. Sur p
 passe sous la liste. L'âge du relevé, la dimension et les limites du comptage se lisent au survol.
 Une seule ligne de statut et une barre de progression rendent le scan visible ; son arrêt reste en haut.
 
-## Plusieurs projets et onglet Base (Codex.17)
+## Mes projets et onglet Base
 
-Dans **Y → Objectif** ou **Plan**, cliquer sur **Projet : …** en haut du contenu.
+Dans **Y → Objectif** ou **Projet**, cliquer sur **Mes projets ▾** en haut du contenu.
 Le sélecteur **Mes projets** propose :
 
-- **Choisir** : retrouver un projet existant, son plan, ses étapes cochées, ses compteurs et sa pause, sans requête IA.
-- **Créer** : saisir un nom ou un but, choisir **Plan complet** ou **Objectif seul**, puis créer. Codex prépare uniquement ce nouveau projet.
-- **Renommer** : modifier le nom du projet actif avec le texte saisi, sans refaire son plan.
+Sélectionner une ligne pour afficher ses actions. Chaque ligne indique son statut et le nombre
+d’objectifs terminés. Sélectionner une ligne ne change pas encore le projet actif.
+
+- **Ouvrir** : retrouver un projet, ses étapes cochées, ses compteurs et sa pause, sans requête IA.
+- **Nouveau projet** : saisir un nom ou un but, choisir **Plusieurs objectifs** ou **Un seul objectif**, puis **Créer**.
+- **Renommer** : modifier le projet sélectionné, même s’il n’est pas actif, sans refaire sa progression.
+- **Supprimer…** : vérifier le nom dans la confirmation, puis supprimer. Si c’est le projet actif, le panneau indique celui qui sera ouvert ensuite ; sa pause est conservée. Supprimer le dernier laisse un projet vide sans génération IA.
+
+**Échap** revient de la confirmation ou du formulaire à la liste ; depuis la liste, il revient à
+l’onglet précédent. Le statut **EN PAUSE** est visible dans **Objectif**, **Projet** et **Mes projets**.
 
 Un seul projet est suivi à la fois. Les autres restent sauvegardés localement : leur progression
 ne s'actualise pas pendant leur inactivité. Le contenu actuel des coffres et de l'inventaire

@@ -2639,29 +2639,29 @@ class App:
                 raise ValueError("Le projet actif a changé. Rouvre le sélecteur.")
             action = request.get("action")
             ident = str(request.get("id") or "")
-            if action not in ("choisir", "creer", "renommer"):
+            if action not in ("choisir", "creer", "renommer", "supprimer"):
                 raise ValueError("Action de projet inconnue.")
             name = str(request.get("nom") or "").strip()[:100]
             mode = request.get("mode")
             if action == "creer" and (mode not in ("objectif", "plan") or not self.game):
-                raise ValueError("Entre dans ta partie pour préparer un objectif ou un plan.")
+                raise ValueError("Entre dans ta partie pour préparer un projet.")
             if action in ("creer", "renommer") and not name:
                 raise ValueError("Donne un nom au projet.")
-            if action == "renommer" and ident != self.projects.active:
-                raise ValueError("Rouvre le sélecteur pour renommer le projet actif.")
+            if action != "creer":
+                self.projects.find(ident)
             if action == "creer" and (not ident or len(ident) > 80):
                 raise ValueError("Identifiant de projet invalide.")
             self.save_plan()  # sauvegarder entièrement celui qu'on quitte, y compris sa pause
             if action == "renommer":
-                self.projects.current()["nom"] = name
-            elif action == "choisir" and ident == self.projects.active:
-                pass
+                self.projects.find(ident)["nom"] = name
+            elif action == "supprimer":
+                self.projects.delete(ident, request.get("confirmation"))
+            elif action == "creer":
+                if not self.projects.create(ident, name):
+                    raise ValueError("Ce projet a déjà été créé.")
             else:
-                if action == "creer":
-                    if not self.projects.create(ident, name):
-                        raise ValueError("Ce projet a déjà été créé.")
-                else:
-                    self.projects.select(ident)
+                self.projects.select(ident)
+            if self.projects.active != previous_active:
                 self.restore_project(self.projects.snapshot())
                 self.plan_version = time.time_ns() // 1000
                 # Aucun craft de l'autre projet ne doit être attribué rétroactivement à celui-ci.
@@ -2679,7 +2679,7 @@ class App:
             self.project_feedback = {"token": token, "ok": False, "message": str(error)}
             self.refresh(force=True)
             return
-        self.project_feedback = {"token": token, "ok": True}
+        self.project_feedback = {"token": token, "ok": True, "action": action}
         self.refresh(force=True)
         if action == "creer":
             self.start_objective(name, new_plan=mode == "plan")

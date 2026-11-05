@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from monifactory_assistant import providers
+from monifactory_assistant.providers.catalog import ModelCatalog
 
 FIELDS = {"model_question", "effort_question", "model_plan", "effort_plan"}
 EFFORT_DEFAULTS = {"question": "low", "plan": "medium"}
@@ -28,6 +29,7 @@ class AISettings:
         self.config = providers.CONFIG if config is None else config
         self.clock = clock
         self.provider = providers.provider(self.config)
+        self.catalog = ModelCatalog()
         self.reply = {}
         self.seen = set()
         self.request_signature = None
@@ -112,6 +114,7 @@ class AISettings:
             "defauts": defaults,
             "efforts": list(providers.EFFORTS_BY_PROVIDER[self.provider]),
             "reponse": dict(self.reply),
+            **self.catalog.view(self.provider, self.values(), defaults),
         }
 
     def _validate(self, values):

@@ -71,9 +71,12 @@ Dans **Y → Réglages → Modèles IA…**, le moteur actif est affiché avec d
 | Profil               | Utilisation                                          | Valeurs Codex par défaut          |
 | -------------------- | ---------------------------------------------------- | --------------------------------- |
 | Discussion et fiches | Questions écrites/vocales et nouvelles fiches avec I | `gpt-5.6-sol`, réflexion `low`    |
-| Plans et objectifs   | Génération d’un nouveau plan ou objectif             | `gpt-6.1-sol`, réflexion `medium` |
+| Projets et objectifs | Génération d’un nouveau projet ou objectif           | `gpt-6.1-sol`, réflexion `medium` |
 
-Modifier le nom exact du modèle et le niveau de réflexion, puis cliquer **Appliquer**. Attendre le
+Cliquer sur le nom du modèle pour ouvrir la liste, rechercher son nom si nécessaire et le sélectionner.
+Il n’est plus nécessaire de connaître son identifiant. Choisir ensuite le niveau de réflexion, puis
+cliquer **Appliquer**. Le choix dans la liste ne sauvegarde que le brouillon ; un niveau incompatible
+avec le nouveau modèle est remplacé par le premier niveau proposé par son catalogue. Attendre le
 message de confirmation : **Enregistrement…** signifie seulement que la demande est en cours.
 **Défauts** remplit le formulaire avec les valeurs du moteur actif ; il faut encore appliquer.
 **Retour** ou Échap revient aux réglages sans envoyer le brouillon.
@@ -84,9 +87,12 @@ l’application du changement ; attendre sa fin puis appliquer. Le réglage rest
 `assistant.local.json`, uniquement pour le moteur actif. Les autres paramètres et le moteur du
 collègue ne sont pas modifiés.
 
-Le menu vérifie la forme du nom et les niveaux de réflexion proposés, sans lancer de requête IA.
-L’accès réel dépend du modèle et du compte ; un nom accepté dans le formulaire ne prouve pas cet
-accès. Les anciennes fiches mémorisées restent locales. La réflexion règle l’effort de traitement ;
+Codex affiche son catalogue local (`CODEX_HOME/models_cache.json`, ou `~/.codex/models_cache.json`).
+La liste est relue lorsqu’il change, sans requête IA ni accès réseau. Si ce catalogue manque ou est
+illisible, les modèles configurés et les valeurs par défaut restent accessibles. Pour actualiser le
+catalogue, ouvrir Codex avec le compte habituel. Claude propose ses alias **Sonnet**, **Opus** et
+**Haiku**, ainsi que les modèles personnalisés déjà configurés. Le catalogue indique les choix
+connus du client ; l’accès réel reste celui de ton compte. Les anciennes fiches mémorisées restent locales. La réflexion règle l’effort de traitement ;
 ce menu ne règle pas le mode Fast ou le service prioritaire.
 
 Changer de moteur Claude/Codex reste dans **Choisir IA**, puis nécessite de relancer l’assistant.

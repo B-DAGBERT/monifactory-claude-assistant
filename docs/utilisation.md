@@ -16,7 +16,7 @@ ne déclenchent aucun appel IA supplémentaire.
 
 ## Objectif dans EMI
 
-Dans **Y → Objectif** ou **Plan**, **Objectif EMI** met le craft demandé dans l’arbre
+Dans **Y → Objectif** ou **Projet**, **Objectif EMI** met le craft demandé dans l’arbre
 EMI : toutes les cibles avec leurs quantités, et les recettes intermédiaires choisies par
 l’assistant. Le livre « Objectif » est une racine virtuelle qui regroupe les cibles ; il
 n’est pas un objet à fabriquer. Clique sur les branches pour suivre leurs recettes dans EMI.

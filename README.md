@@ -16,19 +16,19 @@ Le compte IA se choisit sur chaque poste ; les conversations, coffres et objecti
 
 ## Trouver la bonne fonction
 
-| Besoin                                    | Où aller                                                                         |
-| ----------------------------------------- | -------------------------------------------------------------------------------- |
-| Avancer étape par étape                   | **Y → Objectif** ; changer de projet dans le sélecteur.                          |
-| Mettre un objectif en attente             | **Objectif → Mettre en pause**. La reprise reste manuelle.                       |
-| Préparer le craft complet                 | **Objectif EMI**, puis choisir les branches de **Recipe Tree**.                  |
-| Chercher les ingrédients                  | **Scanner coffres**, à droite de Recipe Tree. Un second clic arrête le scan.     |
-| Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.           |
-| Utiliser une machine                      | Contour rouge, puis **Envoyer** dans sa fenêtre. Récupérer soi-même les sorties. |
-| Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                       |
-| Voir les stocks ou les filons connus      | **Y → Base / Filons**.                                                           |
-| Poser une question                        | **Y → Discussion**.                                                              |
-| Régler l’affichage et la luminosité       | **Y → Réglages**, onglet le plus à droite.                                       |
-| Choisir les modèles et la réflexion       | **Y → Réglages → Modèles IA…** ; **Appliquer** pour les prochaines demandes.     |
+| Besoin                                    | Où aller                                                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Avancer étape par étape                   | **Y → Objectif** ; **Mes projets ▾** pour ouvrir, créer, renommer ou supprimer.                        |
+| Mettre un objectif en attente             | **Objectif / Projet → Mettre en pause**. Le statut apparaît dans les deux onglets.                     |
+| Préparer le craft complet                 | **Objectif EMI**, puis choisir les branches de **Recipe Tree**.                                        |
+| Chercher les ingrédients                  | **Scanner coffres**, à droite de Recipe Tree. Un second clic arrête le scan.                           |
+| Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.                                 |
+| Utiliser une machine                      | Contour rouge, puis **Envoyer** dans sa fenêtre. Récupérer soi-même les sorties.                       |
+| Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                                             |
+| Voir les stocks ou les filons connus      | **Y → Base / Filons**.                                                                                 |
+| Poser une question                        | **Y → Discussion**.                                                                                    |
+| Régler l’affichage et la luminosité       | **Y → Réglages**, onglet le plus à droite.                                                             |
+| Choisir les modèles et la réflexion       | **Y → Réglages → Modèles IA…**, choisir dans la liste puis **Appliquer** pour les prochaines demandes. |
 
 Le contenu des **Sophisticated Backpacks portés** compte dans les besoins, EMI et l’avancement.
 Les boutons de transfert utilisent les cases accessibles : sortir les ingrédients du sac pour les envoyer.
