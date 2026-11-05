@@ -61,7 +61,7 @@ public final class OngletFilons {
     }
 
     private EditBox filtre;
-    private Button trier, vides, eteindre, teleporter, scannerFilon, epuiser, scan, arreter, outils;
+    private Button trier, vides, teleporter, scannerFilon, epuiser, arreter, outils, affichage;
     private int x,
             y,
             largeur,
@@ -74,7 +74,7 @@ public final class OngletFilons {
             detailLargeur,
             lignes;
     private long listeDate, optionsDepuis;
-    private boolean actif, outilsOuverts;
+    private boolean actif;
     private int decalageMinerais, capaciteMinerais;
     private String fichePrecedente = "";
     private DispositionFilons disposition;
@@ -127,17 +127,15 @@ public final class OngletFilons {
                         ajout);
         outils =
                 ajouter(
-                        bouton(
-                                "Outils +",
-                                b -> {
-                                    if (System.currentTimeMillis() - optionsDepuis < 350) return;
-                                    optionsDepuis = System.currentTimeMillis();
-                                    outilsOuverts = !outilsOuverts;
-                                }),
+                        bouton("Options…", b -> mc.setScreen(new EcranOutilsFilons(mc.screen))),
                         ajout);
-        scan = ajouter(bouton("", b -> Filons.viderReleves()), ajout);
+        affichage =
+                ajouter(
+                        bouton(
+                                "Affichage…",
+                                b -> mc.setScreen(new EcranAffichageFilons(mc.screen))),
+                        ajout);
         arreter = ajouter(bouton("Arrêter", b -> Filons.reglerScan(false)), ajout);
-        eteindre = ajouter(bouton("Tout masquer", b -> Filons.afficher("", false)), ajout);
         scannerFilon =
                 ajouter(bouton("Scanner ce filon", b -> Filons.scannerSelection(selection)), ajout);
         teleporter = ajouter(bouton("Se téléporter", b -> Filons.teleporter(selection)), ajout);
@@ -266,65 +264,46 @@ public final class OngletFilons {
         this.y = y;
         this.largeur = largeur;
         this.bas = bas;
-        // Deux rangées courtes ; l'entretien du cache reste replié par défaut.
-        int triLargeur = Math.min(132, largeur * 42 / 100);
+        // Les actions fréquentes restent visibles ; l'entretien ouvre un écran séparé.
+        int triLargeur = Math.min(110, largeur / 3);
         placer(filtre, x, y, largeur - triLargeur - 6);
         placer(trier, x + largeur - triLargeur, y, triLargeur);
         trier.active = vides.active = System.currentTimeMillis() - optionsDepuis >= 650;
         trier.setMessage(
                 Component.literal("Tri : " + new String[] {"distance", "objectif", "nom"}[tri]));
         trier.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Trier les filons par distance, utilité pour l'objectif ou nom.")));
-        int outilsLargeur = 58;
+                Tooltip.create(Component.literal("Distance, utilité pour l'objectif ou nom")));
         boolean enScan = Filons.scanActif();
-        int filtreLargeur = enScan ? Math.min(116, largeur / 3) : largeur - outilsLargeur - 6;
+        int filtreLargeur = Math.min(112, (largeur - 12) / 3);
+        int affichageLargeur = Math.min(90, (largeur - 12) / 3);
+        int outilsLargeur = Math.min(72, largeur - filtreLargeur - affichageLargeur - 12);
         placer(vides, x, y + 22, filtreLargeur);
-        placer(
-                arreter,
-                x + filtreLargeur + 6,
-                y + 22,
-                largeur - filtreLargeur - outilsLargeur - 12);
-        placer(outils, x + largeur - outilsLargeur, y + 22, outilsLargeur);
-        outils.setMessage(Component.literal(outilsOuverts ? "Outils −" : "Outils +"));
-        outils.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Tout masquer et gérer le cache des relevés (100 000 blocs, rotation automatique).")));
+        placer(affichage, x + filtreLargeur + 6, y + 22, affichageLargeur);
+        placer(outils, x + filtreLargeur + affichageLargeur + 12, y + 22, outilsLargeur);
+        int stopX = x + filtreLargeur + affichageLargeur + outilsLargeur + 18;
         arreter.visible = enScan;
-        arreter.setMessage(Component.literal("Arrêter · " + Filons.avancee() + " %"));
+        if (enScan) {
+            // En petite fenêtre, l'arrêt remplace Options, jamais les réglages d'affichage.
+            outils.visible = largeur - (stopX - x) >= 72;
+            placer(
+                    arreter,
+                    outils.visible ? stopX : outils.getX(),
+                    y + 22,
+                    outils.visible ? Math.min(110, largeur - (stopX - x)) : outilsLargeur);
+        }
+        arreter.setMessage(Component.literal("Arrêter " + Filons.avancee() + "%"));
         arreter.active = Filons.boutonScanDisponible();
         arreter.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Arrêter le scan en cours ; conserver les blocs déjà repérés.")));
+                Tooltip.create(Component.literal("Arrêter le scan, conserver les relevés")));
         vides.setMessage(Component.literal(masquerVides ? "Épuisés masqués" : "Épuisés visibles"));
         vides.setTooltip(
+                Tooltip.create(Component.literal("Afficher ou masquer les gisements épuisés")));
+        affichage.setTooltip(
                 Tooltip.create(
-                        Component.literal(
-                                "Afficher ou masquer les gisements épuisés selon GregTech ou ton marquage personnel.")));
-        int demi = (largeur - 6) / 2;
-        placer(eteindre, x, y + 44, demi);
-        placer(scan, x + demi + 6, y + 44, largeur - demi - 6);
-        scan.visible = eteindre.visible = outilsOuverts;
-        scan.setMessage(Component.literal("Vider les relevés"));
-        scan.active =
-                !Filons.monde().isEmpty()
-                        && !Filons.scanActif()
-                        && Filons.boutonScanDisponible()
-                        && !Filons.memoire().blocs().isEmpty();
-        scan.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Libérer le cache : "
-                                        + Filons.memoire().blocs().size()
-                                        + " / 100 000 blocs relevés. Rotation automatique au plafond : minés, puis anciens hors zone scannée. Gisements et choix conservés. Arrête le scan avant de vider.")));
-        eteindre.active = !Filons.affiche().isEmpty() && Filons.affichageDisponible();
-        eteindre.setTooltip(
-                Tooltip.create(Component.literal("Masquer la surbrillance du filon affiché.")));
-
-        disposition = DispositionFilons.calculer(x, y, largeur, bas, outilsOuverts);
+                        Component.literal("Nombre de blocs surlignés et intensité des contours")));
+        outils.setTooltip(
+                Tooltip.create(Component.literal("Tout masquer et vider les relevés locaux")));
+        disposition = DispositionFilons.calculer(x, y, largeur, bas, false);
         listeY = disposition.listeY();
         listeBas = disposition.listeBas();
         listeLargeur = disposition.listeLargeur();

@@ -34,6 +34,9 @@ public final class CoffresArbreEmi {
     private static final String ID = "assistantia:coffres_arbre";
     private static final Map<Screen, Button> boutons = new WeakHashMap<>();
     private static final Map<Screen, Button> suivis = new WeakHashMap<>();
+    private static final Map<Screen, Button> sacs = new WeakHashMap<>();
+    private static long lectureSacDate;
+    private static int typesSac;
     private static Field boutonArbre, barreRecherche;
     private static boolean charge;
     private static java.lang.reflect.Method desactive;
@@ -165,6 +168,17 @@ public final class CoffresArbreEmi {
                                 "États des fabrications, recalcul et annulation des lots")));
         suivis.put(screen, suivi);
         event.addListener(suivi);
+        Button sac =
+                Button.builder(
+                                Component.literal("Sac"),
+                                b ->
+                                        Minecraft.getInstance()
+                                                .setScreen(new fr.assistantia.EcranSac(screen)))
+                        .bounds(200, screen.height - 22, 58, 20)
+                        .build();
+        sac.visible = false;
+        sacs.put(screen, sac);
+        event.addListener(sac);
     }
 
     @SubscribeEvent
@@ -177,7 +191,9 @@ public final class CoffresArbreEmi {
             AbstractWidget search = (AbstractWidget) barreRecherche.get(null);
             button.visible = tree != null && tree.visible && !(boolean) desactive.invoke(null);
             Button suivi = suivis.get(event.getScreen());
+            Button sac = sacs.get(event.getScreen());
             if (suivi != null) suivi.visible = button.visible;
+            if (sac != null) sac.visible = button.visible;
             if (!button.visible) return;
             int x = tree.getX() + tree.getWidth() + 2;
             int y = tree.getY();
@@ -188,16 +204,39 @@ public final class CoffresArbreEmi {
                     && search.getY() < y + 20
                     && search.getY() + search.getHeight() > y)
                 room = Math.min(room, search.getX() - x - 2);
-            int width = Math.min(102, Math.max(20, room - 52));
+            var disposition = fr.assistantia.BarreOutilsEmi.calculer(x, y, room);
+            placer(button, disposition.scan());
+            int width = button.getWidth();
             if (suivi != null) {
-                suivi.setX(room >= 74 ? x + width + 2 : x);
-                suivi.setY(room >= 74 ? y : y - 22);
-                suivi.setWidth(48);
+                placer(suivi, disposition.suivi());
                 suivi.active = ArbreEmi.actif() != null || MachinesEmi.dernierTermine();
+                suivi.setMessage(Component.literal(suivi.getWidth() < 35 ? "…" : "Suivi"));
             }
-            button.setX(x);
-            button.setY(y);
-            button.setWidth(width);
+            if (sac != null) {
+                placer(sac, disposition.sac());
+                long maintenant = System.currentTimeMillis();
+                boolean disponible = fr.assistantia.InventaireJoueur.disponible();
+                if (!disponible) {
+                    typesSac = 0;
+                    lectureSacDate = 0;
+                } else if (maintenant - lectureSacDate > 500) {
+                    typesSac =
+                            fr.assistantia.ListeSac.lire(fr.assistantia.InventaireJoueur.sacs(), "")
+                                    .size();
+                    lectureSacDate = maintenant;
+                }
+                sac.setMessage(
+                        Component.literal(
+                                sac.getWidth() < 50
+                                        ? "Sac"
+                                        : disponible
+                                                ? "Sac (" + (typesSac > 99 ? "99+" : typesSac) + ")"
+                                                : "Sac…"));
+                sac.setTooltip(
+                        Tooltip.create(
+                                Component.literal(
+                                        "Objets déjà sur toi dans le backpack · comptés dans EMI, même fermé")));
+            }
             boolean selected = RechercheEmi.selectionnee(ID);
             boolean lectureSac = selected && !fr.assistantia.InventaireJoueur.synchronise();
             button.active = selected || ArbreEmi.consulte() != null;
@@ -222,12 +261,26 @@ public final class CoffresArbreEmi {
             button.visible = false;
             if (suivis.get(event.getScreen()) != null)
                 suivis.get(event.getScreen()).visible = false;
+            if (sacs.get(event.getScreen()) != null) sacs.get(event.getScreen()).visible = false;
             signaler(e);
         }
     }
 
+    private static void placer(Button bouton, fr.assistantia.BarreOutilsEmi.Zone zone) {
+        bouton.setX(zone.x());
+        bouton.setY(zone.y());
+        bouton.setWidth(zone.largeur());
+    }
+
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
+        Button sac = sacs.get(event.getScreen());
+        if (sac != null && sac.visible && sac.isMouseOver(event.getMouseX(), event.getMouseY())) {
+            if (sac.active)
+                sac.mouseClicked(event.getMouseX(), event.getMouseY(), event.getButton());
+            event.setCanceled(true);
+            return;
+        }
         Button suivi = suivis.get(event.getScreen());
         if (suivi != null
                 && suivi.visible
@@ -249,11 +302,18 @@ public final class CoffresArbreEmi {
     }
 
     public static fr.assistantia.DispositionCoffre.Zone zoneSuivi(Screen screen) {
-        var b = suivis.get(screen);
-        return b != null && b.visible
-                ? new fr.assistantia.DispositionCoffre.Zone(
-                        b.getX(), b.getY(), b.getWidth(), b.getHeight())
-                : null;
+        int x = Integer.MAX_VALUE, y = Integer.MAX_VALUE, droite = 0, bas = 0;
+        for (var carte : List.of(boutons, suivis, sacs)) {
+            var b = carte.get(screen);
+            if (b == null || !b.visible) continue;
+            x = Math.min(x, b.getX());
+            y = Math.min(y, b.getY());
+            droite = Math.max(droite, b.getX() + b.getWidth());
+            bas = Math.max(bas, b.getY() + b.getHeight());
+        }
+        return x == Integer.MAX_VALUE
+                ? null
+                : new fr.assistantia.DispositionCoffre.Zone(x, y, droite - x, bas - y);
     }
 
     public static boolean recalculer() {

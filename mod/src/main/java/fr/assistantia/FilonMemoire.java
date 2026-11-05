@@ -91,6 +91,10 @@ public final class FilonMemoire {
         }
 
         public List<Bloc> contours(Position joueur) {
+            return contours(joueur, 768);
+        }
+
+        public List<Bloc> contours(Position joueur, int maximum) {
             return blocs.stream()
                     .filter(
                             b ->
@@ -98,7 +102,7 @@ public final class FilonMemoire {
                                             && typeAffiche(b.id)
                                             && b.position.distance2(joueur) <= 64 * 64)
                     .sorted(Comparator.comparingDouble(b -> b.position.distance2(joueur)))
-                    .limit(768)
+                    .limit(Math.max(1, Math.min(4096, maximum)))
                     .toList();
         }
 

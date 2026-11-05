@@ -276,3 +276,28 @@ second lot. L’arrêt de l’arbre hors pause et le changement de monde/connexi
 de nettoyage précédentes. Les tests Java couvrent lot envoyé/complet, quantité devenue invalide,
 ancien arbre, retrait sur plusieurs coffres, réception partielle, sac, annulation et absence de double
 attribution entre lots identiques. Les interactions finales sont à confirmer dans le jeu réel.
+
+## Filons et repérage du backpack (shared.33)
+
+`StyleFilons` porte le budget de contours (1 à 4 096, défaut 192) et l’intensité. `AffichageFilons`
+les enregistre dans `config/assistantia-filons-visuel.json` par remplacement atomique quand le système
+le permet. Un enregistrement refusé conserve le style courant et le brouillon ouvert. Le budget
+ne modifie pas `FilonMemoire` : tri par distance et filtrage précèdent la limite de rendu.
+
+`Filons` utilise un buffer dédié, des lignes fines et deux passes : discrète sans profondeur, puis
+plus lisible avec profondeur. Le bloc visé est exclu. Le rendu ne vide pas le buffer global du jeu.
+`EcranAffichageFilons` conserve sa saisie au redimensionnement. Les actions occasionnelles ouvrent
+`EcranOutilsFilons` ; elles ne rajoutent plus une troisième rangée à la liste.
+
+`BarreDefilement` centralise le calcul des pixels, le curseur, la molette et le glisser. Les réglages
+conservent leurs boutons fixes et limitent le rendu et les zones cliquables à la fenêtre visible.
+`EcranSac` utilise la même barre et une vue synchronisée des sacs portés. `ListeSac` regroupe les
+quantités par objet et NBT, sans modifier les piles sources. Les quantités non synchronisées sont
+masquées. La recherche et le regroupement sont mis en cache entre deux rafraîchissements.
+`BarreOutilsEmi` évite le chevauchement de Scanner coffres, Suivi et Sac lorsque la place diminue.
+
+`test_mining_ui.py` couvre les limites, l’intensité, le défilement, le repli des boutons, les grosses
+piles, les identités NBT, le filtre, le redimensionnement, le retour au parent, le rechargement des
+réglages et l’échec d’enregistrement. Les scénarios de `FilonMemoireTest` vérifient aussi que le
+budget d’affichage conserve tous les blocs mémorisés. Ces tests sans GPU ne remplacent pas une
+vérification visuelle après redémarrage de Minecraft.

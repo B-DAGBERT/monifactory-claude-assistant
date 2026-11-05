@@ -38,6 +38,8 @@ public final class Filons {
                         t.setDaemon(true);
                         return t;
                     });
+    private static final MultiBufferSource.BufferSource TAMPONS_FILONS =
+            MultiBufferSource.immediate(new BufferBuilder(32768));
     private static FilonMemoire memoire = new FilonMemoire(true);
     private static FilonMemoire.Scan scan = new FilonMemoire.Scan();
     private static final Map<net.minecraft.world.level.block.Block, Boolean> MINERAIS =
@@ -93,6 +95,10 @@ public final class Filons {
 
     public static long revision() {
         return revision;
+    }
+
+    public static void invaliderContours() {
+        contoursDate = 0;
     }
 
     public static int avancee() {
@@ -810,38 +816,43 @@ public final class Filons {
         FilonMemoire.Position joueur = position();
         Vec3 camera = event.getCamera().getPosition();
         var pose = event.getPoseStack();
-        var buffers = mc.renderBuffers().bufferSource();
+        var buffers = TAMPONS_FILONS;
         FilonMemoire.Filon f = memoire.filon(affiche);
         if (f != null && f.ancre.dimension().equals(joueur.dimension())) {
             if (System.currentTimeMillis() - contoursDate > 500) {
-                contours = f.contours(joueur);
+                contours = f.contours(joueur, AffichageFilons.style().maximum());
                 contoursDate = System.currentTimeMillis();
             }
-            VertexConsumer lignes = buffers.getBuffer(Lignes.TRAVERSANTES);
-            for (var b : contours) {
-                if (b.retire || !f.typeAffiche(b.id) || !mc.level.hasChunkAt(bloc(b.position)))
-                    continue;
-                ResourceLocation reel =
-                        ForgeRegistries.BLOCKS.getKey(
-                                mc.level.getBlockState(bloc(b.position)).getBlock());
-                if (reel == null || !reel.toString().equals(b.id)) continue;
-                int couleur =
-                        net.minecraft.util.Mth.hsvToRgb(
-                                (b.id.hashCode() & 0xffff) / 65536F, .6F, 1F);
-                AABB boite =
-                        new AABB(bloc(b.position))
-                                .inflate(.01)
-                                .move(-camera.x, -camera.y, -camera.z);
-                LevelRenderer.renderLineBox(
-                        pose,
-                        lignes,
-                        boite,
-                        ((couleur >> 16) & 255) / 255F,
-                        ((couleur >> 8) & 255) / 255F,
-                        (couleur & 255) / 255F,
-                        .9F);
+            var style = AffichageFilons.style();
+            for (boolean visible : new boolean[] {false, true}) {
+                var type = visible ? Lignes.FILONS_VISIBLES : Lignes.FILONS_CACHES;
+                VertexConsumer lignes = buffers.getBuffer(type);
+                for (var b : contours) {
+                    BlockPos pos = bloc(b.position);
+                    if (b.retire || !f.typeAffiche(b.id) || !mc.level.hasChunkAt(pos)) continue;
+                    // Laisser le bloc visé et son contour natif parfaitement lisibles pour miner.
+                    if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult vise
+                            && vise.getBlockPos().equals(pos)) continue;
+                    ResourceLocation reel =
+                            ForgeRegistries.BLOCKS.getKey(mc.level.getBlockState(pos).getBlock());
+                    if (reel == null || !reel.toString().equals(b.id)) continue;
+                    float alpha = style.alpha(b.position.distance2(joueur), visible);
+                    if (alpha <= 0) continue;
+                    int couleur =
+                            net.minecraft.util.Mth.hsvToRgb(
+                                    (b.id.hashCode() & 0xffff) / 65536F, .4F, .85F);
+                    AABB boite = new AABB(pos).inflate(.005).move(-camera.x, -camera.y, -camera.z);
+                    LevelRenderer.renderLineBox(
+                            pose,
+                            lignes,
+                            boite,
+                            ((couleur >> 16) & 255) / 255F,
+                            ((couleur >> 8) & 255) / 255F,
+                            (couleur & 255) / 255F,
+                            alpha);
+                }
+                buffers.endBatch(type);
             }
-            buffers.endBatch(Lignes.TRAVERSANTES);
         }
     }
 }

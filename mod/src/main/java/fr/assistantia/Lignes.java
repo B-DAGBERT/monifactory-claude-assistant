@@ -30,6 +30,29 @@ public final class Lignes extends RenderType {
                             .setDepthTestState(NO_DEPTH_TEST)
                             .createCompositeState(false));
 
+    public static final RenderType FILONS_CACHES = filons("assistantia_filons_caches", false);
+    public static final RenderType FILONS_VISIBLES = filons("assistantia_filons_visibles", true);
+
+    private static RenderType filons(String nom, boolean profondeur) {
+        return create(
+                nom,
+                DefaultVertexFormat.POSITION_COLOR_NORMAL,
+                VertexFormat.Mode.LINES,
+                256,
+                false,
+                false,
+                CompositeState.builder()
+                        .setShaderState(RENDERTYPE_LINES_SHADER)
+                        .setLineState(new LineStateShard(OptionalDouble.of(1.0)))
+                        .setLayeringState(VIEW_OFFSET_Z_LAYERING)
+                        .setTransparencyState(TRANSLUCENT_TRANSPARENCY)
+                        .setOutputState(ITEM_ENTITY_TARGET)
+                        .setWriteMaskState(COLOR_WRITE)
+                        .setCullState(NO_CULL)
+                        .setDepthTestState(profondeur ? LEQUAL_DEPTH_TEST : NO_DEPTH_TEST)
+                        .createCompositeState(false));
+    }
+
     private Lignes(
             String nom,
             VertexFormat format,

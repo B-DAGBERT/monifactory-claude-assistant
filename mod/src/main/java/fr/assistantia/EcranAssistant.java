@@ -77,6 +77,7 @@ public class EcranAssistant extends Screen {
     private Button relancer; // visible seulement quand l'assistant ne tourne pas
     private boolean lanceurInconnu;
     private int defilement = 0;
+    private final BarreDefilement defilementReglages = new BarreDefilement();
 
     public EcranAssistant() {
         super(Component.literal("Assistant IA"));
@@ -345,6 +346,7 @@ public class EcranAssistant extends Screen {
 
     @Override
     public boolean mouseClicked(double x, double y, int bouton) {
+        if (onglet == REGLAGES && defilementReglages.cliquer(x, y, bouton)) return true;
         if (onglet == DISCUSSION && discussion.cliquer(x, y, bouton)) return true;
         if (onglet == FILONS && filons.cliquer(x, y, bouton)) return true;
         if (onglet == BASE && base.clic(x, y, bouton)) return true;
@@ -377,6 +379,10 @@ public class EcranAssistant extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double delta) {
+        if (onglet == REGLAGES) {
+            defilementReglages.defiler(delta);
+            return true;
+        }
         if (onglet == DISCUSSION) return discussion.defiler(x, y, delta);
         if (onglet == FILONS) return filons.defiler(x, y, delta);
         if (onglet == BASE) return base.defiler(x, y, delta);
@@ -388,6 +394,7 @@ public class EcranAssistant extends Screen {
 
     @Override
     public boolean mouseDragged(double x, double y, int bouton, double dx, double dy) {
+        if (onglet == REGLAGES && defilementReglages.glisser(y)) return true;
         if (onglet == DISCUSSION && discussion.glisser(y)) return true;
         return super.mouseDragged(x, y, bouton, dx, dy);
     }
@@ -395,6 +402,7 @@ public class EcranAssistant extends Screen {
     @Override
     public boolean mouseReleased(double x, double y, int bouton) {
         discussion.relacher();
+        defilementReglages.relacher();
         return super.mouseReleased(x, y, bouton);
     }
 
@@ -809,8 +817,24 @@ public class EcranAssistant extends Screen {
         lumiere.addProperty("description", Fullbright.description());
         reglages.add(lumiere);
         for (JsonElement reglage : Pont.liste(ecran, "reglages")) reglages.add(reglage);
-        int bouton = 96, texte = largeur - bouton - 12, debut = y;
-        y -= defilement * LIGNE;
+        int bouton = 96,
+                droite = x + largeur - 12,
+                texte = Math.max(30, largeur - bouton - 24),
+                debut = y;
+        int contenu = 0;
+        for (JsonElement e : reglages) {
+            int lignes =
+                    this.font
+                            .split(
+                                    Component.literal(
+                                            Pont.texte(e.getAsJsonObject(), "description")),
+                                    texte)
+                            .size();
+            contenu += Math.max(22, 12 + lignes * LIGNE) + 4;
+        }
+        defilementReglages.regler(x + largeur - 5, debut, bas - debut, contenu);
+        y -= defilementReglages.position();
+        g.enableScissor(x, debut, x + largeur, bas);
         for (JsonElement e : reglages) {
             JsonObject r = e.getAsJsonObject();
             String cle = Pont.texte(r, "cle");
@@ -818,16 +842,25 @@ public class EcranAssistant extends Screen {
             List<FormattedCharSequence> description =
                     this.font.split(Component.literal(Pont.texte(r, "description")), texte);
             int hauteur = Math.max(22, 12 + description.size() * LIGNE) + 4;
-            if (y >= debut - 2 && y + hauteur <= bas) {
-                g.drawString(this.font, Pont.texte(r, "nom"), x, y, Hud.BLANC, false);
+            if (y + hauteur > debut && y < bas) {
+                g.drawString(
+                        this.font,
+                        this.font.plainSubstrByWidth(Pont.texte(r, "nom"), texte),
+                        x,
+                        y,
+                        Hud.BLANC,
+                        false);
                 int yd = y + 11;
                 for (FormattedCharSequence ligne : description) {
                     g.drawString(this.font, ligne, x, yd, Hud.GRIS, false);
                     yd += LIGNE;
                 }
-                // L'interrupteur dit l'état : « ✔ Activé » en vert, « ✘ Désactivé » en gris
-                int bx = x + largeur - bouton, by = y + (hauteur - 4 - 18) / 2;
-                boolean survol = sx >= bx && sx < bx + bouton && sy >= by && sy < by + 18;
+                int bx = droite - bouton, by = y + (hauteur - 4 - 18) / 2;
+                boolean survol =
+                        sx >= bx
+                                && sx < bx + bouton
+                                && sy >= Math.max(debut, by)
+                                && sy < Math.min(bas, by + 18);
                 g.fill(
                         bx,
                         by,
@@ -845,13 +878,19 @@ public class EcranAssistant extends Screen {
                         by + 5,
                         active ? 0xFFFFFF : 0xBBBBBB,
                         false);
-                zones.add(new Zone(bx, by, bouton, 18, null, -1, cle));
-                g.fill(x, y + hauteur - 3, x + largeur, y + hauteur - 2, 0x18FFFFFF);
+                int clicY = Math.max(debut, by), clicBas = Math.min(bas, by + 18);
+                if (clicBas > clicY)
+                    zones.add(new Zone(bx, clicY, bouton, clicBas - clicY, null, -1, cle));
+                g.fill(x, y + hauteur - 3, droite, y + hauteur - 2, 0x18FFFFFF);
             }
             y += hauteur;
         }
-        int depassement = y + defilement * LIGNE - bas;
-        defilement = Math.min(defilement, Math.max(0, (depassement + LIGNE - 1) / LIGNE));
+        g.disableScissor();
+        if (defilementReglages.visible()) {
+            int bx = defilementReglages.x(), by = defilementReglages.curseur();
+            g.fill(bx, debut, bx + 4, bas, 0x50333333);
+            g.fill(bx, by, bx + 4, by + defilementReglages.taille(), 0xBBAAAAAA);
+        }
     }
 
     private static JsonObject partie(JsonObject objet, String cle) {

@@ -47,6 +47,12 @@ Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur u
 
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 
+Le bouton **Sac (N)**, près de **Scanner coffres** et **Suivi** dans EMI, ouvre la liste des
+objets présents dans tes backpacks portés, avec leur quantité et une recherche par nom.
+Le fond bleu rappelle qu’ils sont déjà sur toi. `N` est le nombre de types d’objets ; les grandes
+valeurs sont abrégées. **Retour à EMI** ou Échap ramène au même écran.
+Pendant la synchronisation, la liste attend les données du sac sans afficher l’ancien stock.
+
 Cette option concerne le **comptage**. **Envoyer** continue à utiliser les cases accessibles de l’inventaire : le suivi indique **À sortir du sac** lorsque les ingrédients nécessaires sont dans le backpack. Le mod ne les extrait pas automatiquement.
 
 ## Coffres depuis l’arbre EMI
@@ -183,6 +189,19 @@ n’est nécessaire.
 Sélectionner un filon puis **Scanner** : le scan vise son centre GregTech, même si tu es
 à la surface. **Arrêter** apparaît pendant le scan. Le scan autour du joueur a été retiré.
 
+Les deux lignes en haut regroupent **recherche / tri**, puis **Épuisés masqués / Affichage… / Options…**.
+**Options…** contient **Tout masquer** et **Vider les relevés**. Le bouton **Arrêter** reste accessible
+pendant un scan ; sur une petite fenêtre, il remplace temporairement Options.
+
+Dans **Affichage…**, choisir entre **1 et 4 096 blocs surlignés**, ou utiliser les raccourcis
+**64 / 192 / 512 / 1 024**, puis **Appliquer**. Le défaut est **192 blocs**, en mode **Discret**.
+Les blocs les plus proches sont prioritaires. Les contours sont fins, atténués avec la distance,
+et très légers à travers la roche. Le bloc visé garde seulement son contour de minage normal.
+L’intensité peut passer à **Normal** ou **Soutenu**. Les choix sont mémorisés localement ;
+Échap ou Retour sans appliquer abandonne les modifications.
+
+Ce plafond concerne seulement l’affichage simultané : il ne réduit ni le scan ni les données enregistrées.
+
 Le cache garde jusqu’à **100 000 blocs par monde**. Au plafond, les nouvelles observations
 remplacent par lots les relevés de blocs minés, puis les blocs les moins récemment revus hors
 de la zone scannée. Les blocs présents dans cette zone sont protégés. Les filons GregTech,
@@ -197,6 +216,9 @@ sélectionner le filon, puis **Rétablir**. Les relevés et le journal GregTech 
 horizontalement. Si aucun point libre n’est connu, la TP vise directement un bloc au-dessus
 du centre, même en zone non chargée : **l’arrivée peut être dans la roche**. Aucun bloc n’est
 creusé ou supprimé. Les commandes / permissions opérateur restent nécessaires.
+
+Dans **Réglages**, la liste défile à la molette ou en faisant glisser la barre de droite.
+Les boutons **Modèles IA…** et **Diagnostic** restent fixes au-dessus de la liste.
 
 ## Machines regroupées dans Base
 

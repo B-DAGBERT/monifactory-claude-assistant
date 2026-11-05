@@ -300,6 +300,14 @@ public final class FilonMemoireTest {
         dense.restaurer(p(15, 20, 0), "minecraft:gold_ore", false, 100, origine);
         var df = dense.filon(origine.cle());
         verifier(df.contours(origine).size() == 768, "Budget de rendu conservé");
+        verifier(df.contours(origine, 64).size() == 64, "Budget personnalisé respecté");
+        verifier(df.contours(origine, 0).size() == 1, "Budget nul borné à un bloc");
+        verifier(
+                df.contours(origine, 4096).size() == 801,
+                "Tous les blocs disponibles dans le budget");
+        var proches = df.contours(origine, 64);
+        verifier(proches.get(0).position.distance2(origine) == 0, "Plus proches en premier");
+        verifier(dense.blocs().size() == 801, "Le budget de rendu ne supprime aucun relevé");
         df.choisirTypes(Set.of("minecraft:gold_ore"));
         verifier(
                 df.contours(origine).size() == 1,

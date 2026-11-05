@@ -33,6 +33,9 @@ Le compte IA se choisit sur chaque poste ; les conversations, coffres et objecti
 
 Le contenu des **Sophisticated Backpacks portés** compte dans les besoins, EMI et l’avancement.
 Les boutons de transfert utilisent les cases accessibles : sortir les ingrédients du sac pour les envoyer.
+**Filons → Affichage…** règle le nombre de blocs surlignés et leur intensité, sans toucher aux relevés.
+Dans EMI, **Sac (N)** indique les objets déjà sur toi dans le backpack et permet de les retrouver.
+
 Le scan, les retraits, le suivi des machines et les filons ne font **aucun appel IA**.
 
 ## Guides

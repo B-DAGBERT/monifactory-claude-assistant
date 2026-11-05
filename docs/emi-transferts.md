@@ -26,6 +26,11 @@ Le client demande périodiquement le contenu via le protocole natif du mod. Le m
 
 Les objets du sac comptent dans **l’arbre natif EMI et sa liste latérale**, même après fermeture, ainsi que pour l’avancement et les retraits dans les coffres. L’arbre se rafraîchit à la réception du relevé ; ses calculs ne modifient pas les sources de transfert. Les cases réelles de la grille de craft restent comptées, et le curseur ainsi qu’un sac ouvert ne sont comptés qu’une fois. Pour un envoi machine, **À sortir du sac** signifie qu’il faut d’abord déplacer les ingrédients dans les poches. Le remplissage natif d’EMI et le bouton **Envoyer** ne prélèvent pas automatiquement dans un sac fermé. Un sac posé au sol reste un stockage du monde, et non un inventaire personnel.
 
+Le bouton **Sac (N)** à côté du suivi ouvre une liste en lecture seule : noms, quantités, recherche
+et fond bleu pour les objets déjà portés. La liste conserve les identités NBT distinctes et n’affiche
+aucun ancien stock pendant la synchronisation. Elle n’extrait pas d’ingrédient et ne modifie pas l’arbre.
+Échap et **Retour à EMI** retrouvent l’écran précédent.
+
 ## Remplir l’établi
 
 Avec un arbre EMI actif, le panneau propose les recettes d’établi encore nécessaires à cet arbre. Il se rafraîchit lorsque la recette, les stocks ou les lots en cours changent, même si l’objectif IA ne change pas. **Remplir** utilise le gestionnaire natif EMI et les vraies cases accessibles ; les objets réservés en machine ou dans un sac fermé ne sont pas prélevés. Si l’arbre ne contient plus de recette d’établi réalisable, l’ancien objectif ne réapparaît pas à sa place.
