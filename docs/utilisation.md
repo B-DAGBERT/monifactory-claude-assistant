@@ -262,15 +262,19 @@ diagnostic. Les copies restent personnelles et sont exclues de Git.
 
 ## Lots machines et résultats dans les coffres
 
-Quand un envoi ne charge qu’une partie d’un lot de plus de 64 résultats, une fenêtre propose :
+Quand un envoi ne charge qu’une partie d’un lot d’au moins 64 résultats, une fenêtre propose :
 
 - **Juste envoyé** : conserver au suivi la quantité réellement transférée.
 - **Tout le lot** : suivre aussi le surplus que ton stockage alimentera ensuite.
 
 **Confirmer** applique le choix. Le premier envoi est déjà enregistré ; **Tout le lot** agrandit
 la même ligne et ne recompte pas cette première quantité. **Retour** ou Échap garde seulement
-le lot réellement envoyé. Pour une fabrication lancée à la main, saisir le nombre de fabrications
-ou utiliser **Tout le lot** avant de confirmer.
+le lot réellement envoyé.
+
+Pour **En cours de craft**, depuis une machine ou le suivi : **moins de 64 résultats** sont marqués
+directement, sans question ; **64 résultats et plus** ouvrent le choix de quantité, avec **Tout le lot**.
+Le seuil concerne les résultats objets garantis, en tenant compte du rendement de la recette,
+et les doubles clics ne déclarent pas deux lots.
 
 Les quantités en cours servent à masquer leurs ingrédients dans EMI. Elles restent des résultats
 à récupérer pour **Coffres** : avec ce scan activé, un coffre utile contenant un résultat

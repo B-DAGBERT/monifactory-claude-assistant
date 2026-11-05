@@ -76,9 +76,8 @@ public final class SuiviEmiEcran extends Screen {
                                                     || selection >= lignes.size()) return;
                                             var ligne = lignes.get(selection);
                                             if (ligne.lot() < 0) {
-                                                minecraft.setScreen(
-                                                        new DeclarerFabricationEcran(
-                                                                this, ligne.recette()));
+                                                if (DeclarerFabricationEcran.ouvrir(
+                                                        this, ligne.recette())) actualise = 0;
                                             } else {
                                                 MachinesEmi.annulerLot(ligne.lot());
                                                 actualise = 0;

@@ -522,13 +522,7 @@ public final class MachinesEmi {
         receptionManuelle.initialiser(inventaire());
         int id = ajouterLot(recipe, n, position);
         actualiserArbre();
-        if (demande > n
-                && recipe.getOutputs().stream()
-                        .anyMatch(
-                                o ->
-                                        !o.getItemStack().isEmpty()
-                                                && PlanMachines.produit(o.getAmount(), demande)
-                                                        > 64))
+        if (demande > n && DeclarerFabricationEcran.demandeQuantite(recipe, demande))
             Minecraft.getInstance()
                     .setScreen(new DeclarerFabricationEcran(parent, recipe, n, demande, id));
     }
@@ -1042,8 +1036,7 @@ public final class MachinesEmi {
             var op = selection();
             if (op != null && op.fois() > 0 && declarables(op.recette()) > 0) {
                 PanneauAssistant.son();
-                Minecraft.getInstance()
-                        .setScreen(new DeclarerFabricationEcran(ecran, op.recette()));
+                DeclarerFabricationEcran.ouvrir(ecran, op.recette());
             }
         } else if (d.pages() && d.precedent().contient(x, y)) page = Math.max(0, page - 1);
         else if (d.pages() && d.suivant().contient(x, y))

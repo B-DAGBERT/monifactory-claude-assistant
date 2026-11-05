@@ -2,6 +2,7 @@ package fr.assistantia.compat.emi;
 
 import dev.emi.emi.api.recipe.EmiRecipe;
 import fr.assistantia.PlanMachines;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -11,6 +12,7 @@ import org.lwjgl.glfw.GLFW;
 
 /** Une déclaration masque les ingrédients ; seuls les objets réellement reçus acquittent le lot. */
 public final class DeclarerFabricationEcran extends Screen {
+    private static long dernierClic;
     private final Screen parent;
     private final EmiRecipe recette;
     private final Object arbre;
@@ -19,6 +21,35 @@ public final class DeclarerFabricationEcran extends Screen {
     private Button confirmer, tout, charge;
     private String erreur = "", brouillon;
     private boolean valide;
+
+    /** Le seuil porte sur les objets produits, pas sur le nombre de fabrications. */
+    public static boolean demandeQuantite(EmiRecipe recette, int fois) {
+        return fois > 0
+                && recette.getOutputs().stream()
+                        .anyMatch(
+                                o ->
+                                        !o.getItemStack().isEmpty()
+                                                && o.getChance() >= 1
+                                                && PlanMachines.produit(o.getAmount(), fois) >= 64);
+    }
+
+    /** Même règle depuis la machine et le suivi, avec protection contre le double clic. */
+    public static boolean ouvrir(Screen parent, EmiRecipe recette) {
+        var mc = Minecraft.getInstance();
+        if (mc.screen != parent || MachinesEmi.arbreDeclaration() == null) return false;
+        long maintenant = System.nanoTime();
+        if (dernierClic != 0 && maintenant - dernierClic < 650_000_000L) return false;
+        int quantite = MachinesEmi.declarables(recette);
+        if (quantite <= 0) return false;
+        if (demandeQuantite(recette, quantite)) {
+            dernierClic = maintenant;
+            mc.setScreen(new DeclarerFabricationEcran(parent, recette));
+            return true;
+        }
+        if (!MachinesEmi.declarer(recette, quantite)) return false;
+        dernierClic = maintenant;
+        return true;
+    }
 
     public DeclarerFabricationEcran(Screen parent, EmiRecipe recette) {
         this(parent, recette, 0, Integer.MAX_VALUE);

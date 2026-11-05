@@ -27,7 +27,7 @@ public class RenderSystem {public static int unit=33984,texture=41;
 public record Component(String text) {public static Component literal(String t){return new Component(t);}public String getString(){return text;}}
 """,
     "net.minecraft.client.Minecraft": """
-public class Minecraft {public net.minecraft.client.gui.screens.Screen screen;public void setScreen(net.minecraft.client.gui.screens.Screen s){screen=s;}}
+public class Minecraft {private static Minecraft instance;public Minecraft(){instance=this;}public static Minecraft getInstance(){if(instance==null)instance=new Minecraft();return instance;}public net.minecraft.client.gui.screens.Screen screen;public void setScreen(net.minecraft.client.gui.screens.Screen s){screen=s;}}
 """,
     "net.minecraft.client.gui.Font": """
 public class Font {public String plainSubstrByWidth(String text,int width){return text;}}
@@ -64,8 +64,9 @@ public class Screen {protected Minecraft minecraft;protected Font font=new Font(
  public boolean isPauseScreen(){return false;}public void onClose(){minecraft.setScreen(null);}}
 """,
     "dev.emi.emi.api.recipe.EmiRecipe": """
-public interface EmiRecipe {java.util.List<Output> getOutputs();record Output(long amount){
- public long getAmount(){return amount;}public float getChance(){return 1;}public Stack getItemStack(){return new Stack();}public record Stack(){public boolean isEmpty(){return false;}}public net.minecraft.network.chat.Component getName(){return net.minecraft.network.chat.Component.literal("Plate");}}}
+public interface EmiRecipe {java.util.List<Output> getOutputs();record Output(long amount,boolean item,float chance){
+ public Output(long amount){this(amount,true,1);}
+ public long getAmount(){return amount;}public float getChance(){return chance;}public Stack getItemStack(){return new Stack(!item);}public record Stack(boolean empty){public boolean isEmpty(){return empty;}}public net.minecraft.network.chat.Component getName(){return net.minecraft.network.chat.Component.literal("Plate");}}}
 """,
     "fr.assistantia.PlanMachines": "public class PlanMachines {public static int produit(long n,long q){return (int)(n*q);}}",
     "fr.assistantia.compat.emi.MachinesEmi": """
@@ -104,6 +105,37 @@ public class RenderUiSafetyTest {
   }
   Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Suivi"));
   EmiRecipe recipe=()->java.util.List.of(new EmiRecipe.Output(2));
+  if(args[0].matches("(direct|prompt)-[0-9]+")){
+   mc.screen=parent;
+   int amount=Integer.parseInt(args[0].substring(args[0].indexOf('-')+1));
+   MachinesEmi.max=amount;EmiRecipe one=()->java.util.List.of(new EmiRecipe.Output(1));
+   assert DeclarerFabricationEcran.ouvrir(parent,one);
+   if(args[0].startsWith("direct-")){
+    assert mc.screen==parent&&MachinesEmi.calls==1&&MachinesEmi.last==amount:"small lot: no popup, whole quantity";
+    assert !DeclarerFabricationEcran.ouvrir(parent,one)&&MachinesEmi.calls==1:"double click must not declare another lot";
+   }else{assert mc.screen instanceof DeclarerFabricationEcran&&MachinesEmi.calls==0:"64 and above: ask before declaration";}
+   return;
+  }
+  if(args[0].equals("thresholds")){
+   assert !DeclarerFabricationEcran.demandeQuantite(recipe,31)&&DeclarerFabricationEcran.demandeQuantite(recipe,32):"two outputs per craft, threshold 64";
+   EmiRecipe multi=()->java.util.List.of(new EmiRecipe.Output(1),new EmiRecipe.Output(4));
+   assert DeclarerFabricationEcran.demandeQuantite(multi,16):"check secondary guaranteed item outputs";
+   EmiRecipe extras=()->java.util.List.of(new EmiRecipe.Output(2),new EmiRecipe.Output(1000,false,1),new EmiRecipe.Output(100,true,.1F));
+   assert !DeclarerFabricationEcran.demandeQuantite(extras,10):"ignore fluid amounts and random byproducts";
+   assert !DeclarerFabricationEcran.demandeQuantite(recipe,0);
+   return;
+  }
+  if(args[0].equals("direct-rejected")){
+   mc.screen=parent;MachinesEmi.accept=false;
+   assert !DeclarerFabricationEcran.ouvrir(parent,recipe)&&mc.screen==parent&&MachinesEmi.calls==1;
+   MachinesEmi.accept=true;assert DeclarerFabricationEcran.ouvrir(parent,recipe)&&MachinesEmi.calls==2:"rejected action remains retryable";
+   return;
+  }
+  if(args[0].equals("direct-inactive")){
+   mc.screen=parent;MachinesEmi.max=0;assert !DeclarerFabricationEcran.ouvrir(parent,recipe)&&MachinesEmi.calls==0;
+   MachinesEmi.max=10;MachinesEmi.tree=null;assert !DeclarerFabricationEcran.ouvrir(parent,recipe)&&MachinesEmi.calls==0;
+   return;
+  }
   DeclarerFabricationEcran screen=new DeclarerFabricationEcran(parent,recipe);mc.screen=screen;screen.init(mc,320,240);
   if(args[0].equals("resize")){
    input(screen).setValue("7");screen.init(mc,640,480);
@@ -202,6 +234,21 @@ class RenderUiSafetyTests(unittest.TestCase):
             timeout=30,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_small_lots_declared_without_popup_and_double_click(self):
+        for case in ("direct-1", "direct-63"):
+            with self.subTest(case=case):
+                self.run_case(case)
+
+    def test_64_and_above_require_quantity_dialog(self):
+        for case in ("prompt-64", "prompt-65", "thresholds"):
+            with self.subTest(case=case):
+                self.run_case(case)
+
+    def test_direct_declaration_retry_and_inactive_tree(self):
+        for case in ("direct-rejected", "direct-inactive"):
+            with self.subTest(case=case):
+                self.run_case(case)
 
     def test_texture_binding_restored_on_success_exception_and_nested_upload(self):
         self.run_case("texture")
