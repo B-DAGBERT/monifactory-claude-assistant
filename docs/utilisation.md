@@ -262,6 +262,10 @@ diagnostic. Les copies restent personnelles et sont exclues de Git.
 
 ## Lots machines et résultats dans les coffres
 
+Dans une machine, le clic sur l’icône d’un produit du bandeau ouvre sa recette dans EMI.
+Échap ramène à la machine avec la même sélection. Le placement du bandeau tient compte du titre
+et des onglets natifs, même lorsqu’ils dépassent du rectangle principal.
+
 Quand un envoi ne charge qu’une partie d’un lot d’au moins 64 résultats, une fenêtre propose :
 
 - **Juste envoyé** : conserver au suivi la quantité réellement transférée.

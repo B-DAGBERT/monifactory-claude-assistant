@@ -125,6 +125,9 @@ class EmiTests(unittest.TestCase):
     def test_pending_outputs_received_once_across_machine_and_manual_lots(self):
         self._run_java_contract("ReceptionLots")
 
+    def test_machine_banner_avoids_native_title_and_ignores_hidden_widgets(self):
+        self._run_java_contract("EmpriseModulaire")
+
     def test_virtual_recipe_contract(self):
         self._run_java_contract("RecetteObjectifEmi")
 
@@ -195,6 +198,11 @@ class EmiTests(unittest.TestCase):
                     *(
                         [str(ROOT / "mod/src/main/java/fr/assistantia/ReceptionSortie.java")]
                         if name == "LotFabrication"
+                        else []
+                    ),
+                    *(
+                        [str(ROOT / "mod/src/main/java/fr/assistantia/DispositionCoffre.java")]
+                        if name == "EmpriseModulaire"
                         else []
                     ),
                     *(

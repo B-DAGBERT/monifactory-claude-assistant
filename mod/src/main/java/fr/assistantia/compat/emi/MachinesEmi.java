@@ -760,17 +760,20 @@ public final class MachinesEmi {
 
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post event) {
-        ecran = null;
-        disposition = null;
-        locales = List.of();
-        plan = null;
-        actualise = 0;
-        choix = page = 0;
-        if (event.getScreen() instanceof AbstractContainerScreen<?> s
-                && GregTechMachines.estMachine(s.getMenu())) {
-            ecran = s;
+        if (!(event.getScreen() instanceof AbstractContainerScreen<?> s)
+                || !GregTechMachines.estMachine(s.getMenu())) return;
+        // Une recette EMI garde la machine en arrière-plan. Restaurer sa sélection au retour
+        // comme lors d'un redimensionnement, au lieu de revenir au premier produit.
+        boolean retour = ecran == s;
+        if (!retour) {
+            locales = List.of();
+            choix = page = 0;
             EnvoiMachine.effacerStatut();
         }
+        ecran = s;
+        disposition = null;
+        plan = null;
+        actualise = 0;
     }
 
     private static boolean affiche(Screen s) {
@@ -902,9 +905,14 @@ public final class MachinesEmi {
                 tooltip.add(
                         Component.literal(
                                         op.fois() > 0
-                                                ? op.fois()
-                                                        + " fabrications restantes · Clic : choisir"
+                                                ? op.fois() + " fabrications restantes"
                                                 : "Lot en cours · récupère le résultat à sa sortie")
+                                .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
+                tooltip.add(
+                        Component.literal(
+                                        EnvoiMachine.occupe()
+                                                ? "Recette accessible après l’envoi"
+                                                : "Clic : ouvrir cette recette dans EMI")
                                 .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
             }
         }
@@ -1047,6 +1055,8 @@ public final class MachinesEmi {
                 if (i < locales.size() && d.icone(rang).contient(x, y)) {
                     choix = i;
                     actualise = 0;
+                    PanneauAssistant.son();
+                    dev.emi.emi.api.EmiApi.displayRecipe(locales.get(i).recette());
                     break;
                 }
             }

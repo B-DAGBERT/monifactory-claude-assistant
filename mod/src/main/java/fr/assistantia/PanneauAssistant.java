@@ -117,7 +117,11 @@ public final class PanneauAssistant {
             if (s.isActive())
                 ajouter(screen, widgets, new Zone(gauche + s.x - 1, haut + s.y - 1, 18, 18));
         for (GuiEventListener enfant : screen.children()) ajouter(screen, widgets, zone(enfant));
-        return DispositionCoffre.entourage(zone, widgets);
+        Zone externe = DispositionCoffre.entourage(zone, widgets);
+        // Les titres et onglets LDLib peuvent être déportés sans toucher le rectangle vanilla.
+        // Ils appartiennent bien au conteneur ; les commandes FTB isolées restent exclues.
+        return externe.union(
+                EmpriseModulaire.occupee(screen.getMenu(), zone, screen.width, screen.height));
     }
 
     /** Ignore les widgets cachés hors écran et les grandes racines transparentes. */

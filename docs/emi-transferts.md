@@ -5,7 +5,7 @@
 1. Choisir le craft et ses branches dans **Recipe Tree**, ou importer **Objectif EMI**.
 2. Activer **Coffres**, à droite de Recipe Tree.
 3. Ouvrir un coffre entouré en cyan : **Prendre** retire la quantité de l’icône choisie ; **Tout** retire les ingrédients du scan présents ici.
-4. Aller dans une machine entourée en rouge. Choisir le produit, survoler **Envoyer** pour vérifier le lot puis cliquer.
+4. Aller dans une machine entourée en rouge. Cliquer sur le produit du bandeau ouvre sa recette précise dans EMI ; Échap revient à la machine avec ce produit sélectionné. Survoler **Envoyer** pour vérifier le lot puis cliquer.
 5. Récupérer le résultat soi-même. Les cibles finales reçues restent acquises après rangement.
 
 ## Ce qui est réellement sélectionné
@@ -36,6 +36,10 @@ aucun ancien stock pendant la synchronisation. Elle n’extrait pas d’ingrédi
 Avec un arbre EMI actif, le panneau propose les recettes d’établi encore nécessaires à cet arbre. Il se rafraîchit lorsque la recette, les stocks ou les lots en cours changent, même si l’objectif IA ne change pas. **Remplir** utilise le gestionnaire natif EMI et les vraies cases accessibles ; les objets réservés en machine ou dans un sac fermé ne sont pas prélevés. Si l’arbre ne contient plus de recette d’établi réalisable, l’ancien objectif ne réapparaît pas à sa place.
 
 ## Envoyer dans une machine
+
+Le bandeau se place hors du titre et des onglets natifs GregTech, en tenant compte des widgets
+LDLib déportés. Cliquer sur une icône sélectionne ce produit et ouvre sa recette EMI. Échap revient
+à la même machine en conservant la sélection ; cela ne change pas l’arbre de fabrication actif.
 
 - Le panneau indique les fabrications possibles / restantes. Les quantités détaillées sont au survol ; **Suivi → Recette** ouvre la recette EMI.
 - Les entrées déjà remplies sont déduites. Les outils et catalyseurs ne sont pas multipliés par le nombre de fabrications.
