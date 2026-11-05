@@ -89,6 +89,9 @@ class EmiTests(unittest.TestCase):
     def test_manual_machine_batch_receipts_do_not_duplicate_stock(self):
         self._run_java_contract("ReceptionManuelle")
 
+    def test_manual_lot_has_no_machine_location_and_cannot_break_machine_panel(self):
+        self._run_java_contract("LotMachine")
+
     def test_chest_withdrawal_allocation(self):
         self._run_java_contract("PlanRetrait")
 
@@ -162,6 +165,20 @@ class EmiTests(unittest.TestCase):
                     source = Path(directory) / f"{cls}.java"
                     source.write_text(f"package {package}; public class {cls} {{ {body} }}")
                     fixtures.append(str(source))
+            if name == "LotMachine":
+                for package, cls, body in (
+                    (
+                        "net.minecraft.core",
+                        "BlockPos",
+                        'public class BlockPos {public int x,y,z;public BlockPos(int x,int y,int z){this.x=x;this.y=y;this.z=z;}public BlockPos immutable(){return new BlockPos(x,y,z);}public boolean equals(Object o){return o instanceof BlockPos p&&x==p.x&&y==p.y&&z==p.z;}public int hashCode(){return java.util.Objects.hash(x,y,z);}public String toShortString(){return x+", "+y+", "+z;}}',
+                    ),
+                    ("dev.emi.emi.api.recipe", "EmiRecipe", "public interface EmiRecipe {}"),
+                    ("dev.emi.emi.api.stack", "EmiStack", "public record EmiStack(String id) {}"),
+                ):
+                    source = Path(directory) / f"{cls}.java"
+                    source.write_text(f"package {package}; {body}")
+                    fixtures.append(str(source))
+            package_path = "compat/emi/" if name == "LotMachine" else ""
             subprocess.run(
                 [
                     javac,
@@ -170,8 +187,8 @@ class EmiTests(unittest.TestCase):
                     "-d",
                     directory,
                     *fixtures,
-                    str(ROOT / f"mod/src/main/java/fr/assistantia/{name}.java"),
-                    str(ROOT / f"tests/java/fr/assistantia/{name}Test.java"),
+                    str(ROOT / f"mod/src/main/java/fr/assistantia/{package_path}{name}.java"),
+                    str(ROOT / f"tests/java/fr/assistantia/{package_path}{name}Test.java"),
                     *(
                         [str(ROOT / "mod/src/main/java/fr/assistantia/ReceptionSortie.java")]
                         if name == "LotFabrication"
@@ -185,12 +202,13 @@ class EmiTests(unittest.TestCase):
                             "PlanMachines",
                             "LotFabrication",
                             "ReceptionManuelle",
+                            "LotMachine",
                         }
                         else []
                     ),
                     *(
                         [str(ROOT / "mod/src/main/java/fr/assistantia/LotFabrication.java")]
-                        if name == "ReceptionManuelle"
+                        if name in {"ReceptionManuelle", "LotMachine"}
                         else []
                     ),
                     *[
@@ -210,7 +228,13 @@ class EmiTests(unittest.TestCase):
                 text=True,
             )
             result = subprocess.run(
-                [java, "-ea", "-cp", directory, f"fr.assistantia.{name}Test"],
+                [
+                    java,
+                    "-ea",
+                    "-cp",
+                    directory,
+                    f"fr.assistantia.{package_path.replace('/', '.')}{name}Test",
+                ],
                 capture_output=True,
                 text=True,
                 timeout=15,

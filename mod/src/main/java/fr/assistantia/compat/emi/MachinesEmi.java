@@ -47,7 +47,7 @@ public final class MachinesEmi {
     private static int choix, page;
     private static EnvoiMachine.Plan plan;
     private static long actualise;
-    private static final List<Lot> lots = new ArrayList<>();
+    private static final List<LotMachine> lots = new ArrayList<>();
     private static List<PlanMachines.Operation<EmiRecipe>> toutes = List.of();
     private static String calculPrecedent = "";
     private static long lotsVersion;
@@ -57,21 +57,13 @@ public final class MachinesEmi {
     private static boolean dernierTermine;
     private static final java.util.Map<Object, java.util.Map<EmiRecipe, Boolean>> compatibilites =
             new java.util.WeakHashMap<>();
-    private static boolean erreurSignalee;
+    private static boolean erreurSignalee, erreurInterfaceSignalee;
     private static net.minecraft.world.inventory.AbstractContainerMenu menuObserve;
     private static GregTechMachines.Interface machineObservee;
     private static List<net.minecraft.world.inventory.Slot> sortiesObservees = List.of();
     private static List<GregTechMachines.Cuve> cuvesObservees = List.of();
     private static fr.assistantia.ReceptionSortie<EmiStack> receptionFluides =
             new fr.assistantia.ReceptionSortie<>(ComparaisonEmi::meme);
-
-    private record Lot(
-            int id,
-            EmiRecipe recette,
-            int fois,
-            BlockPos position,
-            boolean manuel,
-            LotFabrication<EmiStack> suivi) {}
 
     public record Ligne(
             int lot, EmiRecipe recette, int fois, String etat, boolean annulable, String detail) {}
@@ -116,7 +108,7 @@ public final class MachinesEmi {
             List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position) {
         if (gains.isEmpty()) return gains;
         for (var lot : lots)
-            if (!lot.manuel() && java.util.Objects.equals(lot.position(), position)) {
+            if (lot.ici(position)) {
                 int avant = lot.suivi().totalRecu();
                 gains = lot.suivi().recevoir(gains);
                 if (avant != lot.suivi().totalRecu()) {
@@ -176,7 +168,7 @@ public final class MachinesEmi {
             }
             recevoir(receptionFluides.actualiser(personnels, fluides), machineObservee.position());
             for (var lot : lots)
-                if (java.util.Objects.equals(lot.position(), machineObservee.position()))
+                if (lot.ici(machineObservee.position()))
                     lot.suivi()
                             .disponible(
                                     sorties.stream()
@@ -268,9 +260,7 @@ public final class MachinesEmi {
                                         + "/"
                                         + lot.suivi().total()
                                         + " récupérés · "
-                                        + (lot.manuel()
-                                                ? "déclaré manuellement"
-                                                : lot.position().toShortString())));
+                                        + lot.lieu()));
         return List.copyOf(lignes);
     }
 
@@ -293,7 +283,7 @@ public final class MachinesEmi {
         if (fois < 1 || fois > max) return false;
         // Point de départ physique : les objets déjà possédés ne valident pas ce nouveau lot.
         receptionManuelle.initialiser(inventaire());
-        ajouterLot(recette, fois, null, true);
+        ajouterLot(recette, fois, null);
         calculPrecedent = "";
         actualiserArbre();
         return true;
@@ -404,26 +394,25 @@ public final class MachinesEmi {
     }
 
     private static void envoyee(EmiRecipe recipe, int n, BlockPos position) {
-        ajouterLot(recipe, n, position, false);
+        ajouterLot(recipe, n, position);
     }
 
-    private static void ajouterLot(EmiRecipe recipe, int n, BlockPos position, boolean manuel) {
+    private static void ajouterLot(EmiRecipe recipe, int n, BlockPos position) {
         List<PlanRetrait.Stock<EmiStack>> sorties = new ArrayList<>();
         for (var output : recipe.getOutputs())
             if (!output.isEmpty()
                     && output.getChance() >= 1
-                    && (!manuel || !output.getItemStack().isEmpty()))
+                    && (position != null || !output.getItemStack().isEmpty()))
                 sorties.add(
                         new PlanRetrait.Stock<>(
                                 output.copy(), PlanMachines.produit(output.getAmount(), n), true));
         if (!sorties.isEmpty())
             lots.add(
-                    new Lot(
+                    new LotMachine(
                             ++prochainLot,
                             recipe,
                             n,
-                            position == null ? null : position.immutable(),
-                            manuel,
+                            java.util.Optional.ofNullable(position),
                             new LotFabrication<>(sorties, ComparaisonEmi::meme)));
         lotsVersion++;
         actualise = 0;
@@ -645,7 +634,7 @@ public final class MachinesEmi {
                                                             ui.machine(), o.recette()))
                                     .toList());
             for (var lot : lots)
-                if (lot.position().equals(ui.position())
+                if (lot.ici(ui.position())
                         && lot.suivi().annulable()
                         && visibles.stream().noneMatch(o -> o.recette() == lot.recette()))
                     visibles.add(new PlanMachines.Operation<>(lot.recette(), 0));
@@ -671,8 +660,16 @@ public final class MachinesEmi {
                             PanneauAssistant.occupee(ecran),
                             locales.size());
             page = Math.min(page, (locales.size() - 1) / disposition.parPage());
-        } catch (ReflectiveOperationException e) {
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // Un panneau indisponible ne doit jamais interrompre le rendu du jeu entier.
             disposition = null;
+            plan = null;
+            locales = List.of();
+            if (!erreurInterfaceSignalee) {
+                com.mojang.logging.LogUtils.getLogger()
+                        .warn("Assistant : panneau machine indisponible", e);
+                erreurInterfaceSignalee = true;
+            }
         }
         actualise = System.currentTimeMillis();
     }
