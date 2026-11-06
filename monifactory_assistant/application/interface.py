@@ -110,6 +110,9 @@ class InterfaceController:
             log(traceback.format_exc())
 
     def check_mod_requests(self):
+        production = getattr(self, "production", None)
+        if production is not None and production.poll(self):
+            self.refresh(force=True)
         if getattr(
             getattr(self, "bridge", None), "isolated", False
         ) is True and not self.bridge.scope_valid(self.bridge.scope):
@@ -184,6 +187,11 @@ class InterfaceController:
             return
         n = request.get("n") or 0
         self.mod_request_n = max(self.mod_request_n or 0, n)
+        if request.get("type") == "production_v2":
+            production = getattr(self, "production", None)
+            if production is not None:
+                production.restore(request, result)
+            return
         if request.get("type") == "question" and n < self.question_ack.get("n", 0):
             return
         if request.get("type") == "projet" and n < (getattr(self, "project_reply_n", 0) or 0):
@@ -222,6 +230,11 @@ class InterfaceController:
             result = {"etat": "refusee", "message": reason}
             self.restore_request_reply(request, result)
             return result
+        if request.get("type") == "production_v2":
+            production = getattr(self, "production", None)
+            if production is None:
+                return {"etat": "refusee", "message": "Service Production indisponible."}
+            return production.submit(request)
         self.handle_mod_request(request)
         result = {"etat": "traitee", "message": "Demande prise en compte."}
         if request.get("type") == "question":

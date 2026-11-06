@@ -547,6 +547,9 @@ def build_mod_view(app):
     ai_settings = getattr(app, "ai_settings", None)
     if ai_settings is not None:
         screen["configuration_ia"] = ai_settings.view(app)
+    production = getattr(app, "production", None)
+    if production is not None:
+        screen["production_v2"] = production.view()
     if plan and progress:
         current = next((i for i, done in enumerate(progress["etapes"]) if not done), None)
         screen["objectif"] = plan["objectif"]

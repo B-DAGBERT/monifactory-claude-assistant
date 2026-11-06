@@ -32,6 +32,7 @@ from monifactory_assistant.paths import ROOT as HERE
 from monifactory_assistant.persistence import load_json
 from monifactory_assistant.platform.hooks import keyboard
 from monifactory_assistant.platform.support import SingleInstance
+from monifactory_assistant.production.service import ProductionService
 from monifactory_assistant.providers.session import Conversation
 from monifactory_assistant.providers.settings import AISettings
 from monifactory_assistant.runtime import log
@@ -111,6 +112,7 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.update_notice = update_notice()
         self.update_notice_id = update_notice_key()
         self.ai_settings = AISettings(HERE)
+        self.production = ProductionService(self.bridge, HERE)
         # journal et coach
         self.session_open = False
         self.game_lost_at = 0
