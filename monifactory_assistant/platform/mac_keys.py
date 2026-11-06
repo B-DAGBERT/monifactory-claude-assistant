@@ -41,6 +41,35 @@ def transition(keys):
             _down[key](None)
 
 
+def _timestamp(value):
+    # JSON accepts NaN/Infinity too; comparisons reject them without integer coercion.
+    return type(value) in (int, float) and 0 <= value < 1e16
+
+
+def _valid_frame(data):
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("session"), str)
+        or not data["session"]
+        or not _timestamp(data.get("t"))
+        or not isinstance(data.get("events"), list)
+    ):
+        return False
+    sequence = 0
+    for event in data["events"]:
+        if (
+            not isinstance(event, dict)
+            or type(event.get("n")) is not int
+            or event["n"] <= sequence
+            or not _timestamp(event.get("t"))
+            or not isinstance(event.get("keys"), list)
+            or not all(isinstance(key, str) and key for key in event["keys"])
+        ):
+            return False
+        sequence = event["n"]
+    return True
+
+
 class Reader:
     def __init__(self, path):
         self.path = path
@@ -54,10 +83,12 @@ class Reader:
         except (OSError, ValueError):
             data = {}
         now = time.time() * 1000
-        if now - data.get("t", 0) > 2000:
-            transition(set())  # release the microphone if the game closes or freezes
+        if not _valid_frame(data) or not -2000 <= now - data["t"] <= 2000:
+            # Release held keys, retaining the sequence so recovery cannot replay an action.
+            # Validate the entire frame before invoking even its first event.
+            transition(set())
             return
-        session = data.get("session")
+        session = data["session"]
         if session != self.session:
             transition(set())
             self.session, self.sequence = session, 0
