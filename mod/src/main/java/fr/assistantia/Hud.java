@@ -124,7 +124,7 @@ public final class Hud {
             GuiGraphics g, Minecraft mc, int largeurEcran, int hauteurEcran, float echelle) {
         JsonObject b = Pont.partie("bulle");
         String texte = Pont.texte(b, "texte");
-        if (texte.isEmpty()) {
+        if (texte.isEmpty() || !CatalogueProduction.apercuCourant(b)) {
             return;
         }
         boolean enCours = Pont.vrai(b, "en_cours");

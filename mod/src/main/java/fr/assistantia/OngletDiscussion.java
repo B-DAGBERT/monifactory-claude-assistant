@@ -39,6 +39,7 @@ final class OngletDiscussion {
     private Font font;
     private Button derniers;
     private JsonArray source;
+    private boolean apercuCourant = true;
     private String attente = "", copie = "";
     private long copieJusqua;
     private int largeurCache = -1, hauteur, hautVue, basVue, barreX;
@@ -114,15 +115,24 @@ final class OngletDiscussion {
     private void preparer(JsonObject ecran, int largeur) {
         JsonArray messages = Pont.liste(ecran, "conversation");
         String question = etat.question();
-        if (messages.equals(source) && largeurCache == largeur && attente.equals(question)) return;
+        var dernier = messages.isEmpty() ? null : messages.get(messages.size() - 1);
+        boolean apercu =
+                dernier == null
+                        || !dernier.isJsonObject()
+                        || CatalogueProduction.apercuCourant(dernier.getAsJsonObject());
+        if (messages.equals(source)
+                && largeurCache == largeur
+                && attente.equals(question)
+                && apercu == apercuCourant) return;
         List<Carte> anciennes = new ArrayList<>(cartes);
         source = messages;
         largeurCache = largeur;
         attente = question;
+        apercuCourant = apercu;
         cartes.clear();
         hauteur = 0;
         for (JsonElement element : messages) {
-            if (!element.isJsonObject()) continue;
+            if (!element.isJsonObject() || (!apercu && element == dernier)) continue;
             JsonObject message = element.getAsJsonObject();
             ajouter(
                     "toi".equals(Pont.texte(message, "de")),

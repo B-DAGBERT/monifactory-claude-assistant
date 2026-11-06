@@ -12,6 +12,7 @@ from monifactory_assistant.game.world_scope import scope_file
 from monifactory_assistant.production.acquisition import (
     acquire,
     active_scope,
+    attest_catalogue,
     capture_stamp,
     read_capture,
 )
@@ -24,6 +25,7 @@ from monifactory_assistant.production.recipes import Amount, Resource
 _CONTEXT = ("monde_actif", "session_monde", "dimension_monde", "projet", "revision_projet")
 _RESOURCE = re.compile(r"[a-z0-9_.-]+:[a-z0-9_./-]+")
 _MAX_AGE = 45_000
+_RESULT_MAX_AGE = 180_000
 
 
 def _project_context(app):
@@ -121,6 +123,7 @@ class ProductionService:
             max_workers=1, thread_name_prefix="production-read"
         )
         self._lock = threading.RLock()
+        self._attestation_lock = threading.Lock()
         self._future = None
         self._generation = 0
         self._context = {}
@@ -190,18 +193,12 @@ class ProductionService:
             if (
                 self._result
                 and self._result.get("etat") == "pret"
-                and not self._catalogue_matches(self._result.get("catalogue"), scope)
+                and (
+                    not self._result_fresh()
+                    or not self._catalogue_matches(self._result.get("catalogue"), scope)
+                )
             ):
-                self._result = {
-                    "n": self._result["n"],
-                    "etat": "erreur",
-                    "titre": "Arbre EMI modifié",
-                    "lignes": ["L'arbre ou son catalogue a changé. Relance la consultation."],
-                    "limites": [],
-                    "alternatives": [],
-                    **self._context,
-                }
-                self._ai_context = ""
+                self._revoke_result()
                 changed = True
         return changed
 
@@ -226,7 +223,7 @@ class ProductionService:
                 }
             )
 
-    def context(self, question=None):
+    def context(self, question=None, *, require_current=False):
         """Only a previously requested result, never a new AI-triggered computation."""
         with self._lock:
             if (
@@ -244,40 +241,101 @@ class ProductionService:
                 or not self._result
                 or self._result.get("etat") != "pret"
             ):
+                if require_current and (
+                    self._result is not None
+                    or re.search(r"\b(v2|plan de production)\b", question.casefold())
+                ):
+                    raise ValueError(
+                        "Ouvre Production dans Minecraft pour obtenir un calcul actuel."
+                    )
                 return None
             age = max(0, int(self.clock() * 1000 - self._result.get("t", 0)))
             proof = {
                 **self._context,
                 "generation_service": self._generation,
                 "n": self._result["n"],
+                "catalogue": self._result.get("catalogue"),
             }
-            if not self.context_valid(proof):
-                return None
             text = (
                 f"Résultat local V2 en lecture seule, calculé il y a {age // 1000} s. Les faits sont datés, pas une autorisation d'action.\n"
                 + self._ai_context[:5000]
             )
+        if self.context_valid(proof):
             return text, proof
+        if require_current:
+            raise ValueError(
+                "Le calcul de production n’est plus vérifiable. Relance-le dans Minecraft."
+            )
+        return None
 
     def context_valid(self, proof):
         with self._lock:
-            if (
-                not isinstance(proof, dict)
-                or not self._matches(proof)
-                or proof.get("generation_service") != self._generation
-                or not self._result
-                or self._result.get("etat") != "pret"
-                or proof.get("n") != self._result.get("n")
-            ):
+            if not self._bound_context(proof):
                 return False
-            if self._app is None or _project_context(self._app) != (
-                self._context["projet"],
-                self._context["revision_projet"],
-            ):
+            catalogue, scope = self._result.get("catalogue"), self._scope
+        current = self._live_catalogue(catalogue, scope)
+        with self._lock:
+            if not self._bound_context(proof):
                 return False
-            return active_scope(
-                self.bridge, int(self.clock() * 1000)
-            ) == self._scope and self._catalogue_matches(self._result.get("catalogue"), self._scope)
+            if current is False:
+                self._revoke_result()
+            return current is True
+
+    def _bound_context(self, proof):
+        if (
+            not isinstance(proof, dict)
+            or not self._matches(proof)
+            or proof.get("generation_service") != self._generation
+            or not self._result
+            or self._result.get("etat") != "pret"
+            or proof.get("n") != self._result.get("n")
+            or proof.get("catalogue") != self._result.get("catalogue")
+            or not self._result_fresh()
+        ):
+            return False
+        if self._app is None or _project_context(self._app) != (
+            self._context["projet"],
+            self._context["revision_projet"],
+        ):
+            return False
+        return active_scope(
+            self.bridge, int(self.clock() * 1000)
+        ) == self._scope and self._catalogue_matches(self._result.get("catalogue"), self._scope)
+
+    def _revoke_result(self):
+        self._result = {
+            "n": self._result["n"],
+            "etat": "erreur",
+            "titre": "Consultation périmée",
+            "lignes": ["La preuve du calcul n’est plus courante. Relance la consultation."],
+            "limites": [],
+            "alternatives": [],
+            **self._context,
+        }
+        self._ai_context = ""
+
+    def _result_fresh(self):
+        age = int(self.clock() * 1000) - self._result.get("t", 0)
+        return 0 <= age <= _RESULT_MAX_AGE
+
+    def _live_catalogue(self, catalogue, scope, *, wait=False):
+        if catalogue is None:
+            return True  # Project-memory reads have no EMI generation.
+        if scope is None:
+            return False
+        acquired = (
+            self._attestation_lock.acquire(timeout=0.5)
+            if wait
+            else self._attestation_lock.acquire(blocking=False)
+        )
+        if not acquired:
+            return (
+                None  # Another consumer owns the mailbox; absence of a verdict is not revocation.
+            )
+        try:
+            return attest_catalogue(self.bridge.dir, scope, catalogue)
+        finally:
+            self._attestation_lock.release()
 
     def _catalogue_matches(self, catalogue, scope):
         if catalogue is None:
@@ -641,10 +699,15 @@ class ProductionService:
                     summary += "\nVérifications : contrôler la recette sélectionnée, l'état de la machine et ses entrées ; aucune connexion ou alimentation n'est présumée."
             if active_scope(self.bridge) != scope:
                 raise ValueError("Connexion modifiée pendant le calcul.")
-            if not self._catalogue_matches(result.get("catalogue"), scope):
-                raise ValueError("Arbre EMI modifié pendant le calcul. Relance la consultation.")
+            catalogue = result.get("catalogue")
+            if not self._catalogue_matches(catalogue, scope) or not self._live_catalogue(
+                catalogue, scope, wait=True
+            ):
+                raise ValueError("Arbre EMI modifié ou indisponible. Relance la consultation.")
             result.update(etat="pret", t=int(self.clock() * 1000))
         except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as error:
+            result.pop("rapport", None)
+            summary = ""
             message = (
                 _safe(error)
                 if isinstance(error, ValueError)

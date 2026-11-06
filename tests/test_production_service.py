@@ -12,7 +12,12 @@ from unittest.mock import patch
 
 from monifactory_assistant.game.requests import CommandQueue
 from monifactory_assistant.game.world_scope import WorldScope
-from monifactory_assistant.production.acquisition import active_scope, read_capture
+from monifactory_assistant.production.acquisition import (
+    CATALOGUE_PROOF_REPLY,
+    active_scope,
+    attest_catalogue,
+    read_capture,
+)
 from monifactory_assistant.production.catalog import catalogue_document
 from monifactory_assistant.production.recipes import (
     Amount,
@@ -75,6 +80,9 @@ class ProductionServiceTests(unittest.TestCase):
         )
         self.service = ProductionService(
             self.bridge, self.root, clock=lambda: self.now / 1000, executor=self.executor
+        )
+        self.attestation = self.enterContext(
+            patch("monifactory_assistant.production.service.attest_catalogue", return_value=True)
         )
         self.identity()
         self.service.poll(self.app)
@@ -295,6 +303,63 @@ class ProductionServiceTests(unittest.TestCase):
         self.app.objective_paused = False
         self.assertFalse(self.service.context_valid(proof))
         self.assertEqual(len(self.executor.calls), 1)
+
+    def test_readable_old_catalogue_without_live_client_cannot_authorize_ai(self):
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        marker = self.data / "catalogue_production_etat.json"
+        old = marker.read_bytes()
+        self.attestation.side_effect = lambda *args: attest_catalogue(*args, timeout=0.03)
+        self.assertIsNone(self.service.context("explique cette production"))
+        self.assertEqual(self.service.view()["resultat"]["etat"], "erreur")
+        with self.assertRaises(ValueError):
+            self.service.context("explique ce diagnostic", require_current=True)
+        self.assertEqual(marker.read_bytes(), old)
+        self.attestation.side_effect = None
+        self.service.submit(self.request(n=self.now + 1))
+        self.assertEqual(self.finish()["etat"], "pret")
+
+    def test_concurrent_check_or_python_restart_cannot_reuse_a_verdict(self):
+        self.service.submit(self.request())
+        self.finish()
+        _, proof = self.service.context("explique la production")
+        with self.service._attestation_lock:
+            self.assertFalse(self.service.context_valid(proof))
+        self.assertEqual(self.service.view()["resultat"]["etat"], "pret")
+        self.assertTrue(self.service.context_valid(proof))
+        restarted = ProductionService(
+            self.bridge, self.root, clock=lambda: self.now / 1000, executor=self.executor
+        )
+        restarted.poll(self.app)
+        self.assertFalse(restarted.context_valid(proof))
+        self.assertIsNone(restarted.view()["resultat"])
+
+    def test_attestation_only_accepts_a_new_ack_and_fails_on_locked_mailboxes(self):
+        from monifactory_assistant.persistence import atomic_json
+
+        accepted = None
+
+        def respond(path, proof, **options):
+            nonlocal accepted
+            atomic_json(path, proof, **options)
+            if accepted is None:
+                accepted = proof
+                atomic_json(self.data / CATALOGUE_PROOF_REPLY, proof, backup=False)
+
+        with patch("monifactory_assistant.production.acquisition.atomic_json", side_effect=respond):
+            self.assertTrue(attest_catalogue(self.data, self.scope, self.metadata, timeout=0.05))
+            self.assertFalse(attest_catalogue(self.data, self.scope, self.metadata, timeout=0.03))
+        self.assertEqual(read_capture(self.data / CATALOGUE_PROOF_REPLY)[0], accepted)
+        with patch(
+            "monifactory_assistant.production.acquisition.atomic_json",
+            side_effect=PermissionError("request locked"),
+        ):
+            self.assertFalse(attest_catalogue(self.data, self.scope, self.metadata, timeout=0.03))
+        with patch(
+            "monifactory_assistant.production.acquisition.read_capture",
+            side_effect=PermissionError("reply locked"),
+        ):
+            self.assertFalse(attest_catalogue(self.data, self.scope, self.metadata, timeout=0.03))
 
     def test_machine_diagnostic_exposes_proofs_but_ai_does_not_relay_untrusted_reason(self):
         self.write(

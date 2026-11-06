@@ -108,3 +108,12 @@ class ProductionConversationTests(unittest.TestCase):
         app.on_answer(*app.results("answer")[0][1:])
         app.run_actions.assert_called_once()
         app.production.context_valid.assert_not_called()
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_unverifiable_v2_never_falls_back_to_an_action_enabled_turn(self, _log):
+        app = Fixture()
+        app.production.context.side_effect = ValueError("Preuve native indisponible")
+        app.work_question("Explique mon plan de production V2", None, None)
+        app.conversation.ask.assert_not_called()
+        app.run_actions.assert_not_called()
+        self.assertEqual(app.results("error"), [("error", "Preuve native indisponible")])

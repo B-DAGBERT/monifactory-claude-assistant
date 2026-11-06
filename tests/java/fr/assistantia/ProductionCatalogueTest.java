@@ -305,6 +305,28 @@ public final class ProductionCatalogueTest {
         var writerField = CatalogueProduction.class.getDeclaredField("WRITER");
         writerField.setAccessible(true);
         ExecutorService writer = (ExecutorService) writerField.get(null);
+        Path proofRequest = marker.resolveSibling("production_v2_preuve_demande.json");
+        Path proofReply = marker.resolveSibling("production_v2_preuve_reponse.json");
+        var proof = new JsonObject();
+        proof.addProperty("v", 1);
+        proof.addProperty("nonce", "a".repeat(32));
+        for (String key :
+                List.of(
+                        "monde_actif",
+                        "session_monde",
+                        "dimension_monde",
+                        "source",
+                        "generation",
+                        "sha256")) proof.add(key, ready.get(key));
+        Files.writeString(proofRequest, proof.toString());
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        check(
+                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                "live client confirms exact challenge");
+        var preview = new JsonObject();
+        preview.add("catalogue_production", proof.deepCopy());
+        check(CatalogueProduction.apercuCourant(preview), "live preview is visible");
         CountDownLatch unblockWriter = new CountDownLatch(1);
         writer.execute(
                 () -> {
@@ -317,10 +339,22 @@ public final class ProductionCatalogueTest {
         try {
             CatalogueProduction.rechargement();
             CatalogueProduction.rechargement();
+            proof.addProperty("nonce", "b".repeat(32));
+            Files.writeString(proofRequest, proof.toString());
+            CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+            check(
+                    !CatalogueProduction.apercuCourant(preview),
+                    "invalid preview is hidden without disk access");
+            check(
+                    JsonParser.parseString(Files.readString(marker)).equals(ready),
+                    "old marker is still readable while writer waits");
         } finally {
             unblockWriter.countDown();
         }
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        check(
+                !JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                "old marker cannot attest a new nonce");
         status = JsonParser.parseString(Files.readString(marker)).getAsJsonObject();
         check(
                 status.get("etat").getAsString().equals("indisponible"),

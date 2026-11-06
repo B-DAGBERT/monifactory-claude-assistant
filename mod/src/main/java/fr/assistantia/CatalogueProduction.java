@@ -1,9 +1,13 @@
 package fr.assistantia;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -19,6 +23,18 @@ public final class CatalogueProduction {
     private static final Path DIRECTORY = FMLPaths.GAMEDIR.get().resolve("kubejs/assistant");
     private static final Path CATALOGUE = DIRECTORY.resolve("catalogue_production.json");
     private static final Path STATUS = DIRECTORY.resolve("catalogue_production_etat.json");
+    private static final Path PROOF_REQUEST =
+            DIRECTORY.resolve("production_v2_preuve_demande.json");
+    private static final Path PROOF_REPLY = DIRECTORY.resolve("production_v2_preuve_reponse.json");
+    private static final List<String> PROOF_CONTEXT =
+            List.of(
+                    "monde_actif",
+                    "session_monde",
+                    "dimension_monde",
+                    "source",
+                    "generation",
+                    "sha256");
+    private static final List<String> CATALOGUE_KEYS = List.of("source", "generation", "sha256");
     private static final Object LOCK = new Object();
     private static final AtomicLong EPOCH = new AtomicLong();
     private static final ScheduledExecutorService WRITER =
@@ -33,6 +49,8 @@ public final class CatalogueProduction {
     private static String context = "";
     private static long request, generation;
     private static boolean writing;
+    private static String lastProof = "";
+    private static BasicFileAttributes lastProofFile;
 
     private CatalogueProduction() {}
 
@@ -49,6 +67,18 @@ public final class CatalogueProduction {
             if (capture != null && Minecraft.getInstance().isSameThread() && !valide())
                 echec("L’arbre EMI ou le monde a changé. Relance le calcul.");
             return state.deepCopy();
+        }
+    }
+
+    static boolean apercuCourant(JsonObject message) {
+        if (!message.has("catalogue_production")) return true;
+        var metadata = message.get("catalogue_production");
+        if (!metadata.isJsonObject()) return false;
+        synchronized (LOCK) {
+            if (capture == null || !"pret".equals(chaine(state, "etat")) || !valide()) return false;
+            for (String key : CATALOGUE_KEYS)
+                if (!state.get(key).equals(metadata.getAsJsonObject().get(key))) return false;
+            return true;
         }
     }
 
@@ -94,7 +124,11 @@ public final class CatalogueProduction {
                 echec("L'arbre EMI ou le monde a changé. Relance le calcul.");
                 return;
             }
-            if (writing || "pret".equals(chaine(state, "etat"))) return;
+            if ("pret".equals(chaine(state, "etat"))) {
+                repondrePreuve();
+                return;
+            }
+            if (writing) return;
             try {
                 if (!(boolean) call("avancer")) {
                     JsonObject progress = (JsonObject) call("metadata");
@@ -119,6 +153,56 @@ public final class CatalogueProduction {
             } catch (ReflectiveOperationException | RuntimeException | LinkageError ex) {
                 echec(message(ex));
             }
+        }
+    }
+
+    /** Called on the client tick only after validating the live EMI tree and connection. */
+    private static void repondrePreuve() {
+        try {
+            if (Files.isSymbolicLink(DIRECTORY)) return;
+            var attrs =
+                    Files.readAttributes(
+                            PROOF_REQUEST, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attrs.isRegularFile() || attrs.size() <= 0 || attrs.size() > 4096) return;
+            if (lastProofFile != null
+                    && lastProofFile.size() == attrs.size()
+                    && lastProofFile.lastModifiedTime().equals(attrs.lastModifiedTime())
+                    && java.util.Objects.equals(lastProofFile.fileKey(), attrs.fileKey())) return;
+            byte[] raw;
+            try (var input = Files.newInputStream(PROOF_REQUEST, LinkOption.NOFOLLOW_LINKS)) {
+                raw = input.readNBytes(4097);
+            }
+            if (raw.length != attrs.size()) return;
+            lastProofFile = attrs;
+            var proof =
+                    JsonParser.parseString(new String(raw, java.nio.charset.StandardCharsets.UTF_8))
+                            .getAsJsonObject();
+            String nonce = chaine(proof, "nonce");
+            if (!nonce.matches("[0-9a-f]{32}")
+                    || nonce.equals(lastProof)
+                    || proof.size() != PROOF_CONTEXT.size() + 2
+                    || !new com.google.gson.JsonPrimitive(1).equals(proof.get("v"))) return;
+            for (String key : PROOF_CONTEXT) if (!state.get(key).equals(proof.get(key))) return;
+            lastProof = nonce;
+            long token = request;
+            WRITER.execute(() -> ecrirePreuve(proof, token));
+        } catch (Exception ignored) {
+            // A missing, locked or malformed challenge receives no positive attestation.
+        }
+    }
+
+    private static void ecrirePreuve(JsonObject proof, long token) {
+        if (token != EPOCH.get()) return;
+        Path temporary = null;
+        try {
+            temporary = PublicationCatalogue.preparer(PROOF_REPLY, proof);
+            synchronized (LOCK) {
+                if (token == EPOCH.get()) PublicationCatalogue.publier(temporary, PROOF_REPLY);
+            }
+        } catch (Exception ignored) {
+            // Python times out instead of accepting an acknowledgement from an older challenge.
+        } finally {
+            nettoyer(temporary);
         }
     }
 

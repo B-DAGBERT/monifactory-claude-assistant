@@ -22,6 +22,7 @@ import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.game.emi import objective_tree
 from monifactory_assistant.game.projects import ProjectStore
 from monifactory_assistant.game.snapshots import frame_value
+from monifactory_assistant.game.world import machine_color, machine_status
 from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +84,8 @@ def load_logic(path):
     namespace = dict(
         ai_provider=ai_provider,
         frame_value=frame_value,
+        machine_color=machine_color,
+        machine_status=machine_status,
         copy=copy,
         ProjectStore=ProjectStore,
         objective_tree=objective_tree,
@@ -361,6 +364,21 @@ class ObjectivePauseTests(unittest.TestCase):
         json.dumps(paused)  # payload remains serializable for the mod
         a.set_objective_paused(False)
         self.assertEqual(build(a)["ecran"]["plan"]["objectifs"][0]["etat"], "en_cours")
+        a.world.machines = lambda: [
+            {"bloc": "gtceu:lv_bender", "nom": "Cintreuse", "x": 0, "y": 1, "z": 2}
+        ]
+        a.world.observation_live = lambda _: True
+        a.message = "Huit plaques"
+        catalogue = {"source": "emi/test", "generation": 1, "sha256": "test"}
+        a.production_message_proof = (a.message, 0, {"catalogue": catalogue})
+        streamed = build(a)
+        self.assertEqual(streamed["ecran"]["conversation"][-1]["texte"], a.message)
+        self.assertEqual(streamed["bulle"]["catalogue_production"], catalogue)
+        a.message_until = time.time() + 10
+        a.production_message_proof = (a.message, a.message_until, {"catalogue": catalogue})
+        self.assertEqual(build(a)["bulle"]["catalogue_production"], catalogue)
+        a.message = "Nouveau message sans preuve"
+        self.assertNotIn("catalogue_production", build(a)["bulle"])
 
     def test_no_objective_cannot_be_paused(self):
         self.app.plan = None

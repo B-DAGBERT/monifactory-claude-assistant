@@ -475,6 +475,12 @@ def build_mod_view(app):
             beams.append(target)
             hud["direction"] = hud["direction"] or target
     live = app.message if app.message and not app.message_until else ""
+    bound_message = getattr(app, "production_message_proof", None)
+    message_catalogue = (
+        bound_message[2].get("catalogue")
+        if bound_message and bound_message[:2] == (app.message, app.message_until)
+        else None
+    )
     bubble = None
     if app.message and (not app.message_until or now < app.message_until):
         bubble = {
@@ -482,12 +488,14 @@ def build_mod_view(app):
             "en_cours": bool(live),
             "fin": int(app.message_until * 1000),
         }
+        if message_catalogue is not None:
+            bubble["catalogue_production"] = message_catalogue
     machines = []
     for m in app.world.machines():
         if re.search(r"hatch|_bus$", m["bloc"]):
             continue
         status = machine_status(m)
-        live = app.world.observation_live(m)
+        machine_live = app.world.observation_live(m)
         machines.append(
             {
                 "nom": m["nom"],
@@ -495,11 +503,11 @@ def build_mod_view(app):
                 "x": m["x"],
                 "y": m["y"],
                 "z": m["z"],
-                "couleur": machine_color(status) if live else "gris",
+                "couleur": machine_color(status) if machine_live else "gris",
                 "item": m["bloc"],
                 "dimension": m.get("dimension", ""),
                 "vu": m.get("t", 0),
-                "actuel": live,
+                "actuel": machine_live,
             }
         )
     info = dict(app.info) if app.info else None
@@ -537,13 +545,18 @@ def build_mod_view(app):
             {"cle": key, "nom": name, "description": text, "valeur": app.settings[key]}
             for key, (name, text, _) in SETTINGS.items()
         ],
-        "conversation": app.history[-30:] + ([{"de": "claude", "texte": live}] if live else []),
+        "conversation": app.history[-30:],
         "sections": sections,
         "machines": machines,
         "coffres": len(storage.containers),
         "joueurs": [f"{p['nom']} en {p['x']} {p['y']} {p['z']}" for p in app.world.players],
         "serveur": app.world.active,
     }
+    if live:
+        message = {"de": "claude", "texte": live}
+        if message_catalogue is not None:
+            message["catalogue_production"] = message_catalogue
+        screen["conversation"].append(message)
     ai_settings = getattr(app, "ai_settings", None)
     if ai_settings is not None:
         screen["configuration_ia"] = ai_settings.view(app)

@@ -296,16 +296,25 @@ class ConversationController:
             self.events.put(("status", f"« {text} » : {ai_provider.label()} réfléchit…"))
             self.events.put(("history", "toi", text))
             spoken = [0]
+            last_preview = 0.0
 
-            def on_text(partial):
-                if proof is not None and not production.context_valid(proof):
-                    return
-                timing.setdefault("premier mot", time.time())
-                partial = readable(
-                    visible_text(partial)
-                )  # la ligne d'actions n'est ni affichée ni lue
+            def show_preview(partial):
+                nonlocal last_preview
+                now = time.monotonic()
+                if proof is not None:
+                    if now - last_preview < 0.35 or not production.context_valid(proof):
+                        return
+                    last_preview = now
+                partial = readable(visible_text(partial))
                 preview = ("live_text", partial)
                 self.events.put(preview if proof is None else (*preview, proof))
+                return partial
+
+            def on_text(partial):
+                timing.setdefault("premier mot", time.time())
+                partial = show_preview(partial)
+                if proof is not None:
+                    return  # Read the completed V2 explanation after revalidating it.
                 if len(partial) < spoken[0]:  # nouveau message de Codex
                     spoken[0] = 0
                 cut = spoken[0]
@@ -321,7 +330,9 @@ class ConversationController:
                 raise ValueError("Le monde a changé pendant la demande.")
             self.speaker.stop()
             production = getattr(self, "production", None)
-            evidence = production.context(text) if production is not None else None
+            evidence = (
+                production.context(text, require_current=True) if production is not None else None
+            )
             proof = evidence[1] if evidence is not None else None
             if evidence is None:
                 recipes = self.recipe_index.hint(text)
@@ -342,13 +353,6 @@ class ConversationController:
             )
             on_tool = lambda name, data: self.events.put(("status", tool_status(name, data)))  # noqa: E731
 
-            # Never replay a submitted turn: a timeout must not duplicate an action.
-            def on_preview(partial):
-                if proof is not None and not production.context_valid(proof):
-                    return
-                preview = ("live_text", readable(visible_text(partial)))
-                self.events.put(preview if proof is None else (*preview, proof))
-
             if scoped and (
                 bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
             ):
@@ -357,13 +361,9 @@ class ConversationController:
                 raise ValueError(
                     "Le calcul de production a changé pendant la préparation de la demande."
                 )
-            answer = self.conversation.ask(prompt, on_text, on_tool, on_preview)
+            answer = self.conversation.ask(prompt, on_text, on_tool, show_preview)
             shown = readable(split_actions(answer)[0])
-            if (
-                self.speak
-                and spoken[0] < len(shown)
-                and (proof is None or production.context_valid(proof))
-            ):
+            if self.speak and spoken[0] < len(shown) and proof is None:
                 self.speaker.add(shown[spoken[0] :])
             result = ("answer", text, answer)
             self.events.put(result if proof is None else (*result, proof))
@@ -385,6 +385,15 @@ class ConversationController:
 
     def on_live_text(self, text, production_proof=None):
         if production_proof is not None and not self.production.context_valid(production_proof):
+            visible = getattr(self, "production_message_proof", None)
+            if visible is not None and visible == (
+                self.message,
+                self.message_until,
+                production_proof,
+            ):
+                self.production_message_proof = None
+                self.message, self.message_until = "", 0
+                self.refresh(force=True)
             return
         bridge = getattr(self, "bridge", None)
         if getattr(bridge, "isolated", False) is True:
@@ -392,22 +401,24 @@ class ConversationController:
             if bridge.scope != scope or scope is not None and not bridge.scope_valid(scope):
                 return
         self.message, self.message_until = text, 0
+        self.production_message_proof = (text, 0, production_proof) if production_proof else None
         self.refresh()
 
     def on_answer(self, question, answer, production_proof=None):
         self.busy = False
         self.connection_problem = ""
-        log(f"Q : {question}\nR : {answer}")
-        answer, actions = split_actions(answer)
-        answer = readable(answer)
         bridge = getattr(self, "bridge", None)
         scope = getattr(self, "question_scope", None)
         scoped = getattr(bridge, "isolated", False) is True
         self.status = ""
+        self.production_message_proof = None
         if production_proof is not None and not self.production.context_valid(production_proof):
             self.notify("Le calcul de production n’est plus courant. Relance-le dans Minecraft.", 8)
             self.refresh(force=True)
             return
+        log(f"Q : {question}\nR : {answer}")
+        answer, actions = split_actions(answer)
+        answer = readable(answer)
         if scoped and (
             bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
         ):
@@ -415,7 +426,11 @@ class ConversationController:
             self.refresh(force=True)
             return
         self.add_history("claude", answer)
+        if production_proof is not None and self.speak:
+            self.speaker.add(answer)
         self.message, self.message_until = answer, time.time() + 180
+        if production_proof is not None:
+            self.production_message_proof = (answer, self.message_until, production_proof)
         self.refresh(force=True)
         if not self.game:
             self.show_overlay(f"Toi : {question}\n\n{answer}")

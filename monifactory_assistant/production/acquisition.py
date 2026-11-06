@@ -1,6 +1,8 @@
 """Bounded, read-only acquisition using the existing native world identity and files."""
 
+import stat
 import time
+import uuid
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,12 +17,44 @@ from monifactory_assistant.game.world_scope import (
     scope_file,
     scope_folder,
 )
+from monifactory_assistant.persistence import atomic_json
 from monifactory_assistant.production.catalog import decode_document
 from monifactory_assistant.production.knowledge import (
     Completeness,
     SourceSnapshot,
     build_knowledge,
 )
+
+CATALOGUE_PROOF_REQUEST = "production_v2_preuve_demande.json"
+CATALOGUE_PROOF_REPLY = "production_v2_preuve_reponse.json"
+
+
+def attest_catalogue(folder, scope, catalogue, *, timeout=0.45):
+    """Require a new acknowledgement from the native client for this exact catalogue."""
+    proof = {
+        "v": 1,
+        "nonce": uuid.uuid4().hex,
+        **scope.fields(),
+        **{key: catalogue[key] for key in ("source", "generation", "sha256")},
+    }
+    try:
+        info = folder.lstat()
+        if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            return False
+        request = scope_file(folder, CATALOGUE_PROOF_REQUEST)
+        atomic_json(request, proof, backup=False, compact=True)
+    except (OSError, ValueError):
+        return False
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            reply, _ = read_capture(folder / CATALOGUE_PROOF_REPLY, 4096)
+            if reply == proof and type(reply["v"]) is int and type(reply["generation"]) is int:
+                return True
+        except (OSError, ValueError, TypeError, RecursionError):
+            pass
+        time.sleep(0.015)
+    return False
 
 
 def capture_stamp(path):
@@ -74,7 +108,10 @@ def acquire(bridge, python_root, scope, request, now_ms):
     """Only independently scoped frames are current; legacy files are never reassigned."""
     if active_scope(bridge, now_ms) != scope:
         raise ValueError("Le monde ou la connexion a changé.")
-    sources, limits = [], []
+    sources = []
+    limits = [
+        "Réservations, fabrications en cours et réceptions : aucun relevé de lot attesté pour ce calcul."
+    ]
     native_inventory = False
     try:
         data, stamp = read_capture(bridge.dir / "production_v2_inventaire.json", 1024 * 1024)
