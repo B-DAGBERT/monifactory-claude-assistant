@@ -26,6 +26,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
 
     @Override
     public void register(EmiRegistry registry) {
+        fr.assistantia.CatalogueProduction.rechargement();
         brancher();
         // EMI range ses listes d'objets autour du panneau de retrait au lieu de passer dessous.
         registry.addGenericExclusionArea(

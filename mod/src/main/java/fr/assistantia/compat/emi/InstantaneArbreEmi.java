@@ -38,6 +38,10 @@ public record InstantaneArbreEmi(
         invalider();
     }
 
+    public static long revisionProduction() {
+        return revision.get();
+    }
+
     static void invalider() {
         revision.incrementAndGet();
     }

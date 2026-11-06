@@ -28,6 +28,7 @@ public abstract class CatalyseursArbreEmiMixin {
             }
         } finally {
             InstantaneArbreEmi.arbreModifie();
+            fr.assistantia.CatalogueProduction.rechargement();
         }
     }
 }
