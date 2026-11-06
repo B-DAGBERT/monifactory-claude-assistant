@@ -1,5 +1,181 @@
 # Qualification de Monifactory Assistant V2
 
+## Campagne Mac, Windows et multijoueur
+
+**V2 RELEASE CANDIDATE — PARTIAL**. La branche
+[`qualification/v2-shared42`](https://github.com/B-DAGBERT/monifactory-claude-assistant/tree/qualification/v2-shared42)
+est disponible pour le second poste. Le premier envoi a publié exactement
+`a6a2d68dd56fa117d1d70a492733b4a709016ccd`. Les commits de campagne ajoutent les guides et
+le rapport. Comparer le checkout au SHA de code avant l’installation. Le dernier `origin/main`
+vérifié est `5d280c3a949f4a6521fb1a4eed0303550dd25ec9`. Les 19 commits de code et de
+qualification du candidat descendent de ce point. R5 a cinq commits indépendants à
+`5105320384d5e9e7f56eb58e2662831f07f1e329`. La confirmation native R5 reste séparée.
+
+- [Recette Windows 11, Claude Code et NTFS](recette-v2-windows.md)
+- [Recette à deux joueurs et permissions FTB](recette-v2-multijoueur.md)
+- [Origine des preuves Mac, versions et procédures de retour arrière](integration-v2.md)
+
+Les résultats distinguent **AUTOMATED** pour les tests, **LOCAL_INTEGRATION** pour un vrai
+composant exercé hors jeu, **IN_GAME** pour Minecraft, **USER_CONFIRMED** pour un essai attesté
+par le joueur, et **NOT_TESTED** quand le parcours n’a pas été exécuté.
+
+### Versions et intégrité de la livraison
+
+Le JAR Mac chargé de référence est `assistantia-1.0.0-shared.42.jar`. SHA-256
+`5d6516f6ffa57ae116d7f91fcf4326155330b153345e782cbbbf62bd8e441737`.
+La reconstruction Forge de la campagne a donné
+`d885676135fef6c4f76eac29b1659bf9b97693ea996010af90b25bdead22ee15`.
+Les 192 entrées non répertoires concordent en contenu, à l’exception de l’horodatage de
+compilation dans `META-INF/MANIFEST.MF`. L’essai de jeu désigne l’empreinte réellement chargée.
+Le script client KubeJS est en version 12. SHA-256
+`a77b218d8778fd3dc123444a58b1e194d226080db0121e6c81d8e87175387f1e`.
+La file de demandes reste en version 2, le catalogue et la preuve de génération en version 1.
+Le script serveur, les formats existants et le déclenchement du lot 5 restent hors de cette
+livraison. La branche de qualification n’est pas la source de mise à jour automatique.
+
+La revue avant envoi a inspecté les 19 commits, y compris les lignes ajoutées à chaque commit,
+leurs noms de fichiers, les chemins personnels et les signatures usuelles de secrets. Aucun
+fichier de sauvegarde, export de session, conversation, résultat brut ou JAR de jeu n’a été
+détecté dans les changements. Le binaire du wrapper Gradle préexistait sur `main`. Les essais
+de jeu ont utilisé uniquement une instance jetable et un projet fictif. Le calcul Production
+consulte les données et la preuve de session. Les transferts et les actions destructives
+restent sous les confirmations natives existantes. Le garde-fou Python refuse les suppressions
+issues des réponses IA. Le script de relevé et les protections FTB côté serveur n’ont aucune
+modification dans la branche candidate.
+
+Le scénario d’installation `.40 → .42 → .40` a été rejoué avec le JAR reconstruit sur une
+copie. Le JAR, le script et le plan fictif concordaient avant installation et après restauration.
+Une coupure brutale entre les deux remplacements de fichiers
+reste un risque P4 identifié. La sauvegarde de l’installateur permet de remettre le couple
+précédent. Le verrou NTFS et la reprise d’installation sur Windows restent à tester.
+
+### Matrice de preuve
+
+| Domaine                  | Résultat                                                                                                                               | Niveau                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Git                      | Branche de qualification publiée, `main` contrôlé, R5 séparé                                                                           | LOCAL_INTEGRATION                    |
+| Tests Mac                | 627 tests et 26 scénarios EMI. Contrats Java, Forge JDK 17, Node et Rhino, Ruff, Prettier                                              | AUTOMATED                            |
+| Mac et KubeJS            | Démarrage normal dans une copie Expert avec les configurations publiques du pack                                                       | IN_GAME                              |
+| EMI                      | 8 plaques, coût cintreuse 6 cuivre + 2 étain, marteau 9 cuivre + 3 étain                                                               | IN_GAME                              |
+| Verrou macOS             | Ancien marqueur lisible, nouvelle preuve refusée, nouveau calcul après libération                                                      | IN_GAME                              |
+| Production               | Inventaire personnel alloué. Contrats de stocks, lots et diagnostics. Acquisition native de coffres et lots partielle                  | IN_GAME et AUTOMATED                 |
+| Windows / NTFS           | Procédure prête. Poste et verrou natif à qualifier                                                                                     | NOT_TESTED                           |
+| Multijoueur / FTB        | Positions et mondes vérifiés sur contrats. Deux vrais joueurs et permissions FTB à qualifier                                           | AUTOMATED, IN_GAME NOT_TESTED        |
+| IA                       | Un appel Codex CLI éphémère sur les quantités fictives exactes. Dialogue de jeu avec fournisseur simulé. Claude réel à qualifier       | LOCAL_INTEGRATION, Claude NOT_TESTED |
+| R5                       | Candidat original testé en jeu pour consentement, expiration, déconnexion et double clic. Course et preuve durable étudiées séparément | IN_GAME et AUTOMATED                 |
+| Performance              | Catalogue, agrégation, calcul, diagnostic, contexte et invalidation mesurés sur fixture commune                                        | LOCAL_INTEGRATION                    |
+| Intégrité et déploiement | JAR chargé identifié. Sauvegarde du projet fictif, installation et retour arrière contrôlés sur copies                                 | IN_GAME et LOCAL_INTEGRATION         |
+
+### Rejeu Mac sur le candidat exact
+
+Sur Monifactory 0.13.8 en mode Expert, Forge 47.4.13 et JDK 17, la campagne a utilisé le
+JAR chargé identifié ci-dessus et la copie Python de `a6a2d68`. La sonde de laboratoire
+pilote les boutons natifs et relève leurs états. La JVM a démarré sans agent de contournement.
+
+Le premier passage a détecté sur disque un JAR R5 `.40` résiduel de la campagne précédente.
+La liste active de Forge contenait le seul assistant `.42`, qui a aussi répondu par son
+protocole natif de preuve. Les essais longs sont attribués à ce JAR chargé. Le second
+démarrage, après retrait du JAR résiduel dans la copie uniquement, a confirmé une seule
+archive assistant sur disque et un seul assistant `.42` chargé par Forge. Le sac fermé a
+été reconnu après démarrage, le plan bronze a reçu une nouvelle preuve et le projet en
+pause est resté identique. Les avertissements de recettes du pack ont été consignés
+séparément du chargement V2.
+
+| Cas    | Résultat de la campagne                                                                                                                                                                                        | Niveau               |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| MAC-01 | PASS. Démarrage de la copie conforme et entrée dans le monde jetable                                                                                                                                           | IN_GAME              |
+| MAC-02 | PASS. Registre EMI réellement chargé. Écrans natifs de recette et de Recipe Tree ouverts                                                                                                                       | IN_GAME              |
+| MAC-03 | PASS. Le plan Production a été calculé depuis l’arbre natif et le pont a reçu sa preuve                                                                                                                        | IN_GAME              |
+| MAC-04 | PASS. Huit plaques par cintreuse et marteau, coûts 6 cuivre + 2 étain et 9 cuivre + 3 étain                                                                                                                    | IN_GAME              |
+| MAC-05 | PASS. Le changement d’arbre révoque l’ancien plan et sa preuve                                                                                                                                                 | IN_GAME              |
+| MAC-06 | PASS. Le marqueur macOS immuable reste identique sur disque. L’ancien résultat est refusé avant appel au fournisseur simulé. Nouveau calcul après libération                                                   | IN_GAME              |
+| MAC-07 | PASS. Le bouton Minecraft de sortie revient normalement au menu. Identité et ancien résultat révoqués                                                                                                          | IN_GAME              |
+| MAC-08 | PASS. Retour dans le même monde, nouvelle session, ancienne preuve rejetée et nouveau calcul accepté                                                                                                           | IN_GAME              |
+| MAC-09 | PASS. Projet fictif en pause conservé octet pour octet pendant la reconnexion et la relance de Python seul. Ancien résultat absent et nouveau calcul accepté                                                   | IN_GAME et AUTOMATED |
+| MAC-10 | PARTIAL. Recettes, arbre EMI et stock du backpack testés en jeu. Collecte et envoi réels en machine restent à rejouer. Les 26 scénarios contrôlent les contrats de fluides, circuits, catalyseurs et transfert | IN_GAME et AUTOMATED |
+
+La sortie normale règle le blocage observé avec l’ancienne sonde qui appelait directement
+la fermeture du monde. Le test a quitté puis rechargé le même monde et vérifié séparément
+la continuité de la clé de monde et le renouvellement de la session. Les calculs observés
+avant et après reconnexion ont duré 0,760 et 0,921 s. Après libération du marqueur, le
+calcul du marteau a duré 1,083 s. Ces valeurs incluent les échanges et les ticks du client.
+Après relance de Python seul, le nouveau calcul natif a pris 1,075 s. Le plan du marteau
+réutilise 6 cuivre et 2 étain du sac synchronisé et indique 3 cuivre et 1 étain à obtenir.
+
+### Stocks de la campagne
+
+Les numéros ci-dessous suivent la campagne multiplateforme. Le tableau de stabilisation à
+quinze cas, plus bas, conserve sa numérotation. En cas de différence, distinguer le contenu
+physique du stock effectivement alloué et du crédit de progression.
+
+| ID       | Résultat établi et limite                                                                                                                                                                                                                   | Niveau                     |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| STOCK-01 | Un inventaire physique attesté est alloué une seule fois                                                                                                                                                                                    | IN_GAME et AUTOMATED       |
+| STOCK-02 | Déplacement en jeu de 6 cuivre et 2 étain vers un Sophisticated Backpack dans la barre rapide. Sac fermé, quantité synchronisée et allouée une seule fois, zéro manque. L’emplacement Curios et les variantes NBT restent hors de cet essai | IN_GAME et AUTOMATED       |
+| STOCK-03 | Le coffre observé reste distinct du stock personnel. Avec 3 en poche et 5 en coffre, le plan demande encore 5 sur une cible de 8                                                                                                            | LOCAL_INTEGRATION, PARTIAL |
+| STOCK-04 | Le contrat regroupe les deux moitiés attestées. Production native n’alloue actuellement pas le coffre double                                                                                                                                | AUTOMATED, PARTIAL         |
+| STOCK-05 | Un relevé tardif ne réattribue pas une pile déplacée. Sans révision commune, Production évite la somme des deux sources                                                                                                                     | AUTOMATED                  |
+| STOCK-06 | Un stockage ancien reste historique et hors des disponibilités garanties                                                                                                                                                                    | AUTOMATED                  |
+| STOCK-07 | Une réservation réduit les quantités disponibles dans le contrat. Aucun lot natif de Production ne l’atteste                                                                                                                                | AUTOMATED, PARTIAL         |
+| STOCK-08 | Une entrée de machine ne devient ni stock de coffre ni produit acquis                                                                                                                                                                       | AUTOMATED, PARTIAL         |
+| STOCK-09 | Une sortie attendue reste en attente, distincte du physique                                                                                                                                                                                 | AUTOMATED, PARTIAL         |
+| STOCK-10 | Les reçus partiels sont cumulatifs et bornés au lot. L’export actuel ne permet pas d’identifier ce lot dans Production                                                                                                                      | AUTOMATED, PARTIAL         |
+| STOCK-11 | L’annulation retire uniquement la part encore attendue dans le contrat. Le suivi EMI garde sa commande native                                                                                                                               | AUTOMATED, PARTIAL         |
+| STOCK-12 | Le projet reste en pause et le calcul n’avance aucune étape. Le suivi EMI conserve ses lots en mémoire pendant la pause                                                                                                                     | IN_GAME et AUTOMATED       |
+| STOCK-13 | Un changement de connexion invalide le résultat et le suivi local EMI. Un lot actif réel reste à rejouer                                                                                                                                    | AUTOMATED, PARTIAL         |
+| STOCK-14 | La reprise de file durable n’exécute pas à nouveau la demande. La restauration de lots V2 reste hors du contrat natif                                                                                                                       | AUTOMATED, PARTIAL         |
+
+Le module d’acquisition natif alloue actuellement l’inventaire personnel du clic. Avec
+une capture valide, la vue de connaissance privilégie cette source. Sans capture attestée,
+les agrégats génériques sont écartés des allocations exactes. Le suivi EMI peut indiquer une
+réservation ou une réception, mais le fichier de crédits cumulés ne fournit pas l’identité
+d’un lot à Production. Des essais sur le poste Windows ne peuvent pas combler cette limite
+d’intégration. Pour qualifier un périmètre réunissant coffres et lots, il faut une vue de
+stock cohérente et une provenance de lot qui permette de rapprocher les réceptions sans
+doubler les crédits. Le candidat préfère signaler l’inconnu plutôt que combler ces données.
+
+### Dernière revue de R5
+
+Le candidat natif `5105320` garde ses preuves en jeu. Le correctif de résultat durable
+`97a595a` reste sur la branche locale `codex/r5-commit-status`. Le point d’engagement
+logique est le dernier relevé de la file et la revalidation du contexte avant consommation
+de l’autorisation. Une annulation visible lors de ce contrôle empêche l’écriture. Une demande
+qui arrive après peut être trop tardive, même avant le remplacement du fichier. Ce protocole
+interprocessus ne promet pas une annulation jusqu’à l’écriture atomique.
+
+Le correctif restitue le résultat terminal à une annulation tardive et après redémarrage,
+sans rétablir l’autorisation de suppression. Un reçu contradictoire ou une erreur survenue
+après modification rend le résultat incertain. La suite complète séparée a réussi **535
+tests**, dont la passe ciblée de **114 tests** avec 17 nouveaux cas. **Sept arrêts SIGKILL**
+sur projets fictifs ont réussi. La contre-revue a rejoué 83 tests. Le
+correctif n’a pas été essayé avec le client Minecraft réel, même si son Java n’a pas changé.
+R5 reste **PARTIAL**, indépendant de la V2 en lecture seule et du garde-fou de `main`.
+
+### Mesures de la campagne
+
+Même fixture entre `2c734d8` et `a6a2d68`, avec 2 024 recettes, 600 coffres, une machine
+et une chaîne de 24 étapes. 21 passages après trois échauffements. Le scénario de base se
+rejoue avec `python -m tests.benchmarks.production_v2`. La comparaison ajoute le diagnostic
+de cette machine et un répondant immédiat sur les fichiers temporaires pour mesurer le pont.
+
+| Opération                | Médiane avant | Médiane après | P95 après | Pic Python après |
+| ------------------------ | ------------: | ------------: | --------: | ---------------: |
+| Catalogue                |     29,761 ms |     31,066 ms | 38,668 ms |        4,794 Mio |
+| Agrégation               |     26,549 ms |     25,094 ms | 31,236 ms |        1,497 Mio |
+| Plan pur                 |      2,225 ms |      2,146 ms |  2,271 ms |        0,320 Mio |
+| Plan depuis observations |      6,124 ms |      6,341 ms |  7,546 ms |        0,696 Mio |
+| Diagnostic               |      0,150 ms |      0,150 ms |  0,154 ms |        0,012 Mio |
+| Service complet          |     54,429 ms |     57,303 ms | 61,095 ms |        4,797 Mio |
+| Contexte IA              |      0,077 ms |      0,834 ms |  1,022 ms |        0,014 Mio |
+| Invalidation locale      |      0,148 ms |      0,155 ms |  0,165 ms |        0,008 Mio |
+
+Les moteurs de calcul et d’agrégation sont inchangés entre les deux versions. Les petits
+écarts entre passages ne démontrent pas de régression du moteur. La préparation du contexte
+inclut maintenant un contrôle positif du client. Le répondant simulé ne représente pas un
+tick Minecraft. Sans réponse native, le contrôle de 450 ms a expiré en environ 457–460 ms,
+sondage et lectures inclus. Ces mesures excluent le temps du fournisseur IA, les FPS et le
+temps du serveur. Le jeu et la reconnexion ont été mesurés séparément sur Mac.
+
 ## Qualification du candidat stabilisé
 
 Le [rapport d’intégration](integration-v2.md) suit les commits, les deux anomalies prioritaires,

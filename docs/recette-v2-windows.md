@@ -103,6 +103,14 @@ Choisir **Recipe Tree** dans EMI puis **Y → Production**. Pour le bronze, sél
 l’alliage cuivre-étain comme branche du lingot, avec huit plaques comme objectif. Le
 tableau commence à **NOT RUN** sur Windows.
 
+Les recettes de référence sont `gtceu:bender/bend_bronze_to_plate`,
+`gtceu:forge_hammer/hammer_bronze_to_plate` et
+`gtceu:alloy_smelter/copper_ingot_and_tin_ingot_into_bronze`. Pour WIN-12, utiliser une
+cintreuse LV de test déjà alimentée, régler son circuit virtuel sur 1 et préparer un
+lingot de bronze. Faire le transfert avec le bouton natif et relever son résultat avant
+de récupérer la plaque. Faire un essai séparé avec un fluide ou un moule si la machine de
+test correspondante est disponible. Noter les cas réellement exécutés.
+
 | ID     | Opération et attendu                                                                                                                                                                              | Résultat |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | WIN-01 | Entrer dans le monde Expert. Le JAR de test est le seul assistant chargé.                                                                                                                         | NOT RUN  |
@@ -173,7 +181,18 @@ commandes de consentement R5 appartiennent à une autre branche.
 
 Fermer la copie Minecraft et son assistant. À partir du manifeste `installation.json` de la
 sauvegarde annoncée, restaurer uniquement les JAR listés et le script client précédent.
-Retirer le JAR candidat de cette copie avant le redémarrage. Comparer les empreintes avant
+La commande suivante exécute cette restauration sur la copie et retire le JAR candidat.
+Vérifier le manifeste et les deux chemins affichés avant de lancer la dernière ligne.
+
+```powershell
+$Backup = (Resolve-Path (Read-Host 'Dossier de sauvegarde annoncé pendant WIN-15')).Path
+$TestInstance
+$Backup
+Get-Content -Raw (Join-Path $Backup 'installation.json')
+& $Py -c 'import sys; from monifactory_assistant.commands.setup import restore_install; restore_install(sys.argv[1], sys.argv[2])' $TestInstance $Backup
+```
+
+Comparer les empreintes avant
 installation et après restauration, puis lancer le checkout Python correspondant. Le monde,
 les plans, les coffres et les conversations restent dans leurs dossiers respectifs. Voir aussi
 [le guide de collaboration](collaboration.md).
