@@ -1,5 +1,7 @@
 # Recette V2 à deux joueurs
 
+Les références et résultats ci-dessous concernent le candidat shared.42. Pour tester shared.45, reprendre [les références et les essais de preuves natives](qualification-v2-native-stock-lots.md).
+
 Cette recette utilise le même code `a6a2d68dd56fa117d1d70a492733b4a709016ccd` sur Mac
 et Windows, le JAR `1.0.0-shared.42` et le script KubeJS client 12. La branche
 [`qualification/v2-shared42`](https://github.com/B-DAGBERT/monifactory-claude-assistant/tree/qualification/v2-shared42)

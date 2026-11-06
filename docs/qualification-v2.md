@@ -1,5 +1,7 @@
 # Qualification de Monifactory Assistant V2
 
+Les références et résultats ci-dessous concernent le candidat shared.42. Pour tester shared.45, reprendre [les références et les essais de preuves natives](qualification-v2-native-stock-lots.md).
+
 ## Campagne Mac, Windows et multijoueur
 
 **V2 RELEASE CANDIDATE — PARTIAL**. La branche

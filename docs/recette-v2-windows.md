@@ -1,5 +1,7 @@
 # Recette V2 sur Windows 11 avec Claude Code
 
+Les références et résultats ci-dessous concernent le candidat shared.42. Pour tester shared.45, reprendre [les références et les essais de preuves natives](qualification-v2-native-stock-lots.md).
+
 Cette campagne porte sur le code `a6a2d68dd56fa117d1d70a492733b4a709016ccd`, le mod
 `1.0.0-shared.42` et le script client KubeJS 12. La branche GitHub
 [`qualification/v2-shared42`](https://github.com/B-DAGBERT/monifactory-claude-assistant/tree/qualification/v2-shared42)
