@@ -100,21 +100,13 @@ def _allocation_lines(plan):
 
 
 def _historical_lines(snapshot, missing):
-    searched = {amount.resource.id for amount in missing if amount.resource.kind == "item"}
-    if not searched:
-        return []
-    lines = []
-    for row in snapshot.select("storage"):
-        if not any(
-            proof.freshness in {Freshness.STALE, Freshness.HISTORICAL} for proof in row.evidence
-        ):
-            continue
-        for item, quantity in row.value.get("items", {}).items():
-            if item in searched and quantity > 0:
-                lines.append(f"Ancien relevé, non alloué : {quantity} item {item}")
-                if len(lines) >= 8:
-                    return lines
-    return lines
+    if any(amount.resource.kind == "item" for amount in missing) and any(
+        proof.freshness in {Freshness.STALE, Freshness.HISTORICAL}
+        for row in snapshot.select("storage")
+        for proof in row.evidence
+    ):
+        return ["Historique de stockage présent · accès et disponibilité non vérifiés."]
+    return []
 
 
 def _compatible_posts(step):

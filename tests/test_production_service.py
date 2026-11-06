@@ -19,6 +19,7 @@ from monifactory_assistant.production.acquisition import (
     read_capture,
 )
 from monifactory_assistant.production.catalog import _digest, catalogue_document
+from monifactory_assistant.production.knowledge import Freshness
 from monifactory_assistant.production.recipes import (
     Amount,
     Catalog,
@@ -27,7 +28,7 @@ from monifactory_assistant.production.recipes import (
     Recipe,
     Resource,
 )
-from monifactory_assistant.production.service import ProductionService
+from monifactory_assistant.production.service import ProductionService, _historical_lines
 
 IRON = Resource("item", "minecraft:iron_ingot", "item")
 PLATE = Resource("item", "gtceu:iron_plate", "item")
@@ -203,6 +204,19 @@ class ProductionServiceTests(unittest.TestCase):
                     any("À récupérer au coffre" in line for line in result["lignes"]),
                     bool(expected_chest),
                 )
+
+    def test_historical_storage_has_no_detail_without_current_access_proof(self):
+        stale = SimpleNamespace(
+            evidence=[SimpleNamespace(freshness=Freshness.HISTORICAL)],
+            value={"items": {IRON.id: 7654}},
+        )
+        snapshot = SimpleNamespace(select=lambda kind: [stale])
+        lines = _historical_lines(snapshot, [Amount(IRON, 2)])
+        self.assertEqual(
+            lines, ["Historique de stockage présent · accès et disponibilité non vérifiés."]
+        )
+        self.assertNotIn(IRON.id, str(lines))
+        self.assertNotIn("7654", str(lines))
 
     def test_cumulative_native_receipt_is_not_an_extra_physical_source(self):
         for received in (0, 3):
