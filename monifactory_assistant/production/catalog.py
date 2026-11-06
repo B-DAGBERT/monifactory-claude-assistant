@@ -83,6 +83,7 @@ class CatalogueReader:
                 document = decode_document(raw)
                 if (
                     not isinstance(document, dict)
+                    or document.keys() != {"schema", "version", "source", "sha256", "catalogue"}
                     or document.get("schema") != SCHEMA
                     or type(document.get("version")) is not int
                     or document["version"] != 1

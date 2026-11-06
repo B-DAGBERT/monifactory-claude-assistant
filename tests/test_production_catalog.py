@@ -85,6 +85,9 @@ class CatalogueReaderTests(unittest.TestCase):
         broken["recipes"][0]["outputs"][0]["amount"]["quantity"] = True
         self.publish(broken)
         self.assertEqual(self.reader.refresh().status, "stale")
+        unknown_envelope = dict(catalogue_document("fixture-pack", payload(3)), incomplete=True)
+        atomic_json(self.path, unknown_envelope, backup=False)
+        self.assertEqual(self.reader.refresh().status, "stale")
 
     def test_replacement_during_validation_does_not_publish_the_read_generation(self):
         self.publish(payload(1))

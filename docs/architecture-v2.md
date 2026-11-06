@@ -46,3 +46,32 @@ projets, des stocks et des historiques. Le lot 2 reste reporté.
    mutation issues du dialogue restent `BLOCKED_BY_R5`. Les changements d’installation sont soumis à P4.
 
 Les critères par chantier et les résultats mesurés sont consignés dans la qualification V2.
+
+## Rejouer un calcul hors jeu
+
+Depuis la racine du dépôt, le scénario de huit plaques utilise un catalogue et des stocks fictifs.
+
+```sh
+python -m monifactory_assistant.commands.plan_production \
+  tests/fixtures/production_v2/catalogue.json \
+  tests/fixtures/production_v2/demande.json --source scenario-bronze
+```
+
+Le résultat donne deux lots d’alliage puis huit opérations à la cintreuse. Il identifie les stocks
+utilisés, les quantités, le circuit configuré à vérifier et l’empreinte du catalogue. Le champ
+`execution_readiness` reste `not_evaluated`. Une fabrication en cours apparaît dans `waiting` et
+sa réception ne crée aucun stock physique. Le résultat `partial` indique un choix, une quantité
+ou une condition à résoudre avant de considérer le calcul comme complet.
+
+Le format `monifactory.production.catalogue` v1 enveloppe le catalogue de recettes v1 et l’associe
+à une source et à une empreinte SHA-256. La génération est croissante par source. La publication
+de référence utilise un remplacement atomique d’un document complet. L’empreinte vérifie l’intégrité
+du document, tandis que le choix du producteur relève du code appelant. Le lecteur refuse un
+document incomplet, une source étrangère et la réutilisation d’un numéro pour un contenu différent.
+
+Les stocks de la commande sont des relevés fournis par l’appelant. Chaque identifiant désigne un
+seul inventaire physique. L’adaptateur des observations du jeu impose en plus une preuve de fraîcheur,
+une portée de monde et un accord explicite avant de combiner les stocks personnels et les coffres.
+Un identifiant d’objet seul ne suffit pas pour compter une variante, un outil distinct par ses données
+ou un fluide. Les anciens relevés restent consultables. Les capacités des réseaux restent inconnues
+en l’absence d’une observation dédiée.
