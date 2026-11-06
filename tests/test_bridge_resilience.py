@@ -156,7 +156,18 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
 
     def test_malformed_legacy_document_is_skipped_once_then_recovers(self):
         path = self.folder / "demande_mod.json"
-        documents = [None, [], "invalid", {}, {"n": True}, {"n": "1000000"}, {"n": 1000000.5}]
+        documents = [
+            None,
+            [],
+            "invalid",
+            {},
+            {"n": True},
+            {"n": "1000000"},
+            {"n": 1000000.5},
+            {"n": -1},
+            {"n": 2**53},
+            {"n": 10**400},
+        ]
         for document in documents:
             with self.subTest(document=document):
                 path.write_text(json.dumps(document), encoding="utf-8")
@@ -214,6 +225,33 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         self.assertFalse(app.project_feedback["ok"])
         self.assertEqual(app.project_feedback["token"], "old-token")
         self.assertFalse(list(inbox.glob("*.json")))
+
+    def test_extreme_durable_number_does_not_block_a_valid_request(self):
+        app = self.app()
+        inbox = self.folder / "demandes"
+        inbox.mkdir()
+        for index, number in enumerate((-1, 2**53, 10**400)):
+            (inbox / f"{index}.json").write_text(
+                json.dumps({"requete": f"invalid-{index}", "n": number}), encoding="utf-8"
+            )
+        (inbox / "valid.json").write_text(
+            json.dumps({"requete": "valid", "n": 1_000_000, "type": "action", "action": "voix"}),
+            encoding="utf-8",
+        )
+        app.check_mod_requests()
+        self.action.assert_called_once()
+        self.assertEqual(len(list(inbox.glob("*.invalide"))), 3)
+        self.assertFalse(list(inbox.glob("*.json")))
+
+    def test_extreme_receipt_number_blocks_without_dispatch(self):
+        self.write()
+        (self.folder / "reponses_demandes.json").write_text(
+            json.dumps({"invalid": {"n": 10**400, "etat": "traitee"}}), encoding="utf-8"
+        )
+        app = self.app()
+        app.check_mod_requests()
+        self.action.assert_not_called()
+        self.assertFalse(app.request_queue.valid)
 
 
 class StructuredActionsTests(unittest.TestCase):

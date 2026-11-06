@@ -30,6 +30,7 @@ class CommandQueue:
                 not isinstance(v, dict)
                 or isinstance(v.get("n"), bool)
                 or not isinstance(v.get("n"), int)
+                or not 0 <= v["n"] <= 2**53 - 1
                 for v in self.rows.values()
             ):
                 raise ValueError("Confirmations invalides")
@@ -60,6 +61,7 @@ class CommandQueue:
             or len(ident) > 80
             or isinstance(n, bool)
             or not isinstance(n, int)
+            or not 0 <= n <= 2**53 - 1  # Exact JSON/JavaScript integer milliseconds.
         ):
             raise ValueError("Identifiant invalide")
         age = self.clock() * 1000 - n

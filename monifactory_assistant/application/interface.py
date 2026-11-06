@@ -134,7 +134,11 @@ class InterfaceController:
                 number = request.get("n")
                 if isinstance(number, float) and number.is_integer():
                     number = int(number)
-                if isinstance(number, bool) or not isinstance(number, int):
+                if (
+                    isinstance(number, bool)
+                    or not isinstance(number, int)
+                    or not 0 <= number <= 2**53 - 1
+                ):
                     self.mod_request_time = modified
                     raise ValueError("Numéro de demande historique invalide")
                 request["n"] = number
