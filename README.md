@@ -51,6 +51,7 @@ Le scan, les retraits, le suivi des machines et les filons ne font **aucun appel
 - [Scénarios EMI basiques et complexes à la demande](docs/scenarios.md)
 - [Organisation du code, formatage et tests](docs/developpement.md)
 - [Qualification de l’isolation des mondes et procédure de restauration](docs/isolation-mondes.md)
+- [Audit d’architecture V1.5](docs/audit-architecture-v1.5.md) et [qualification des correctifs](docs/qualification-v1.5.md)
 - [Corrections et validation de la version shared.28](docs/audit-shared28.md)
 - [Documentation historique de la version Claude](docs/historique-claude.md)
 

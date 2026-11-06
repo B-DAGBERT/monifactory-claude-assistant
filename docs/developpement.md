@@ -232,6 +232,10 @@ ces deux valeurs. La file du client est limitée à 128 fichiers. Le protocole 2
 `ecran.demandes` ; les anciens couples client/assistant utilisent encore `demande_mod.json`.
 Les réglages IA et le scan EMI gardent leurs canaux indépendants.
 
+Le canal historique utilise aussi la réservation durable. Le numéro d’une ancienne demande
+sert de clé de déduplication quand l’UUID est absent. Un client qui renvoie son UUID par la file
+version 2 retrouve le même reçu.
+
 Avant chaque exécution, une réservation est écrite dans `reponses_demandes.json`. La confirmation
 et les accusés de question/projet sont enregistrés avant suppression du fichier de demande.
 Un résultat durable est restitué lors d’un renvoi, sans refaire l’action. Une réservation laissée
