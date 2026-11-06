@@ -1,8 +1,11 @@
 # Assistant Monifactory — Claude et Codex
 
-Un assistant dans Minecraft pour comprendre un bloc, suivre un objectif, préparer ses crafts dans
-EMI et retrouver ses ingrédients. Les deux moteurs utilisent **le même mod et la branche `main`**.
-Le compte IA se choisit sur chaque poste ; les conversations, coffres et objectifs restent locaux.
+Assistant pour Monifactory avec Claude Code et Codex. Il aide à suivre des objectifs, préparer
+les recettes dans EMI, retrouver les ingrédients dans les coffres et suivre les fabrications
+GregTech. Il répond aussi aux questions sur les objets et aide à retrouver les filons connus.
+
+Les deux moteurs utilisent **le même mod et la branche `main`**. Le compte IA se choisit sur
+chaque poste. Les conversations, relevés de coffres et objectifs restent locaux.
 
 ## Démarrer
 
@@ -68,3 +71,9 @@ et les guides dans `docs/`. Les lanceurs restent à la racine pour les installat
 Travailler sur une branche issue de `main`, valider, fusionner puis publier sur `main`.
 Les commandes et le parcours à deux sont dans [le guide de collaboration](docs/collaboration.md).
 Ne jamais ajouter les configurations privées, sessions, journaux ou données de jeu au dépôt.
+
+## Contributeurs
+
+- [B-DAGBERT](https://github.com/B-DAGBERT), créateur du projet.
+- [Damien Alengrin](https://github.com/damien34760), contributeur à la prise en charge de Codex,
+  à l’intégration EMI et au suivi des fabrications GregTech.
