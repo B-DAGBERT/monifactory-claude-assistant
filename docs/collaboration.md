@@ -29,8 +29,8 @@ git push origin main
 ```
 
 Si quelqu’un a publié entre-temps, récupérer son travail et résoudre la divergence avant de pousser.
-Ne pas utiliser de push forcé, ni de reset pour effacer des modifications locales. Les vérifications
-GitHub de `main` doivent rester vertes ; elles utilisent des CLI simulés et aucun compte IA personnel.
+Ne pas utiliser de push forcé ni de reset pour effacer des modifications locales. Les vérifications
+se lancent localement et les tests des moteurs utilisent des CLI simulés.
 
 ## Recevoir la version sur chaque poste
 

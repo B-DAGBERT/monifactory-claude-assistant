@@ -13,8 +13,8 @@ lors d'une reconnexion restent à qualifier sur des copies de test.
 Deux racines sont fournies explicitement :
 
 - La racine Python du dépôt : fichiers racine `*.json`, `*.jsonl`, `*.json.*`,
-  `*.jsonl.*`, `.*.json-*.tmp`, `assistant.log*`, et contenu complet des dossiers
-  `backups/`, `captures/`, `.runtime/`.
+  `*.jsonl.*`, `.*.json-*.tmp`, `.*.jsonl-*.tmp`, `assistant.log*`, et contenu complet des dossiers
+  `backups/`, `captures/`, `.runtime/`, `mondes/`.
 - Le dossier exact `kubejs/assistant` de l'instance : **tous** les fichiers, y compris
   formats inconnus, exports, archives de filons, dossiers vides et fichiers temporaires.
 
