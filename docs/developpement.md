@@ -360,17 +360,31 @@ jour à la réouverture, supprimé pour une machine cassée/remplacée dans un c
 d’un changement de connexion/dimension. Le client ne garantit pas le contenu d’une machine fermée
 modifiée à distance par un autre joueur.
 
-## Relevés et planification partagés (shared.38)
+## Relevés et planification partagés
 
 Le script KubeJS serveur annonce les chunks entièrement transmis dans `chunks_complets`.
 Une erreur de lecture, une limite d’inventaire ou un retrait de blocs pour tenir dans le message
 invalide la couverture du chunk. Les relevés v1 fournissent des observations positives, les
 versions suivantes permettent aussi de confirmer une omission dans un chunk couvert.
 
-Pour un déploiement neuf, copier [le script v3](../serveur/assistant_ia_serveur.js) dans
-`kubejs/server_scripts` sur l’hôte et redémarrer le serveur. Le script v3 lit les chunks déjà
-chargés. Il transmet les inventaires vides et écarte les comptages partiels. Le paquet est borné
-et découpé en fragments adaptés aux chaînes NBT. Le script client existant recompose les fragments.
+Sur le serveur, copier [le script v4](../serveur/assistant_ia_serveur.js) dans
+`kubejs/server_scripts` en remplaçant la copie existante, puis redémarrer le serveur.
+Le client existant recompose les fragments du paquet.
+
+Le script inspecte les chunks déjà chargés. Il répartit les relevés des joueurs sur plusieurs
+ticks, à raison d’au plus un joueur par tick et un relevé par joueur au maximum tous les 60
+ticks. Les signaux de présence prolongent l’inscription sans avancer le prochain relevé.
+
+Avant toute lecture de stock ou d’état d’une machine, le script applique le droit d’interaction
+FTB Chunks du joueur destinataire. Les deux moitiés des coffres doubles vanilla et Sophisticated
+Storage doivent être chargées et accessibles. Quand la zone non revendiquée est protégée, elle
+est ignorée pour éviter les messages d’interaction du serveur. Un contrôle indisponible empêche
+la lecture.
+
+Le scan automatique ignore aussi les coffres vanilla verrouillés, les blocs dont le butin vanilla
+reste à générer, Lootr, les coffres Ender et les contrôleurs ou connecteurs qui agrègent le
+stockage distant de Sophisticated Storage et Functional Storage. Un relevé complet retire du
+stock serveur mémorisé les coffres filtrés dans les chunks qu’il couvre.
 
 Python valide la structure du relevé avant de fusionner les observations. Il utilise la date
 d’écriture locale du fichier reçu pour comparer les relevés du serveur et les ouvertures de

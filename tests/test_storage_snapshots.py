@@ -101,6 +101,226 @@ class StorageSnapshotTests(unittest.TestCase):
                 self.assertEqual(scan.call_count, 2)
                 self.assertIsNone(service.view(bridge, storage, b, 601))
 
+    def run_server_script(self, before, after):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node.js requis pour exécuter le script KubeJS simulé")
+        server = Path(__file__).resolve().parents[1] / "serveur/assistant_ia_serveur.js"
+        result = subprocess.run(
+            [node, "-"],
+            input=before + server.read_text() + after,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_server_spreads_simultaneous_players_and_ignores_disconnected_or_expired_players(self):
+        result = self.run_server_script(
+            """
+        var Platform = {isLoaded: () => false};
+        var Java = {loadClass: () => function () {}};
+        var signal, tick;
+        var NetworkEvents = {dataReceived: (_, fn) => { signal = fn; }};
+        var ServerEvents = {tick: fn => { tick = fn; }};
+        """,
+            """
+        var envois = [];
+        var niveau = {
+            dimension: 'test:world',
+            getChunkSource: () => ({getChunkNow: () => null})
+        };
+        function joueur(nom) {
+            return {
+                getName: () => ({getString: () => nom}),
+                getX: () => 0, getY: () => 64, getZ: () => 0,
+                level: niveau, sendData: () => { envois.push([ticksServeur, nom]); }
+            };
+        }
+        var a = joueur('a'), b = joueur('b'), c = joueur('c');
+        var event = {server: {players: [a, b, c]}};
+        [a, b, c].forEach(p => signal({player: p}));
+        for (let i = 1; i <= 120; i++) {
+            if (i % 10 === 0) signal({player: a});
+            if (i === 90) event.server.players = [a, b];
+            tick(event);
+        }
+        var initial = envois.slice();
+        for (let i = 121; i <= 690; i++) {
+            if (i % 10 === 0) signal({player: a});
+            tick(event);
+        }
+        console.log(JSON.stringify({initial: initial, derniers: envois.filter(e => e[0] > 600)}));
+        """,
+        )
+        self.assertEqual(result["initial"], [[1, "a"], [21, "b"], [41, "c"], [61, "a"], [81, "b"]])
+        self.assertTrue(result["derniers"])
+        self.assertEqual({name for _, name in result["derniers"]}, {"a"})
+
+    def test_server_scans_only_authorized_physical_inventories(self):
+        result = self.run_server_script(
+            """
+        var audience = '';
+        var managerDisponible = true;
+        var apiCassee = false;
+        var zoneNonRevendiquee = false;
+        var ftbPresent = true;
+        var bloquees = [];
+        var politique = {};
+        var main = {};
+        var manager = {
+            getChunk: (_, pos) => null,
+            shouldPreventInteraction: function (player, hand, pos, protection, entity) {
+                if (hand !== main || protection !== politique || entity !== null) {
+                    throw Error('mauvais appel FTB Chunks');
+                }
+                bloquees.push(pos);
+                return player.getName().getString() !== 'membre' && [1, 16, 18].includes(pos);
+            }
+        };
+        var classes = {
+            'dev.ftb.mods.ftbchunks.api.FTBChunksAPI': {
+                api: () => ({
+                    isManagerLoaded: () => managerDisponible,
+                    getManager: () => manager
+                })
+            },
+            'dev.ftb.mods.ftbchunks.FTBChunksWorldConfig': {
+                DISABLE_PROTECTION: {get: () => false},
+                noWilderness: () => zoneNonRevendiquee
+            },
+            'dev.ftb.mods.ftbchunks.api.Protection': {INTERACT_BLOCK: politique},
+            'net.minecraft.world.InteractionHand': {MAIN_HAND: main},
+            'dev.ftb.mods.ftblibrary.math.ChunkDimPos': function () {}
+        };
+        var Platform = {isLoaded: id => id === 'ftbchunks' && ftbPresent};
+        var Java = {loadClass: function (name) {
+            if (name === 'java.util.ArrayList') return function () {};
+            if (apiCassee || !classes[name]) throw Error('API indisponible');
+            return classes[name];
+        }};
+        var NetworkEvents = {dataReceived: function () {}};
+        var ServerEvents = {tick: function () {}};
+        """,
+            """
+        var lectures = {};
+        var recuperations = {};
+        var chests = {};
+        function coffre(x, id, type, tags) {
+            var bloc = {
+                x: x, y: 64, z: 0, pos: x, id: id,
+                properties: {get: key => key === 'type' ? type : 'north'},
+                entityData: {
+                    m_128461_: key => tags[key] || '',
+                    m_128441_: key => tags[key] != null
+                }
+            };
+            Object.defineProperty(bloc, 'inventory', {get: function () {
+                lectures[audience].push(x);
+                return {getSlots: () => 1, getStackInSlot: () => ({
+                    isEmpty: () => false, id: 'test:objet_' + x, getCount: () => 5
+                })};
+            }});
+            chests[x] = bloc;
+            return bloc;
+        }
+        coffre(0, 'minecraft:chest', 'single', {});
+        coffre(1, 'minecraft:chest', 'single', {});
+        coffre(2, 'minecraft:chest', 'single', {Lock: 'secret'});
+        coffre(3, 'minecraft:barrel', 'single', {LootTable: 'test:loot'});
+        coffre(4, 'lootr:lootr_chest', 'single', {});
+        coffre(5, 'enderchests:ender_chest', 'single', {});
+        coffre(6, 'functionalstorage:framed_controller_extension', 'single', {});
+        coffre(7, 'sophisticatedstorage:oak_storage_connector', 'single', {});
+        coffre(8, 'functionalstorage:oak_1', 'single', {});
+        coffre(9, 'sophisticatedstorage:chest', 'single', {});
+        coffre(10, 'minecraft:ender_chest', 'single', {});
+        var gauche = coffre(15, 'minecraft:chest', 'left', {});
+        var droite = coffre(16, 'minecraft:chest', 'right', {});
+        gauche.east = droite;
+        droite.west = gauche;
+        gauche = coffre(17, 'sophisticatedstorage:chest', 'left', {});
+        droite = coffre(18, 'sophisticatedstorage:chest', 'right', {});
+        gauche.east = droite;
+        droite.west = gauche;
+        gauche = coffre(19, 'minecraft:trapped_chest', 'left', {});
+        droite = coffre(20, 'minecraft:trapped_chest', 'right', {Lock: 'cle'});
+        gauche.east = droite;
+        droite.west = gauche;
+
+        var niveau = {
+            dimension: 'test:world',
+            getChunkSource: () => ({getChunkNow: function (x, z) {
+                if (z !== 0 || (x !== 0 && x !== 1)) return null;
+                return {getBlockEntitiesPos: () => Object.keys(chests).map(Number).filter(
+                    pos => Math.floor(pos / 16) === x
+                )};
+            }}),
+            getBlock: function (x) { recuperations[audience].push(x); return chests[x]; },
+            m_46749_: x => x !== 16 || audience !== 'voisin_decharge'
+        };
+        var trames = {};
+        function scanner(nom, joueur) {
+            audience = nom;
+            lectures[nom] = [];
+            recuperations[nom] = [];
+            scannerPour({
+                getName: () => ({getString: () => joueur}),
+                getX: () => 0, getZ: () => 0,
+                level: niveau, sendData: (_, data) => { trames[nom] = JSON.parse(data.p0); }
+            }, []);
+        }
+        scanner('externe', 'externe');
+        scanner('membre', 'membre');
+        scanner('voisin_decharge', 'membre');
+        managerDisponible = false;
+        scanner('ftb_arret', 'membre');
+        managerDisponible = true;
+        zoneNonRevendiquee = true;
+        bloquees = [];
+        scanner('zone_protegee', 'externe');
+        var tentativesZoneProtegee = bloquees.length;
+        zoneNonRevendiquee = false;
+        ftbChunks = null;
+        apiCassee = true;
+        scanner('ftb_erreur', 'membre');
+        ftbPresent = false;
+        scanner('sans_ftb', 'externe');
+        console.log(JSON.stringify({
+            trames: trames, lectures: lectures, recuperations: recuperations,
+            tentativesZoneProtegee: tentativesZoneProtegee
+        }));
+        """,
+        )
+        self.assertEqual(result["tentativesZoneProtegee"], 0)
+        expected = {
+            "externe": {0, 8, 9},
+            "membre": {0, 1, 8, 9, 15, 16, 17, 18},
+            "voisin_decharge": {0, 1, 8, 9, 16, 17, 18},
+            "ftb_arret": set(),
+            "zone_protegee": set(),
+            "ftb_erreur": set(),
+            "sans_ftb": {0, 1, 8, 9, 15, 16, 17, 18},
+        }
+        for player, allowed in expected.items():
+            with self.subTest(player=player):
+                frame = result["trames"][player]
+                self.assertEqual({entry["p"][0] for entry in frame["blocs"]}, allowed)
+                self.assertEqual(set(result["lectures"][player]), allowed)
+                self.assertEqual(frame["chunks_complets"], [[0, 0], [1, 0]])
+        self.assertTrue({1, 16, 18}.isdisjoint(result["recuperations"]["externe"]))
+        self.assertEqual(result["recuperations"]["ftb_erreur"], [])
+
+        world = object.__new__(World)
+        world.last_t, world.blocks = 0, {}
+        old = {**result["trames"]["membre"], "t": 1000}
+        new = {**result["trames"]["externe"], "t": 2000}
+        with patch("monifactory_assistant.game.world.atomic_json"):
+            self.assertTrue(world.update(old))
+            self.assertTrue(world.update(new))
+        self.assertEqual({chest["x"] for chest in world.containers()}, expected["externe"])
+
     def test_server_truncation_invalidates_only_affected_chunks(self):
         node = shutil.which("node")
         if not node:
@@ -109,13 +329,13 @@ class StorageSnapshotTests(unittest.TestCase):
         source = server.read_text().replace("const TAILLE_MAX = 600000", "const TAILLE_MAX = 1100")
         harness = (
             """
+        var Platform = {isLoaded: () => false};
         var Java = {loadClass: () => function () {}};
         var NetworkEvents = {dataReceived: function () {}};
         var ServerEvents = {tick: function () {}};
         """
             + source
             + """
-        presents.test = 0;
         const p = {
             getName: () => ({getString: () => 'test'}), getX: () => 0, getZ: () => 0,
             server: {players: []},
@@ -130,14 +350,14 @@ class StorageSnapshotTests(unittest.TestCase):
                     }
                 }),
                 getBlock: x => ({
-                    x: x, y: 64, z: 0, id: 'minecraft:chest',
+                    x: x, y: 64, z: 0, id: 'test:chest',
                     inventory: {getSlots: () => 1, getStackInSlot: () => ({
                         isEmpty: () => false, id: 'test:' + '堆'.repeat(35), getCount: () => 7
                     })}
                 })
             }
         };
-        scannerPour(p);
+        scannerPour(p, []);
         """
         )
         run = subprocess.run(
@@ -157,13 +377,13 @@ class StorageSnapshotTests(unittest.TestCase):
         source = server.read_text()
         harness = (
             """
+        var Platform = {isLoaded: () => false};
         var Java = {loadClass: () => function () {}};
         var NetworkEvents = {dataReceived: function () {}};
         var ServerEvents = {tick: function () {}};
         """
             + source
             + """
-        presents.test = 0;
         const chunks = {
             '0,0': {m_5928_: () => [0]},
             '1,0': {m_5928_: () => [16]},
@@ -186,10 +406,10 @@ class StorageSnapshotTests(unittest.TestCase):
                 dimension: 'test:world',
                 getChunk: () => { charges++; throw Error('chargement forcé'); },
                 m_7726_: () => ({m_7131_: (x, z) => chunks[x + ',' + z]}),
-                getBlock: x => ({x: x, y: 64, z: 0, id: 'minecraft:chest', inventory: invs[x]})
+                getBlock: x => ({x: x, y: 64, z: 0, id: 'test:chest', inventory: invs[x]})
             }
         };
-        scannerPour(p);
+        scannerPour(p, []);
         console.log(JSON.stringify({paquet: paquet, charges: charges}));
         """
         )
@@ -200,7 +420,7 @@ class StorageSnapshotTests(unittest.TestCase):
         frame = json.loads(result["paquet"]["p0"])
         self.assertEqual(result["charges"], 0)
         self.assertEqual(frame["chunks_complets"], [[0, 0]])
-        self.assertEqual(frame["blocs"], [{"p": [0, 64, 0], "b": "minecraft:chest", "o": []}])
+        self.assertEqual(frame["blocs"], [{"p": [0, 64, 0], "b": "test:chest", "o": []}])
         world = object.__new__(World)
         world.last_t, world.blocks = 0, {}
         with patch("monifactory_assistant.game.world.atomic_json"):
@@ -278,6 +498,7 @@ class StorageSnapshotTests(unittest.TestCase):
         ]
         harness = (
             """
+        var Platform = {isLoaded: () => false};
         var Java = {loadClass: () => function () {}};
         var NetworkEvents = {dataReceived: function () {}};
         var ServerEvents = {tick: function () {}};
@@ -294,7 +515,6 @@ class StorageSnapshotTests(unittest.TestCase):
             parseRaw: texte => ({getAsJsonObject: () => JSON.parse(texte)}),
             write: (_, valeur) => { releve = valeur; }
         };
-        presents.test = 0;
         const item = 'test:' + '物'.repeat(22000);
         let tailles = [];
         scannerPour({
@@ -316,12 +536,12 @@ class StorageSnapshotTests(unittest.TestCase):
                 dimension: 'test:world',
                 getChunkSource: () => ({getChunkNow: (x, z) =>
                     x === 0 && z === 0 ? {getBlockEntitiesPos: () => [0]} : null}),
-                getBlock: () => ({x: 0, y: 64, z: 0, id: 'minecraft:chest',
+                getBlock: () => ({x: 0, y: 64, z: 0, id: 'test:chest',
                     inventory: {getSlots: () => 1, getStackInSlot: () => ({
                         isEmpty: () => false, id: item, getCount: () => 1
                     })}})
             }
-        });
+        }, []);
         console.log(JSON.stringify({tailles: tailles, intact: releve.blocs[0].o[0][0] === item}));
         """
         )

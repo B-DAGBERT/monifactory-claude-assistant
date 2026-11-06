@@ -1,5 +1,5 @@
 // Assistant Monifactory, côté serveur : regarde autour de chaque joueur qui a l'assistant (coffres, machines
-// GregTech, boilers, multiblocs) et lui envoie ce qu'il voit toutes les 3 secondes.
+// GregTech, boilers, multiblocs) et répartit les relevés sur les ticks du serveur.
 // LECTURE SEULE : ce script ne modifie rien dans le monde.
 // À déposer dans kubejs/server_scripts/ sur le serveur, puis /reload (ou redémarrer le serveur).
 //
@@ -7,19 +7,24 @@
 // - les listes internes de Java refusent les appels : liste() les copie dans une ArrayList ;
 // - pas de let/const dans un bloc à l'intérieur d'une fonction fléchée : utiliser des fonctions normales.
 
-const VERSION_SERVEUR = 3
+const VERSION_SERVEUR = 4
 const RAYON_CHUNKS = 2            // 5 x 5 chunks autour du joueur (80 blocs de côté)
-const INTERVALLE = 60             // en ticks : toutes les 3 secondes
+const INTERVALLE = 60             // intervalle minimal par joueur, en ticks
 const PRESENCE_MAX = 600         // ticks sans signe de vie du client
 const TAILLE_PARTIE = 20000       // 3 octets max par unité UTF-16 dans une chaîne NBT
 const TAILLE_MAX = 600000         // plafond en octets pour le contenu UTF modifié du relevé
 const CASES_MAX = 200             // cases lues au plus par inventaire
 const IGNORES = /pipe|cable|wire|conduit|frame|_sign|banner|bed$|skull|head$/
 
+// Ces capacités exposent un stock personnel ou le stock d'autres blocs à distance.
+const STOCKS_LIES = /^(?:lootr:|enderchests:|minecraft:ender_chest$|sophisticatedstorage:(?:controller$|.*storage_connector$)|functionalstorage:(?:framed_)?(?:storage_controller|controller_extension)$)/
+const COFFRES_DOUBLES = /^(?:minecraft:(?:trapped_)?chest|sophisticatedstorage:(?:.*_)?chest)$/
 const ArrayList = Java.loadClass('java.util.ArrayList')
 let ticksServeur = 0
-const presents = Object.create(null) // nom du joueur -> dernier tick de présence
-let erreursServeur = []
+let prochainEnvoi = 0
+const presents = Object.create(null) // nom du joueur -> dernier signal et échéance de scan
+const erreursServeur = []
+let ftbChunks = null
 
 function noterErreurServeur(ou, e) {
   const msg = (ou + ' : ' + e).slice(0, 256)
@@ -74,6 +79,71 @@ function premiere(ou, lectures) {
   }
   if (derniere != null) noterErreurServeur(ou, derniere)
   return null
+}
+
+// ---------- Droits de lecture ----------
+
+function autorisationScan(joueur, level) {
+  try {
+    if (!Platform.isLoaded('ftbchunks')) return () => true
+    if (ftbChunks == null) {
+      ftbChunks = {
+        api: Java.loadClass('dev.ftb.mods.ftbchunks.api.FTBChunksAPI'),
+        config: Java.loadClass('dev.ftb.mods.ftbchunks.FTBChunksWorldConfig'),
+        interaction: Java.loadClass('dev.ftb.mods.ftbchunks.api.Protection').INTERACT_BLOCK,
+        main: Java.loadClass('net.minecraft.world.InteractionHand').MAIN_HAND,
+        ChunkDimPos: Java.loadClass('dev.ftb.mods.ftblibrary.math.ChunkDimPos')
+      }
+    }
+    let api = ftbChunks.api.api()
+    if (!api.isManagerLoaded()) return () => false
+    let manager = api.getManager()
+    if (ftbChunks.config.DISABLE_PROTECTION.get() == true) return () => true
+    let zoneNonRevendiqueeProtegee = ftbChunks.config.noWilderness(joueur)
+    return function (pos) {
+      try {
+        // FTB affiche un message en zone non revendiquée protégée. Le scan y reste silencieux.
+        if (zoneNonRevendiqueeProtegee && manager.getChunk(new ftbChunks.ChunkDimPos(level, pos)) == null) {
+          return false
+        }
+        return manager.shouldPreventInteraction(joueur, ftbChunks.main, pos, ftbChunks.interaction, null) === false
+      } catch (e) {
+        noterErreurServeur('droits FTB Chunks', e)
+        return false
+      }
+    }
+  } catch (e) {
+    noterErreurServeur('droits FTB Chunks', e)
+    return () => false
+  }
+}
+
+function verrouilleOuButin(bloc) {
+  const nbt = bloc.entityData
+  if (nbt == null) return true
+  const verrou = typeof nbt.getString == 'function' ? nbt.getString('Lock') : nbt.m_128461_('Lock')
+  const butin = typeof nbt.contains == 'function' ? nbt.contains('LootTable') : nbt.m_128441_('LootTable')
+  return str(verrou) !== '' || butin == true
+}
+
+function stockageLisible(bloc, id, level, autorise) {
+  if (STOCKS_LIES.test(id)) return false
+  const vanilla = id.startsWith('minecraft:')
+  if (vanilla && verrouilleOuButin(bloc)) return false
+  if (!COFFRES_DOUBLES.test(id)) return true
+
+  const proprietes = bloc.properties
+  const type = str(proprietes.get('type'))
+  if (type === 'single') return true
+  if (type !== 'left' && type !== 'right') return false
+  const directions = ['north', 'east', 'south', 'west']
+  const facing = directions.indexOf(str(proprietes.get('facing')))
+  if (facing < 0) return false
+  const autre = bloc[directions[(facing + (type === 'left' ? 1 : 3)) % 4]]
+  const pos = autre.pos
+  const charge = typeof level.isLoaded == 'function' ? level.isLoaded(pos) : level.m_46749_(pos)
+  return charge == true && autorise(pos) && str(autre.id) === id
+    && (!vanilla || !verrouilleOuButin(autre))
 }
 
 // ---------- Ce qu'il y a dans un chunk ----------
@@ -141,10 +211,11 @@ function etatMachine(mm) {
   return m
 }
 
-function decrireBloc(level, pos, couverture) {
+function decrireBloc(level, pos, couverture, autorise) {
+  if (!autorise(pos)) return null
   const bloc = level.getBlock(pos)
   const id = str(bloc.id)
-  if (IGNORES.test(id)) return null
+  if (IGNORES.test(id) || !stockageLisible(bloc, id, level, autorise)) return null
   const info = { p: [Number(bloc.x), Number(bloc.y), Number(bloc.z)], b: id }
   let mm = null
   try { mm = bloc.entity.metaMachine } catch (e) { /* pas une machine GregTech */ }
@@ -167,14 +238,14 @@ function decrireBloc(level, pos, couverture) {
 
 // ---------- Envoi au joueur ----------
 
-function scannerPour(p) {
+function scannerPour(p, connectes) {
   const nom = str(p.getName().getString())
-  if (presents[nom] == null || ticksServeur - presents[nom] > PRESENCE_MAX) return
   const level = p.level
   const source = premiere('source de chunks', [() => level.getChunkSource(), () => level.m_7726_()])
   if (source == null) return
   const px = p.getX(), pz = p.getZ()
   const cx = Math.floor(px / 16), cz = Math.floor(pz / 16)
+  const autorise = autorisationScan(p, level)
   let blocs = []
   const couverts = {}
   for (let dx = -RAYON_CHUNKS; dx <= RAYON_CHUNKS; dx++) {
@@ -189,7 +260,7 @@ function scannerPour(p) {
       let couverture = { complet: true }
       for (let i = 0; i < positions.length; i++) {
         try {
-          let info = decrireBloc(level, positions[i], couverture)
+          let info = decrireBloc(level, positions[i], couverture, autorise)
           if (info == null) continue
           if (!info.p.every(Number.isSafeInteger)
               || Math.floor(info.p[0] / 16) !== x || Math.floor(info.p[2] / 16) !== z) {
@@ -206,7 +277,7 @@ function scannerPour(p) {
     }
   }
   const joueurs = []
-  liste(p.server.players).forEach(autre => {
+  connectes.forEach(autre => {
     if (str(autre.getName().getString()) != nom) {
       joueurs.push({ nom: str(autre.getName().getString()), dimension: str(autre.level.dimension),
         x: Math.floor(autre.getX()), y: Math.floor(autre.getY()), z: Math.floor(autre.getZ()) })
@@ -244,16 +315,52 @@ function scannerPour(p) {
   p.sendData('assistant_ia_monde', data)
 }
 
-// Le script client de l'assistant se signale toutes les 10 secondes : on ne travaille que pour lui
-NetworkEvents.dataReceived('assistant_ia_present', event => essayerServeur('présence', () => {
-  presents[str(event.player.getName().getString())] = ticksServeur
-}))
+// Un nouveau signal prolonge la présence et conserve l'échéance du prochain relevé.
+NetworkEvents.dataReceived('assistant_ia_present', function (event) {
+  essayerServeur('présence', function () {
+    const nom = str(event.player.getName().getString())
+    let presence = presents[nom]
+    if (presence == null) {
+      presence = { prochain: ticksServeur + 1 }
+      presents[nom] = presence
+    }
+    presence.signal = ticksServeur
+  })
+})
 
 ServerEvents.tick(function (event) {
   ticksServeur++
-  if (ticksServeur % INTERVALLE != 0) return
+  if (ticksServeur < prochainEnvoi) return
+
+  let suivant = null
+  let echeance = ticksServeur + 1
+  let actifs = 0
   const noms = Object.keys(presents)
-  for (let i = 0; i < noms.length; i++)
-    if (ticksServeur - presents[noms[i]] > PRESENCE_MAX) delete presents[noms[i]]
-  liste(event.server.players).forEach(p => essayerServeur('scan', () => scannerPour(p)))
+  for (let i = 0; i < noms.length; i++) {
+    let nom = noms[i]
+    let presence = presents[nom]
+    if (ticksServeur - presence.signal > PRESENCE_MAX) {
+      delete presents[nom]
+      continue
+    }
+    actifs++
+    if (presence.prochain < echeance) {
+      suivant = nom
+      echeance = presence.prochain
+    }
+  }
+  if (suivant == null) return
+
+  essayerServeur('scan', function () {
+    const joueurs = liste(event.server.players)
+    const joueur = joueurs.find(p => str(p.getName().getString()) === suivant)
+    if (joueur == null) {
+      delete presents[suivant]
+      return
+    }
+    // Servir l'échéance la plus ancienne, avec au plus un scan par tick même en surcharge.
+    presents[suivant].prochain = ticksServeur + INTERVALLE
+    prochainEnvoi = ticksServeur + Math.max(1, Math.floor(INTERVALLE / actifs))
+    scannerPour(joueur, joueurs)
+  })
 })
