@@ -1,5 +1,130 @@
 # Intégration V2 dans Monifactory Expert
 
+## Stabilisation du candidat
+
+| Référence vérifiée       | Commit de départ                           | État                                                      |
+| ------------------------ | ------------------------------------------ | --------------------------------------------------------- |
+| `origin/main`            | `5d280c3a949f4a6521fb1a4eed0303550dd25ec9` | Référence commune au Mac et au PC                         |
+| `codex/v2-integration`   | `2c734d817667401d908153c8b3e955e96ccb2516` | 16 commits propres, aucun retard sur `main`               |
+| `codex/r5-consent`       | `5105320384d5e9e7f56eb58e2662831f07f1e329` | 5 commits propres, indépendant de V2                      |
+| `codex/v2-stabilisation` | Branche issue de `2c734d8`                 | Candidat isolé, Forge `1.0.0-shared.42`, KubeJS client 12 |
+
+Les deux branches candidates de départ étaient locales et leurs copies de travail propres. Le
+checkout principal contient un dossier `.serena/` non suivi. Le lot 2,
+le script serveur et les workflows ne font pas partie de ce candidat.
+
+| Domaine                            | Preuve à l’entrée                                              | Objectif de stabilisation                              |
+| ---------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------ |
+| EMI, Production et projet en pause | Minecraft Expert Mac, avec agent du laboratoire                | Démarrage conforme, nouveau JAR et échanges réels      |
+| Résultat périmé                    | Fichiers et application locale, contournement par réessai      | Refuser l’ancien marqueur même lorsqu’il reste lisible |
+| Stocks et fabrications en cours    | Inventaire physique en jeu, autres sources sur fixtures        | Cas distribués, preuve de fraîcheur et de réception    |
+| R5                                 | Confirmation et sauvegarde d’un faux projet dans Minecraft Mac | Coupures, rejeu, fenêtres de consentement              |
+| IA                                 | Transports simulés Codex et Claude                             | CLI autorisés sur profils d’essai                      |
+| Windows 11 et multijoueur          | Parcours préparés                                              | Essais réels et verrou NTFS                            |
+
+### BUG-01 · Chargement KubeJS
+
+Dans la copie initiale, Quark avait régénéré `config/quark-common.toml` avec ses valeurs par
+défaut. **Color Runes** y valait `true`, alors que la configuration Expert installée le met à
+`false`. Au rechargement des recettes, le thread de chargement attendait le pool de
+`RecipesEventJS.runInParallel`. Un worker traversait `SmithingRuneRecipe`, puis MoreJS,
+et attendait le contexte Rhino détenu par le thread de chargement. Les dumps identifient
+le cycle d’attente. `allowAsyncStreams=false` seul ne lève pas ce chemin de KubeJS.
+
+Le test sur Apple Silicon utilise Minecraft 1.20.1, Monifactory 0.13.8, Forge 47.4.13,
+Quark 4.0-462, KubeJS 2001.6.5-build.16 et Rhino 2001.2.3-build.10. Les JAR concernés et les
+190 scripts de démarrage et de recettes du pack concordaient avec l’instance de référence.
+La correction consiste à restaurer les fichiers publics `config/quark-common.toml` et
+`kubejs/config/common.properties` du même pack dans la copie de test. Cette configuration
+conserve `allowAsyncStreams=true`. Aucun script n’a été modifié et aucune fonction n’a été
+désactivée pour le démarrage. L’agent JVM temporaire a été retiré de la commande de lancement.
+Les deux fichiers ont été restaurés ensemble. La valeur Quark seule n’a pas été testée par
+une seconde bascule indépendante.
+
+Sur cette copie, le candidat `.41` a terminé l’initialisation des recettes, ouvert EMI et
+affiché les plans, le diagnostic et le projet en pause via les boutons natifs. La commande
+du processus confirme l’absence de `-javaagent`. Le JAR V1.5 `.40` recompilé au `5d280c3`
+a chargé les recettes dans le même environnement. Son SHA-256 est
+`0353fb16001572ab242b612011061ee06ce427d848324f2cbfdf37974127f834`. Ces essais isolent le blocage à la
+configuration du banc. Pour reproduire, exporter le profil du pack en gardant ses
+configurations publiques, écarter les sauvegardes et les sessions, puis créer un nouveau monde
+Expert. Contrôler `Color Runes`, le fichier de configuration KubeJS et la ligne de commande
+avant de conclure sur un échec de recettes.
+
+### BUG-02 · Ancien marqueur lisible
+
+Le test de reproduction a conservé `catalogue_production_etat.json` à `pret`, tout en retirant
+la possibilité d’interroger le client. `ProductionService.context` renvoyait auparavant les
+quantités et le diagnostic. Une écriture de révocation retardée ne pouvait donc pas protéger
+le dialogue.
+
+Python exige désormais une preuve positive à chaque consommation du contexte EMI. La preuve
+reprend le monde, la session, la dimension, la source, la génération et l’empreinte du catalogue.
+Un identifiant à usage unique distingue chaque contrôle. Minecraft répond à partir de l’arbre
+et de la connexion en mémoire. Les réponses manquantes, illisibles, retardées ou portant un
+autre identifiant n’autorisent aucun affichage courant ni transmission. La demande et sa
+réponse sont deux fichiers de liaison à remplacement atomique. Ils gardent une
+seule valeur chacun et ne rejoignent ni la file des commandes ni les sauvegardes.
+
+La révision du projet et la demande restent vérifiées côté Python avant et après l’échange.
+Le résultat expire après trois minutes. Un flux d’explication est revérifié avant publication,
+et Minecraft masque en mémoire un aperçu dont le catalogue a changé. La voix lit la réponse
+V2 complète après contrôle. La Discussion habituelle conserve son flux. Une vérification déjà
+en cours peut différer un aperçu concurrent. Elle ne révoque pas un résultat valide.
+
+Les tests reproduisent l’ancien marqueur, un reçu rejoué, les refus d’ouverture et d’écriture,
+la concurrence et le redémarrage de Python. Le contrat Java suspend le worker de révocation
+et constate que le marqueur ancien reste lisible, sans pouvoir produire de nouvelle preuve ni
+maintenir l’aperçu. La reprise après une nouvelle publication est testée. La limite d’attente
+du contrôle est de 450 ms par échange. Aucun relevé ancien ne remplace un stock indisponible.
+
+Le JAR `.42` de SHA-256 `5d6516f6ffa57ae116d7f91fcf4326155330b153345e782cbbbf62bd8e441737`
+a été chargé sans agent, avec le script client 12 et l’assistant Python du candidat. Le test
+a rendu le seul marqueur du laboratoire immuable avec `chflags uchg`, puis a changé de branche
+EMI. Le fichier est resté `pret` et identique octet pour octet. La nouvelle demande de preuve
+n’a reçu aucun accusé correspondant. La question V2 a été refusée avant l’appel du fournisseur
+simulé. Après restauration de l’attribut du fichier, la révocation a été publiée et le calcul
+au marteau a donné 9 cuivre et 3 étain. Le projet fictif en pause est resté identique.
+
+Sur ce passage, le pont a rendu la cintreuse en 0,91 s et le marteau en 1,06 s, de la demande
+au résultat observable. Il s’agit de deux mesures en jeu avec les ticks et le pont complet.
+Un verrou macOS immuable et une simulation `PermissionError` ne constituent pas un essai NTFS.
+
+Le passage final a aussi alloué exactement 6 cuivre et 2 étain depuis les poches du joueur
+fictif, avec zéro manque. La déconnexion a vidé l’identité et invalidé le résultat et la preuve.
+La sonde de laboratoire appelait directement la fermeture du monde et a attendu indéfiniment
+le serveur intégré. L’événement de déconnexion et l’invalidation sont observés. Le cycle
+complet de reconnexion du JAR `.42` reste à rejouer avec le bouton normal. La reconnexion
+avait été observée sur `.41`.
+
+### Contrôles et décision
+
+| Contrôle                          | Résultat                                                                                                                                                           |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Suite complète macOS              | 627 tests réussis. Les tests d’origine sont conservés.                                                                                                             |
+| Scénarios EMI                     | 26 réussis.                                                                                                                                                        |
+| Forge et Java                     | JDK 17, compilation `.42`, format Java et contrats natifs réussis.                                                                                                 |
+| KubeJS, installation et formatage | Syntaxe Node, deux tests sur le Rhino du pack, Ruff, dépendances Python, `npm ci`, Prettier et `git diff --check` réussis.                                         |
+| Mac, client seul                  | Forge, KubeJS et EMI sans agent, plans bronze et stock physique, refus réel après verrou macOS.                                                                    |
+| Windows 11 et serveur à deux      | Non exécutés. Le verrou NTFS, les protections FTB et la séparation des deux installations restent à qualifier.                                                     |
+| Codex et Claude                   | Transports simulés dans le jeu. Un appel Codex réel éphémère vérifie l’explication des chiffres. Claude réel et le pont natif de bout en bout restent à qualifier. |
+
+Le durcissement est dans `48129e5`. La matrice des stocks et des lots est dans `11719f8`.
+Voir [la qualification des stocks, R5 et les mesures](qualification-v2.md). Le candidat est
+partiel et reste sur sa branche locale. Les commits V2 dépendent des contrats de cette branche.
+Aucun de ces changements ne déclenche une mise à jour des installations qui suivent `main`.
+
+Sur une deuxième instance temporaire, l’installateur a remplacé le JAR V1.5 `.40` par
+l’artefact `.42` exact et conservé un seul JAR. La restauration par le manifeste a remis
+le JAR et le script précédents avec leurs empreintes initiales. Le fichier fictif de plan
+est resté identique à travers l’installation et le retour arrière.
+
+L’appel réel autorisé a utilisé Codex CLI `0.167.0-alpha.3.2`, GPT-6.1 Sol et une session
+éphémère en lecture seule avec les seuls chiffres fictifs. Le coût annoncé était 6 cuivre
+et 2 étain, et le manque 2 cuivre et 1 étain. La réponse a conservé la pause et distingué
+le relevé historique du coffre de la disponibilité inconnue de la machine. Ce contrôle
+exerce le CLI réel hors jeu. Le test de liaison dans Minecraft utilise le fournisseur simulé.
+
 ## Préflight
 
 `origin/main` a été relu à `5d280c3a949f4a6521fb1a4eed0303550dd25ec9`. Le candidat
@@ -234,3 +359,72 @@ de session, les identifiants du monde et les données personnelles du joueur.
 4. Sur les deux postes, quitter le monde, arrêter puis relancer l’assistant et rouvrir le monde.
    La nouvelle connexion exige un nouveau calcul. Sur le serveur de test, vérifier séparément
    la visibilité des positions et les protections de coffre FTB pour deux profils fictifs.
+
+### Préparer le checkout Windows 11
+
+Dans le checkout du candidat, préparer un Python 3.12 avec Tk, Node et un JDK 17. Dans la
+session PowerShell de test, affecter `$TestInstance` à la racine de la copie jetable, puis
+contrôler les chemins avant toute installation.
+
+```powershell
+$env:MINECRAFT_DIR = $TestInstance
+python -m pip install -r requirements-dev.txt
+python codex_setup.py check
+python -m ruff format --check .
+python -m ruff check .
+npm ci
+npm run format:check
+python -m unittest discover -s tests -v
+python -m monifactory_assistant.commands.scenarios tous
+& .\mod\gradlew.bat -p mod checkJavaFormat
+node --check jeu/assistant_ia.js
+python codex_setup.py build
+python codex_setup.py install --dry-run
+```
+
+Si la simulation affiche la copie attendue et que ses processus sont fermés, lancer
+`python codex_setup.py install`. Relever `Get-FileHash` sur le JAR installé et sa version
+dans le journal du démarrage. Ouvrir le profil fictif, puis vérifier le script client 12,
+l’onglet Production, les deux routes du bronze et le tableau commun de scénarios.
+
+### Reproduire un marqueur lisible sous verrou NTFS
+
+Sur **une copie Windows jetable** en mode Expert, ouvrir Production avec le JAR `.42` et
+calculer les huit plaques à la cintreuse. Depuis PowerShell, ouvrir en lecture partagée le
+marqueur existant. Garder cette fenêtre ouverte et effectuer l’essai dans Minecraft avant
+d’appuyer sur Entrée pour libérer le fichier.
+
+```powershell
+$mark = Join-Path $TestInstance 'kubejs\assistant\catalogue_production_etat.json'
+$lock = [System.IO.File]::Open($mark, 'Open', 'Read', 'Read')
+try { Read-Host 'Effectuer les contrôles dans Minecraft puis appuyer sur Entrée' }
+finally { $lock.Dispose() }
+```
+
+`$TestInstance` doit désigner explicitement la racine de la copie. Avec le verrou en place,
+sélectionner le marteau de forge et vérifier que l’ancien résultat disparaît même si le
+fichier garde `pret`. En Discussion, demander « Explique le plan de production V2 ».
+La preuve doit être refusée avant appel au fournisseur. Répéter lors d’une réponse retardée
+sur un fournisseur de test. Libérer le verrou, attendre la révocation et relancer le calcul.
+Le nouveau résultat doit correspondre à la route au marteau. Rejouer lors d’un redémarrage
+de l’assistant et d’une reconnexion. Relever le résultat du contrôle, la latence et l’erreur
+éventuelle. Masquer les identifiants de session dans le relevé.
+
+### Essais à deux et retour arrière
+
+Sur un serveur de test configuré comme le serveur commun, les deux joueurs notent d’abord
+leurs positions et dimensions mutuelles. Alterner une déconnexion, une reconnexion et un
+passage de dimension. Tester un coffre accessible, puis un coffre identique dans une zone
+FTB protégée. Répartir un ingrédient entre un coffre double, un stockage Sophisticated et
+un backpack porté. Déplacer une pile et vérifier l’absence de double compte avec le relevé
+précédent. Distinguer les résultats EMI historiques et les observations réellement utilisables
+par Production. Chaque poste compare le hash de ses projets et sauvegardes avant et après.
+
+Pour tester le candidat, conserver un checkout et une instance à part. Fermer le jeu et
+l’assistant avant toute installation, compiler au JDK 17, noter le SHA du JAR et installer le
+JAR avec son script client. Vérifier un seul JAR assistant dans la copie. Relancer Python
+depuis le même checkout, puis Minecraft. L’installateur de test archive les fichiers remplacés
+et le manifeste `installation.json`. Pour restaurer la copie, fermer les deux processus,
+restaurer uniquement le couple JAR et script listé dans ce manifeste, puis relancer Python
+depuis son checkout correspondant. Le retour sur la référence commune se fait par commit
+correctif ou par revert coordonné. Voir [le guide de collaboration](collaboration.md).

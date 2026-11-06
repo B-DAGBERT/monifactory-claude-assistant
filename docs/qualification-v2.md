@@ -1,5 +1,89 @@
 # Qualification de Monifactory Assistant V2
 
+## Qualification du candidat stabilisé
+
+Le [rapport d’intégration](integration-v2.md) suit les commits, les deux anomalies prioritaires,
+les essais dans Minecraft et la procédure de reproduction Mac et Windows. Les tableaux suivants
+décrivent la portée de l’essai de stabilisation. Les sections historiques gardent leurs références.
+
+### Stocks et productions
+
+Les cas de `tests/test_production_stock_matrix.py` emploient les contrats réels du planificateur,
+des relevés datés et de leur rapprochement. Leurs entrées sont synthétiques, à l’exception des
+contrats d’acquisition exécutés sur de vrais fichiers temporaires. Le stock issu de chaque
+source, ses réservations et ses manques sont comparés par assertions. Les cas EMI précédents
+restent dans la suite de scénarios et ne sont pas remplacés par cette matrice.
+
+| Cas                            | Comparaison vérifiée                                                         | Niveau et limite                                                                                 |
+| ------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| STOCK-01 · Inventaire          | Stock physique porté déduit une seule fois                                   | Contrat et inventaire du joueur de test dans Minecraft                                           |
+| STOCK-02 · Sac                 | Le total synchronisé du joueur remplace l’ancien relevé et son sous-total    | Contrat et Java de backpack fermé. En jeu, compter le sac lorsqu’une réponse native l’atteste    |
+| STOCK-03 · Plusieurs coffres   | Quantités distinctes allouées sur un même relevé fiable                      | Contrat. La V2 native ne somme pas ce relevé et un inventaire sans révision de transfert commune |
+| STOCK-04 · Coffre double       | Fusion des moitiés attestées. Une chaîne de voisins reste ambiguë            | Contrat. Parcours Sophisticated Storage, Drawers et protections à rejouer en jeu                 |
+| STOCK-05 · Déplacement         | La nouvelle localisation prime sans compter l’ancien coffre                  | Contrat de provenance                                                                            |
+| STOCK-06 · Observation tardive | Un ancien paquet ne réactive pas la source périmée                           | Contrat de fraîcheur                                                                             |
+| STOCK-07 · Stock incomplet     | Manques relatifs aux relevés. Total inconnu                                  | Contrat et indication de la vue V2                                                               |
+| STOCK-08 · Réservation         | Quantité réservée déduite du physique utilisable                             | Contrat du registre de lots. Réservation native V2 indisponible                                  |
+| STOCK-09 · Mise en machine     | Une entrée machine ne devient ni stock de coffre ni lot déclaré              | Contrat. Transfert EMI natif inchangé                                                            |
+| STOCK-10 · Production attendue | Le produit reste en attente et n’alimente aucune allocation physique         | Contrat du registre de lots. Sortie native V2 indisponible                                       |
+| STOCK-11 · Réception partielle | Le reçu est cumulatif, idempotent et borné au lot                            | Contrat et Java des réceptions. Reçu natif V2 indisponible                                       |
+| STOCK-12 · Annulation          | Seule l’attente restante est libérée. L’objet physique reste compté une fois | Contrat et Java de suivi. Annulation en V2 indisponible                                          |
+| STOCK-13 · Circuit             | Le réglage virtuel ne consomme aucun circuit physique                        | Contrat et recettes GregTech chargées dans Minecraft                                             |
+| STOCK-14 · Fluide              | mB exacts. Un seau n’est pas assimilé à un volume disponible                 | Contrat et recettes chargées. Fluides de stock non attestés                                      |
+| STOCK-15 · Dimensions          | Les mêmes coordonnées restent séparées selon la dimension                    | Contrat d’isolation. Passage réel entre dimensions à rejouer                                     |
+
+Le moteur sépare les lots non commencés, réservés, envoyés et attendus, puis les réceptions
+partielles, complètes et les annulations. Le rapport natif ne dispose aujourd’hui que du physique
+attesté. `fabrication_emi.json` agrège des crédits d’avancement par objectif. Il ne prouve ni
+l’identité d’un lot, ni sa réservation, ni sa réception. Le test ouvre ce fichier temporaire
+avec l’adaptateur réel et vérifie que ses crédits ne sont promus dans aucun de ces états. Les
+quantités de lots sont donc inconnues dans Production. Les onglets EMI existants gardent leur
+suivi. Les tests de pause, reprise, changement de projet, révision, déconnexion et rejeu
+vérifient que le calcul V2 ne modifie ni le suivi ni la sauvegarde de progression.
+
+### Consentement R5 indépendant
+
+`codex/r5-consent` reste à `5105320`. Le précédent essai Minecraft a exercé la cible du
+dialogue, la confirmation, Annuler et Échap, la sauvegarde et le refus de l’injection IA.
+La présente revue a réussi 55 tests ciblés, puis sept vrais arrêts `SIGKILL` de processus
+sur un plan fictif. Les points d’arrêt suivent la réservation durable, la sauvegarde,
+l’écriture du temporaire à mi-chemin, sa synchronisation, le remplacement du primaire,
+le moment précédant le reçu et le reçu publié avant nettoyage. Chaque reprise rejoue la
+même demande trois fois et vérifie l’absence de second effacement, la sauvegarde exacte et
+le refus d’une preuve associée à une autre connexion.
+
+Le nouvel essai natif utilise le même JAR `.40` indépendant et une sonde réservée à la copie
+Expert. Après 32,3 s, Confirmer refuse la proposition expirée et préserve le plan et sa
+sauvegarde octet pour octet. Une déconnexion juste après le clic a vidé l’identité, retiré
+la proposition et publié un reçu négatif. Le plan est resté intact. La sonde n’a pas mené à
+terme son retour au menu dans ce dernier cas. Après redémarrage, deux activations du même
+bouton Confirmer pendant le même tick ont gardé un seul identifiant de demande. Un seul
+effacement a été confirmé et la sauvegarde correspondait exactement au plan fictif initial.
+
+Une annulation parvenue après le dernier contrôle de la file et juste avant l’écriture peut
+arriver trop tard. Le scénario reproductible commence avec une confirmation positive et
+valide. Le plan fictif est alors effacé une seule fois et sa sauvegarde exacte est disponible.
+Cette limite de retrait du consentement et la qualification native restante gardent R5 en
+statut partiel. Le garde-fou publié sur `main` continue de refuser les suppressions proposées
+par l’IA.
+
+### Mesures avant et après
+
+Le même scénario hors jeu, `python -m tests.benchmarks.production_v2`, a utilisé 2 024 recettes,
+600 coffres et une chaîne de 24 étapes, avec 21 répétitions par série et ordre avant, après,
+après, avant. Les temps médians du calcul passent de 6,46–10,97 ms à 6,71–11,30 ms et le
+pic d’allocations reste à 0,756 Mio. Le catalogue est mesuré entre 36,70–72,15 ms avant et
+33,37–47,86 ms après. L’agrégation va de 27,31–51,23 ms avant à 39,02–94,28 ms après.
+Les essais partagent les ressources de la machine avec le laboratoire. La dispersion et
+les moteurs de calcul identiques empêchent d’attribuer ces écarts au candidat.
+
+Le nouveau contrôle hors moteur écrit deux petits documents au plus par attestation
+réussie et attend au maximum 450 ms la réponse du client. Le client ne recalcule pas
+l’arbre et ne réécrit pas le catalogue pour y répondre. Aucun contrôle n’est émis par
+l’assistant au repos. Les aperçus V2 sont limités à un contrôle de flux toutes les 350 ms,
+avec un contrôle avant affichage. Une réponse ou un aperçu en attente de preuve peut
+donc être retardé. Les mesures du moteur excluent ce pont, le rendu et les CLI distants.
+
 ## Transition V1.5
 
 | Prérequis                   | Résultat vérifié                                                                                                                                                                                                          |
