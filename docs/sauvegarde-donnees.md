@@ -4,9 +4,9 @@ Cet outil est explicite et indépendant du démarrage de l'assistant. Il ne chan
 monde, ne rattache aucun historique à un serveur, n'active aucune nouvelle structure et
 ne restaure jamais par-dessus une installation. Il n'appelle ni Codex ni Claude.
 
-Le sous-lot d'identité et de routage des mondes reste **non activé**. Il faut encore
-qualifier la provenance des paquets lors d'une reconnexion et le retour arrière sur
-Windows et sur une connexion réelle. Une sauvegarde vérifiée ne valide pas ces mécanismes.
+Le [lot d'isolation des mondes](isolation-mondes.md) réutilise cette archive pour préparer et
+contrôler une migration. La restauration réelle sur Windows et la réception de paquets
+lors d'une reconnexion restent à qualifier sur des copies de test.
 
 ## Périmètre
 

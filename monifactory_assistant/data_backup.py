@@ -23,9 +23,10 @@ PYTHON_PATTERNS = (
     "*.json.*",
     "*.jsonl.*",
     ".*.json-*.tmp",
+    ".*.jsonl-*.tmp",
     "assistant.log*",
 )
-PYTHON_DIRECTORIES = ("backups", "captures", ".runtime")
+PYTHON_DIRECTORIES = ("backups", "captures", ".runtime", "mondes")
 
 
 class BackupError(RuntimeError):
