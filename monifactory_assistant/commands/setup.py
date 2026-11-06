@@ -137,19 +137,25 @@ def install(instance, dry_run=False, *, jar=None, client_script=None):
         backup / "installation.json",
         {"mods": [p.name for p in replaced], "script": script.is_file()},
     )
+    publishing = False
     try:
-        temporary = target.with_suffix(".jar.tmp")
-        shutil.copy2(jar, temporary)
-        temporary.replace(target)
+        temporary_jar = target.with_suffix(".jar.tmp")
+        temporary_script = script.with_suffix(".js.tmp")
+        script.parent.mkdir(parents=True, exist_ok=True)
+        # Finish both copies before replacing either member of the installed pair.
+        shutil.copy2(jar, temporary_jar)
+        shutil.copy2(client_script, temporary_script)
+        publishing = True
+        temporary_jar.replace(target)
+        temporary_script.replace(script)
         for path in replaced:
             if path != target:
                 path.unlink()  # already backed up, avoid duplicate mod IDs in Forge
-        script.parent.mkdir(parents=True, exist_ok=True)
-        temporary = script.with_suffix(".js.tmp")
-        shutil.copy2(client_script, temporary)
-        temporary.replace(script)
-    except Exception:
-        restore_install(instance, backup)
+    except (Exception, KeyboardInterrupt, SystemExit):
+        # Catchable cancellation also restores the pair, without swallowing the exit.
+        # SIGKILL/power loss cannot run this rollback; the backup remains available.
+        if publishing:
+            restore_install(instance, backup)
         raise
     print(
         f"Installé. Sauvegarde de la version précédente : {backup}\nRedémarre Minecraft pour charger le nouveau .jar."
