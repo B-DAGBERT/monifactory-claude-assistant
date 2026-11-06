@@ -9,6 +9,7 @@ from datetime import datetime
 
 from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
+from monifactory_assistant.game.snapshots import file_stamp
 from monifactory_assistant.game.storage import Storage, StorageMonitor
 from monifactory_assistant.game.veins import find_veins
 from monifactory_assistant.game.world import World, machine_status, observation_date
@@ -204,20 +205,40 @@ class GameController:
 
     def check_craftable(self):
         """Relit les recettes quand le jeu les a réexportées, ou que le mod a écrit quelle machine fait quoi."""
-        try:
-            changed = (self.bridge.dir / "recettes_info.json").stat().st_mtime
-        except OSError:
+        if self.recipe_loading:
             return
-        machines = self.bridge.dir / "machines_recettes.txt"
-        if machines.exists():
-            changed = (changed, machines.stat().st_mtime)
-        if changed != self.craftable_read:
-            self.craftable_read = changed
-            threading.Thread(target=self.load_recipes, daemon=True).start()
+        changed = self.recipe_stamp()
+        if changed is not None and changed != self.craftable_read:
+            self.recipe_loading = True
+            try:
+                threading.Thread(target=self.load_recipes, args=(changed,), daemon=True).start()
+            except RuntimeError:
+                self.recipe_loading = False
+                raise
 
-    def load_recipes(self):
-        self.craftable = load_craftable(self.bridge.dir)
-        self.recipe_index = RecipeIndex(self.bridge.dir)
+    def recipe_stamp(self):
+        folder = self.bridge.dir
+        catalog = file_stamp(folder / "recettes_info.json")
+        return (catalog, file_stamp(folder / "machines_recettes.txt")) if catalog else None
+
+    def load_recipes(self, stamp):
+        folder = self.bridge.dir
+        try:
+            loaded = load_craftable(folder), RecipeIndex(folder)
+        except Exception:
+            self.events.put(("recipes_loaded", stamp, None, traceback.format_exc()))
+        else:
+            self.events.put(("recipes_loaded", stamp, loaded, None))
+
+    def on_recipes_loaded(self, stamp, loaded, error):
+        self.recipe_loading = False
+        if error is not None:
+            if error not in self.logged_errors:
+                self.logged_errors.add(error)
+                log(error)
+        elif self.recipe_stamp() == stamp:
+            self.craftable, self.recipe_index = loaded
+            self.craftable_read = stamp
 
     def on_game_connected(self):
         if self.session_open:

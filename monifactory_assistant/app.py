@@ -91,7 +91,8 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.guide = None  # flèche demandée à la voix vers un lieu
         self.veins = []  # filons de minerai repérés
         self.veins_read = 0
-        self.craftable, self.craftable_read = set(), 0  # objets qu'une recette du pack produit
+        self.craftable, self.craftable_read = set(), None  # objets qu'une recette du pack produit
+        self.recipe_loading = False
         self.recipe_index = RecipeIndex()  # recettes par objet, jointes aux questions
         self.info, self.info_pending = (
             None,

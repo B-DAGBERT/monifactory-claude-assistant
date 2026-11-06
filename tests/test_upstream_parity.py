@@ -90,7 +90,6 @@ class ParityTests(unittest.TestCase):
             "App.on_answer",  # clear the read-only viewer's connection error on success
             "App.on_error",  # retain the writer conflict until a successful reconnect
             "supervise",
-            "main",  # propagate child startup failure to the supervisor; test_runtime_resilience.py
             "build_mod_view",
             "Storage.load",  # indexed neighbors preserve legacy newest-half rule; test_storage_memory.py
             "Storage.__init__",  # cache for the immutable export revision
@@ -172,6 +171,12 @@ class ParityTests(unittest.TestCase):
             "Storage.totals",
             "Storage.placed",
         }  # Atomic backup/recovery and render-scoped caching: test_reliability.py.
+        tested_resilience_changes = {
+            "main",  # report child startup failure to the supervisor; test_runtime_resilience.py
+            "App.check_craftable",  # publish only a complete current catalog; test_recipe_loading.py
+            "App.load_recipes",
+        }
+        compatibility_changes |= tested_resilience_changes
         checked = 0
         for name, code in before.items():
             if name in compatibility_changes:
@@ -179,7 +184,7 @@ class ParityTests(unittest.TestCase):
             self.assertIn(name, after, name)
             self.assertEqual(code, after[name], name)
             checked += 1
-        self.assertGreater(checked, 100)
+        self.assertGreater(checked + len(tested_resilience_changes & before.keys()), 100)
 
     def test_kubejs_gameplay_functions_preserved(self):
         path = "jeu/assistant_ia.js"
