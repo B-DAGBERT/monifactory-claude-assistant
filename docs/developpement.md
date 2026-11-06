@@ -17,7 +17,7 @@
 - `ui/discussion.py` sert uniquement le suivi en lecture seule ; ses fichiers sont dans `ui/web/`.
 - `game/` contient les projets, la mémoire des stockages, les relevés d’inventaire, les échanges EMI et les imports de filons. Le journal GregTech du client reste la source des filons.
 - `mod/src/main/java/fr/assistantia/` contient les écrans et fonctions Forge.
-- `jeu/` et `serveur/` conservent les scripts KubeJS d’origine, vérifiés par les tests de parité.
+- `jeu/` contient le script KubeJS client d’origine. `serveur/` contient le script de relevé avec couverture des chunks.
 
 ## Compatibilité
 
@@ -45,8 +45,9 @@ python codex_setup.py build
 ```
 
 Utiliser `python -m ruff format --check .` et `npm run format:check` pour contrôler sans modifier.
-Le Java se vérifie avec `bash mod/gradlew -p mod checkJavaFormat`. Les scripts KubeJS restent
-identiques à la référence historique et sont exclus du formatage automatique.
+Le Java se vérifie avec `bash mod/gradlew -p mod checkJavaFormat`. Les scripts KubeJS sont
+exclus du formatage automatique. La parité couvre le client. Le relevé serveur est vérifié avec
+une simulation Node.js du script KubeJS.
 Les commandes Gradle directes nécessitent `JAVA_HOME` pointant vers un **JDK 17** ; elles ne
 lisent pas `assistant.local.json`. `python codex_setup.py build` résout, lui, le réglage `java_home`
 et les emplacements détectés. Vérifier `java -version` si Gradle refuse de démarrer.
@@ -94,7 +95,7 @@ Le fichier `inventaire_joueur.json` exporte une vue complète ; `game/inventory.
 
 ## Édition d’un arbre et lots manuels
 
-`CoffresArbreEmi` compare une vue des besoins et variantes toutes les dix ticks quand le scan est activé, hors transfert. Une modification remplace les quotas ; les anciennes réponses sont rejetées par leur numéro. `MemoireCollecte.reprendre` garde les acquisitions pertinentes et `reserver` ajoute un stock de planification réversible. Les matières historiquement envoyées sont retirées de cette seule vue pour éviter de créditer à la fois un résultat attendu et ses ingrédients.
+`CoffresArbreEmi` consulte toutes les dix ticks la révision de l’instantané partagé avec `MachinesEmi` quand le scan est activé, hors transfert. Une modification remplace les quotas ; les anciennes réponses sont rejetées par leur numéro. `MemoireCollecte.reprendre` garde les acquisitions pertinentes et `reserver` ajoute un stock de planification réversible. Les matières historiquement envoyées sont retirées de cette seule vue pour éviter de créditer à la fois un résultat attendu et ses ingrédients.
 
 `MachinesEmi.declarer` revalide la recette et les fabrications encore nécessaires à la confirmation. Les lots manuels ne déplacent rien et ne servent jamais de preuve de production finale. `ReceptionManuelle` mesure les gains du stock personnel consolidé, en déduisant les réceptions déjà attribuées aux lots automatiques. Un même gain ne remplit qu’un seul lot. Les quantités finales peuvent changer sans perdre les acquisitions de `SuiviFabrication`.
 
@@ -343,8 +344,8 @@ Le contrôleur utilise une horloge remplaçable dans les tests pour rejouer les 
 
 `World.merged` arbitre d’abord toutes les observations d’une position selon leur date, avant de
 classer coffres et machines. À égalité, le serveur gagne. Une disparition dans sa zone est mémorisée
-avec une date et un stock vide : le script omet les coffres vides, et leur ancienne ouverture ne doit
-pas les ressusciter. Une ouverture ultérieure peut remplacer cette absence. La fusion n’écrit rien.
+avec une date et un stock vide si le chunk a été transmis en entier. Une ouverture ultérieure
+peut remplacer cette absence. La fusion se fait en mémoire.
 
 Le mixin optionnel `CatalyseursArbreEmiMixin` complète `MaterialNode.defineRecipe` après sa construction
 native. Il ajoute uniquement les catalyseurs physiques séparés des recettes GT, marque leur usage
@@ -358,3 +359,27 @@ de clic. La lecture réelle de la machine ouverte reste obligatoire avant envoi.
 jour à la réouverture, supprimé pour une machine cassée/remplacée dans un chunk chargé et vidé lors
 d’un changement de connexion/dimension. Le client ne garantit pas le contenu d’une machine fermée
 modifiée à distance par un autre joueur.
+
+## Relevés et planification partagés (shared.38)
+
+Le script KubeJS serveur v2 annonce les chunks entièrement transmis dans `chunks_complets`.
+Une erreur de lecture, une limite d’inventaire ou un retrait de blocs pour tenir dans le message
+invalide la couverture du chunk. Les blocs effectivement transmis restent utilisables. Les relevés
+v1 continuent à alimenter les observations positives. Pour déduire qu’un coffre omis est vide ou
+cassé, le serveur doit utiliser v2.
+
+`StorageMonitor` réutilise la vue fusionnée tant que ses relevés source sont stables. Un changement
+d’inode, de date ou de taille invalide la lecture locale. Une écriture partielle laisse la dernière
+vue exploitable. L’export texte dépend de la liste des coffres, du contenu et de la minute affichée.
+La recherche EMI réutilise ses correspondances tant que le stock et les besoins restent stables.
+Le déplacement du joueur change seulement leur ordre.
+
+`InstantaneArbreEmi` lit l’arbre natif une fois par révision, puis fournit les deux représentations
+utilisées par le scan des coffres et le plan machine. Le mixin signale la reconstruction d’un nœud.
+Le changement de racine ou de quantité de lots invalide aussi la vue. `SuiviLotsEmi` possède les
+réservations et réceptions. `PanneauMachineEmi` reçoit le résultat à afficher.
+
+L’aperçu d’envoi lit les entrées et cuves une fois. Les recettes d’objets bornent la taille du lot
+avec les quantités disponibles avant de simuler. Chaque essai utilise des réserves simulées.
+Au clic, le circuit, la machine et les quantités sont vérifiés sur une nouvelle lecture, puis les
+clics natifs sont construits pour la quantité annoncée.

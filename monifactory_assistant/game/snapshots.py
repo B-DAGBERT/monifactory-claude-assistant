@@ -24,3 +24,12 @@ def frame_value(app, key, compute):
     if identity not in cache:
         cache[identity] = compute()
     return cache[identity]
+
+
+def file_stamp(path):
+    """Identity of a file revision, including replacements with the same size and date."""
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return None
+    return stat.st_ino, stat.st_mtime_ns, stat.st_size

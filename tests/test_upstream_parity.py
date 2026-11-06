@@ -91,6 +91,8 @@ class ParityTests(unittest.TestCase):
             "supervise",
             "build_mod_view",
             "Storage.load",  # indexed neighbors preserve legacy newest-half rule; test_storage_memory.py
+            "Storage.__init__",  # cache for the immutable export revision
+            "Storage.as_text",  # format each distinct minute once; test_storage_snapshots.py
             "World.containers",  # independent adjacent storage and indexed grouping; test_emi_search.py
             "World.merged",  # keep physical chest positions for recipe search, including matching neighbors
             "describe_veins",  # distinguish GT deposits from partial local block observations
@@ -162,9 +164,9 @@ class ParityTests(unittest.TestCase):
             checked += 1
         self.assertGreater(checked, 100)
 
-    def test_kubejs_scripts_identical(self):
-        for path in ("jeu/assistant_ia.js", "serveur/assistant_ia_serveur.js"):
-            self.assertEqual(upstream(path), (ROOT / path).read_text())
+    def test_kubejs_client_script_identical(self):
+        path = "jeu/assistant_ia.js"
+        self.assertEqual(upstream(path), (ROOT / path).read_text())
 
     def test_original_info_screen_only_changes_branding(self):
         # AideEcran now intentionally withdraws chest ingredients at the user's request.

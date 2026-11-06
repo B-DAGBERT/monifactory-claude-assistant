@@ -33,7 +33,7 @@ ajouter le circuit virtuel ni les postes de fabrication des autres catégories E
 
 ## Complexe
 
-Dix-sept parcours ajoutent notamment :
+Dix-neuf parcours ajoutent notamment :
 
 - une machine qui termine après plus de dix minutes ;
 - l’assistant lent ou une écriture temporairement refusée, avec reprises espacées et bornées ;
@@ -43,7 +43,8 @@ Dix-sept parcours ajoutent notamment :
 - cent coffres mélangés, dont quarante utiles, et un lot de 320 objets reçu en huit étapes ;
 - la priorité aux composants déjà prêts plutôt qu’à leurs ingrédients et outils ;
 - la fusion des relevés client/serveur selon leur date, les coffres vides omis du relevé serveur,
-  un coffre remplacé par une machine et les mêmes coordonnées dans deux dimensions.
+  un coffre remplacé par une machine et les mêmes coordonnées dans deux dimensions. Les chunks
+  omis d’un relevé tronqué et les anciens relevés sans couverture conservent leurs coffres connus.
 
 Le contrat machine décrit plus haut est également exécuté. **Tous** le rejoue une seule fois.
 

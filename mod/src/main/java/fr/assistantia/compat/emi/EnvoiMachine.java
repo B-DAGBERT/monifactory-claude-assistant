@@ -30,7 +30,12 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 /** Dépôt par les interactions normales du menu ; le serveur reste autoritaire. */
 public final class EnvoiMachine {
     public record Plan(
-            int fois, List<SequenceEnvoi.Action> actions, List<String> details, String probleme) {
+            EmiRecipe recette,
+            Object arbre,
+            Object machine,
+            int fois,
+            List<String> details,
+            String probleme) {
         public boolean possible() {
             return fois > 0 && probleme.isEmpty();
         }
@@ -132,76 +137,139 @@ public final class EnvoiMachine {
         }
     }
 
-    public static Plan preparer(AbstractContainerScreen<?> screen, EmiRecipe recipe, int demande) {
+    private record Entrees(
+            AbstractContainerMenu menu,
+            GregTechMachines.Interface ui,
+            List<Slot> joueurs,
+            Map<Slot, ItemStack> piles,
+            List<FluidTank> cuves,
+            List<FluidStack> fluides,
+            List<EmiIngredient> ingredients,
+            int circuit) {}
+
+    private static Entrees lireEntrees(AbstractContainerMenu menu, EmiRecipe recette)
+            throws ReflectiveOperationException {
+        var ui = GregTechMachines.ouvrir(menu);
+        verifier(
+                ui != null && GregTechMachines.compatible(ui.machine(), recette),
+                "Machine incompatible");
+        verifier(!GregTechMachines.occupe(ui.machine()), "Machine en cours de fabrication");
+        verifier(menu.getCarried().isEmpty(), "Pose l’objet tenu par la souris");
+        int circuit;
         try {
-            var ui = GregTechMachines.ouvrir(screen.getMenu());
-            if (ui == null || !GregTechMachines.compatible(ui.machine(), recipe))
-                return vide("Machine incompatible");
-            if (GregTechMachines.occupe(ui.machine()))
-                return vide("Machine en cours de fabrication");
-            if (!screen.getMenu().getCarried().isEmpty())
-                return vide("Pose l’objet tenu par la souris");
-            final int circuit;
-            try {
-                circuit = circuitRequis(recipe);
-            } catch (ReflectiveOperationException | RuntimeException e) {
-                return vide("Circuit machine : configuration de la recette illisible");
-            }
-            String erreurCircuit = problemeCircuit(ui, circuit);
-            if (!erreurCircuit.isEmpty()) return vide(erreurCircuit);
+            circuit = circuitRequis(recette);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            throw new IllegalStateException(
+                    "Circuit machine : configuration de la recette illisible", e);
+        }
+        String erreur = problemeCircuit(ui, circuit);
+        verifier(erreur.isEmpty(), erreur);
+        var joueurs =
+                menu.slots.stream()
+                        .filter(EnvoiMachine::personnel)
+                        .filter(Slot::isActive)
+                        .filter(s -> s.mayPickup(Minecraft.getInstance().player))
+                        .toList();
+        Map<Slot, ItemStack> piles = new IdentityHashMap<>();
+        joueurs.forEach(s -> piles.put(s, s.getItem().copy()));
+        ui.entrees().forEach(s -> piles.put(s, s.getItem().copy()));
+        var cuves = ui.cuves().stream().map(GregTechMachines.Cuve::simulation).toList();
+        return new Entrees(
+                menu,
+                ui,
+                joueurs,
+                piles,
+                cuves,
+                cuves.stream().map(c -> c.getFluid().copy()).toList(),
+                ingredients(recette),
+                circuit);
+    }
+
+    private static int borneObjets(Entrees entrees, EmiRecipe recette, int demande) {
+        // Une recette fluide peut produire un contenant vide utilisable comme autre ingrédient.
+        if (entrees.ingredients().stream()
+                .anyMatch(
+                        i -> i.getEmiStacks().stream().anyMatch(s -> s.getKey() instanceof Fluid)))
+            return demande;
+        int maximum = demande;
+        for (var ingredient : recette.getInputs()) {
+            if (ingredient.isEmpty() || ingredient.getChance() == 0 || ingredient.getAmount() <= 0)
+                continue;
+            long present =
+                    entrees.piles().values().stream()
+                            .filter(s -> accepte(ingredient, s))
+                            .mapToLong(ItemStack::getCount)
+                            .sum();
+            // produit() borne déjà une demande à un million.
+            if (present < PlanMachines.produit(ingredient.getAmount(), maximum))
+                maximum = (int) (present / ingredient.getAmount());
+        }
+        return Math.max(1, maximum); // Garder la raison affichée quand même un seul craft échoue.
+    }
+
+    public static Plan preparer(AbstractContainerScreen<?> screen, EmiRecipe recipe, int demande) {
+        if (demande <= 0) return vide("Ingrédients manquants");
+        try {
+            Object arbre = ArbreEmi.actif();
+            if (arbre == null) return vide("Arbre EMI inactif");
+            var entrees = lireEntrees(screen.getMenu(), recipe);
             Plan dernier = vide("Ingrédients manquants");
-            // Un lot borné par les piles et les cuves. Le reste restera proposé ensuite.
-            for (int n = Math.min(64, demande); n >= 1; n--) {
-                dernier = calculer(screen.getMenu(), ui, recipe, n, circuit);
+            for (int n = borneObjets(entrees, recipe, Math.min(64, demande)); n >= 1; n--) {
+                dernier = calculer(entrees, recipe, arbre, n, null);
                 if (dernier.possible()) return dernier;
             }
             return dernier;
+        } catch (IllegalStateException e) {
+            return vide(
+                    e.getMessage() == null
+                            ? "Entrées de cette machine non disponibles"
+                            : e.getMessage());
         } catch (ReflectiveOperationException | RuntimeException e) {
             return vide("Entrées de cette machine non disponibles");
         }
     }
 
     private static Plan vide(String message) {
-        return new Plan(0, List.of(), List.of(), message);
+        return new Plan(null, null, null, 0, List.of(), message);
     }
 
     private static Plan calculer(
-            AbstractContainerMenu menu,
-            GregTechMachines.Interface ui,
+            Entrees entrees,
             EmiRecipe recipe,
+            Object arbre,
             int n,
-            int circuitRequis)
+            List<SequenceEnvoi.Action> actions)
             throws ReflectiveOperationException {
-        List<SequenceEnvoi.Action> actions = new ArrayList<>();
-        actions.add(
-                new SequenceEnvoi.Action() {
-                    public void envoyer() {
-                        verifier(
-                                GregTechMachines.compatible(ui.machine(), recipe)
-                                        && !GregTechMachines.occupe(ui.machine()),
-                                "Machine modifiée ou déjà en cours de fabrication");
-                        String erreurCircuit = problemeCircuit(ui, circuitRequis);
-                        verifier(erreurCircuit.isEmpty(), erreurCircuit);
-                    }
+        var ui = entrees.ui();
+        var menu = entrees.menu();
+        int circuitRequis = entrees.circuit();
+        if (actions != null)
+            actions.add(
+                    new SequenceEnvoi.Action() {
+                        public void envoyer() {
+                            verifier(
+                                    GregTechMachines.compatible(ui.machine(), recipe)
+                                            && !GregTechMachines.occupe(ui.machine()),
+                                    "Machine modifiée ou déjà en cours de fabrication");
+                            String erreurCircuit = problemeCircuit(ui, circuitRequis);
+                            verifier(erreurCircuit.isEmpty(), erreurCircuit);
+                        }
 
-                    public boolean confirmee() {
-                        return true;
-                    }
-                });
+                        public boolean confirmee() {
+                            return true;
+                        }
+                    });
+        boolean transfert = false;
         List<String> details = new ArrayList<>();
         if (circuitRequis >= 0) details.add("Circuit machine : " + circuitRequis + " · vérifié");
-        List<Slot> joueurs =
-                menu.slots.stream()
-                        .filter(EnvoiMachine::personnel)
-                        .filter(Slot::isActive)
-                        .filter(s -> s.mayPickup(Minecraft.getInstance().player))
-                        .toList();
-        Map<Slot, ItemStack> simulation = new IdentityHashMap<>();
-        joueurs.forEach(s -> simulation.put(s, s.getItem().copy()));
-        List<FluidTank> cuves = ui.cuves().stream().map(GregTechMachines.Cuve::simulation).toList();
+        List<Slot> joueurs = entrees.joueurs();
+        Map<Slot, ItemStack> simulation = new IdentityHashMap<>(entrees.piles());
+        List<FluidTank> cuves = entrees.cuves();
+        for (int i = 0; i < cuves.size(); i++)
+            cuves.get(i).setFluid(entrees.fluides().get(i).copy());
         var items = new ArrayList<PlanRetrait.Besoin<ItemStack>>();
         var nomsItems = new ArrayList<String>();
-        var tous = ingredients(recipe);
+        var tous = entrees.ingredients();
         Map<String, Integer> fluidesDemandes = new HashMap<>();
         Map<String, Integer> outilsDemandes = new HashMap<>();
         for (int k = 0; k < tous.size(); k++) {
@@ -289,9 +357,18 @@ public final class EnvoiMachine {
                                         un, cuve, Integer.MAX_VALUE, null, true);
                         int volume = cuve.getFluidAmount() - avant;
                         if (volume <= 0) continue;
-                        ItemStack attendu = pile.copy(), vide = resultat.getResult().copy();
-                        var cible = ui.cuves().get(t);
-                        actions.addAll(fluide(menu, src, retour, attendu, un, vide, cible));
+                        ItemStack vide = resultat.getResult().copy();
+                        if (actions != null)
+                            actions.addAll(
+                                    fluide(
+                                            menu,
+                                            src,
+                                            retour,
+                                            pile.copy(),
+                                            un,
+                                            vide,
+                                            ui.cuves().get(t)));
+                        transfert = true;
                         ItemStack restant = pile.copy();
                         restant.shrink(1);
                         simulation.put(src, restant);
@@ -322,7 +399,7 @@ public final class EnvoiMachine {
         sources.addAll(joueurs);
         List<PlanRetrait.Stock<ItemStack>> stocks = new ArrayList<>();
         for (Slot s : sources) {
-            ItemStack item = simulation.getOrDefault(s, s.getItem());
+            ItemStack item = simulation.get(s);
             if (!personnel(s)
                     && !item.isEmpty()
                     && items.stream().noneMatch(b -> b.accepte().test(item)))
@@ -337,13 +414,15 @@ public final class EnvoiMachine {
                 if (nManquant > 0) manquants.add(nManquant + " × " + nomsItems.get(i));
             }
             return new Plan(
+                    null,
+                    null,
+                    null,
                     0,
-                    List.of(),
                     List.copyOf(details),
                     "À collecter : " + String.join(", ", manquants));
         }
         Map<Slot, ItemStack> destinations = new IdentityHashMap<>();
-        ui.entrees().forEach(s -> destinations.put(s, s.getItem().copy()));
+        ui.entrees().forEach(s -> destinations.put(s, entrees.piles().get(s)));
         for (var prise : allocation.prises()) {
             Slot src = sources.get(prise.index());
             ItemStack original = simulation.get(src).copy();
@@ -360,7 +439,8 @@ public final class EnvoiMachine {
                 int quantite = Math.min(place, restant);
                 if (quantite <= 0) continue;
                 ItemStack attendu = simulation.get(src).copy();
-                actions.add(objets(menu, src, dest, attendu, quantite));
+                if (actions != null) actions.add(objets(menu, src, dest, attendu, quantite));
+                transfert = true;
                 ItemStack apres = attendu.copy();
                 apres.shrink(quantite);
                 simulation.put(src, apres);
@@ -372,8 +452,8 @@ public final class EnvoiMachine {
             }
             if (restant > 0) return vide("Pas assez de place dans les entrées de la machine");
         }
-        if (actions.size() == 1) return vide("Ingrédients déjà en machine");
-        return new Plan(n, List.copyOf(actions), List.copyOf(details), "");
+        if (!transfert) return vide("Ingrédients déjà en machine");
+        return new Plan(recipe, arbre, ui.machine(), n, List.copyOf(details), "");
     }
 
     private static SequenceEnvoi.Action objets(
@@ -501,16 +581,31 @@ public final class EnvoiMachine {
                 || mc.player.containerMenu != screen.getMenu()
                 || !screen.getMenu().getCarried().isEmpty()
                 || System.nanoTime() - dernierClic < 1_000_000_000L) return;
+        var actions = new ArrayList<SequenceEnvoi.Action>();
         try {
-            arbre = ArbreEmi.actif();
-        } catch (Exception e) {
+            Object courant = ArbreEmi.actif();
+            verifier(courant != null && courant == plan.arbre(), "Arbre EMI changé");
+            var entrees = lireEntrees(screen.getMenu(), plan.recette());
+            verifier(entrees.ui().machine() == plan.machine(), "Machine changée");
+            var confirme = calculer(entrees, plan.recette(), courant, plan.fois(), actions);
+            verifier(confirme.possible(), confirme.probleme());
+            arbre = courant;
+        } catch (IllegalStateException e) {
+            statut =
+                    e.getMessage() == null
+                            ? "Entrées de cette machine non disponibles"
+                            : e.getMessage();
+            mc.player.displayClientMessage(Component.literal(statut), false);
+            return;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            statut = "Entrées de cette machine non disponibles";
+            mc.player.displayClientMessage(Component.literal(statut), false);
             return;
         }
-        if (arbre == null) return;
         dernierClic = System.nanoTime();
         ecran = screen;
         succes = termine;
-        sequence = new SequenceEnvoi(plan.actions());
+        sequence = new SequenceEnvoi(actions);
         statut = "Envoi en cours…";
     }
 

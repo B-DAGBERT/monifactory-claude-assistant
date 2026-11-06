@@ -26,7 +26,7 @@ from monifactory_assistant.game.bridge import Bridge
 from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.recipes import RecipeIndex
 from monifactory_assistant.game.requests import CommandQueue
-from monifactory_assistant.game.storage import Storage
+from monifactory_assistant.game.storage import Storage, StorageMonitor
 from monifactory_assistant.game.world import World
 from monifactory_assistant.paths import ROOT as HERE
 from monifactory_assistant.persistence import load_json
@@ -80,6 +80,7 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.game = None  # dernier état du jeu, None si le jeu n'est pas connecté
         self.storage = Storage([])
         self.storage_text = None
+        self.storage_export_key = None
         self.logged_errors = set()
         self.status = ""
         self.connection_problem = ""
@@ -100,7 +101,7 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.search = None  # objets à mettre en surbrillance (« trouve-moi mes torches »)
         self.infos = load_json(INFO_FILE, {})
         self.world = World()  # ce que voit le script serveur
-        self.client_storage = Storage([])
+        self.storage_monitor = StorageMonitor()
         # mod Minecraft : écran de l'assistant, surbrillance, faisceaux
         self.history = recent_history(self.bridge.dir, ai_provider.label())
         self.last_mod_view = None

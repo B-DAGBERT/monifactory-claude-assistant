@@ -1,21 +1,12 @@
 package fr.assistantia.compat.emi;
 
 import com.mojang.logging.LogUtils;
-import dev.emi.emi.api.recipe.EmiRecipe;
-import dev.emi.emi.api.stack.EmiIngredient;
-import dev.emi.emi.api.stack.EmiStack;
-import fr.assistantia.ArbreCollecte;
 import fr.assistantia.ArbreEmi;
 import fr.assistantia.MemoireCollecte;
 import fr.assistantia.RechercheEmi;
 import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.WeakHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -28,7 +19,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.registries.ForgeRegistries;
 
 /** Un seul interrupteur près de Recipe Tree. Aucune mutation de l'arbre ni des favoris EMI. */
 public final class CoffresArbreEmi {
@@ -45,56 +35,12 @@ public final class CoffresArbreEmi {
     private static boolean erreurSignalee;
     private static long dernierClic;
     private static int ticks;
-    private static Instantane dernierArbre;
+    private static InstantaneArbreEmi dernierArbre;
 
-    private record Instantane(
-            ArbreCollecte.Noeud noeud,
-            long lots,
-            List<EmiStack> variantes,
-            String cles,
-            String cible) {
-        boolean meme(Instantane autre) {
-            return autre != null
-                    && lots == autre.lots
-                    && noeud.equals(autre.noeud)
-                    && cles.equals(autre.cles)
-                    && cible.equals(autre.cible);
-        }
-    }
-
-    private static Instantane instantane(Object tree) throws ReflectiveOperationException {
-        List<EmiStack> variantes = new ArrayList<>();
-        var node =
-                lire(
-                        tree.getClass().getField("goal").get(tree),
-                        Collections.newSetFromMap(new IdentityHashMap<>()),
-                        new int[] {0},
-                        0,
-                        variantes);
-        long lots = tree.getClass().getField("batches").getLong(tree);
-        String cles =
-                variantes.stream()
-                        .map(v -> v.getId() + "|" + v.getNbt())
-                        .sorted()
-                        .toList()
-                        .toString();
-        var root = tree.getClass().getField("goal").get(tree);
-        var produit = (EmiIngredient) root.getClass().getField("ingredient").get(root);
-        String cible =
-                produit.getEmiStacks().stream()
-                        .map(v -> v.getId() + "|" + v.getNbt())
-                        .sorted()
-                        .toList()
-                        .toString();
-        return new Instantane(node, lots, List.copyOf(variantes), cles, cible);
-    }
-
-    private static void appliquer(Instantane vue) {
+    private static void appliquer(InstantaneArbreEmi vue) {
         RechercheEmi.recalculer(
-                new MemoireCollecte(vue.noeud(), vue.lots()),
-                item ->
-                        vue.variantes().stream()
-                                .anyMatch(v -> ComparaisonEmi.meme(EmiStack.of(item), v)),
+                new MemoireCollecte(vue.collecte(), vue.lots()),
+                vue::accepte,
                 dernierArbre != null && vue.cible().equals(dernierArbre.cible()));
         dernierArbre = vue;
     }
@@ -111,8 +57,8 @@ public final class CoffresArbreEmi {
         try {
             Object tree = ArbreEmi.actif();
             if (tree == null) return;
-            var vue = instantane(tree);
-            if (!vue.meme(dernierArbre)) appliquer(vue);
+            var vue = InstantaneArbreEmi.lire(tree);
+            if (!vue.memeCollecte(dernierArbre)) appliquer(vue);
         } catch (ReflectiveOperationException | RuntimeException e) {
             RechercheEmi.arreter(); // Ne pas proposer les ingrédients de l'ancien arbre.
             signaler(e);
@@ -421,7 +367,8 @@ public final class CoffresArbreEmi {
         try {
             Object tree = ArbreEmi.actif();
             if (tree == null) return false;
-            appliquer(instantane(tree));
+            InstantaneArbreEmi.invalider();
+            appliquer(InstantaneArbreEmi.lire(tree));
             return true;
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);
@@ -441,21 +388,12 @@ public final class CoffresArbreEmi {
             charger();
             Object tree = ArbreEmi.consulte();
             if (tree == null) return;
-            Object root = tree.getClass().getField("goal").get(tree);
-            long lots = tree.getClass().getField("batches").getLong(tree);
-            Set<Object> chemin = Collections.newSetFromMap(new IdentityHashMap<>());
-            int[] count = {0};
-            List<EmiStack> variantes = new ArrayList<>();
-            ArbreCollecte.Noeud snapshot = lire(root, chemin, count, 0, variantes);
-            dernierArbre = instantane(tree);
+            var vue = InstantaneArbreEmi.lire(tree);
             if (ArbreEmi.actif() == null) RechercheEmi.arreter();
             if (!ArbreEmi.activer()) return;
             RechercheEmi.basculer(
-                    ID,
-                    new MemoireCollecte(snapshot, lots),
-                    item ->
-                            variantes.stream()
-                                    .anyMatch(v -> ComparaisonEmi.meme(EmiStack.of(item), v)));
+                    ID, new MemoireCollecte(vue.collecte(), vue.lots()), vue::accepte);
+            dernierArbre = vue;
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);
             var p = Minecraft.getInstance().player;
@@ -471,67 +409,6 @@ public final class CoffresArbreEmi {
     public static fr.assistantia.RetraitCoffre.Plan planTransfert(
             AbstractContainerScreen<?> screen) {
         return RechercheEmi.retrait(screen.getMenu());
-    }
-
-    private static ArbreCollecte.Noeud lire(
-            Object node, Set<Object> chemin, int[] count, int depth, List<EmiStack> variantes)
-            throws ReflectiveOperationException {
-        return lire(node, chemin, count, depth, variantes, null);
-    }
-
-    private static ArbreCollecte.Noeud lire(
-            Object node,
-            Set<Object> chemin,
-            int[] count,
-            int depth,
-            List<EmiStack> variantes,
-            EmiRecipe parent)
-            throws ReflectiveOperationException {
-        if (node == null || depth > 128 || ++count[0] > 4096 || !chemin.add(node))
-            throw new IllegalArgumentException("Arbre EMI invalide ou trop grand");
-        Class<?> type = node.getClass();
-        EmiIngredient ingredient = (EmiIngredient) type.getField("ingredient").get(node);
-        boolean catalystDeclare =
-                type.getField("catalyst").getBoolean(node)
-                        || type.getField("consumeChance").getFloat(node) == 0;
-        if (ComparaisonEmi.circuitVirtuel(parent, ingredient, catalystDeclare)) {
-            // Réglage de la machine : ni objet à trouver, ni sous-recette à fabriquer.
-            chemin.remove(node);
-            return null;
-        }
-        EmiRecipe recette = (EmiRecipe) type.getField("recipe").get(node);
-        Set<String> ids = new LinkedHashSet<>();
-        boolean outil = true;
-        for (EmiStack stack : ingredient.getEmiStacks()) {
-            var item = stack.getItemStack();
-            if (item.isEmpty()) continue;
-            // Le livre de l'objectif est une racine virtuelle, jamais un objet à rechercher.
-            if (item.hasTag() && item.getTag().contains("assistantia_objectif")) continue;
-            var id = ForgeRegistries.ITEMS.getKey(item.getItem());
-            if (id != null) {
-                ids.add(id.toString());
-                variantes.add(stack.copy());
-            }
-            outil &=
-                    item.isDamageableItem()
-                            || !stack.getRemainder().isEmpty()
-                                    && stack.getRemainder().getItemStack().is(item.getItem());
-        }
-        boolean catalyst = catalystDeclare || outil && !ids.isEmpty();
-        List<ArbreCollecte.Noeud> children = new ArrayList<>();
-        Object raw = type.getField("children").get(node);
-        if (raw instanceof List<?> nodes)
-            for (Object child : nodes) {
-                var enfant = lire(child, chemin, count, depth + 1, variantes, recette);
-                if (enfant != null) children.add(enfant);
-            }
-        chemin.remove(node);
-        return new ArbreCollecte.Noeud(
-                ids,
-                type.getField("amount").getLong(node),
-                type.getField("divisor").getLong(node),
-                catalyst,
-                children);
     }
 
     private static void signaler(Exception e) {

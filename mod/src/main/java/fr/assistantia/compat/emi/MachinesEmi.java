@@ -13,17 +13,12 @@ import fr.assistantia.PlanRetrait;
 import fr.assistantia.DispositionCoffre.Disposition;
 import fr.assistantia.DispositionCoffre.Zone;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Set;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.chunk.ChunkStatus;
 import net.minecraft.world.phys.AABB;
@@ -37,7 +32,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 /** Étapes machine du véritable arbre EMI : affichage rouge et dépôt explicite. */
 public final class MachinesEmi {
     private static Object arbre, connexion;
-    private static String dimension = "", signature = "";
+    private static String dimension = "";
+    private static InstantaneArbreEmi instantane;
     private static int ticks;
     private static List<PlanMachines.Operation<EmiRecipe>> operations = List.of(),
             locales = List.of();
@@ -47,7 +43,8 @@ public final class MachinesEmi {
     private static int choix, page;
     private static EnvoiMachine.Plan plan;
     private static long actualise;
-    private static final List<LotMachine> lots = new ArrayList<>();
+    private static final SuiviLotsEmi lots =
+            new SuiviLotsEmi(MachinesEmi::inventaire, MachinesEmi::lotsModifies);
     private static List<PlanMachines.Operation<EmiRecipe>> toutes = List.of();
     private static String calculPrecedent = "";
 
@@ -58,20 +55,10 @@ public final class MachinesEmi {
     private static long entreesVersion, outilsVersion = -1;
     private static List<PlanMachines.Operation<EmiRecipe>> operationsOutils;
     private static List<PlanRetrait.Stock<EmiStack>> outilsConnus = List.of();
-    private static long lotsVersion;
-    private static int prochainLot;
-    private static final fr.assistantia.ReceptionManuelle<EmiStack> receptionManuelle =
-            new fr.assistantia.ReceptionManuelle<>(ComparaisonEmi::meme);
     private static boolean dernierTermine;
     private static final java.util.Map<Object, java.util.Map<EmiRecipe, Boolean>> compatibilites =
             new java.util.WeakHashMap<>();
     private static boolean erreurSignalee, erreurInterfaceSignalee;
-    private static net.minecraft.world.inventory.AbstractContainerMenu menuObserve;
-    private static GregTechMachines.Interface machineObservee;
-    private static List<net.minecraft.world.inventory.Slot> sortiesObservees = List.of();
-    private static List<GregTechMachines.Cuve> cuvesObservees = List.of();
-    private static fr.assistantia.ReceptionSortie<EmiStack> receptionFluides =
-            new fr.assistantia.ReceptionSortie<>(ComparaisonEmi::meme);
 
     public record Ligne(
             int lot, EmiRecipe recette, int fois, String etat, boolean annulable, String detail) {}
@@ -85,150 +72,12 @@ public final class MachinesEmi {
     }
 
     public static void recevoir(List<PlanRetrait.Stock<ItemStack>> objets) {
-        if (lots.isEmpty()) return;
-        List<PlanRetrait.Stock<EmiStack>> gains =
-                objets.stream()
-                        .map(
-                                s ->
-                                        new PlanRetrait.Stock<>(
-                                                EmiStack.of(s.objet()), s.quantite(), true))
-                        .toList();
-        var player = Minecraft.getInstance().player;
-        if (player == null) return;
-        List<PlanRetrait.Stock<EmiStack>> restants = gains;
-        List<PlanRetrait.Stock<EmiStack>> attendusAutomatiques = new ArrayList<>();
-        try {
-            var ui = GregTechMachines.ouvrir(player.containerMenu);
-            if (ui != null) {
-                for (var lot : lots)
-                    if (lot.ici(ui.position())) attendusAutomatiques.addAll(lot.suivi().restants());
-                restants = recevoir(gains, ui.position());
-            }
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            // Les lots envoyés automatiquement exigent une preuve de leur machine.
-        }
-        var attribues = receptionManuelle.soustraire(gains, restants);
-        var nouveaux =
-                receptionManuelle.actualiser(
-                        inventaire(), attribues, attendusAutomatiques, restants);
-        if (nouveaux.isEmpty()) return;
-        var distribution =
-                fr.assistantia.ReceptionLots.repartir(
-                        nouveaux,
-                        lots.stream()
-                                .map(
-                                        l ->
-                                                new fr.assistantia.ReceptionLots.Source<>(
-                                                        l.suivi(),
-                                                        (java.util.function.Predicate<EmiStack>)
-                                                                s ->
-                                                                        l.manuel()
-                                                                                || !s.getItemStack()
-                                                                                        .isEmpty()))
-                                .toList());
-        if (distribution.change()) {
-            lotsVersion++;
-            InventaireArbreEmi.invalider();
-            actualise = 0;
-        }
+        lots.recevoir(objets);
     }
 
-    private static List<PlanRetrait.Stock<EmiStack>> recevoir(
-            List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position) {
-        if (gains.isEmpty()) return gains;
-        for (var lot : lots)
-            if (lot.ici(position)) {
-                int avant = lot.suivi().totalRecu();
-                gains = lot.suivi().recevoir(gains);
-                if (avant != lot.suivi().totalRecu()) {
-                    lotsVersion++;
-                    InventaireArbreEmi.invalider();
-                    actualise = 0;
-                }
-            }
-        return gains;
-    }
-
-    private static void actualiserLots() {
-        var player = Minecraft.getInstance().player;
-        if (player == null || lots.isEmpty()) {
-            menuObserve = null;
-            return;
-        }
-        var dansCoffres =
-                new java.util.HashMap<>(fr.assistantia.RechercheEmi.resultatsDisponibles());
-        for (var lot : lots) {
-            boolean disponible = false;
-            for (var attendu : lot.suivi().restants()) {
-                String id = attendu.objet().getId().toString();
-                int n = Math.min(attendu.quantite(), dansCoffres.getOrDefault(id, 0));
-                disponible |= n > 0;
-                dansCoffres.put(id, Math.max(0, dansCoffres.getOrDefault(id, 0) - n));
-            }
-            lot.suivi().disponible(disponible);
-        }
-        try {
-            if (menuObserve != player.containerMenu) {
-                menuObserve = player.containerMenu;
-                machineObservee = GregTechMachines.ouvrir(menuObserve);
-                sortiesObservees =
-                        machineObservee == null ? List.of() : GregTechMachines.sorties(menuObserve);
-                cuvesObservees =
-                        machineObservee == null
-                                ? List.of()
-                                : GregTechMachines.cuvesSortie(menuObserve);
-                receptionFluides = new fr.assistantia.ReceptionSortie<>(ComparaisonEmi::meme);
-            }
-            if (machineObservee == null || !fr.assistantia.InventaireJoueur.synchronise()) return;
-            List<PlanRetrait.Stock<EmiStack>> sorties = new ArrayList<>();
-            for (var slot : sortiesObservees)
-                if (!slot.getItem().isEmpty())
-                    sorties.add(
-                            new PlanRetrait.Stock<>(
-                                    EmiStack.of(slot.getItem()), slot.getItem().getCount(), true));
-            List<PlanRetrait.Stock<EmiStack>> fluides = new ArrayList<>();
-            for (var cuve : cuvesObservees) {
-                var f = cuve.contenu();
-                if (!f.isEmpty())
-                    fluides.add(
-                            new PlanRetrait.Stock<>(
-                                    EmiStack.of(f.getFluid(), f.getTag(), f.getAmount()),
-                                    f.getAmount(),
-                                    true));
-            }
-            sorties.addAll(fluides);
-            var personnels = new ArrayList<PlanRetrait.Stock<EmiStack>>();
-            if (!cuvesObservees.isEmpty()) {
-                personnels.addAll(
-                        inventaire().stream()
-                                .filter(
-                                        o ->
-                                                o.objet().getKey()
-                                                        instanceof
-                                                        net.minecraft.world.level.material.Fluid)
-                                .toList());
-            }
-            recevoir(receptionFluides.actualiser(personnels, fluides), machineObservee.position());
-            for (var lot : lots)
-                if (lot.ici(machineObservee.position()))
-                    lot.suivi()
-                            .disponible(
-                                    lot.suivi().etat() == LotFabrication.Etat.A_RECUPERER
-                                            || sorties.stream()
-                                                    .anyMatch(
-                                                            s ->
-                                                                    lot.suivi().restants().stream()
-                                                                            .anyMatch(
-                                                                                    r ->
-                                                                                            ComparaisonEmi
-                                                                                                    .meme(
-                                                                                                            s
-                                                                                                                    .objet(),
-                                                                                                            r
-                                                                                                                    .objet()))));
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            machineObservee = null;
-        }
+    private static void lotsModifies() {
+        InventaireArbreEmi.invalider();
+        actualise = 0;
     }
 
     private static void ajouterFluide(List<PlanRetrait.Stock<EmiStack>> stock, ItemStack item) {
@@ -245,15 +94,7 @@ public final class MachinesEmi {
     }
 
     public static void annulerLot(int id) {
-        if (EnvoiMachine.occupe()) return;
-        lots.stream()
-                .filter(l -> l.id() == id && l.suivi().annulable())
-                .forEach(l -> l.suivi().annuler());
-        lotsVersion++;
-        InventaireArbreEmi.invalider();
-        actualise = 0;
-        calculPrecedent = "";
-        actualiserArbre();
+        if (!EnvoiMachine.occupe() && lots.annuler(id)) actualiserArbre();
     }
 
     public static void recalculer() {
@@ -298,7 +139,7 @@ public final class MachinesEmi {
                                     ? plan.probleme()
                                     : o.recette().getCategory().getName().getString()));
         }
-        for (var lot : lots)
+        for (var lot : lots.actifs())
             if (lot.suivi().etat() != LotFabrication.Etat.ANNULE)
                 lignes.add(
                         new Ligne(
@@ -331,26 +172,9 @@ public final class MachinesEmi {
     public static boolean completerLot(int id, EmiRecipe recette, int supplement) {
         actualiserArbre();
         if (supplement <= 0 || supplement > declarables(recette)) return false;
-        for (int i = 0; i < lots.size(); i++) {
-            var lot = lots.get(i);
-            if (lot.id() != id || lot.recette() != recette) continue;
-            var sorties = sortiesLot(recette, supplement, !lot.manuel());
-            if (sorties.isEmpty() || !lot.suivi().ajouter(sorties)) return false;
-            lots.set(
-                    i,
-                    new LotMachine(
-                            id,
-                            recette,
-                            PlanMachines.produit(1, (long) lot.fois() + supplement),
-                            lot.emplacement(),
-                            lot.suivi()));
-            lotsVersion++;
-            InventaireArbreEmi.invalider();
-            calculPrecedent = "";
-            actualiserArbre();
-            return true;
-        }
-        return false;
+        if (!lots.completer(id, recette, supplement)) return false;
+        actualiserArbre();
+        return true;
     }
 
     public static Object arbreDeclaration() {
@@ -361,12 +185,7 @@ public final class MachinesEmi {
         actualiserArbre();
         int max = declarables(recette);
         if (fois < 1 || fois > max) return false;
-        // Terminer l'observation des anciens lots avant d'établir le point de départ du nouveau.
-        recevoir(List.of());
-        // Point de départ physique : les objets déjà possédés ne valident pas ce nouveau lot.
-        receptionManuelle.initialiser(inventaire());
-        ajouterLot(recette, fois, null);
-        calculPrecedent = "";
+        if (lots.ajouter(recette, fois, null) == 0) return false;
         actualiserArbre();
         return true;
     }
@@ -379,7 +198,7 @@ public final class MachinesEmi {
                 || mc.level == null
                 || connexion != mc.getConnection()
                 || !dimension.equals(mc.level.dimension().location().toString())) return List.of();
-        return lots.stream()
+        return lots.actifs().stream()
                 .flatMap(l -> l.suivi().restants().stream())
                 .map(s -> new PlanRetrait.Stock<>(s.objet().copy(), s.quantite(), true))
                 .toList();
@@ -396,7 +215,7 @@ public final class MachinesEmi {
                 || connexion != mc.getConnection()
                 || !dimension.equals(mc.level.dimension().location().toString())) return List.of();
         var acquis =
-                lots.stream()
+                lots.actifs().stream()
                         .flatMap(l -> l.suivi().obtenus().stream())
                         .filter(s -> !s.objet().getItemStack().isEmpty())
                         .toList();
@@ -521,7 +340,7 @@ public final class MachinesEmi {
                 || !dimension.equals(mc.level.dimension().location().toString()))
             return java.util.Map.of();
         java.util.Map<String, Integer> result = new java.util.HashMap<>();
-        for (var lot : lots)
+        for (var lot : lots.actifs())
             for (var s : lot.suivi().restants()) {
                 var item = s.objet().getItemStack();
                 if (!item.isEmpty())
@@ -618,43 +437,11 @@ public final class MachinesEmi {
 
     private static void envoyee(
             EmiRecipe recipe, int n, int demande, BlockPos position, Screen parent) {
-        recevoir(List.of());
-        receptionManuelle.initialiser(inventaire());
-        int id = ajouterLot(recipe, n, position);
+        int id = lots.ajouter(recipe, n, position);
         actualiserArbre();
         if (demande > n && DeclarerFabricationEcran.demandeQuantite(recipe, demande))
             Minecraft.getInstance()
                     .setScreen(new DeclarerFabricationEcran(parent, recipe, n, demande, id));
-    }
-
-    private static List<PlanRetrait.Stock<EmiStack>> sortiesLot(
-            EmiRecipe recipe, int n, boolean automatique) {
-        List<PlanRetrait.Stock<EmiStack>> sorties = new ArrayList<>();
-        for (var output : recipe.getOutputs())
-            if (!output.isEmpty()
-                    && output.getChance() >= 1
-                    && (automatique || !output.getItemStack().isEmpty()))
-                sorties.add(
-                        new PlanRetrait.Stock<>(
-                                output.copy(), PlanMachines.produit(output.getAmount(), n), true));
-        return List.copyOf(sorties);
-    }
-
-    private static int ajouterLot(EmiRecipe recipe, int n, BlockPos position) {
-        var sorties = sortiesLot(recipe, n, position != null);
-        if (sorties.isEmpty()) return 0;
-        int id = ++prochainLot;
-        lots.add(
-                new LotMachine(
-                        id,
-                        recipe,
-                        n,
-                        java.util.Optional.ofNullable(position),
-                        new LotFabrication<>(sorties, ComparaisonEmi::meme)));
-        lotsVersion++;
-        InventaireArbreEmi.invalider();
-        actualise = 0;
-        return id;
     }
 
     private static String cleStock(List<PlanRetrait.Stock<EmiStack>> stock) {
@@ -663,69 +450,6 @@ public final class MachinesEmi {
                 .sorted()
                 .toList()
                 .toString();
-    }
-
-    private static PlanMachines.Noeud<EmiStack, EmiRecipe> lire(
-            Object node, Set<Object> chemin, StringBuilder key, int depth, int[] count)
-            throws ReflectiveOperationException {
-        return lire(node, chemin, key, depth, count, null);
-    }
-
-    private static PlanMachines.Noeud<EmiStack, EmiRecipe> lire(
-            Object node,
-            Set<Object> chemin,
-            StringBuilder key,
-            int depth,
-            int[] count,
-            EmiRecipe parent)
-            throws ReflectiveOperationException {
-        if (node == null || depth > 128 || ++count[0] > 4096 || !chemin.add(node))
-            throw new IllegalArgumentException("Arbre invalide");
-        var type = node.getClass();
-        var ingredient = (EmiIngredient) type.getField("ingredient").get(node);
-        boolean reusable =
-                type.getField("catalyst").getBoolean(node)
-                        || type.getField("consumeChance").getFloat(node) == 0;
-        if (ComparaisonEmi.circuitVirtuel(parent, ingredient, reusable)) {
-            // Supprimer toute la branche de configuration, pas les vrais outils de la recette.
-            chemin.remove(node);
-            return null;
-        }
-        var variantes =
-                ingredient.getEmiStacks().stream()
-                        .filter(
-                                s -> {
-                                    var item = s.getItemStack();
-                                    return !item.hasTag()
-                                            || !item.getTag().contains("assistantia_objectif");
-                                })
-                        .map(EmiStack::copy)
-                        .toList();
-        var recipe = (EmiRecipe) type.getField("recipe").get(node);
-        long amount = type.getField("amount").getLong(node),
-                divisor = type.getField("divisor").getLong(node);
-        key.append(recipe == null ? "-" : recipe.getId())
-                .append(':')
-                .append(amount)
-                .append('/')
-                .append(divisor)
-                .append(ingredient)
-                .append(';');
-        List<PlanMachines.Noeud<EmiStack, EmiRecipe>> enfants = new ArrayList<>();
-        Object raw = type.getField("children").get(node);
-        if (raw instanceof List<?> nodes)
-            for (Object child : nodes) {
-                var enfant = lire(child, chemin, key, depth + 1, count, recipe);
-                if (enfant != null) enfants.add(enfant);
-            }
-        chemin.remove(node);
-        return new PlanMachines.Noeud<>(
-                s -> variantes.stream().anyMatch(v -> ComparaisonEmi.meme(s, v)),
-                amount,
-                divisor,
-                reusable,
-                recipe,
-                enfants);
     }
 
     private static void actualiserArbre() {
@@ -737,16 +461,13 @@ public final class MachinesEmi {
             if ((current == null && !fr.assistantia.PauseObjectifEmi.enPause())
                     || connexion != mc.getConnection()
                     || !dim.equals(dimension)) {
-                lots.clear();
+                lots.vider();
                 entreesConnues.clear();
                 entreesVersion++;
                 outilsConnus = List.of();
                 operationsOutils = null;
-                receptionManuelle.vider();
-                lotsVersion++;
-                InventaireArbreEmi.invalider();
             }
-            menuObserve = null;
+            lots.oublierInterface();
             toutes = List.of();
             calculPrecedent = "";
             compatibilites.clear();
@@ -754,7 +475,7 @@ public final class MachinesEmi {
             operations = locales = List.of();
             machines = List.of();
             disposition = null;
-            signature = "";
+            instantane = null;
             arbre = current;
             connexion = mc.getConnection();
             dimension = dim;
@@ -766,20 +487,11 @@ public final class MachinesEmi {
                 || EnvoiMachine.occupe()
                 || !fr.assistantia.InventaireJoueur.synchronise()) return;
         try {
-            var key = new StringBuilder();
-            var root =
-                    lire(
-                            arbre.getClass().getField("goal").get(arbre),
-                            Collections.newSetFromMap(new IdentityHashMap<>()),
-                            key,
-                            0,
-                            new int[] {0});
-            long batches = arbre.getClass().getField("batches").getLong(arbre);
-            key.append(batches);
-            if (!signature.equals(key.toString())) {
-                // Un changement de recette ou de quantité ne retire rien des machines.
+            var vue = InstantaneArbreEmi.lire(arbre);
+            if (instantane != vue) {
                 compatibilites.clear();
-                signature = key.toString();
+                calculPrecedent = "";
+                instantane = vue;
             }
             var stock = inventaire();
             var finaux =
@@ -792,13 +504,13 @@ public final class MachinesEmi {
             stock.addAll(creditsAcquis(stock, finaux));
             stock.addAll(finaux);
             stock.addAll(completerOutils(stock));
-            String cle = signature + "|" + cleStock(stock) + "|" + lotsVersion;
+            String cle = cleStock(stock) + "|" + lots.revision();
             if (cle.equals(calculPrecedent)) return;
             calculPrecedent = cle;
             // Les réceptions sorties des poches gardent un crédit de travail accompli.
             // Les quantités restantes seules restent réservées et recherchées en jaune.
-            for (var lot : lots) stock.addAll(lot.suivi().restants());
-            toutes = PlanMachines.calculer(root, batches, stock);
+            for (var lot : lots.actifs()) stock.addAll(lot.suivi().restants());
+            toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
         } catch (ReflectiveOperationException | RuntimeException e) {
             operations = toutes = List.of();
@@ -815,7 +527,7 @@ public final class MachinesEmi {
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         if (actif() != arbre || ++ticks % 10 == 0) actualiserArbre();
-        actualiserLots();
+        lots.actualiser();
         if (ticks % 100 == 0) compatibilites.clear();
         if (ticks % 40 != 0) return;
         var mc = Minecraft.getInstance();
@@ -908,7 +620,7 @@ public final class MachinesEmi {
                                                     GregTechMachines.compatible(
                                                             ui.machine(), o.recette()))
                                     .toList());
-            for (var lot : lots)
+            for (var lot : lots.actifs())
                 if (lot.ici(ui.position())
                         && lot.suivi().annulable()
                         && visibles.stream().noneMatch(o -> o.recette() == lot.recette()))
@@ -963,130 +675,29 @@ public final class MachinesEmi {
 
     @SubscribeEvent
     public static void rendu(ScreenEvent.Render.Post event) {
-        if (!affiche(event.getScreen()) || disposition == null || selection() == null) return;
-        var d = disposition;
-        var c = d.cadre();
-        var g = event.getGuiGraphics();
-        var font = Minecraft.getInstance().font;
-        int mx = event.getMouseX(), my = event.getMouseY();
         var selected = selection();
-        // Même habillage que le panneau des coffres et le HUD.
-        PanneauAssistant.fond(g, c);
-        String titre =
-                EnvoiMachine.occupe()
-                        ? EnvoiMachine.statut()
-                        : selected.recette().getCategory().getName().getString()
-                                + " · "
-                                + (plan == null ? 0 : plan.fois())
-                                + " / "
-                                + selected.fois()
-                                + " fabrications";
-        String quantites =
-                selected.fois() > 0
-                        ? (plan == null ? 0 : plan.fois()) + "/" + selected.fois()
-                        : quantiteSelection();
-        if (selected.fois() == 0) titre = etatSelection() + " · " + quantites + " récupérés";
-        String nom = EnvoiMachine.occupe() ? EnvoiMachine.statut() : etatSelection();
-        PanneauAssistant.titre(g, font, d.titre(), nom, quantites);
-        List<Component> tooltip = null;
-        for (int rang = 0; rang < d.parPage(); rang++) {
-            int i = page * d.parPage() + rang;
-            if (i >= locales.size()) break;
-            var op = locales.get(i);
-            var z = d.icone(rang);
-            PanneauAssistant.caseIcone(g, z, i == choix);
-            if (!op.recette().getOutputs().isEmpty())
-                op.recette()
-                        .getOutputs()
-                        .get(0)
-                        .render(g, z.x() + 1, z.y() + 1, 0, EmiIngredient.RENDER_ICON);
-            if (op.fois() > 0) PanneauAssistant.nombre(g, font, z, op.fois());
-            if (z.contient(mx, my)) {
-                tooltip = new ArrayList<>();
-                tooltip.add(
-                        Component.literal(
-                                op.recette().getOutputs().isEmpty()
-                                        ? "Recette"
-                                        : op.recette().getOutputs().get(0).getName().getString()));
-                tooltip.add(
-                        Component.literal(
-                                        op.fois() > 0
-                                                ? op.fois() + " fabrications restantes"
-                                                : "Lot en cours · récupère le résultat à sa sortie")
-                                .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
-                tooltip.add(
-                        Component.literal(
-                                        EnvoiMachine.occupe()
-                                                ? "Recette accessible après l’envoi"
-                                                : "Clic : ouvrir cette recette dans EMI")
-                                .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
-            }
-        }
-        boolean libre = !EnvoiMachine.occupe();
-        PanneauAssistant.bouton(
-                g,
-                font,
-                d.prendre(),
-                circuitARegler(selected.recette()) ? "Circuit" : "Envoyer",
-                libre && plan != null && plan.possible(),
-                true,
-                mx,
-                my);
-        PanneauAssistant.bouton(
-                g,
-                font,
-                d.tout(),
-                "En cours de craft",
-                libre && selected.fois() > 0 && declarables(selected.recette()) > 0,
-                false,
-                mx,
-                my);
-        if (d.pages()) {
-            PanneauAssistant.bouton(g, font, d.precedent(), "‹", libre && page > 0, false, mx, my);
-            PanneauAssistant.bouton(
-                    g,
-                    font,
-                    d.suivant(),
-                    "›",
-                    libre && (page + 1) * d.parPage() < locales.size(),
-                    false,
-                    mx,
-                    my);
-        }
-        if (d.prendre().contient(mx, my) || d.titre().contient(mx, my)) {
-            tooltip = new ArrayList<>();
-            tooltip.add(Component.literal(titre));
-            if (plan != null) {
-                if (!plan.probleme().isEmpty()) tooltip.add(Component.literal(plan.probleme()));
-                if (circuitARegler(selected.recette()))
-                    tooltip.add(
-                            Component.literal(
-                                    "Règle le numéro dans la configuration de la machine. Aucun envoi avant confirmation du bon réglage."));
-                for (String s : plan.details()) tooltip.add(Component.literal(s));
-            }
-            if (!EnvoiMachine.statut().isEmpty())
-                tooltip.add(Component.literal(EnvoiMachine.statut()));
-        }
-        if (d.tout().contient(mx, my))
-            tooltip =
-                    List.of(
-                            Component.literal(
-                                    selected.fois() <= 0
-                                            ? "Déjà déclaré. Le suivi global d'EMI permet d'annuler cette réservation."
-                                            : EnvoiMachine.occupe()
-                                                    ? "Attends la fin de l'envoi."
-                                                    : !fr.assistantia.InventaireJoueur.synchronise()
-                                                            ? "Lecture du sac en cours…"
-                                                            : declarables(selected.recette()) == 0
-                                                                    ? "Déclaration manuelle disponible pour les recettes avec un résultat objet garanti."
-                                                                    : "Déclarer une quantité déjà lancée. Les ingrédients ne seront plus demandés ; récupère ensuite le résultat."));
-        if (tooltip != null) g.renderComponentTooltip(font, tooltip, mx, my);
+        if (!affiche(event.getScreen()) || disposition == null || selected == null) return;
+        PanneauMachineEmi.afficher(
+                event,
+                new PanneauMachineEmi.Vue(
+                        disposition,
+                        locales,
+                        choix,
+                        page,
+                        plan,
+                        etatSelection(),
+                        selected.fois() == 0 ? quantiteSelection() : "",
+                        EnvoiMachine.statut(),
+                        EnvoiMachine.occupe(),
+                        circuitARegler(selected.recette()),
+                        declarables(selected.recette()) > 0,
+                        fr.assistantia.InventaireJoueur.synchronise()));
     }
 
     private static String quantiteSelection() {
         var op = selection();
         int recu = 0, total = 0;
-        for (var lot : lots)
+        for (var lot : lots.actifs())
             if (op != null && lot.recette() == op.recette() && lot.suivi().annulable()) {
                 recu += lot.suivi().totalRecu();
                 total += lot.suivi().total();
@@ -1109,7 +720,7 @@ public final class MachinesEmi {
             if (circuitARegler(op.recette())) return "Circuit à régler";
             return plan != null && plan.possible() ? "À envoyer" : "À collecter";
         }
-        return lots.stream()
+        return lots.actifs().stream()
                 .filter(l -> l.recette() == op.recette() && l.suivi().annulable())
                 .map(l -> l.suivi().etat().texte)
                 .findFirst()

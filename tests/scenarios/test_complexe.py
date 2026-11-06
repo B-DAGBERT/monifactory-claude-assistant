@@ -182,6 +182,7 @@ class ScenariosComplexes(Parcours, unittest.TestCase):
             "t": 1000,
             "dimension": "test:world",
             "zone": [0, 0, 0, 0],
+            "chunks_complets": [[0, 0]],
             "blocs": [{"p": [3, 64, 0], "b": "minecraft:chest", "o": [["test:plate", 8]]}],
         }
         with patch("monifactory_assistant.game.world.atomic_json"):
@@ -203,3 +204,32 @@ class ScenariosComplexes(Parcours, unittest.TestCase):
         merged = world.merged(Storage([coffre(3, n=8, t=2000)]))
         self.assertEqual(merged.containers, [])
         self.assertEqual(len(merged.machines), 1)
+
+    def test_18_releve_tronque_preserve_les_coffres_hors_couverture(self):
+        world = object.__new__(World)
+        world.blocks, world.last_t, world.players, world.errors = {}, 0, [], []
+        proche = {"p": [3, 64, 0], "b": "minecraft:chest", "o": [["test:plate", 2]]}
+        loin = {**proche, "p": [18, 64, 0]}
+        frame = {
+            "t": 1000,
+            "dimension": "test:world",
+            "zone": [0, 0, 1, 0],
+            "blocs": [proche, loin],
+        }
+        with patch("monifactory_assistant.game.world.atomic_json"):
+            world.update(frame)
+            world.update({**frame, "t": 2000, "blocs": [], "chunks_complets": [[0, 0]]})
+        merged = world.merged(Storage([]))
+        self.demarrer(2)
+        self.client.step(lot={"item": "test:plate", "n": 2})
+        self.assertEqual(self.rafraichir(merged.raw)["coffres"], [{"x": 18, "jaune": True}])
+
+    def test_19_ancien_serveur_ne_prouve_pas_une_absence(self):
+        world = object.__new__(World)
+        world.blocks, world.last_t, world.players, world.errors = {}, 0, [], []
+        bloc = {"p": [3, 64, 0], "b": "minecraft:chest", "o": [["test:plate", 2]]}
+        frame = {"t": 1000, "dimension": "test:world", "zone": [0, 0, 0, 0], "blocs": [bloc]}
+        with patch("monifactory_assistant.game.world.atomic_json"):
+            world.update(frame)
+            world.update({**frame, "t": 2000, "blocs": []})
+        self.assertEqual(world.merged(Storage([])).containers[0]["objets"][0]["n"], 2)

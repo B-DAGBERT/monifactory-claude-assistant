@@ -239,6 +239,30 @@ public final class EnvoiMachineTest {
         assert !EnvoiMachine.preparer(screen, virtualCircuit, 4).possible()
                 : "configuration de recette invalide refusée";
         setup();
+        menu.slots.get(2).item = new ItemStack("tin", 20);
+        p = EnvoiMachine.preparer(screen, r, 64);
+        assert p.possible() && p.fois() == 10;
+        menu.slots.get(2).item.setCount(8);
+        EnvoiMachine.lancer(screen, p, () -> done++);
+        assert !EnvoiMachine.occupe() && mc.gameMode.clicks == 0 && done == 0
+                : "une quantité changée après l'aperçu impose un nouveau plan";
+        setup();
+        var cuve = GregTechMachines.ui.cuves().get(0);
+        cuve.tank.capacity = 2000;
+        var seau = new ItemStack("water_bucket", 1);
+        seau.fluid = "water";
+        seau.amount = 1000;
+        menu.slots.get(2).item = seau;
+        var fluide = recipe(EmiStack.of(new Fluid("water"), null, 1000));
+        p = EnvoiMachine.preparer(screen, fluide, 64);
+        assert p.possible() && p.fois() == 1 && cuve.lectures == 1
+                : "les tailles de lot réutilisent le même relevé de cuve";
+        EnvoiMachine.lancer(screen, p, () -> done++);
+        assert cuve.lectures == 2 : "le clic reprend un relevé frais";
+        finish();
+        assert cuve.lectures == 3 && cuve.calls == 1 && done == 1
+                : "la cuve est contrôlée juste avant de vider le contenant";
+        setup();
         var mold = item("mold_ingot", 1);
         var alloy = new EmiRecipe(List.of(item("tin", 1)), List.of(mold));
         menu.slots.get(2).item = new ItemStack("tin", 64);

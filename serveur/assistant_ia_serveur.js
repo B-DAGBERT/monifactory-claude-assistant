@@ -7,7 +7,7 @@
 // - les listes internes de Java refusent les appels : liste() les copie dans une ArrayList ;
 // - pas de let/const dans un bloc à l'intérieur d'une fonction fléchée : utiliser des fonctions normales.
 
-const VERSION_SERVEUR = 1
+const VERSION_SERVEUR = 2
 const RAYON_CHUNKS = 2            // 5 x 5 chunks autour du joueur (80 blocs de côté)
 const INTERVALLE = 60             // en ticks : toutes les 3 secondes
 const PRESENCE_MAX = 30000        // ms sans signe de vie du client : l'assistant n'est plus lancé
@@ -66,20 +66,22 @@ function premiere(ou, lectures) {
 
 function positionsTechniques(level, cx, cz) {
   const chunk = premiere('chunk', [() => level.getChunk(cx, cz), () => level.m_6325_(cx, cz)])
-  if (chunk == null) return []
+  if (chunk == null) return null
   const positions = premiere('blocs du chunk', [
-    () => liste(chunk.getBlockEntitiesPos()),
-    () => liste(chunk.getBlockEntities().keySet()),
-    () => liste(chunk.m_5928_())
+    () => chunk.getBlockEntitiesPos(),
+    () => chunk.getBlockEntities().keySet(),
+    () => chunk.m_5928_()
   ])
-  return positions == null ? [] : positions
+  return positions == null ? null : liste(positions)
 }
 
-function lireInventaireBloc(bloc) {
+function lireInventaireBloc(bloc, couverture) {
   let inv = null
-  try { inv = bloc.inventory } catch (e) { return [] }
+  try { inv = bloc.inventory } catch (e) { couverture.complet = false; return [] }
   if (inv == null) return []
-  const n = Math.min(Number(inv.getSlots()), CASES_MAX)
+  const cases = Number(inv.getSlots())
+  if (cases > CASES_MAX) couverture.complet = false
+  const n = Math.min(cases, CASES_MAX)
   const total = {}
   for (let i = 0; i < n; i++) {
     let st = inv.getStackInSlot(i)
@@ -115,7 +117,7 @@ function etatMachine(mm) {
   return m
 }
 
-function decrireBloc(level, pos) {
+function decrireBloc(level, pos, couverture) {
   const bloc = level.getBlock(pos)
   const id = str(bloc.id)
   if (IGNORES.test(id)) return null
@@ -123,9 +125,12 @@ function decrireBloc(level, pos) {
   let mm = null
   try { mm = bloc.entity.metaMachine } catch (e) { /* pas une machine GregTech */ }
   if (mm != null) {
-    try { info.m = etatMachine(mm) } catch (e) { noterErreurServeur('machine ' + id, e) }
+    try { info.m = etatMachine(mm) } catch (e) {
+      couverture.complet = false
+      noterErreurServeur('machine ' + id, e)
+    }
   }
-  const objets = lireInventaireBloc(bloc)
+  const objets = lireInventaireBloc(bloc, couverture)
   if (objets.length > 0) info.o = objets
   if (info.m == null && info.o == null) return null
   return info
@@ -140,15 +145,23 @@ function scannerPour(p) {
   const px = p.getX(), pz = p.getZ()
   const cx = Math.floor(px / 16), cz = Math.floor(pz / 16)
   let blocs = []
+  const couverts = {}
   for (let dx = -RAYON_CHUNKS; dx <= RAYON_CHUNKS; dx++) {
     for (let dz = -RAYON_CHUNKS; dz <= RAYON_CHUNKS; dz++) {
-      let positions = positionsTechniques(level, cx + dx, cz + dz)
+      const x = cx + dx, z = cz + dz
+      const positions = positionsTechniques(level, x, z)
+      if (positions == null) continue
+      const couverture = { complet: true }
       for (let i = 0; i < positions.length; i++) {
         try {
-          let info = decrireBloc(level, positions[i])
+          let info = decrireBloc(level, positions[i], couverture)
           if (info != null) blocs.push(info)
-        } catch (e) { noterErreurServeur('bloc', e) }
+        } catch (e) {
+          couverture.complet = false
+          noterErreurServeur('bloc', e)
+        }
       }
+      if (couverture.complet) couverts[x + ',' + z] = [x, z]
     }
   }
   const joueurs = []
@@ -164,10 +177,16 @@ function scannerPour(p) {
     json = JSON.stringify({
       v: VERSION_SERVEUR, t: Date.now(), dimension: str(level.dimension),
       zone: [cx - RAYON_CHUNKS, cz - RAYON_CHUNKS, cx + RAYON_CHUNKS, cz + RAYON_CHUNKS],
-      blocs: blocs, joueurs: joueurs, erreurs: erreursServeur
+      blocs: blocs, joueurs: joueurs, erreurs: erreursServeur,
+      chunks_complets: Object.keys(couverts).map(k => couverts[k])
     })
     if (longueur(json) <= TAILLE_MAX || blocs.length < 10) break
-    blocs = blocs.slice(0, Math.floor(blocs.length / 2))
+    const garde = Math.floor(blocs.length / 2)
+    for (let i = garde; i < blocs.length; i++) {
+      const p = blocs[i].p
+      delete couverts[Math.floor(p[0] / 16) + ',' + Math.floor(p[2] / 16)]
+    }
+    blocs = blocs.slice(0, garde)
   }
   const data = {}
   let n = 0

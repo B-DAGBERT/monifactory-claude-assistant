@@ -4,7 +4,7 @@ import math
 from collections import defaultdict
 from datetime import datetime
 
-from monifactory_assistant.game.snapshots import frame_value
+from monifactory_assistant.game.snapshots import file_stamp, frame_value
 
 SHARED_CHESTS = {
     "minecraft:chest",
@@ -149,6 +149,7 @@ class Storage:
         self.containers = containers
         self.raw = containers if raw is None else raw  # avec les deux moitiés des grands coffres
         self.machines = machines or []  # blocs à interface ouverts au moins une fois
+        self._export_key = None
 
     @staticmethod
     def load(bridge):
@@ -211,10 +212,56 @@ class Storage:
                 nearest, nearest_distance = c, distance
         return total, nearest
 
+    def export_key(self):
+        """Comparer ce qui sera exporté avant de formater les dates et les lignes."""
+        if self._export_key is None:
+            self._export_key = tuple(
+                (
+                    c["x"],
+                    c["y"],
+                    c["z"],
+                    c["dimension"],
+                    c["bloc"],
+                    c["nom"],
+                    int(c["t"] // 60_000),
+                    c["objets"],
+                )
+                for c in self.containers
+            )
+        return self._export_key
+
     def as_text(self):
         lines = []
+        dates = {}
         for c in self.containers:
-            date = datetime.fromtimestamp(c["t"] / 1000).strftime("%d/%m %H:%M")
+            minute = int(c["t"] // 60_000)
+            if minute not in dates:
+                dates[minute] = datetime.fromtimestamp(minute * 60).strftime("%d/%m %H:%M")
+            date = dates[minute]
             where = f"{int(c['x'])} {int(c['y'])} {int(c['z'])} | {c['dimension']} | {c['bloc']} ({c['nom']})"
             lines += [f"{o['item']} | {int(o['n'])} | {where} | {date}" for o in c["objets"]]
         return "\n".join(lines) + "\n"
+
+
+class StorageMonitor:
+    """Réutilise le dernier relevé valide et sa fusion jusqu'à une nouvelle observation."""
+
+    def __init__(self):
+        self.client = self.storage = Storage([])
+        self.stamp = None
+        self.server_blocks = self.merged_client = None
+
+    def refresh(self, bridge, world):
+        path = bridge.dir / "stockage.json"
+        try:
+            stamp = file_stamp(path)
+            if stamp != self.stamp:
+                client = Storage.load(bridge)
+                if client is not None and file_stamp(path) == stamp:
+                    self.client, self.stamp = client, stamp
+        except OSError:
+            pass  # Garder le dernier relevé complet et réessayer au prochain cycle.
+        if world.blocks is not self.server_blocks or self.client is not self.merged_client:
+            self.storage = world.merged(self.client) if world.blocks else self.client
+            self.server_blocks, self.merged_client = world.blocks, self.client
+        return self.storage

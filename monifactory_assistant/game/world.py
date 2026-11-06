@@ -1,8 +1,10 @@
 """Mémoire du monde et description des états des machines."""
 
+import math
 import re
 import time
 
+from monifactory_assistant.game.snapshots import file_stamp
 from monifactory_assistant.game.storage import Storage, distinct_containers
 from monifactory_assistant.persistence import atomic_json, load_json
 from monifactory_assistant.settings import WORLD_FILE
@@ -23,16 +25,32 @@ class World:
         self.players = []
         self.errors = []
         self.last_t = 0  # heure de la dernière vue du serveur (ms)
+        self.snapshot_stamp = None
 
     @property
     def active(self):
         return time.time() * 1000 - self.last_t < 15000
 
+    def poll(self, bridge):
+        path = bridge.dir / "monde.json"
+        try:
+            stamp = file_stamp(path)
+            if stamp is None or stamp == self.snapshot_stamp:
+                return False
+            snapshot = bridge.read("monde.json")
+            if not isinstance(snapshot, dict) or file_stamp(path) != stamp:
+                return False
+        except OSError:
+            return False
+        changed = self.update(snapshot)
+        self.snapshot_stamp = stamp
+        return changed
+
     def update(self, snapshot):
         """Intègre une vue du serveur. Renvoie True si elle est nouvelle."""
-        if not snapshot or snapshot.get("t", 0) <= self.last_t:
+        date = snapshot.get("t", 0) if isinstance(snapshot, dict) else 0
+        if type(date) not in (int, float) or not math.isfinite(date) or date <= self.last_t:
             return False
-        self.last_t = snapshot["t"]
         dimension = snapshot["dimension"]
         cx0, cz0, cx1, cz1 = snapshot["zone"]
         seen = {}
@@ -47,32 +65,43 @@ class World:
                 "x": x,
                 "y": y,
                 "z": z,
-                "t": snapshot["t"],
+                "t": date,
                 "v": 2,
                 "objets": [{"item": i, "n": int(n)} for i, n in b.get("o", [])],
                 "etat": b.get("m"),
             }
-        # Ce qui était dans la zone regardée et n'y est plus a été cassé ou déplacé
-        for key, b in list(self.blocks.items()):
-            if (
-                b["dimension"] == dimension
-                and cx0 <= b["x"] // 16 <= cx1
-                and cz0 <= b["z"] // 16 <= cz1
-                and key not in seen
-            ):
-                # Le script omet aussi les coffres devenus vides. Garder une absence
-                # datée empêche un ancien relevé client de les ressusciter.
-                self.blocks[key] = {
-                    **b,
-                    "t": snapshot["t"],
-                    "objets": [],
-                    "etat": None,
-                    "absent": True,
-                }
-        self.blocks.update(seen)
+        # Une omission ne prouve une absence que dans un chunk entièrement transmis.
+        # Un ancien script ne donne pas cette preuve, mais ses observations restent utiles.
+        coverage = snapshot.get("chunks_complets")
+        complete = (
+            {
+                tuple(chunk)
+                for chunk in coverage
+                if isinstance(chunk, list)
+                and len(chunk) == 2
+                and all(type(coord) in (int, float) for coord in chunk)
+                and cx0 <= chunk[0] <= cx1
+                and cz0 <= chunk[1] <= cz1
+            }
+            if isinstance(coverage, list)
+            else set()
+        )
+        updated = dict(self.blocks)
+        if complete:
+            for key, b in self.blocks.items():
+                if (
+                    b["dimension"] == dimension
+                    and (b["x"] // 16, b["z"] // 16) in complete
+                    and key not in seen
+                ):
+                    updated[key] = {**b, "t": date, "objets": [], "etat": None, "absent": True}
+        updated.update(seen)
+        if updated != self.blocks:
+            atomic_json(WORLD_FILE, {"blocs": updated})
+            self.blocks = updated
         self.players = snapshot.get("joueurs", [])
         self.errors = snapshot.get("erreurs", [])
-        atomic_json(WORLD_FILE, {"blocs": self.blocks})
+        self.last_t = date
         return True
 
     def containers(self):

@@ -2,6 +2,7 @@ package fr.assistantia.mixin;
 
 import dev.emi.emi.api.recipe.EmiRecipe;
 import fr.assistantia.compat.emi.CatalyseursArbreEmi;
+import fr.assistantia.compat.emi.InstantaneArbreEmi;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.Unique;
@@ -25,6 +26,8 @@ public abstract class CatalyseursArbreEmiMixin {
                         .warn("Assistant : catalyseurs de l'arbre EMI indisponibles", e);
                 assistantia$erreurCatalyseurs = true;
             }
+        } finally {
+            InstantaneArbreEmi.arbreModifie();
         }
     }
 }

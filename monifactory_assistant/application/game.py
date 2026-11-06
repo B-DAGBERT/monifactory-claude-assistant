@@ -66,31 +66,32 @@ class GameController:
         if time.time() - self.veins_read > 5:
             self.veins, self.veins_read = find_veins(self.bridge), time.time()
             self.check_new_veins()
-        client = (
-            Storage.load(self.bridge) or self.client_storage
-        )  # coffres et machines ouverts par le joueur
-        self.client_storage = client
-        snapshot = self.bridge.read("monde.json")  # ce que voit le script serveur
-        if snapshot and snapshot.get("t", 0) > self.world.last_t:
-            if self.world.update(snapshot):
-                for error in self.world.errors:
-                    if error not in self.logged_errors:
-                        self.logged_errors.add(error)
-                        log("Erreur sur le serveur : " + error)
-        storage = self.world.merged(client) if self.world.blocks else client
-        self.check_new_machines(storage)
-        text = storage.as_text()
-        if text != self.storage_text:
-            if self.storage_text is not None:
-                self.check_removed_chests(storage)
-                if state.get("coffre_ouvert"):
-                    chest = next(
-                        (c for c in storage.containers if c["cle"] == state["coffre_ouvert"]), None
-                    )
-                    if chest:
-                        self.notify(f"Coffre mémorisé : {len(chest['objets'])} sortes d'objets.", 4)
-            self.bridge.write_text("stockage.txt", text)
-            self.storage_text = text
+        if self.world.poll(self.bridge):
+            for error in self.world.errors:
+                if error not in self.logged_errors:
+                    self.logged_errors.add(error)
+                    log("Erreur sur le serveur : " + error)
+        storage = self.storage_monitor.refresh(self.bridge, self.world)
+        if storage is not self.storage:
+            self.check_new_machines(storage)
+        export_key = storage.export_key()
+        if export_key != self.storage_export_key:
+            text = storage.as_text()
+            if text != self.storage_text:
+                if self.storage_text is not None:
+                    self.check_removed_chests(storage)
+                    if state.get("coffre_ouvert"):
+                        chest = next(
+                            (c for c in storage.containers if c["cle"] == state["coffre_ouvert"]),
+                            None,
+                        )
+                        if chest:
+                            self.notify(
+                                f"Coffre mémorisé : {len(chest['objets'])} sortes d'objets.", 4
+                            )
+                self.bridge.write_text("stockage.txt", text)
+                self.storage_text = text
+            self.storage_export_key = export_key
         self.storage = storage
 
         if (
