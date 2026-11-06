@@ -42,6 +42,10 @@ Dans EMI, **Sac N** indique les objets déjà sur toi dans le backpack et permet
 
 Le scan, les retraits, le suivi des machines et les filons ne font **aucun appel IA**.
 
+Pour supprimer un projet, utilise **Mes projets ▾** et sa confirmation. La Discussion et la voix
+peuvent expliquer les opérations. La création et le remplacement d’un plan détaillé se font dans
+le menu en jeu pendant la qualification du consentement R5.
+
 ## Guides
 
 - [Utilisation des menus, objectifs et filons](docs/utilisation.md)

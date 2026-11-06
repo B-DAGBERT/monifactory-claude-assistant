@@ -79,13 +79,27 @@ changement de monde. Le JAR de cette compilation locale a l’empreinte SHA-256
   de la restauration elle-même exigent une qualification de la transaction complète.
 - **R2, limite de couverture.** Le marqueur identifie la révision publiée du catalogue. Il
   ne rend pas transactionnelle la réécriture de plusieurs fichiers de recettes par KubeJS.
-- **R5, BLOCKED.** Le modèle peut proposer l’effacement d’un plan. La sauvegarde immédiate est
-  protégée par R4. L’autorisation explicite en jeu reste à définir pour conserver les commandes
-  de suppression légitimes dans la discussion et à la voix.
+- **R5, PARTIAL.** Le garde-fou publié interdit les effets destructifs des réponses IA. Le parcours
+  de consentement natif distinct reste en qualification. Voir le bilan ci-dessous.
 - **NO CHANGE NEEDED.** La composition des contrôleurs, les adaptateurs des deux CLI, les
   règles de transferts natifs et le protocole de migration restent adaptés aux constats de l’audit.
 - **REJECTED.** Refaire l’architecture dans ce lot ne répond pas aux mesures locales.
 - **Lot 2 reporté.** Le planificateur des scans serveur suit le périmètre déjà en production.
+
+## Clôture R5 et décision V2
+
+| Point                         | Garde-fou R5 publié                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reproduction                  | Sur une copie de projet, une question de recette suivie d’un `effacer_plan` dans la réponse simulée effaçait le plan. `retirer_objectif` sans titre et l’alias `feuille_de_route` avec une liste vide supprimaient des entrées du plan.                                                                                                                         |
+| Frontière contrôlée           | `ConversationController.run_actions` reçoit le résultat final des deux moteurs. Il n’accepte que les types autorisés, vérifie leurs paramètres et refuse l’ensemble d’un lot comportant une action interdite. Un champ `confirmation` ou un type imitant la file Minecraft ne donne aucun droit.                                                                |
+| Effet dans la version publiée | Les réponses de Discussion et de la voix restent informatives. La recherche, les repères, les réglages ordinaires, la pause et les ajouts sans écrasement restent disponibles. Les suppressions, remplacements, actions de progression et générations de projet sont désactivés depuis la réponse IA. Les commandes natives du menu Projet restent disponibles. |
+| Persistance et rejeu          | Les refus n’ouvrent aucun consentement et laissent le plan et sa copie précédente intacts. La file durable et les commandes natives existantes conservent leur comportement. R4 conserve la sauvegarde complète lors de l’effacement d’un plan.                                                                                                                 |
+| Validation                    | `2209355`, 13 tests ajoutés. 479 tests et 26 scénarios EMI passent sur macOS. Ruff, Prettier, `pip check` et `git diff --check` passent. Les réponses Codex et Claude sont simulées.                                                                                                                                                                            |
+| Statut                        | Garde-fou **PASS**. Consentement en jeu **PARTIAL** jusqu’à un essai réel de ce nouveau parcours.                                                                                                                                                                                                                                                               |
+
+**V2 LIMITED.** La conception et les moteurs déterministes sans effet dans le jeu peuvent
+commencer. Les nouvelles actions destructives et les intégrations qui en dépendent attendent
+la qualification du consentement natif. P4 reste ouvert et le lot 2 reste reporté.
 
 ## Mesures locales
 
