@@ -128,7 +128,6 @@ class InterfaceController:
             if path.exists() and path.stat().st_mtime != self.mod_request_time:
                 modified = path.stat().st_mtime
                 request = json.loads(path.read_text(encoding="utf-8"))
-                self.mod_request_time = modified
                 # Celle d'avant le démarrage est ignorée, sauf si elle est toute récente : posée pendant que
                 # l'assistant était arrêté, juste avant que le joueur le relance depuis le jeu
                 age = time.time() * 1000 - float(request.get("n") or 0)
@@ -140,7 +139,13 @@ class InterfaceController:
                     return
                 legacy_n = getattr(self, "legacy_request_n", None)
                 if request.get("n") != legacy_n and recent:
-                    self.handle_mod_request(request)
+                    if requests is not None:
+                        if requests.accept_legacy(
+                            request, self.dispatch_queued_request, self.restore_request_reply
+                        ):
+                            self.refresh(force=True)
+                    else:
+                        self.handle_mod_request(request)
                 elif (
                     legacy_n is None
                     and not recent
@@ -149,6 +154,7 @@ class InterfaceController:
                 ):
                     self.question_ack = {"n": request.get("n"), "etat": "expiree"}
                 self.legacy_request_n = request.get("n")
+                self.mod_request_time = modified
                 if isinstance(request.get("n"), (int, float)):
                     self.mod_request_n = max(self.mod_request_n or 0, request["n"])
         except (OSError, ValueError):
@@ -166,7 +172,7 @@ class InterfaceController:
         self.mod_request_n = max(self.mod_request_n or 0, n)
         if request.get("type") == "question" and n < self.question_ack.get("n", 0):
             return
-        if request.get("type") == "projet" and n < getattr(self, "project_reply_n", 0):
+        if request.get("type") == "projet" and n < (getattr(self, "project_reply_n", 0) or 0):
             return
         if request.get("type") == "projet":
             self.project_reply_n = n

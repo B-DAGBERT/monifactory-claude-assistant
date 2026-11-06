@@ -61,6 +61,10 @@ class ParityTests(unittest.TestCase):
     def test_gameplay_functions_preserved(self):
         before = methods(upstream("assistant_mc.py"))
         after = methods(ast.unparse(application_tree()))
+        tested_bridge_changes = {
+            "split_actions",  # Reject scalar action JSON without losing text; test_bridge_resilience.py.
+            "App.action_oublier_coffre",  # Coordinates need a dimension; test_bridge_resilience.py.
+        }
         compatibility_changes = {
             "find_claude",
             "tool_status",
@@ -177,7 +181,8 @@ class ParityTests(unittest.TestCase):
             "App.load_recipes",
             "App.describe_journal",  # retain usable records beside a damaged record; test_journal_tail.py
         }
-        compatibility_changes |= tested_resilience_changes
+        tested_changes = tested_resilience_changes | tested_bridge_changes
+        compatibility_changes |= tested_changes
         checked = 0
         for name, code in before.items():
             if name in compatibility_changes:
@@ -185,7 +190,7 @@ class ParityTests(unittest.TestCase):
             self.assertIn(name, after, name)
             self.assertEqual(code, after[name], name)
             checked += 1
-        self.assertGreater(checked + len(tested_resilience_changes & before.keys()), 100)
+        self.assertGreater(checked + len(tested_changes & before.keys()), 100)
 
     def test_kubejs_gameplay_functions_preserved(self):
         path = "jeu/assistant_ia.js"

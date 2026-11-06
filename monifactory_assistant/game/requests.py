@@ -50,6 +50,74 @@ class CommandQueue:
         }
         atomic_json(self.receipt, self.rows, backup=False)
 
+    def _process(self, request, dispatch, restore):
+        if not isinstance(request, dict):
+            raise ValueError("Demande invalide")
+        ident, n = request.get("requete"), request.get("n")
+        if (
+            not isinstance(ident, str)
+            or not ident
+            or len(ident) > 80
+            or isinstance(n, bool)
+            or not isinstance(n, int)
+        ):
+            raise ValueError("Identifiant invalide")
+        age = self.clock() * 1000 - n
+        row = self.rows.get(ident)
+        if row is not None:
+            if row.get("etat") == "traitement":
+                row = {
+                    "n": n,
+                    "etat": "interrompue",
+                    "message": "Résultat incertain après interruption. Vérifie l’action avant de la redemander.",
+                }
+                self.rows[ident] = row
+                self._save()
+        elif not -5000 <= age <= self.MAX_AGE_MS:
+            row = {
+                "n": n,
+                "etat": "expiree",
+                "message": "Demande expirée ; renouvelle ton action.",
+            }
+            self.rows[ident] = row
+            self._save()
+        else:
+            self.rows[ident] = {"n": n, "etat": "traitement"}
+            self._save()  # No dispatch without a durable reservation, on either channel.
+            try:
+                row = {"n": n, **dispatch(request)}
+            except Exception:
+                row = {
+                    "n": n,
+                    "etat": "interrompue",
+                    "message": "Action interrompue. Vérifie son résultat avant de réessayer.",
+                }
+            self.rows[ident] = row
+            try:
+                self._save()
+            except OSError:
+                self.rows[ident] = {"n": n, "etat": "traitement"}
+                raise
+        restore(request, row)
+        self.last = {"id": ident, **row}
+
+    def accept_legacy(self, request, dispatch, restore=lambda request, result: None):
+        """Use the same receipt when a client has not yet discovered protocol 2."""
+        if not self.valid:
+            return False
+        if not isinstance(request, dict):
+            raise ValueError("Demande invalide")
+        # Current clients already carry their UUID on the old channel. Keep it if a retry
+        # later arrives through the durable inbox; older clients identify clicks by n.
+        request = {"requete": "legacy-" + str(request.get("n")), **request}
+        try:
+            self._process(request, dispatch, restore)
+        except OSError:
+            self.error = "File momentanément inaccessible ; aucune action renvoyée."
+            raise
+        self.error = ""
+        return True
+
     def poll(self, dispatch, restore=lambda request, result: None):
         if not self.valid:
             return False
@@ -64,57 +132,7 @@ class CommandQueue:
                 if path.stat().st_size > 262_144:
                     raise ValueError("Demande trop volumineuse")
                 request = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(request, dict):
-                    raise ValueError("Demande invalide")
-                ident, n = request.get("requete"), request.get("n")
-                if (
-                    not isinstance(ident, str)
-                    or not ident
-                    or len(ident) > 80
-                    or isinstance(n, bool)
-                    or not isinstance(n, int)
-                ):
-                    raise ValueError("Identifiant invalide")
-                age = self.clock() * 1000 - n
-                row = self.rows.get(ident)
-                if row is not None:
-                    if row.get("etat") == "traitement":
-                        row = {
-                            "n": n,
-                            "etat": "interrompue",
-                            "message": "Résultat incertain après interruption. Vérifie l’action avant de la redemander.",
-                        }
-                        self.rows[ident] = row
-                        self._save()
-                    restore(request, row)
-                elif not -5000 <= age <= self.MAX_AGE_MS:
-                    row = {
-                        "n": n,
-                        "etat": "expiree",
-                        "message": "Demande expirée ; renouvelle ton action.",
-                    }
-                    self.rows[ident] = row
-                    self._save()
-                    restore(request, row)
-                else:
-                    self.rows[ident] = {"n": n, "etat": "traitement"}
-                    self._save()  # No dispatch without a durable reservation.
-                    try:
-                        row = {"n": n, **dispatch(request)}
-                    except Exception:
-                        row = {
-                            "n": n,
-                            "etat": "interrompue",
-                            "message": "Action interrompue. Vérifie son résultat avant de réessayer.",
-                        }
-                    self.rows[ident] = row
-                    try:
-                        self._save()
-                    except OSError:
-                        self.rows[ident] = {"n": n, "etat": "traitement"}
-                        raise
-                restore(request, row)
-                self.last = {"id": ident, **row}
+                self._process(request, dispatch, restore)
                 path.unlink(missing_ok=True)
                 self.pending -= 1
                 changed = True

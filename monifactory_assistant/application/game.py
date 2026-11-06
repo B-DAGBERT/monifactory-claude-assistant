@@ -398,12 +398,15 @@ class GameController:
                 default=None,
             )
         else:
+            dimension = action.get("dimension") or (self.game or {}).get("dimension")
             position = (int(action.get("x", 0)), int(action.get("y", 0)), int(action.get("z", 0)))
             target = next(
                 (
                     c
                     for c in self.storage.raw
-                    if (int(c["x"]), int(c["y"]), int(c["z"])) == position
+                    if dimension
+                    and c.get("dimension") == dimension
+                    and (int(c["x"]), int(c["y"]), int(c["z"])) == position
                 ),
                 None,
             )

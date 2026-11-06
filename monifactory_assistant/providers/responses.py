@@ -19,6 +19,8 @@ def split_actions(text):
         actions = []
     if isinstance(actions, dict):
         actions = [actions]
+    elif not isinstance(actions, list):
+        actions = []
     return text[: match.start()].strip(), [a for a in actions if isinstance(a, dict)]
 
 
