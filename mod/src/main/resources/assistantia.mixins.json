@@ -4,6 +4,9 @@
   "package": "fr.assistantia.mixin",
   "compatibilityLevel": "JAVA_17",
   "client": [
+    "ContextePaquetForgeMixin",
+    "OrigineMondeKubeJSMixin",
+    "IdentiteGregTechMixin",
     "ContenuSacMixin",
     "InventaireFavorisEmiMixin",
     "InventaireEcranArbreEmiMixin",
