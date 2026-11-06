@@ -37,18 +37,30 @@ La révision testée `11efdc4` totalise **451 tests** et **26 scénarios EMI** s
 Les cas accepté et refusé passent à +46 secondes, sans nouveau tour, dans
 `test_bridge_resilience.py`. Commit `11efdc4`.
 
-## Correctifs gardés sur la branche de qualification
+## Clôture de l’intégration V1.5
 
-Ces correctifs sont assemblés dans `codex/v15-qualification`. Ils doivent être essayés
-sur des copies sous Windows et dans le jeu avant publication. Le JAR de qualification
-garde le nom `assistantia-1.0.0-shared.40.jar`. Son empreinte est
-`37e34318ac015414d630daf9a0bed83c6b3f94665fe8b513f2268bb9a36ceb44` pour la compilation locale.
-Le script client passe à la version 12. Le script serveur et les formats de migration restent
-inchangés.
+La branche d’intégration part de `origin/main` à `6e4b684`. Le candidat local est exactement
+`1a56fe6`, sans commit ultérieur sur sa branche. `6e4b684` en est un ancêtre. L’avance rapide
+reprend les 21 fichiers des six correctifs du candidat et conserve les correctifs Python et Git
+déjà publiés. L’arbre de code est identique à celui qui avait passé les tests à `d2dd64d`.
 
-Le candidat complet `d2dd64d` passe **466 tests** et **26 scénarios EMI** sur macOS. Le
-contrôle Java et la compilation Forge réussissent, ainsi que Ruff, Prettier, `pip check`,
-le contrôle de syntaxe Node et `git diff --check`.
+Le JAR conserve le nom `assistantia-1.0.0-shared.40.jar`. Le script client passe de 11 à 12.
+La file durable et le catalogue restent en version 2. Le serveur facultatif, les formats de
+migration, les fournisseurs IA et le mode d’activation du lot 5 restent hors du diff.
+
+Les deux utilisateurs déclarent leurs essais réels satisfaisants et acceptent la clôture sur ce
+périmètre. Cette déclaration est distincte des tests automatisés et ne fournit ni journal de test
+ni empreinte du JAR chargé sur leurs postes. Les validations détaillées de la migration personnelle
+et des reprises non interceptables restent distinctes.
+
+Les statuts du tableau décrivent les limites des preuves techniques détaillées. L’acceptation
+utilisateur permet d’intégrer ce périmètre sans transformer ces limites en preuves automatisées.
+
+Le code destiné à la publication passe **466 tests** et **26 scénarios EMI** sur macOS. Ruff,
+Prettier, `pip check`, le format Java, la compilation Forge avec JDK 17, la syntaxe Node et
+`git diff --check` passent. Rhino `2001.2.3-build.10` rejoue les 13 cas de commande et le
+changement de monde. Le JAR de cette compilation locale a l’empreinte SHA-256
+`2ae88ba9c126a1a193d7d5fa35cb64cdf11c5206f8e7c80538e6ffd1f4d64df6`. Il n’a pas été installé.
 
 | ID  | Avant → après et preuve                                                                                                                                                                                                                                                      | Statut                                                                       | Commit    |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------- |
@@ -72,8 +84,8 @@ le contrôle de syntaxe Node et `git diff --check`.
   de suppression légitimes dans la discussion et à la voix.
 - **NO CHANGE NEEDED.** La composition des contrôleurs, les adaptateurs des deux CLI, les
   règles de transferts natifs et le protocole de migration restent adaptés aux constats de l’audit.
-- **REJECTED.** Refaire l’architecture ou modifier le planificateur de scans du serveur pour
-  gagner des performances dans ce lot ne répond pas aux mesures locales.
+- **REJECTED.** Refaire l’architecture dans ce lot ne répond pas aux mesures locales.
+- **Lot 2 reporté.** Le planificateur des scans serveur suit le périmètre déjà en production.
 
 ## Mesures locales
 
@@ -101,7 +113,7 @@ mesure 79,9 → 80,8 ms en médiane, avec environ 46,1 Mo de mémoire résidente
 et un seul thread après import des deux côtés. Cet essai s’arrête avant Tk, la voix et
 le chargement d’une partie.
 
-## Validation sur Windows 11 et en jeu
+## Rejouer la qualification sur Windows 11 et en jeu
 
 Sur un checkout de qualification, avec Git et Node.js disponibles, depuis PowerShell.
 
@@ -128,4 +140,5 @@ le remplacement des fichiers avec un verrou temporaire NTFS. Pour la lecture de 
 comparer les mêmes coordonnées dans deux dimensions, les coffres protégés par FTB,
 les positions des autres joueurs et un objectif en pause. Vérifier les parcours EMI
 de retrait, circuit virtuel, fluide, catalyseur, réception et backpack selon
-[les scénarios](scenarios.md). Le volet Windows et les essais natifs restent **PARTIAL**.
+[les scénarios](scenarios.md). Les vérifications de détail qui ne sont pas décrites par les
+utilisateurs gardent leur statut de preuve précédent.
