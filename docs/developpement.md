@@ -362,11 +362,19 @@ modifiée à distance par un autre joueur.
 
 ## Relevés et planification partagés (shared.38)
 
-Le script KubeJS serveur v2 annonce les chunks entièrement transmis dans `chunks_complets`.
+Le script KubeJS serveur annonce les chunks entièrement transmis dans `chunks_complets`.
 Une erreur de lecture, une limite d’inventaire ou un retrait de blocs pour tenir dans le message
-invalide la couverture du chunk. Les blocs effectivement transmis restent utilisables. Les relevés
-v1 continuent à alimenter les observations positives. Pour déduire qu’un coffre omis est vide ou
-cassé, le serveur doit utiliser v2.
+invalide la couverture du chunk. Les relevés v1 fournissent des observations positives, les
+versions suivantes permettent aussi de confirmer une omission dans un chunk couvert.
+
+Pour un déploiement neuf, copier [le script v3](../serveur/assistant_ia_serveur.js) dans
+`kubejs/server_scripts` sur l’hôte et redémarrer le serveur. Le script v3 lit les chunks déjà
+chargés. Il transmet les inventaires vides et écarte les comptages partiels. Le paquet est borné
+et découpé en fragments adaptés aux chaînes NBT. Le script client existant recompose les fragments.
+
+Python valide la structure du relevé avant de fusionner les observations. Il utilise la date
+d’écriture locale du fichier reçu pour comparer les relevés du serveur et les ouvertures de
+coffre. Un fichier périmé ou d’une autre dimension est ignoré.
 
 `StorageMonitor` réutilise la vue fusionnée tant que ses relevés source sont stables. Un changement
 d’inode, de date ou de taille invalide la lecture locale. Une écriture partielle laisse la dernière

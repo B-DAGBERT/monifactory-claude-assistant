@@ -109,6 +109,7 @@ class ParityTests(unittest.TestCase):
             "App.save_plan",
             "App.refresh",
             "App.check_game",
+            "App.machine_at",  # restrict live machine lookup to the requested dimension
             "App.coach",
             "App.flush_coach",
             "App.handle_mod_request",
@@ -146,6 +147,7 @@ class ParityTests(unittest.TestCase):
             "log",
             "World.__init__",
             "World.update",
+            "World.active",  # validate freshness on the client clock; test_storage_snapshots.py
             "App.load_places",
             "App.save_places",
             "App.set_setting",

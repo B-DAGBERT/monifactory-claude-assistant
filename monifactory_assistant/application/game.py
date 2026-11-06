@@ -66,7 +66,7 @@ class GameController:
         if time.time() - self.veins_read > 5:
             self.veins, self.veins_read = find_veins(self.bridge), time.time()
             self.check_new_veins()
-        if self.world.poll(self.bridge):
+        if self.world.poll(self.bridge, state.get("dimension")):
             for error in self.world.errors:
                 if error not in self.logged_errors:
                     self.logged_errors.add(error)
@@ -263,11 +263,13 @@ class GameController:
         if request.get("origine") != "bloc" or not self.world.active:
             return ""
         position = (request.get("x"), request.get("y"), request.get("z"))
+        dimension = request.get("dimension") or (self.game or {}).get("dimension")
         machine = next(
             (
                 m
                 for m in self.world.machines()
-                if (int(m["x"]), int(m["y"]), int(m["z"])) == position
+                if m["dimension"] == dimension
+                and (int(m["x"]), int(m["y"]), int(m["z"])) == position
             ),
             None,
         )
