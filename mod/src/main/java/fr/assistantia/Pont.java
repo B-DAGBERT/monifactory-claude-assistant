@@ -340,10 +340,9 @@ public final class Pont {
      * Écrit un fichier texte pour l'assistant et Codex, d'un coup : il n'est jamais lu à moitié
      * écrit.
      */
-    static void ecrireTexte(String nom, List<String> lignes) {
+    static boolean ecrireTexte(String nom, List<String> lignes) {
         if ("inventaire_details.txt".equals(nom) && IdentiteMonde.isolation()) {
-            ecrireInventaireDetaille(lignes);
-            return;
+            return ecrireInventaireDetaille(lignes);
         }
         try {
             Files.createDirectories(DOSSIER);
@@ -354,14 +353,16 @@ public final class Pont {
                     DOSSIER.resolve(nom),
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
+            return true;
         } catch (IOException e) {
             LOGGER.warn("Assistant IA : {} non écrit", nom, e);
+            return false;
         }
     }
 
-    private static void ecrireInventaireDetaille(List<String> lignes) {
+    private static boolean ecrireInventaireDetaille(List<String> lignes) {
         JsonObject contexte = new JsonObject();
-        if (!annoterContexte(contexte)) return;
+        if (!annoterContexte(contexte)) return false;
         try {
             Path dossier = DOSSIER.resolve("mondes").resolve(chaine(contexte, "monde_actif"));
             Files.createDirectories(dossier);
@@ -387,8 +388,10 @@ public final class Pont {
                     dossier.resolve("inventaire_details_contexte.json"),
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);
+            return true;
         } catch (IOException | java.security.NoSuchAlgorithmException e) {
             LOGGER.warn("Assistant IA : inventaire détaillé non écrit", e);
+            return false;
         }
     }
 

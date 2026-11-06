@@ -75,6 +75,27 @@ public class BridgeWorldScopeTest {
    assert !read("inventaire_joueur.json").has("monde_actif");
    Pont.ecrireTexte("inventaire_details.txt",List.of("ancien"));assert Files.readString(root.resolve("inventaire_details.txt")).contains("ancien");return;
   }
+  if(args[0].equals("publication")){
+   Path legacy=root.resolve("inventaire_details.txt");
+   Files.writeString(legacy,"legacy intact");
+   Path tmp=root.resolve("inventaire_details.txt.tmp");Files.createDirectory(tmp);
+   assert !Pont.ecrireTexte("inventaire_details.txt",List.of("nouveau"));
+   assert Files.readString(legacy).equals("legacy intact");Files.delete(tmp);
+   assert Pont.ecrireTexte("inventaire_details.txt",List.of("nouveau"));
+   assert Files.readString(legacy).contains("nouveau");
+   context(a,s1,dim);
+   String prefix="mondes/"+a+"/";Files.createDirectories(root.resolve(prefix));
+   Path metadataTmp=root.resolve(prefix+"inventaire_details_contexte.json.tmp");
+   Files.createDirectory(metadataTmp);
+   assert !Pont.ecrireTexte("inventaire_details.txt",List.of("fer x2"));
+   assert Files.readString(root.resolve(prefix+"inventaire_details.txt")).contains("fer x2");
+   assert !Files.exists(root.resolve(prefix+"inventaire_details_contexte.json"));
+   Files.delete(metadataTmp);
+   assert Pont.ecrireTexte("inventaire_details.txt",List.of("fer x2"));
+   assert Pont.contexteValide(read(prefix+"inventaire_details_contexte.json"));
+   context("","",dim);
+   assert !Pont.ecrireTexte("inventaire_details.txt",List.of("inconnu"));return;
+  }
   context(a,s1,dim);
   if(args[0].equals("transition")){
    var old=view("A");publish(old,time);assert Pont.cherche("minecraft:iron_ingot");assert Pont.assistantActif();
@@ -210,3 +231,6 @@ class BridgeWorldScopeTests(unittest.TestCase):
 
     def test_scoped_inventory_text_hash_reconnect_and_legacy_preservation(self):
         self.run_case("details")
+
+    def test_text_publication_acknowledges_both_files_and_retries_after_io_failure(self):
+        self.run_case("publication")

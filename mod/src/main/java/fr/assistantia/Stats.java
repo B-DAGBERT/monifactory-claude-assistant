@@ -49,7 +49,8 @@ public final class Stats {
         "Stone", "Iron Ore", "Diamond Ore", "Obsidian", "Ancient Debris"
     };
     private static int tick;
-    private static String signature = "";
+    private static String signature;
+    private static int prochainePublicationCatalogue;
     private static Iterator<Item>
             catalogue; // tous les objets du jeu, parcourus quelques centaines par tick
     private static List<String> lignesCatalogue;
@@ -81,8 +82,7 @@ public final class Stats {
     private static void machines() {
         List<String> lignes = Emi.postesDeTravail();
         if (!lignes.isEmpty()) {
-            Pont.ecrireTexte("machines_recettes.txt", lignes);
-            machinesFaites = true;
+            machinesFaites = Pont.ecrireTexte("machines_recettes.txt", lignes);
         }
     }
 
@@ -133,13 +133,12 @@ public final class Stats {
         if (nouvelle.toString().equals(signature)) {
             return;
         }
-        signature = nouvelle.toString();
         List<String> lignes = new ArrayList<>();
         lignes.add(ENTETE);
         for (int i = 0; i < objets.size(); i++) {
             lignes.add(ligne(emplacements.get(i), objets.get(i), joueur));
         }
-        Pont.ecrireTexte("inventaire_details.txt", lignes);
+        if (Pont.ecrireTexte("inventaire_details.txt", lignes)) signature = nouvelle.toString();
     }
 
     private static void avancerCatalogue(Player joueur) {
@@ -161,11 +160,13 @@ public final class Stats {
                 // un objet de mod qui ne supporte pas d'être lu hors du jeu : on le passe
             }
         }
-        if (!catalogue.hasNext()) {
-            Pont.ecrireTexte("stats_objets.txt", lignesCatalogue);
-            catalogueFait = true;
-            catalogue = null;
-            lignesCatalogue = null;
+        if (!catalogue.hasNext() && tick >= prochainePublicationCatalogue) {
+            prochainePublicationCatalogue = tick + 40;
+            if (Pont.ecrireTexte("stats_objets.txt", lignesCatalogue)) {
+                catalogueFait = true;
+                catalogue = null;
+                lignesCatalogue = null;
+            }
         }
     }
 
