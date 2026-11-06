@@ -205,8 +205,8 @@ avec paquets retardés restent nécessaires avant le verdict PASS et l'activatio
 
 Branche locale `fiabilite/isolation-mondes`, reprise depuis `111c8d1` et synchronisée
 avec `main` à `d943bad`. Le code concerne les mixins et la liaison Java, le script
-client, le routage Python, les commandes de migration et les tests. Le lot reste **PARTIAL**
-jusqu'à la qualification réelle et son intégration est réservée à la branche de travail.
+client, le routage Python, les commandes de migration et les tests. La qualification reste
+**PARTIAL**. La publication du code sur `main` laisse la migration désactivée par défaut.
 
 Sur une répétition synthétique, le manifeste et la restauration concordent sur **16 fichiers**
 et **1 288 octets**. Les **7 fichiers** destinés aux partitions gardent leurs octets, notamment
