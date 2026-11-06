@@ -22,6 +22,7 @@ public final class Client {
         MinecraftForge.EVENT_BUS.register(Fullbright.class);
         MinecraftForge.EVENT_BUS.register(Stats.class);
         MinecraftForge.EVENT_BUS.register(CatalogueProduction.class);
+        MinecraftForge.EVENT_BUS.register(StockProduction.class);
         MinecraftForge.EVENT_BUS.register(AideEcran.class);
         MinecraftForge.EVENT_BUS.register(RetraitCoffre.class);
     }

@@ -39,6 +39,11 @@ public final class ReceptionManuelle<T> {
         tick = 0;
     }
 
+    /** Retours apparents dont la preuve peut encore arriver dans un autre tick. */
+    public boolean enAttente() {
+        return gainsRecents.stream().anyMatch(g -> !g.credite && g.quantite > 0);
+    }
+
     public void initialiser(List<PlanRetrait.Stock<T>> stock) {
         precedent = List.copyOf(stock);
     }

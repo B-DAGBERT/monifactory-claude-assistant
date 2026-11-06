@@ -15,6 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = {
+    "fr.assistantia.InventaireProduction": 'public class InventaireProduction {public static String expected=""; public static boolean captureCourante(String id,String sha){return id.equals("capture-qa")&&sha.equals(expected);} public static boolean valideCapture(String id,String sha){return captureCourante(id,sha);}}',
     "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft INSTANCE=new Minecraft();public Object player=new Object();public Level level=new Level();public Connection connection=new Connection();public static Minecraft getInstance(){return INSTANCE;}public boolean isSameThread(){return !Thread.currentThread().getName().equals("assistant-catalogue-production");}public Connection getConnection(){return connection;}public static class Connection{private final Object handle=new Object();public Object getConnection(){return handle;}}public static class Level{public Dimension dimension(){return new Dimension();}}public static class Dimension{public net.minecraft.resources.ResourceLocation location(){return new net.minecraft.resources.ResourceLocation("minecraft:overworld");}}}""",
     "net.minecraftforge.client.event.ClientPlayerNetworkEvent": "public class ClientPlayerNetworkEvent {public static class LoggingOut {}}",
     "net.minecraftforge.event.TickEvent": "public class TickEvent {public enum Phase{START,END};public static class ClientTickEvent{public Phase phase=Phase.END;}}",

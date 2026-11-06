@@ -19,20 +19,31 @@ public final class EcranProduction extends Screen {
     private static final String[] NOMS = {"Plan", "Diagnostic", "Projet"};
     private static final String[] OPERATIONS = {"plan", "diagnostic", "memoire"};
     private final Screen parent;
+    private final boolean depuisCoffre;
     private final EtatProduction etat = new EtatProduction();
     private final List<Button> onglets = new ArrayList<>();
     private final List<FormattedCharSequence> lignes = new ArrayList<>();
     private EditBox quantite;
     private Button calculer, valeurEmi, choix, precedent, suivant;
     private String saisie = "", recette = "", signatureCatalogue = "", produit = "Arbre EMI actuel";
+    private String captureActive = "", empreinteCapture = "";
     private int onglet, gauche, largeur, page, parPage, contenuY;
     private long derniereLecture, revisionAffichee = -1;
     private List<EtatProduction.Alternative> alternatives = List.of();
     private boolean transmission;
 
     public EcranProduction(Screen parent) {
+        this(parent, false);
+    }
+
+    private EcranProduction(Screen parent, boolean depuisCoffre) {
         super(Component.literal("Production · lecture seule"));
         this.parent = parent;
+        this.depuisCoffre = depuisCoffre;
+    }
+
+    public static EcranProduction depuisCoffre(Screen parent) {
+        return new EcranProduction(parent, true);
     }
 
     @Override
@@ -53,6 +64,7 @@ public final class EcranProduction extends Screen {
                                                 if (onglet == index) return;
                                                 onglet = index;
                                                 signatureCatalogue = recette = "";
+                                                captureActive = empreinteCapture = "";
                                                 alternatives = List.of();
                                                 etat.invalider(
                                                         "Choisis une lecture ; aucun objectif ne sera modifié.");
@@ -206,6 +218,7 @@ public final class EcranProduction extends Screen {
         long maintenant = System.currentTimeMillis();
         if (!etat.commencer(maintenant)) return;
         signatureCatalogue = "";
+        captureActive = empreinteCapture = "";
         if (onglet == 2) transmettre(new JsonObject());
         else if (!CatalogueProduction.demander())
             etat.invalider(texte(CatalogueProduction.etat(), "message"));
@@ -225,9 +238,11 @@ public final class EcranProduction extends Screen {
         if (transmission || !etat.preparation() || !InventaireProduction.courant(etat.contexte()))
             return;
         transmission = true;
+        boolean publication = false;
         try {
             var demande = new JsonObject();
             demande.addProperty("type", "production_v2");
+            demande.addProperty("preuves_natives", 2);
             demande.addProperty("operation", OPERATIONS[onglet]);
             demande.addProperty("projet", etat.contexte().projet());
             demande.addProperty("revision_projet", etat.contexte().revision());
@@ -259,12 +274,8 @@ public final class EcranProduction extends Screen {
                 if (!recette.isEmpty()) demande.addProperty("recette", recette);
                 String capture = UUID.randomUUID().toString();
                 demande.addProperty("capture", capture);
-                if (!InventaireProduction.exporter(capture, etat.contexte())) {
-                    etat.invalider(
-                            "Relevé d’inventaire non transmis. Réessaie quand le lien est disponible.");
-                    return;
-                }
                 signatureCatalogue = signature(catalogue);
+                captureActive = capture;
                 var pile = Pont.objet(texte(ressource, "id"));
                 produit =
                         nombre
@@ -272,13 +283,40 @@ public final class EcranProduction extends Screen {
                                 + (pile.isEmpty()
                                         ? texte(ressource, "id")
                                         : pile.getHoverName().getString());
+                var publicationStock =
+                        InventaireProduction.exporter(
+                                demande, etat.contexte(), catalogue, depuisCoffre);
+                publication = true;
+                publicationStock.whenComplete(
+                        (empreinte, erreur) ->
+                                minecraft.execute(
+                                        () -> {
+                                            transmission = false;
+                                            if (minecraft.screen != this
+                                                    || !etat.preparation()
+                                                    || !capture.equals(captureActive)) return;
+                                            if (erreur != null
+                                                    || !InventaireProduction.confirmerCapture(
+                                                            capture, empreinte)) {
+                                                etat.invalider(
+                                                        "Relevé de production modifié ou indisponible. Relance le calcul.");
+                                            } else {
+                                                empreinteCapture = empreinte;
+                                                demande.addProperty("capture_sha256", empreinte);
+                                                envoyer(demande);
+                                            }
+                                        }));
+                return;
             }
-            if (Pont.envoyer(demande))
-                etat.envoye(entier(demande, "n"), System.currentTimeMillis());
-            else etat.invalider("Demande non transmise. Aucun calcul confirmé.");
+            envoyer(demande);
         } finally {
-            transmission = false;
+            if (!publication) transmission = false;
         }
+    }
+
+    private void envoyer(JsonObject demande) {
+        if (Pont.envoyer(demande)) etat.envoye(entier(demande, "n"), System.currentTimeMillis());
+        else etat.invalider("Demande non transmise. Aucun calcul confirmé.");
     }
 
     private void choisirRecette() {
@@ -297,9 +335,10 @@ public final class EcranProduction extends Screen {
         JsonObject vue = objet(Pont.partie("ecran"), "production_v2");
         var courant = contexte(objet(vue, "contexte"));
         boolean actif = Pont.assistantActif();
+        boolean compatible = entier(vue, "v") == 1 && entier(vue, "preuves_natives") == 2;
         boolean disponible =
                 actif
-                        && entier(vue, "v") == 1
+                        && compatible
                         && Pont.vrai(vue, "disponible")
                         && InventaireProduction.courant(courant);
         var ancien = etat.contexte();
@@ -308,13 +347,16 @@ public final class EcranProduction extends Screen {
                 disponible,
                 !actif
                         ? "Assistant arrêté ou relevé périmé."
-                        : !InventaireProduction.courant(courant)
-                                ? "Connexion en cours de synchronisation. Attends le monde actif."
-                                : texte(vue, "message"),
+                        : !compatible
+                                ? "Versions incompatibles. Relance l’assistant et le mod du même candidat."
+                                : !InventaireProduction.courant(courant)
+                                        ? "Connexion en cours de synchronisation. Attends le monde actif."
+                                        : texte(vue, "message"),
                 resultat(objet(vue, "resultat")),
                 System.currentTimeMillis());
         if (ancien != null && !ancien.equals(courant)) {
             signatureCatalogue = recette = "";
+            captureActive = empreinteCapture = "";
             alternatives = List.of();
             produit = "Arbre EMI actuel";
             quantite.setValue("");
@@ -326,10 +368,13 @@ public final class EcranProduction extends Screen {
                 if (statut.equals("pret")) transmettre(catalogue);
                 else if (statut.equals("indisponible") || statut.equals("erreur"))
                     etat.invalider(texte(catalogue, "message"));
-            } else if (!statut.equals("pret") || !signatureCatalogue.equals(signature(catalogue))) {
+            } else if (!statut.equals("pret")
+                    || !signatureCatalogue.equals(signature(catalogue))
+                    || !InventaireProduction.captureCourante(captureActive, empreinteCapture)) {
                 signatureCatalogue = recette = "";
+                captureActive = empreinteCapture = "";
                 alternatives = List.of();
-                etat.invalider("Arbre EMI modifié · relance la lecture pour le nouveau choix.");
+                etat.invalider("Arbre EMI ou relevé modifié · relance le calcul.");
             }
         }
         actualiserBoutons();
@@ -477,7 +522,9 @@ public final class EcranProduction extends Screen {
     @Override
     public void onClose() {
         etat.fermer();
-        if (minecraft != null) minecraft.setScreen(parent);
+        if (minecraft != null)
+            minecraft.setScreen(
+                    !depuisCoffre || StockProduction.retourPossible(parent) ? parent : null);
     }
 
     @Override

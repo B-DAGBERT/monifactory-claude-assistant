@@ -324,6 +324,33 @@ public final class ProductionCatalogueTest {
         check(
                 JsonParser.parseString(Files.readString(proofReply)).equals(proof),
                 "live client confirms exact challenge");
+        var frame = new JsonObject();
+        frame.addProperty("v", 2);
+        frame.addProperty("capture", "capture-qa");
+        String frameDigest = CatalogueProduction.publierInventaire(frame).get(2, TimeUnit.SECONDS);
+        Path frameFile = marker.resolveSibling("production_v2_inventaire.json");
+        check(
+                frameDigest.equals(PublicationCatalogue.empreinte(Files.readString(frameFile))),
+                "snapshot digest covers the published bytes");
+        InventaireProduction.expected = frameDigest;
+        proof.addProperty("v", 2);
+        proof.addProperty("capture", "capture-qa");
+        proof.addProperty("capture_sha256", "f".repeat(64));
+        proof.addProperty("nonce", "c".repeat(32));
+        Files.writeString(proofRequest, proof.toString());
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        check(
+                !JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                "a correct capture ID with a substituted digest cannot be attested");
+        proof.addProperty("capture_sha256", frameDigest);
+        proof.addProperty("nonce", "d".repeat(32));
+        Files.writeString(proofRequest, proof.toString());
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        check(
+                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                "fresh catalogue and capture attest together");
         var preview = new JsonObject();
         preview.add("catalogue_production", proof.deepCopy());
         check(CatalogueProduction.apercuCourant(preview), "live preview is visible");

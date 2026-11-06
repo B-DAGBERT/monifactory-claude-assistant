@@ -23,6 +23,9 @@ final class SuiviLotsEmi {
     private final List<LotMachine> lecture = Collections.unmodifiableList(lots);
     private final Supplier<List<PlanRetrait.Stock<EmiStack>>> inventaire;
     private final Runnable changement;
+    private final Supplier<Object> provenance;
+    private final java.util.Map<Integer, Object> origines = new java.util.HashMap<>();
+    private List<PlanRetrait.Stock<EmiStack>> inventaireAssimile;
     private final ReceptionManuelle<EmiStack> receptionManuelle =
             new ReceptionManuelle<>(ComparaisonEmi::meme);
     private long revision;
@@ -35,8 +38,49 @@ final class SuiviLotsEmi {
             new ReceptionSortie<>(ComparaisonEmi::meme);
 
     SuiviLotsEmi(Supplier<List<PlanRetrait.Stock<EmiStack>>> inventaire, Runnable changement) {
+        this(inventaire, changement, () -> null);
+    }
+
+    SuiviLotsEmi(
+            Supplier<List<PlanRetrait.Stock<EmiStack>>> inventaire,
+            Runnable changement,
+            Supplier<Object> provenance) {
         this.inventaire = inventaire;
         this.changement = changement;
+        this.provenance = provenance;
+    }
+
+    Object origine(int id) {
+        return origines.get(id);
+    }
+
+    List<PlanRetrait.Stock<EmiStack>> inventaireAssimile() {
+        return inventaireAssimile;
+    }
+
+    boolean receptionEnAttente() {
+        return receptionManuelle.enAttente() || receptionFluides.enAttente();
+    }
+
+    private void memoriserInventaire(List<PlanRetrait.Stock<EmiStack>> stock) {
+        if (inventaireAssimile != null && stock.size() == inventaireAssimile.size()) {
+            boolean identique = true;
+            for (int i = 0; i < stock.size() && identique; i++) {
+                var a = stock.get(i);
+                var b = inventaireAssimile.get(i);
+                identique =
+                        a.quantite() == b.quantite()
+                                && a.objet().getItemStack().isEmpty()
+                                        == b.objet().getItemStack().isEmpty()
+                                && a.objet().getId().equals(b.objet().getId())
+                                && java.util.Objects.equals(a.objet().getNbt(), b.objet().getNbt());
+            }
+            if (identique) return;
+        }
+        inventaireAssimile =
+                stock.stream()
+                        .map(s -> new PlanRetrait.Stock<>(s.objet().copy(), s.quantite(), true))
+                        .toList();
     }
 
     List<LotMachine> actifs() {
@@ -61,6 +105,8 @@ final class SuiviLotsEmi {
 
     void vider() {
         lots.clear();
+        origines.clear();
+        inventaireAssimile = null;
         oublierInterface();
         receptionManuelle.vider();
         modifie();
@@ -82,6 +128,7 @@ final class SuiviLotsEmi {
             if (lot.id() != id || lot.recette() != recette) continue;
             var sorties = sortiesLot(recette, supplement, !lot.manuel());
             if (sorties.isEmpty() || !lot.suivi().ajouter(sorties)) return false;
+            if (!java.util.Objects.equals(origines.get(id), provenance.get())) origines.remove(id);
             lots.set(
                     i,
                     new LotMachine(
@@ -111,10 +158,14 @@ final class SuiviLotsEmi {
 
     int ajouter(EmiRecipe recipe, int n, BlockPos position) {
         recevoir(List.of());
-        receptionManuelle.initialiser(inventaire.get());
+        var personnels = inventaire.get();
+        receptionManuelle.initialiser(personnels);
+        memoriserInventaire(personnels);
         var sorties = sortiesLot(recipe, n, position != null);
         if (sorties.isEmpty()) return 0;
         int id = ++prochainLot;
+        var origine = provenance.get();
+        if (origine != null) origines.put(id, origine);
         lots.add(
                 new LotMachine(
                         id,
@@ -150,9 +201,10 @@ final class SuiviLotsEmi {
             // Les lots envoyés automatiquement exigent une preuve de leur machine.
         }
         var attribues = receptionManuelle.soustraire(gains, restants);
+        var personnels = inventaire.get();
         var nouveaux =
-                receptionManuelle.actualiser(
-                        inventaire.get(), attribues, attendusAutomatiques, restants);
+                receptionManuelle.actualiser(personnels, attribues, attendusAutomatiques, restants);
+        memoriserInventaire(personnels);
         if (nouveaux.isEmpty()) return;
         var distribution =
                 fr.assistantia.ReceptionLots.repartir(

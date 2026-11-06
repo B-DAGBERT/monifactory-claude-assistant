@@ -11,6 +11,7 @@ from monifactory_assistant.game.objectives import machine_label
 from monifactory_assistant.game.world_scope import scope_file
 from monifactory_assistant.production.acquisition import (
     acquire,
+    acquire_native,
     active_scope,
     attest_catalogue,
     capture_stamp,
@@ -18,14 +19,16 @@ from monifactory_assistant.production.acquisition import (
 )
 from monifactory_assistant.production.analysis import analyse_observed
 from monifactory_assistant.production.catalog import CatalogueReader
-from monifactory_assistant.production.knowledge import Freshness, KnowledgeStatus
+from monifactory_assistant.production.knowledge import Freshness
 from monifactory_assistant.production.memory import read_projects
+from monifactory_assistant.production.planner import StockLedger
 from monifactory_assistant.production.recipes import Amount, Resource
 
 _CONTEXT = ("monde_actif", "session_monde", "dimension_monde", "projet", "revision_projet")
 _RESOURCE = re.compile(r"[a-z0-9_.-]+:[a-z0-9_./-]+")
 _MAX_AGE = 45_000
 _RESULT_MAX_AGE = 180_000
+_PROOF_VERSION = 2
 
 
 def _project_context(app):
@@ -40,6 +43,78 @@ def _safe(text, limit=300):
 
 def _amount(amount):
     return f"{amount.quantity} {amount.resource.unit} {amount.resource.id}"
+
+
+def _native_lines(native):
+    if native is None:
+        return ["Preuve native indisponible · stock et suivi non attestés."]
+    lines = [
+        "Couverture partielle · coffre ouvert et cases du même paquet serveur."
+        if native.stock_mode == "menu_serveur"
+        else "Couverture partielle · inventaire et sacs synchronisés."
+        if native.stock_available
+        else "Stock physique inconnu · inventaire non attesté."
+    ]
+    if not native.lots_available:
+        lines.append("Réservations et suivi des lots non exploitables dans cette capture.")
+        return lines
+    lines.append("Réservations physiques non attestées par le suivi.")
+    labels = {
+        "en_cours": "En cours",
+        "a_recuperer": "À récupérer",
+        "termine": "Réceptionné",
+        "annule": "Annulé",
+    }
+    lots = (
+        row
+        for row in native.observations
+        if row.kind == "production_lot"
+        and any(proof.freshness == Freshness.LIVE for proof in row.evidence)
+    )
+    for index, row in enumerate(lots):
+        if index >= 12:
+            lines.append("Autres lots · affichage limité.")
+            break
+        state = row.value["state"]
+        lines.append(f"Lot {labels[state].lower()} · {_safe(row.value['recipe'])}")
+        for field, label in (
+            ("remaining", "Attendu déclaré"),
+            ("received", "Réception attestée"),
+            ("cancelled", "Attente annulée"),
+        ):
+            for value in row.value[field][:3]:
+                resource = value["resource"]
+                lines.append(f"{label} : {value['quantity']} {resource['unit']} {resource['id']}")
+    return lines
+
+
+def _allocation_lines(plan):
+    labels = {"native:2-coffre": "À récupérer au coffre", "native:1-curseur": "Sur le curseur"}
+    return [
+        labels.get(entry.source_id, "Disponible attesté sur le joueur")
+        + ": "
+        + _amount(Amount(entry.resource, entry.quantity))
+        for entry in plan.allocations[:40]
+        if entry.source_kind == "physical"
+    ]
+
+
+def _historical_lines(snapshot, missing):
+    searched = {amount.resource.id for amount in missing if amount.resource.kind == "item"}
+    if not searched:
+        return []
+    lines = []
+    for row in snapshot.select("storage"):
+        if not any(
+            proof.freshness in {Freshness.STALE, Freshness.HISTORICAL} for proof in row.evidence
+        ):
+            continue
+        for item, quantity in row.value.get("items", {}).items():
+            if item in searched and quantity > 0:
+                lines.append(f"Ancien relevé, non alloué : {quantity} item {item}")
+                if len(lines) >= 8:
+                    return lines
+    return lines
 
 
 def _compatible_posts(step):
@@ -213,6 +288,7 @@ class ProductionService:
             return copy.deepcopy(
                 {
                     "v": 1,
+                    "preuves_natives": _PROOF_VERSION,
                     "disponible": available,
                     "message": "Lecture seule : aucun transfert ni modification d'objectif."
                     if available
@@ -368,6 +444,14 @@ class ProductionService:
         with self._lock:
             number = request.get("n")
             if (
+                type(request.get("preuves_natives")) is not int
+                or request["preuves_natives"] != _PROOF_VERSION
+            ):
+                return {
+                    "etat": "refusee",
+                    "message": "Versions incompatibles. Relance l’assistant et le mod du même candidat.",
+                }
+            if (
                 type(number) is not int
                 or not 0 <= number <= 2**53 - 1
                 or not -5000 <= now - number <= _MAX_AGE
@@ -394,6 +478,14 @@ class ProductionService:
                     raise ValueError("Consultation inconnue.")
                 target = None
                 if operation != "memoire":
+                    if not isinstance(request.get("capture"), str) or not re.fullmatch(
+                        r"[a-zA-Z0-9_.:/|\-]{1,128}", request["capture"]
+                    ):
+                        raise ValueError("Identifiant de capture native invalide.")
+                    if not isinstance(request.get("capture_sha256"), str) or not re.fullmatch(
+                        r"[0-9a-f]{64}", request["capture_sha256"]
+                    ):
+                        raise ValueError("Empreinte de capture native invalide.")
                     kind = request.get("kind", "item")
                     resource = Resource(
                         kind,
@@ -558,38 +650,18 @@ class ProductionService:
                 selected = request.get("recette") or metadata.get("recette_racine")
                 if selected:
                     choices[target.resource] = selected
-                snapshot = acquire(
-                    self.bridge, self.python_root, scope, request, int(self.clock() * 1000)
-                )
-                # Only the native click's tag-free inventory proves an exact variant-empty item.
-                if not any(
-                    any(
-                        proof.reference == "production_v2_inventaire.json"
-                        and proof.freshness == Freshness.LIVE
-                        and proof.status == KnowledgeStatus.OBSERVED
-                        for proof in row.evidence
-                    )
-                    for row in snapshot.select("inventory")
-                ):
-                    snapshot = replace_stock_unknown(snapshot)
-                eligible = {
-                    amount.resource
-                    for recipe in catalogue.catalog.recipes
-                    for ingredient in recipe.inputs
-                    for amount in ingredient.options
-                    if amount.resource.kind == "item" and not amount.resource.variant
-                }
-                eligible.update(
-                    output.amount.resource
-                    for recipe in catalogue.catalog.recipes
-                    for output in recipe.outputs
-                    if output.amount.resource.kind == "item" and not output.amount.resource.variant
-                )
+                now = int(self.clock() * 1000)
+                try:
+                    native = acquire_native(self.bridge, scope, request, now)
+                except (OSError, ValueError, TypeError, RecursionError):
+                    native = None
+                snapshot = acquire(self.bridge, self.python_root, scope, request, now)
                 analysis = analyse_observed(
                     catalogue,
                     snapshot,
                     target,
-                    id_countable=eligible,
+                    stock_ledger=native.ledger if native else StockLedger(),
+                    stock_evidence=native.evidence if native else (),
                     recipe_choices=choices,
                     ingredient_choices=ingredients,
                     diagnose_recipe=selected,
@@ -599,12 +671,11 @@ class ProductionService:
                     "Produit : " + _amount(target),
                     "Plan conditionnel : les machines ne sont pas déclarées prêtes par ce calcul.",
                 ]
+                source_lines = _native_lines(native)
+                lines.extend(source_lines)
+                allocations = _allocation_lines(analysis.plan)
                 if request["operation"] == "plan":
-                    lines.extend(
-                        "Disponible attesté : " + _amount(Amount(entry.resource, entry.quantity))
-                        for entry in analysis.plan.allocations[:40]
-                        if entry.source_kind == "physical"
-                    )
+                    lines.extend(allocations)
                     lines.extend(
                         "À obtenir selon les relevés : " + _amount(amount)
                         for amount in analysis.plan.missing[:50]
@@ -612,6 +683,7 @@ class ProductionService:
                     lines.extend(
                         "À attendre : " + _amount(amount) for amount in analysis.plan.waiting[:30]
                     )
+                    lines.extend(_historical_lines(snapshot, analysis.plan.missing))
                     for index, step in enumerate(analysis.plan.steps[:64], 1):
                         lines.append(
                             f"{index}. {step.batches} fabrication(s) · {step.recipe_id}"
@@ -656,9 +728,10 @@ class ProductionService:
                 ][:32]
                 limits = list(analysis.limits) + [
                     "Catalogue limité à l'arbre EMI choisi ; branches extérieures non connues.",
-                    "Réservations EMI et productions en cours non attestées par les exports actuels.",
                     "Fluides et variantes NBT de l'inventaire ne sont pas comptés comme stock disponible.",
                 ]
+                if native:
+                    limits.extend(native.limitations)
                 limits.extend(
                     _safe(value) for value in metadata.get("limites", ()) if isinstance(value, str)
                 )
@@ -673,14 +746,24 @@ class ProductionService:
                         "source": catalogue.source,
                         "generation": catalogue.catalog.generation,
                         "sha256": catalogue.sha256,
+                        "capture": request["capture"],
+                        "capture_sha256": request["capture_sha256"],
                     },
                     rapport=_bounded_report(analysis.plan),
+                    preuves={
+                        "stock": native.stock_mode
+                        if native and native.stock_available
+                        else "inconnu",
+                        "lots_exploitables": bool(native and native.lots_available),
+                        "couverture_complete": False,
+                    },
                 )
                 if result["rapport"].get("partial_view"):
                     result["limites"].append(
                         "Affichage structuré limité ; le calcul porte sur toutes les étapes de l'arbre fourni."
                     )
-                summary = f"Produit {target.resource.id}, quantité {target.quantity} {target.resource.unit}. Catalogue génération {catalogue.catalog.generation}; statut du calcul {analysis.plan.status}. Stocks incomplets, inventaire sans NBT seulement.\n"
+                summary = f"Produit {target.resource.id}, quantité {target.quantity} {target.resource.unit}. Catalogue génération {catalogue.catalog.generation}; statut du calcul {analysis.plan.status}.\n"
+                summary += "\n".join(source_lines[:16] + allocations[:12]) + "\n"
                 summary += "\n".join(
                     "Besoin calculé : " + _amount(amount) for amount in analysis.plan.missing[:12]
                 )
@@ -703,7 +786,9 @@ class ProductionService:
             if not self._catalogue_matches(catalogue, scope) or not self._live_catalogue(
                 catalogue, scope, wait=True
             ):
-                raise ValueError("Arbre EMI modifié ou indisponible. Relance la consultation.")
+                raise ValueError(
+                    "Arbre EMI ou preuve native modifié ou indisponible. Relance la consultation."
+                )
             result.update(etat="pret", t=int(self.clock() * 1000))
         except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as error:
             result.pop("rapport", None)
@@ -728,19 +813,3 @@ class ProductionService:
             )
         with self._lock:
             self._finished.append((generation, result, summary))
-
-
-def replace_stock_unknown(snapshot):
-    """Legacy aggregates have no item-variant proof: retain evidence without allocating them."""
-    from dataclasses import replace
-
-    return replace(
-        snapshot,
-        observations=tuple(
-            row for row in snapshot.observations if row.kind not in {"inventory", "storage"}
-        ),
-        limitations=(
-            *snapshot.limitations,
-            "Identité exacte des objets disponibles non attestée ; besoins calculés sans stock garanti.",
-        ),
-    )

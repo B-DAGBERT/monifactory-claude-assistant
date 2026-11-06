@@ -58,6 +58,11 @@ public final class LotFabrication<T> {
         return true;
     }
 
+    /** Total promis cumulatif, y compris après réception ou annulation ; ce n'est pas du stock. */
+    public List<PlanRetrait.Stock<T>> attendus() {
+        return List.copyOf(attendu);
+    }
+
     /** Réceptions réelles conservées même après déplacement, pose ou annulation du surplus. */
     public List<PlanRetrait.Stock<T>> obtenus() {
         List<PlanRetrait.Stock<T>> acquis = new ArrayList<>();

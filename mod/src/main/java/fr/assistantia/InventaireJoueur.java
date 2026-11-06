@@ -15,6 +15,7 @@ public final class InventaireJoueur {
     private static List<ItemStack> piles = List.of(), sacs = List.of();
     private static boolean synchronise = true, connecte;
     private static long dernierExport;
+    private static long revision;
     private static Object connexion;
 
     /** Un nouveau monde ne peut pas utiliser la dernière vue de la connexion précédente. */
@@ -31,6 +32,10 @@ public final class InventaireJoueur {
         return sacs;
     }
 
+    static long revision() {
+        return revision;
+    }
+
     public static boolean synchronise() {
         return synchronise;
     }
@@ -41,6 +46,7 @@ public final class InventaireJoueur {
         var mc = Minecraft.getInstance();
         long temps = System.currentTimeMillis();
         if (mc.player == null || mc.level == null) {
+            if (connecte) revision++;
             piles = sacs = List.of();
             synchronise = true;
             SacsPortes.client().vider();
@@ -53,6 +59,7 @@ public final class InventaireJoueur {
             connexion = null;
             return;
         }
+        boolean nouvelleConnexion = !connecte || connexion != mc.getConnection();
         connecte = true;
         List<ItemStack> base = new ArrayList<>();
         mc.player.getInventory().items.forEach(s -> ajouter(base, s));
@@ -61,8 +68,10 @@ public final class InventaireJoueur {
         ajouter(base, mc.player.containerMenu.getCarried());
         var etat = SacsPortes.client().lire(mc.player, base, mc.getConnection(), temps);
         sacs = etat.objets();
-        synchronise = etat.synchronise();
         base.addAll(sacs);
+        if (nouvelleConnexion || synchronise != etat.synchronise() || !memePiles(base, piles))
+            revision++;
+        synchronise = etat.synchronise();
         piles = List.copyOf(base);
         connexion = mc.getConnection();
         if (temps - dernierExport < 500) return;
@@ -76,6 +85,12 @@ public final class InventaireJoueur {
         json.add("inventaire", totaux(piles));
         json.add("backpacks", totaux(sacs));
         Pont.envoyerInventaire(json);
+    }
+
+    private static boolean memePiles(List<ItemStack> a, List<ItemStack> b) {
+        if (a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) if (!ItemStack.matches(a.get(i), b.get(i))) return false;
+        return true;
     }
 
     private static void ajouter(List<ItemStack> liste, ItemStack s) {

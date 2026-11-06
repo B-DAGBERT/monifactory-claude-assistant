@@ -21,6 +21,11 @@ public final class OrigineFabrication {
     private static int age;
     private static final Map<String, Integer> totalFabrique = new HashMap<>();
 
+    /** Une lecture de production ne force jamais le rapprochement des preuves différées. */
+    public static boolean receptionEnAttente() {
+        return !crafts.isEmpty() || receptionSortie.enAttente();
+    }
+
     public static Map<String, Integer> totaux() {
         return Map.copyOf(totalFabrique);
     }

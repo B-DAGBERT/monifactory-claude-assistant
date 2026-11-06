@@ -27,6 +27,12 @@ public final class ReceptionSortie<T> {
         this.meme = meme;
     }
 
+    /** Lecture de cohérence uniquement : aucun mouvement en vol ne devient une réception. */
+    public boolean enAttente() {
+        return gains.stream().anyMatch(m -> m.quantite > 0)
+                || retraits.stream().anyMatch(m -> m.quantite > 0);
+    }
+
     private int compte(List<PlanRetrait.Stock<T>> liste, T objet) {
         return liste.stream()
                 .filter(s -> meme.test(objet, s.objet()))

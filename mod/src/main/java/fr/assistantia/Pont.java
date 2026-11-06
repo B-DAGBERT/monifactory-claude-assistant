@@ -449,11 +449,6 @@ public final class Pont {
         return ecrireDemande("inventaire_joueur.json", inventaire);
     }
 
-    /** Capture de lecture V2 indépendante du relevé historique utilisé par les transferts. */
-    static boolean envoyerInventaireProduction(JsonObject inventaire) {
-        return ecrireDemande("production_v2_inventaire.json", inventaire);
-    }
-
     public static boolean envoyerProgresFabrication(JsonObject progres) {
         return ecrireDemande("fabrication_emi.json", progres);
     }

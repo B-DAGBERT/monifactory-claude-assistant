@@ -10,6 +10,12 @@
     "ContenuSacMixin",
     "InventaireFavorisEmiMixin",
     "InventaireEcranArbreEmiMixin",
-    "CatalyseursArbreEmiMixin"
+    "CatalyseursArbreEmiMixin",
+    "PaquetsStockMixin",
+    "ContenuStockSophistiqueMixin",
+    "VariationStockSophistiqueMixin",
+    "ClicStockMixin",
+    "ClicStockSophistiqueMixin",
+    "EcranStockMixin"
   ]
 }

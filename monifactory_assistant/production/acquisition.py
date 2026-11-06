@@ -18,12 +18,13 @@ from monifactory_assistant.game.world_scope import (
     scope_folder,
 )
 from monifactory_assistant.persistence import atomic_json
-from monifactory_assistant.production.catalog import decode_document
+from monifactory_assistant.production.catalog import _digest, decode_document
 from monifactory_assistant.production.knowledge import (
     Completeness,
     SourceSnapshot,
     build_knowledge,
 )
+from monifactory_assistant.production.native_evidence import decode_native_evidence
 
 CATALOGUE_PROOF_REQUEST = "production_v2_preuve_demande.json"
 CATALOGUE_PROOF_REPLY = "production_v2_preuve_reponse.json"
@@ -32,11 +33,14 @@ CATALOGUE_PROOF_REPLY = "production_v2_preuve_reponse.json"
 def attest_catalogue(folder, scope, catalogue, *, timeout=0.45):
     """Require a new acknowledgement from the native client for this exact catalogue."""
     proof = {
-        "v": 1,
+        "v": 2 if "capture" in catalogue else 1,
         "nonce": uuid.uuid4().hex,
         **scope.fields(),
         **{key: catalogue[key] for key in ("source", "generation", "sha256")},
     }
+    if "capture" in catalogue:
+        proof["capture"] = catalogue["capture"]
+        proof["capture_sha256"] = catalogue["capture_sha256"]
     try:
         info = folder.lstat()
         if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
@@ -104,16 +108,32 @@ def active_scope(bridge, now_ms=None):
         return None
 
 
+def acquire_native(bridge, scope, request, now_ms):
+    data, stamp = read_capture(bridge.dir / "production_v2_inventaire.json", 1024 * 1024)
+    if _digest(data) != request.get("capture_sha256"):
+        raise ValueError("L’empreinte du relevé natif ne correspond pas au clic.")
+    return decode_native_evidence(
+        data, scope=scope, request=request, now_ms=now_ms, received_at_ms=stamp[1] // 1_000_000
+    )
+
+
 def acquire(bridge, python_root, scope, request, now_ms):
     """Only independently scoped frames are current; legacy files are never reassigned."""
     if active_scope(bridge, now_ms) != scope:
         raise ValueError("Le monde ou la connexion a changé.")
     sources = []
-    limits = [
-        "Réservations, fabrications en cours et réceptions : aucun relevé de lot attesté pour ce calcul."
-    ]
+    native_v2 = request.get("preuves_natives") == 2
+    limits = (
+        []
+        if native_v2
+        else [
+            "Réservations, fabrications en cours et réceptions : aucun relevé de lot attesté pour ce calcul."
+        ]
+    )
     native_inventory = False
     try:
+        if native_v2:
+            raise ValueError("Relevé v2 lu séparément.")
         data, stamp = read_capture(bridge.dir / "production_v2_inventaire.json", 1024 * 1024)
         if (
             not request.get("capture")
@@ -134,14 +154,15 @@ def acquire(bridge, python_root, scope, request, now_ms):
             "Inventaire natif : seuls les objets sans NBT sont comptés ; variantes non attestées."
         )
     except (OSError, ValueError, TypeError, RecursionError):
-        limits.append("Inventaire du clic indisponible ; aucun ancien stock ne le remplace.")
+        if not native_v2:
+            limits.append("Inventaire du clic indisponible ; aucun ancien stock ne le remplace.")
 
     for name in ("etat.json", "monde.json"):
         try:
             data, stamp = read_capture(bridge.dir / name)
             if not scope.accepts(data):
                 raise ValueError("Relevé sans preuve de monde/session.")
-            if native_inventory and name == "etat.json":
+            if (native_inventory or native_v2) and name == "etat.json":
                 # It cannot restore NBT-aggregated stock excluded by the explicit native capture.
                 data = {key: value for key, value in data.items() if key != "inventaire"}
             sources.append(SourceSnapshot(name, data, received_at_ms=stamp[1] // 1_000_000))

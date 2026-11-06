@@ -18,7 +18,7 @@ from monifactory_assistant.production.acquisition import (
     attest_catalogue,
     read_capture,
 )
-from monifactory_assistant.production.catalog import catalogue_document
+from monifactory_assistant.production.catalog import _digest, catalogue_document
 from monifactory_assistant.production.recipes import (
     Amount,
     Catalog,
@@ -124,21 +124,25 @@ class ProductionServiceTests(unittest.TestCase):
         )
 
     def inventory(self, quantity, **changes):
-        self.write(
-            "production_v2_inventaire.json",
-            {
-                "v": 1,
-                "t": self.now,
-                "joueur": "Test",
-                "dimension": self.scope.dimension,
-                "actif": True,
-                "synchronise": True,
-                "inventaire": {IRON.id: quantity},
-                "capture": "capture-1",
-                **self.scope.fields(),
-                **changes,
-            },
-        )
+        data = {
+            "v": 2,
+            "t": self.now,
+            "joueur": "Test",
+            "dimension": self.scope.dimension,
+            "actif": True,
+            "synchronise": True,
+            "inventaire": {IRON.id: quantity},
+            "capture": "capture-1",
+            "projet": self.app.projects.active,
+            "revision_projet": self.service.view()["contexte"]["revision_projet"],
+            "catalogue_source": self.metadata["source"],
+            "catalogue_generation": self.metadata["generation"],
+            "catalogue_sha256": self.metadata["sha256"],
+            **self.scope.fields(),
+            **changes,
+        }
+        self.inventory_sha = _digest(data)
+        self.write("production_v2_inventaire.json", data)
 
     def request(self, **changes):
         return {
@@ -148,6 +152,8 @@ class ProductionServiceTests(unittest.TestCase):
             "item": PLATE.id,
             "quantite": 8,
             "capture": "capture-1",
+            "preuves_natives": 2,
+            "capture_sha256": self.inventory_sha,
             **self.service.view()["contexte"],
             "catalogue_source": self.metadata["source"],
             "catalogue_generation": self.metadata["generation"],
@@ -159,6 +165,94 @@ class ProductionServiceTests(unittest.TestCase):
         self.executor.run()
         self.service.poll(self.app)
         return self.service.view()["resultat"]
+
+    def test_coherent_chest_counts_after_pockets_and_displays_retrieval(self):
+        for carried, expected_chest in ((3, 5), (8, 0)):
+            with self.subTest(carried=carried):
+                stock = {
+                    "v": 1,
+                    "mode": "menu_serveur",
+                    "disponible": True,
+                    "coherence": "paquet_complet_sans_mutation",
+                    "observe_ms": self.now,
+                    "capture_ms": self.now,
+                    "revision": "menu-1",
+                    "container_id": 2,
+                    "state_id": 1,
+                    "sources": [
+                        {"id": "coffre", "nature": "coffre_ouvert", "items": {IRON.id: 5}},
+                        {
+                            "id": "inventaire",
+                            "nature": "inventaire_36",
+                            "items": {IRON.id: carried},
+                        },
+                        {"id": "curseur", "nature": "curseur", "items": {}},
+                    ],
+                    "limites": [],
+                }
+                self.inventory(64, stock=stock)  # Independent personal view must not be added.
+                self.service.submit(self.request(n=self.now + carried))
+                result = self.finish()
+                self.assertEqual(result["rapport"]["missing"], [])
+                allocations = {
+                    row["source_id"]: row["quantity"] for row in result["rapport"]["allocations"]
+                }
+                self.assertEqual(allocations["native:0-inventaire"], carried)
+                self.assertEqual(allocations.get("native:2-coffre", 0), expected_chest)
+                self.assertEqual(
+                    any("À récupérer au coffre" in line for line in result["lignes"]),
+                    bool(expected_chest),
+                )
+
+    def test_cumulative_native_receipt_is_not_an_extra_physical_source(self):
+        for received in (0, 3):
+            with self.subTest(received=received):
+                lot = {
+                    "id": f"emi-lot/{self.scope.session}/1",
+                    "recette": RECIPE.id,
+                    "origine": "declaration_joueur",
+                    "etat": "en_cours",
+                    "total": [Amount(PLATE, 8).to_dict()],
+                    "recus": [Amount(PLATE, received).to_dict()] if received else [],
+                    "restants": [Amount(PLATE, 8 - received).to_dict()],
+                    "annules": [],
+                }
+                self.inventory(
+                    0,
+                    inventaire={PLATE.id: received} if received else {},
+                    suivi={
+                        "v": 1,
+                        "disponible": True,
+                        "revision": received + 1,
+                        "empreinte": "a" * 64,
+                        "lots": [lot],
+                        "limites": [],
+                    },
+                )
+                self.service.submit(self.request(n=self.now + received))
+                result = self.finish()
+                plan = result["rapport"]
+                self.assertEqual(plan["waiting"], [Amount(PLATE, 8 - received).to_dict()])
+                self.assertEqual(
+                    sum(
+                        row["quantity"]
+                        for row in plan["allocations"]
+                        if row["source_kind"] == "physical"
+                    ),
+                    received,
+                )
+                self.assertEqual(
+                    any("Réception attestée" in line for line in result["lignes"]), bool(received)
+                )
+
+    def test_native_file_digest_and_versions_fail_closed(self):
+        request = self.request()
+        self.assertEqual(self.service.submit({**request, "preuves_natives": 1})["etat"], "refusee")
+        self.service.submit(request)
+        self.inventory(64)  # Same ID but different bytes from the acknowledged capture.
+        result = self.finish()
+        self.assertEqual(result["rapport"]["missing"], [Amount(IRON, 8).to_dict()])
+        self.assertEqual(result["preuves"]["stock"], "inconnu")
 
     def test_opt_in_only_and_no_files_or_progress_written(self):
         before = {p.name: p.read_bytes() for p in self.data.iterdir()}

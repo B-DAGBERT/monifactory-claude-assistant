@@ -44,7 +44,10 @@ public final class MachinesEmi {
     private static EnvoiMachine.Plan plan;
     private static long actualise;
     private static final SuiviLotsEmi lots =
-            new SuiviLotsEmi(MachinesEmi::inventaire, MachinesEmi::lotsModifies);
+            new SuiviLotsEmi(
+                    MachinesEmi::inventaire,
+                    MachinesEmi::lotsModifies,
+                    MachinesEmi::porteeProduction);
     private static List<PlanMachines.Operation<EmiRecipe>> toutes = List.of();
     private static String calculPrecedent = "";
 
@@ -62,6 +65,76 @@ public final class MachinesEmi {
 
     public record Ligne(
             int lot, EmiRecipe recette, int fois, String etat, boolean annulable, String detail) {}
+
+    private static ProjectionLotsEmi.Portee porteeProduction() {
+        var mc = Minecraft.getInstance();
+        if (!mc.isSameThread()
+                || mc.player == null
+                || mc.level == null
+                || actif() == null
+                || actif() != arbre
+                || mc.getConnection() != connexion
+                || !dimension.equals(mc.level.dimension().location().toString())) return null;
+        var vue = fr.assistantia.Pont.partie("ecran");
+        var projets = vue.get("projets");
+        if (projets == null || !projets.isJsonObject()) return null;
+        return new ProjectionLotsEmi.Portee(
+                arbre,
+                connexion,
+                EmiApi.getRecipeManager(),
+                fr.assistantia.IdentiteMonde.monde(),
+                fr.assistantia.IdentiteMonde.session(),
+                dimension,
+                ProjectionLotsEmi.texte(projets.getAsJsonObject(), "actif"));
+    }
+
+    /** Instantané du propriétaire, sans transfert ni actualisation forcée des réceptions. */
+    public static com.google.gson.JsonObject lotsProduction(
+            com.google.gson.JsonObject contexte, com.google.gson.JsonObject catalogue) {
+        if (!Minecraft.getInstance().isSameThread())
+            throw new IllegalStateException("Projection des lots hors thread client");
+        var vue = fr.assistantia.Pont.partie("ecran");
+        var production = vue.get("production_v2");
+        var actuel =
+                production != null && production.isJsonObject()
+                        ? production.getAsJsonObject().get("contexte")
+                        : null;
+        boolean courant = actuel != null && actuel.isJsonObject() && contexte != null;
+        if (courant)
+            for (String cle :
+                    List.of(
+                            "monde_actif",
+                            "session_monde",
+                            "dimension_monde",
+                            "projet",
+                            "revision_projet"))
+                courant &=
+                        contexte.has(cle)
+                                && actuel.getAsJsonObject().has(cle)
+                                && java.util.Objects.equals(
+                                        contexte.get(cle), actuel.getAsJsonObject().get(cle));
+        boolean synchronise =
+                courant
+                        && fr.assistantia.InventaireJoueur.disponible()
+                        && !EnvoiMachine.occupe()
+                        && !fr.assistantia.RetraitCoffre.occupe()
+                        && !OrigineFabrication.receptionEnAttente();
+        return ProjectionLotsEmi.lire(
+                lots, porteeProduction(), inventaire(), synchronise, contexte, catalogue);
+    }
+
+    /**
+     * Ajout, extension, réception, annulation ou vidage ; les étiquettes seules n'y figurent pas.
+     */
+    public static long revisionLotsProduction() {
+        return lots.revision();
+    }
+
+    /** À utiliser au clic ou pour le défi natif ; aucune lecture par frame. */
+    public static String empreinteLotsProduction(
+            com.google.gson.JsonObject contexte, com.google.gson.JsonObject catalogue) {
+        return lotsProduction(contexte, catalogue).get("empreinte").getAsString();
+    }
 
     public static void termine() {
         dernierTermine = true;

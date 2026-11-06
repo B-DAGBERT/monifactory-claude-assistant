@@ -26,6 +26,7 @@ public final class CatalogueProduction {
     private static final Path PROOF_REQUEST =
             DIRECTORY.resolve("production_v2_preuve_demande.json");
     private static final Path PROOF_REPLY = DIRECTORY.resolve("production_v2_preuve_reponse.json");
+    private static final Path INVENTORY = DIRECTORY.resolve("production_v2_inventaire.json");
     private static final List<String> PROOF_CONTEXT =
             List.of(
                     "monde_actif",
@@ -78,7 +79,10 @@ public final class CatalogueProduction {
             if (capture == null || !"pret".equals(chaine(state, "etat")) || !valide()) return false;
             for (String key : CATALOGUE_KEYS)
                 if (!state.get(key).equals(metadata.getAsJsonObject().get(key))) return false;
-            return true;
+            return !metadata.getAsJsonObject().has("capture")
+                    || InventaireProduction.captureCourante(
+                            chaine(metadata.getAsJsonObject(), "capture"),
+                            chaine(metadata.getAsJsonObject(), "capture_sha256"));
         }
     }
 
@@ -178,17 +182,47 @@ public final class CatalogueProduction {
                     JsonParser.parseString(new String(raw, java.nio.charset.StandardCharsets.UTF_8))
                             .getAsJsonObject();
             String nonce = chaine(proof, "nonce");
+            boolean nativeProof = proof.has("capture");
             if (!nonce.matches("[0-9a-f]{32}")
                     || nonce.equals(lastProof)
-                    || proof.size() != PROOF_CONTEXT.size() + 2
-                    || !new com.google.gson.JsonPrimitive(1).equals(proof.get("v"))) return;
+                    || proof.size() != PROOF_CONTEXT.size() + (nativeProof ? 4 : 2)
+                    || !new com.google.gson.JsonPrimitive(nativeProof ? 2 : 1)
+                            .equals(proof.get("v"))) return;
             for (String key : PROOF_CONTEXT) if (!state.get(key).equals(proof.get(key))) return;
+            if (nativeProof
+                    && !InventaireProduction.valideCapture(
+                            chaine(proof, "capture"), chaine(proof, "capture_sha256"))) return;
             lastProof = nonce;
             long token = request;
             WRITER.execute(() -> ecrirePreuve(proof, token));
         } catch (Exception ignored) {
             // A missing, locked or malformed challenge receives no positive attestation.
         }
+    }
+
+    static java.util.concurrent.CompletableFuture<String> publierInventaire(JsonObject value) {
+        long token = EPOCH.get();
+        return java.util.concurrent.CompletableFuture.supplyAsync(
+                () -> {
+                    Path temporary = null;
+                    try {
+                        if (token != EPOCH.get()) return "";
+                        String digest =
+                                PublicationCatalogue.empreinte(
+                                        PublicationCatalogue.canonique(value));
+                        temporary = PublicationCatalogue.preparer(INVENTORY, value);
+                        synchronized (LOCK) {
+                            if (token != EPOCH.get()) return "";
+                            PublicationCatalogue.publier(temporary, INVENTORY);
+                            return digest;
+                        }
+                    } catch (Exception ex) {
+                        return "";
+                    } finally {
+                        nettoyer(temporary);
+                    }
+                },
+                WRITER);
     }
 
     private static void ecrirePreuve(JsonObject proof, long token) {

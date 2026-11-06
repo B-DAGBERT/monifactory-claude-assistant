@@ -35,6 +35,8 @@ def analyse_observed(
     ingredient_choices=None,
     diagnose_recipe=None,
     machine_key=None,
+    stock_ledger=None,
+    stock_evidence=(),
 ):
     """ID-only stocks require an explicit equivalence decision from the caller's data contract."""
     if catalogue.catalog is None or catalogue.status not in ("ready", "stale"):
@@ -48,7 +50,8 @@ def analyse_observed(
         eligible[resource.id] = resource
 
     stock, proofs = [], []
-    for observation in snapshot.availability_observations():
+    observations = snapshot.availability_observations() if stock_ledger is None else ()
+    for observation in observations:
         quantities = tuple(
             Amount(eligible[item], amount)
             for item, amount in observation.value.get("items", {}).items()
@@ -78,7 +81,7 @@ def analyse_observed(
     result = plan(
         catalogue.catalog,
         target,
-        StockLedger(sources=tuple(stock)),
+        StockLedger(sources=tuple(stock)) if stock_ledger is None else stock_ledger,
         recipe_choices=choices,
         ingredient_choices=ingredient_choices,
     )
@@ -92,16 +95,16 @@ def analyse_observed(
             planning=result,
             planning_world=snapshot.scope.world if snapshot.scope is not None else None,
             planning_generation=catalogue.catalog.generation,
-            planning_evidence=tuple(evidence for proof in proofs for evidence in proof.evidence),
+            planning_evidence=tuple(stock_evidence)
+            + tuple(evidence for proof in proofs for evidence in proof.evidence),
         )
 
     limits = list(snapshot.limitations)
-    if not snapshot.stock_universe_complete:
+    complete = snapshot.stock_universe_complete and stock_ledger is None
+    if not complete:
         limits.append(
             "Les manques sont calculés sur les stocks fournis. Le stock total est inconnu."
         )
     if catalogue.status == "stale":
         limits.append("Calcul fondé sur la dernière génération validée du catalogue.")
-    return ProductionAnalysis(
-        result, diagnosis, catalogue, tuple(proofs), snapshot.stock_universe_complete, tuple(limits)
-    )
+    return ProductionAnalysis(result, diagnosis, catalogue, tuple(proofs), complete, tuple(limits))

@@ -40,6 +40,7 @@ public class Minecraft {private static Minecraft instance;public Minecraft(){ins
  public static Minecraft getInstance(){if(instance==null)instance=new Minecraft();return instance;}
  public net.minecraft.client.gui.screens.Screen screen;public Player player=new Player();public Level level=new Level();
  public void setScreen(net.minecraft.client.gui.screens.Screen s){if(screen!=null&&screen!=s)screen.removed();screen=s;}
+ public void execute(Runnable task){task.run();}
  public static class Player{public net.minecraft.network.chat.Component getName(){return net.minecraft.network.chat.Component.literal("test");}}
  public static class Level{public Dimension dimension(){return new Dimension();}}
  public static class Dimension{public net.minecraft.resources.ResourceLocation location(){return new net.minecraft.resources.ResourceLocation("minecraft:overworld");}}}
@@ -71,12 +72,19 @@ public class IdentiteMonde{public static String world="m1_"+"a".repeat(64),sessi
 """,
         "fr.assistantia.InventaireJoueur": """
 public class InventaireJoueur{public static boolean available=true;public static java.util.List<net.minecraft.world.item.ItemStack> stacks=java.util.List.of();
- public static boolean disponible(){return available;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return stacks;}}
+ public static boolean disponible(){return available;}public static long revision(){return 1;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return stacks;}}
+""",
+        "fr.assistantia.StockProduction": """
+import com.google.gson.JsonObject;
+public class StockProduction{public static JsonObject capturer(long now){return null;}
+ public static boolean valide(JsonObject j){return false;}
+ public static boolean retourPossible(net.minecraft.client.gui.screens.Screen s){return false;}}
 """,
         "fr.assistantia.CatalogueProduction": """
 import com.google.gson.*;
 public class CatalogueProduction{public static JsonObject state=new JsonObject();public static int calls;public static boolean accepted=true;
- public static boolean demander(){calls++;return accepted;}public static JsonObject etat(){return state;}}
+ public static boolean demander(){calls++;return accepted;}public static JsonObject etat(){return state;}
+ public static java.util.concurrent.CompletableFuture<String> publierInventaire(JsonObject j){Pont.exports++;Pont.inventory=j.deepCopy();return java.util.concurrent.CompletableFuture.completedFuture(Pont.accept?"a".repeat(64):"");}}
 """,
         "fr.assistantia.Pont": """
 import com.google.gson.*;
@@ -120,7 +128,7 @@ public class ProductionMenuTest {
  c.add("cible",JsonParser.parseString("{\"resource\":{\"kind\":\"item\",\"id\":\"gtceu:iron_plate\",\"unit\":\"item\",\"variant\":\"\"},\"quantity\":4}"));CatalogueProduction.state=c;}
  static JsonObject response(long n){var r=context();r.addProperty("n",n);r.addProperty("etat","pret");r.addProperty("titre","Résultat");var lines=new JsonArray();for(int i=0;i<40;i++)lines.add("Fait observé "+i);r.add("lignes",lines);return r;}
  public static void main(String[] args)throws Exception {
-  var view=new JsonObject();view.addProperty("v",1);view.addProperty("disponible",true);view.add("contexte",context());Pont.ecran.add("production_v2",view);
+  var view=new JsonObject();view.addProperty("v",1);view.addProperty("preuves_natives",2);view.addProperty("disponible",true);view.add("contexte",context());Pont.ecran.add("production_v2",view);
   CatalogueProduction.state.addProperty("etat","chargement");
   Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Objectif"));var s=new EcranProduction(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
   if(args[0].equals("idle")){
