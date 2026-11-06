@@ -128,9 +128,19 @@ class InterfaceController:
             if path.exists() and path.stat().st_mtime != self.mod_request_time:
                 modified = path.stat().st_mtime
                 request = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(request, dict):
+                    self.mod_request_time = modified
+                    raise ValueError("Demande historique invalide")
+                number = request.get("n")
+                if isinstance(number, float) and number.is_integer():
+                    number = int(number)
+                if isinstance(number, bool) or not isinstance(number, int):
+                    self.mod_request_time = modified
+                    raise ValueError("Numéro de demande historique invalide")
+                request["n"] = number
                 # Celle d'avant le démarrage est ignorée, sauf si elle est toute récente : posée pendant que
                 # l'assistant était arrêté, juste avant que le joueur le relance depuis le jeu
-                age = time.time() * 1000 - float(request.get("n") or 0)
+                age = time.time() * 1000 - number
                 recent = -5000 <= age < 45000
                 if getattr(
                     getattr(self, "bridge", None), "isolated", False

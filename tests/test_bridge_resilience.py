@@ -1,6 +1,7 @@
 """Characterize restart/reply failures without Minecraft or an AI process."""
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -152,6 +153,45 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         self.write(n=900_000)
         self.app().check_mod_requests()
         self.action.assert_not_called()
+
+    def test_malformed_legacy_document_is_skipped_once_then_recovers(self):
+        path = self.folder / "demande_mod.json"
+        documents = [None, [], "invalid", {}, {"n": True}, {"n": "1000000"}, {"n": 1000000.5}]
+        for document in documents:
+            with self.subTest(document=document):
+                path.write_text(json.dumps(document), encoding="utf-8")
+                app = self.app()
+                with patch(
+                    "monifactory_assistant.application.interface.json.loads", wraps=json.loads
+                ) as reader:
+                    app.check_mod_requests()
+                    app.check_mod_requests()
+                    self.assertEqual(reader.call_count, 1)
+                self.action.assert_not_called()
+                self.assertEqual(app.root.after.call_count, 2)
+        self.write(n=1_000_000)
+        # Guarantee a new timestamp independently of filesystem precision.
+        modified = app.mod_request_time + 1
+        os.utime(path, (modified, modified))
+        app.check_mod_requests()
+        self.action.assert_called_once()
+
+    def test_integral_legacy_float_has_same_identity_as_integer_on_restart(self):
+        self.write(n=1_000_000.0)
+        self.app().check_mod_requests()
+        self.write(n=1_000_000)
+        self.app().check_mod_requests()
+        self.action.assert_called_once()
+
+    def test_temporary_legacy_read_failure_is_retried(self):
+        self.write()
+        app = self.app()
+        with patch.object(Path, "read_text", side_effect=PermissionError("temporarily locked")):
+            app.check_mod_requests()
+        self.assertIsNone(app.mod_request_time)
+        self.action.assert_not_called()
+        app.check_mod_requests()
+        self.action.assert_called_once()
 
     def test_first_project_refusal_after_scope_reset_does_not_block_later_requests(self):
         app = self.app()
