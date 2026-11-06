@@ -414,3 +414,29 @@ L’aperçu d’envoi lit les entrées et cuves une fois. Les recettes d’objet
 avec les quantités disponibles avant de simuler. Chaque essai utilise des réserves simulées.
 Au clic, le circuit, la machine et les quantités sont vérifiés sur une nouvelle lecture, puis les
 clics natifs sont construits pour la quantité annoncée.
+
+## Sélection locale du contexte de Discussion
+
+`game/context.py` sélectionne les objets par identifiant exact ou nom reconnu sans ambiguïté.
+Une question de recette garde les ingrédients des variantes connues sur deux niveaux et leurs
+machines. Une recherche dans les coffres garde les quantités, dimensions, positions et dates
+utiles. Un réglage simple reçoit un contexte plus court. Les questions ambiguës, les diagnostics
+machine et la planification conservent le contexte étendu. Ajouter « contexte complet » à la
+question force ce dernier pour ce tour. Les positions multijoueurs et la pause restent dans
+le prompt. La sélection utilise le catalogue local et la question suit le même appel unique.
+
+`python -m tests.benchmarks.question_context` mesure sept prompts synthétiques sans IA. Pour
+comparer, lancer le même fichier depuis un dossier temporaire avec `PYTHONPATH` sur une copie
+de `2ca966c`. Les mesures suivantes utilisent 50 répétitions sur macOS ARM64. L'estimation
+des tokens est la longueur du prompt divisée par quatre, hors système et historique.
+
+| Question                              | Caractères avant → après | Tokens estimés | Préparation médiane en ms |
+| ------------------------------------- | ------------------------ | -------------- | ------------------------- |
+| Fabriquer Bronze Plate                | 20 539 → 6 195           | 5 135 → 1 549  | 0,225 → 0,054             |
+| Trouver Bronze Plate dans les coffres | 20 554 → 5 812           | 5 138 → 1 453  | 0,232 → 0,056             |
+| Désactiver la voix                    | 20 199 → 5 096           | 5 050 → 1 274  | 0,223 → 0,028             |
+
+Les quatre autres prompts (machine, projet, demande ambiguë, contexte complet) ont la même
+empreinte SHA-256 avant et après. Les tests vérifient la recette exacte, les stocks rares,
+les machines compatibles, les dates et les positions des deux joueurs. Les temps de réponse
+et la qualité des modèles en partie réelle ne sont pas mesurés ici.

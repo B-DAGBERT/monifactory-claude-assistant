@@ -85,6 +85,7 @@ class ParityTests(unittest.TestCase):
             "App.__init__",
             "App.on_type",
             "App.context",
+            "describe_state",  # optional exact item selection preserves full mode; test_question_context.py
             "App.work_question",
             "App.on_answer",  # clear the read-only viewer's connection error on success
             "App.on_error",  # retain the writer conflict until a successful reconnect

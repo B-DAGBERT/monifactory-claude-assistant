@@ -292,9 +292,14 @@ def observation_date(stamp):
     return "date inconnue"
 
 
-def describe_world(world, limit=60):
+def describe_world(world, limit=60, *, machine_ids=None):
     live, historical = [], []
-    machines = [m for m in world.machines() if not re.search(r"hatch|_bus$", m["bloc"])]
+    machines = [
+        m
+        for m in world.machines()
+        if (machine_ids is None or m["bloc"] in machine_ids)
+        and not re.search(r"hatch|_bus$", m["bloc"])
+    ]
     for m in sorted(machines, key=World._date, reverse=True)[:limit]:
         where = f"{m['nom']} en {m['x']} {m['y']} {m['z']} ({m['dimension']})"
         if world.observation_live(m):
@@ -325,11 +330,14 @@ def describe_world(world, limit=60):
     return "\n".join(lines)
 
 
-def describe_machines(storage, limit=60):
-    if not storage.machines:
+def describe_machines(storage, limit=60, *, machine_ids=None):
+    machines = storage.machines
+    if machine_ids is not None:
+        machines = [m for m in machines if m["bloc"] in machine_ids]
+    if not machines:
         return "Machines posées : aucune repérée."
     return "Machines repérées en partie (derniers emplacements observés) : " + " ; ".join(
         f"{m['nom']} [{m['bloc']}] en {int(m['x'])} {int(m['y'])} {int(m['z'])} "
         f"({m['dimension']}, {observation_date(m.get('t'))})"
-        for m in storage.machines[:limit]
+        for m in machines[:limit]
     )

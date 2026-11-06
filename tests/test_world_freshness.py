@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 from monifactory_assistant.application.conversation import ConversationController
 from monifactory_assistant.application.game import GameController
+from monifactory_assistant.game.recipes import RecipeIndex
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.world import World, describe_world
 
@@ -153,7 +154,7 @@ class WorldFreshnessTests(unittest.TestCase):
         )
         controller.plan, controller.guide, controller.speak = None, None, False
         controller.describe_journal = lambda _: ""
-        controller.recipe_index = SimpleNamespace(hint=lambda _: "")
+        controller.recipe_index = RecipeIndex()
         controller.events, controller.speaker = Queue(), Mock()
         self.world.update(frame(MACHINE, CHEST, players=[PLAYER]))
         self.world.invalidate_live()

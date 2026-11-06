@@ -6,7 +6,12 @@ import time
 import traceback
 
 import monifactory_assistant.providers as ai_provider
-from monifactory_assistant.game.context import describe_state, describe_storage
+from monifactory_assistant.game.context import (
+    QuestionContext,
+    describe_state,
+    describe_storage,
+    question_context,
+)
 from monifactory_assistant.game.objectives import item_names, machine_label, needed_machines
 from monifactory_assistant.game.veins import describe_veins
 from monifactory_assistant.game.world import describe_machines, describe_world
@@ -140,7 +145,12 @@ class ConversationController:
             return
         self.start_question(None, audio)
 
-    def context(self, shot, with_storage=False):
+    def context(self, shot, with_storage=False, *, question=None):
+        selection = (
+            question_context(question, self.recipe_index)
+            if with_storage and question is not None
+            else QuestionContext()
+        )
         parts = []
         if self.objective_paused:
             parts.append(
@@ -149,15 +159,27 @@ class ConversationController:
                 "Tu peux toujours répondre aux autres questions."
             )
         if self.game:
-            parts.append(describe_state(self.game))
+            parts.append(describe_state(self.game, items=selection.items))
         if with_storage:
-            parts.append(describe_storage(self.storage))
-            parts.append(describe_machines(self.storage))
-            parts.append(describe_veins(self.veins, self.game))
-            world = describe_world(self.world)
+            if selection.profile != "reglage":
+                parts.append(describe_storage(self.storage, items=selection.items))
+                prefix = "Machines ciblées. " if selection.machines is not None else ""
+                parts.append(
+                    prefix + describe_machines(self.storage, machine_ids=selection.machines)
+                )
+                parts.append(describe_veins(self.veins, self.game))
+            world = describe_world(self.world, machine_ids=selection.machines)
             if world:
                 parts.append(world)
-        if self.objectives:
+            if selection.focused:
+                parts.append(
+                    "Contexte ciblé pour cette question ; les autres stocks et événements ne sont pas détaillés. "
+                    "Si une information manque, consulte les fichiers locaux en lecture seule "
+                    "(stockage.txt, recettes_*.json, machines_recettes.txt, inventaire_joueur.json). "
+                    "Ne conclus pas qu'un objet absent de cet extrait n'existe pas. "
+                    "Ajoute « contexte complet » dans une question pour joindre le contexte étendu à ce tour."
+                )
+        if self.objectives and selection.profile != "reglage":
             marks = {"fait": "✔ ", "en_cours": "▶ ", "a_faire": ""}
             parts.append(
                 f"Plan (objectif principal) : {self.plan_title or 'sans titre'} ; ses objectifs dans "
@@ -167,11 +189,16 @@ class ConversationController:
                     for i, o in enumerate(self.objectives)
                 )
             )
-        if with_storage:
+        if with_storage and not selection.focused:
             journal = self.describe_journal(25)
             if journal:
                 parts.append(journal)
-        if self.plan:
+        if selection.profile == "reglage":
+            parts.append(
+                f"Plan conservé : {self.plan_title or 'sans titre'} ; objectif : "
+                + (self.plan["objectif"] if self.plan else "aucun")
+            )
+        if self.plan and selection.profile != "reglage":
             progress = self.progress()
             names = item_names(self.plan)
             current = next(
@@ -204,7 +231,7 @@ class ConversationController:
                         for m in machines
                     )
                 )
-        if self.places:
+        if self.places and selection.profile != "reglage":
             parts.append(
                 "Lieux mémorisés : "
                 + " ; ".join(
@@ -277,7 +304,7 @@ class ConversationController:
                 text
             )  # les recettes des objets cités : Codex n'a pas à les chercher
             prompt = (
-                f"{self.context(shot, with_storage=True)}\n\n{ACTIONS_HELP}\n\n"
+                f"{self.context(shot, with_storage=True, question=text)}\n\n{ACTIONS_HELP}\n\n"
                 + (recipes + "\n\n" if recipes else "")
                 + f"Ma question : {text}"
             )
