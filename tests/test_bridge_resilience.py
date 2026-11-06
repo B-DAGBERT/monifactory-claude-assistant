@@ -67,6 +67,24 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         restarted.start_question.assert_not_called()
         self.assertEqual(restarted.question_ack, {"n": 1_000_000, "etat": "acceptee"})
 
+    def test_expired_legacy_file_cannot_replace_its_durable_question_ack(self):
+        for busy in (False, True):
+            with self.subTest(busy=busy):
+                self.write(n=int(self.now * 1000), type="question", texte="Question de test")
+                first = self.app()
+                first.busy = busy
+                first.check_mod_requests()
+                expected = dict(first.question_ack)
+                self.assertEqual(expected["etat"], "refusee" if busy else "acceptee")
+
+                self.now += 46
+                restarted = self.app()
+                # The real App restores the durable acknowledgement before checking files.
+                restarted.question_ack = dict(restarted.request_queue.last["question"])
+                restarted.check_mod_requests()
+                self.assertEqual(restarted.question_ack, expected)
+                restarted.start_question.assert_not_called()
+
     def test_retry_uses_one_identity_across_legacy_and_durable_channels(self):
         request = self.write(requete="same-client-request")
         self.app().check_mod_requests()

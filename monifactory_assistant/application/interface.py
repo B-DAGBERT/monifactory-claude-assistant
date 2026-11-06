@@ -164,7 +164,7 @@ class InterfaceController:
                     legacy_n is None
                     and not recent
                     and request.get("type") == "question"
-                    and (request.get("n") or 0) >= self.question_ack.get("n", 0)
+                    and number > self.question_ack.get("n", -1)
                 ):
                     self.question_ack = {"n": request.get("n"), "etat": "expiree"}
                 self.legacy_request_n = request.get("n")
