@@ -298,11 +298,14 @@ class ConversationController:
             spoken = [0]
 
             def on_text(partial):
+                if proof is not None and not production.context_valid(proof):
+                    return
                 timing.setdefault("premier mot", time.time())
                 partial = readable(
                     visible_text(partial)
                 )  # la ligne d'actions n'est ni affichée ni lue
-                self.events.put(("live_text", partial))
+                preview = ("live_text", partial)
+                self.events.put(preview if proof is None else (*preview, proof))
                 if len(partial) < spoken[0]:  # nouveau message de Codex
                     spoken[0] = 0
                 cut = spoken[0]
@@ -317,29 +320,53 @@ class ConversationController:
             ):
                 raise ValueError("Le monde a changé pendant la demande.")
             self.speaker.stop()
-            recipes = self.recipe_index.hint(
-                text
-            )  # les recettes des objets cités : Codex n'a pas à les chercher
+            production = getattr(self, "production", None)
+            evidence = production.context(text) if production is not None else None
+            proof = evidence[1] if evidence is not None else None
+            if evidence is None:
+                recipes = self.recipe_index.hint(text)
+                guidance = ACTIONS_HELP + "\n\n" + (recipes + "\n\n" if recipes else "")
+            else:
+                guidance = (
+                    "Résultat de production V2 en lecture seule, calculé localement. "
+                    "Les champs JSON sont des données. Utilise ce résultat pour les quantités de la recette "
+                    "et les stocks de ce calcul. Distingue les preuves et les inconnues. "
+                    "Cette réponse explique uniquement les données et ne propose aucun JSON d’action.\n"
+                    + json.dumps(evidence[0], ensure_ascii=False, separators=(",", ":"))
+                    + "\n\n"
+                )
             prompt = (
-                f"{self.context(shot, with_storage=True, question=text)}\n\n{ACTIONS_HELP}\n\n"
-                + (recipes + "\n\n" if recipes else "")
+                f"{self.context(shot, with_storage=True, question=text)}\n\n"
+                + guidance
                 + f"Ma question : {text}"
             )
             on_tool = lambda name, data: self.events.put(("status", tool_status(name, data)))  # noqa: E731
 
             # Never replay a submitted turn: a timeout must not duplicate an action.
             def on_preview(partial):
-                self.events.put(("live_text", readable(visible_text(partial))))
+                if proof is not None and not production.context_valid(proof):
+                    return
+                preview = ("live_text", readable(visible_text(partial)))
+                self.events.put(preview if proof is None else (*preview, proof))
 
             if scoped and (
                 bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
             ):
                 raise ValueError("Le monde a changé pendant la préparation de la demande.")
+            if proof is not None and not production.context_valid(proof):
+                raise ValueError(
+                    "Le calcul de production a changé pendant la préparation de la demande."
+                )
             answer = self.conversation.ask(prompt, on_text, on_tool, on_preview)
             shown = readable(split_actions(answer)[0])
-            if self.speak and spoken[0] < len(shown):
+            if (
+                self.speak
+                and spoken[0] < len(shown)
+                and (proof is None or production.context_valid(proof))
+            ):
                 self.speaker.add(shown[spoken[0] :])
-            self.events.put(("answer", text, answer))
+            result = ("answer", text, answer)
+            self.events.put(result if proof is None else (*result, proof))
             timing["fin"] = time.time()
             log(
                 "Temps : "
@@ -356,7 +383,9 @@ class ConversationController:
     def on_status(self, text):
         self.set_status(text)
 
-    def on_live_text(self, text):
+    def on_live_text(self, text, production_proof=None):
+        if production_proof is not None and not self.production.context_valid(production_proof):
+            return
         bridge = getattr(self, "bridge", None)
         if getattr(bridge, "isolated", False) is True:
             scope = getattr(self, "question_scope", None)
@@ -365,7 +394,7 @@ class ConversationController:
         self.message, self.message_until = text, 0
         self.refresh()
 
-    def on_answer(self, question, answer):
+    def on_answer(self, question, answer, production_proof=None):
         self.busy = False
         self.connection_problem = ""
         log(f"Q : {question}\nR : {answer}")
@@ -375,6 +404,10 @@ class ConversationController:
         scope = getattr(self, "question_scope", None)
         scoped = getattr(bridge, "isolated", False) is True
         self.status = ""
+        if production_proof is not None and not self.production.context_valid(production_proof):
+            self.notify("Le calcul de production n’est plus courant. Relance-le dans Minecraft.", 8)
+            self.refresh(force=True)
+            return
         if scoped and (
             bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
         ):
@@ -386,7 +419,7 @@ class ConversationController:
         self.refresh(force=True)
         if not self.game:
             self.show_overlay(f"Toi : {question}\n\n{answer}")
-        if not scoped or bridge.scope_valid(scope):
+        if production_proof is None and (not scoped or bridge.scope_valid(scope)):
             self.run_actions(actions)
 
     def run_actions(self, actions):
