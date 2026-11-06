@@ -175,6 +175,7 @@ class ParityTests(unittest.TestCase):
             "main",  # report child startup failure to the supervisor; test_runtime_resilience.py
             "App.check_craftable",  # publish only a complete current catalog; test_recipe_loading.py
             "App.load_recipes",
+            "App.describe_journal",  # retain usable records beside a damaged record; test_journal_tail.py
         }
         compatibility_changes |= tested_resilience_changes
         checked = 0

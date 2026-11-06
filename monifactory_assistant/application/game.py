@@ -2,6 +2,7 @@
 
 import json
 import math
+import os
 import threading
 import time
 import traceback
@@ -180,28 +181,41 @@ class GameController:
 
     def journal_tail(self, count=40):
         path = getattr(self, "journal_file", JOURNAL_FILE)
-        if path is None:
+        if path is None or count <= 0:
             return []
         try:
-            lines = path.read_text(encoding="utf-8").splitlines()[-count:]
+            # Read enough physical JSONL records from the end, including any final partial line.
+            with path.open("rb") as stream:
+                position = stream.seek(0, os.SEEK_END)
+                chunks, newlines = [], 0
+                while position and newlines <= count:
+                    size = min(position, 8192)
+                    position -= size
+                    stream.seek(position)
+                    chunk = stream.read(size)
+                    chunks.append(chunk)
+                    newlines += chunk.count(b"\n")
         except OSError:
             return []
         events = []
-        for line in lines:
+        for line in b"".join(reversed(chunks)).splitlines()[-count:]:
             try:
-                events.append(json.loads(line))
+                event = json.loads(line.decode("utf-8"))
             except ValueError:
-                pass
+                continue
+            if isinstance(event, dict):
+                events.append(event)
         return events
 
     def describe_journal(self, count=30):
-        events = self.journal_tail(count)
-        if not events:
-            return ""
-        return "Journal récent de la partie :\n" + "\n".join(
-            f"{datetime.fromtimestamp(e['t']):%d/%m %H:%M} {e['type']} : {e['texte']}"
-            for e in events
-        )
+        lines = []
+        for event in self.journal_tail(count):
+            try:
+                date = datetime.fromtimestamp(event["t"])
+                lines.append(f"{date:%d/%m %H:%M} {event['type']} : {event['texte']}")
+            except (KeyError, TypeError, ValueError, OverflowError, OSError):
+                continue
+        return "Journal récent de la partie :\n" + "\n".join(lines) if lines else ""
 
     def check_craftable(self):
         """Relit les recettes quand le jeu les a réexportées, ou que le mod a écrit quelle machine fait quoi."""
