@@ -321,9 +321,10 @@ public final class ProductionCatalogueTest {
         Files.writeString(proofRequest, proof.toString());
         CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
-        check(
-                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
-                "live client confirms exact challenge");
+        check(!Files.exists(proofReply), "legacy challenge cannot confirm the native capture");
+        var legacy = new JsonObject();
+        legacy.add("catalogue_production", proof.deepCopy());
+        check(!CatalogueProduction.apercuCourant(legacy), "preview must carry the capture binding");
         var frame = new JsonObject();
         frame.addProperty("v", 2);
         frame.addProperty("capture", "capture-qa");
@@ -341,7 +342,7 @@ public final class ProductionCatalogueTest {
         CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
         check(
-                !JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                !Files.exists(proofReply),
                 "a correct capture ID with a substituted digest cannot be attested");
         proof.addProperty("capture_sha256", frameDigest);
         proof.addProperty("nonce", "d".repeat(32));

@@ -96,7 +96,7 @@ final class ProjectionLotsEmi {
             JsonObject contexte,
             JsonObject catalogue) {
         JsonObject result = new JsonObject();
-        result.addProperty("v", 2);
+        result.addProperty("v", 3);
         result.addProperty("revision", suivi.revision());
         JsonArray lots = new JsonArray();
         TreeSet<String> limites = new TreeSet<>();
@@ -124,7 +124,7 @@ final class ProjectionLotsEmi {
                     }
                     if (lot.suivi().receptionNonAttribuee()) {
                         limites.add(
-                                "Lots avec gain personnel sans origine machine prouvée exclus du calcul.");
+                                "Lots avec réception sans preuve de transfert exact exclus du calcul (corrélation locale seulement).");
                         continue;
                     }
                     JsonObject valeur;

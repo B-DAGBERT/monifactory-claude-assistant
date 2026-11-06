@@ -195,15 +195,10 @@ final class SuiviLotsEmi {
             if (ui != null) {
                 for (var lot : lots)
                     if (lot.ici(ui.position())) attendusAutomatiques.addAll(lot.suivi().restants());
-                restants =
-                        recevoir(
-                                gains,
-                                ui.position(),
-                                OrigineFabrication.receptionsMachineProuvees(
-                                        objets, player.containerMenu));
+                restants = recevoir(gains, ui.position());
             }
         } catch (ReflectiveOperationException | RuntimeException e) {
-            // Les lots envoyés automatiquement exigent une preuve de leur machine.
+            // Conserver le rapprochement historique seulement si la machine est lisible.
         }
         var attribues = receptionManuelle.soustraire(gains, restants);
         var personnels = inventaire.get();
@@ -233,16 +228,13 @@ final class SuiviLotsEmi {
 
     private List<PlanRetrait.Stock<EmiStack>> recevoir(
             List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position) {
-        return recevoir(gains, position, true);
-    }
-
-    private List<PlanRetrait.Stock<EmiStack>> recevoir(
-            List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position, boolean origineProuvee) {
         if (gains.isEmpty()) return gains;
         for (var lot : lots)
             if (lot.ici(position)) {
                 int avant = lot.suivi().totalRecu();
-                gains = lot.suivi().recevoir(gains, origineProuvee);
+                // Objets et fluides : une baisse de sortie + un gain proche ne portent aucun
+                // identifiant de transfert. Le suivi reste inchangé, pas une preuve Production.
+                gains = lot.suivi().recevoir(gains, false);
                 if (avant != lot.suivi().totalRecu()) {
                     modifie();
                 }

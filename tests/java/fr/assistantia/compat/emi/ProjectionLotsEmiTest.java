@@ -96,26 +96,38 @@ public final class ProjectionLotsEmiTest {
                 .toList();
     }
 
-    private static void receiveMachine(SuiviLotsEmi owner, int n) {
+    private static void receiveCorrelatedMachine(SuiviLotsEmi owner, int n) {
         machine();
         var slot = new net.minecraft.world.inventory.Slot(new Object(), 0);
         slot.item = new ItemStack("test:plate", n);
         GregTechMachines.outputSlots = List.of(slot);
         OrigineFabrication.vider();
         OrigineFabrication.actualiser(nativeInventory());
-        inventory = List.of(stock(item("test:plate", n), n));
+        // A conveyor removes the output; no item has reached the player.
         slot.item = ItemStack.EMPTY;
+        OrigineFabrication.actualiser(nativeInventory());
+        assert OrigineFabrication.receptions().isEmpty();
+        // An unrelated later gain of the same item is locally indistinguishable.
+        inventory = List.of(stock(item("test:plate", n), n));
         OrigineFabrication.actualiser(nativeInventory());
         assert !OrigineFabrication.receptions().isEmpty();
         owner.recevoir(OrigineFabrication.receptions());
     }
 
+    // Pure model fixture: an explicitly proven receipt, not a native source or runtime fallback.
+    private static void receiveExplicitModel(SuiviLotsEmi owner, int n) {
+        owner.actifs().get(0).suivi().recevoir(List.of(stock(item("test:plate", n), n)), true);
+    }
+
     private static void excluded(SuiviLotsEmi owner) {
         var projection = project(owner);
-        assert projection.get("v").getAsInt() == 2;
+        assert projection.get("v").getAsInt() == 3;
         assert projection.get("disponible").getAsBoolean() : projection;
         assert projection.getAsJsonArray("lots").isEmpty() : projection;
-        assert projection.getAsJsonArray("limites").toString().contains("origine machine prouvée");
+        assert projection
+                .getAsJsonArray("limites")
+                .toString()
+                .contains("sans preuve de transfert exact");
     }
 
     private static JsonObject only(JsonObject projection) {
@@ -160,7 +172,7 @@ public final class ProjectionLotsEmiTest {
             assert view.get("empreinte").getAsString().matches("[0-9a-f]{64}");
             assert !view.has("reserved") && !lot.has("stock");
         } else if (scenario.equals("partial_cancel")) {
-            receiveMachine(owner, 3);
+            receiveExplicitModel(owner, 3);
             var partial = only(project(owner));
             assert quantity(partial, "total", "test:plate") == 10;
             assert quantity(partial, "recus", "test:plate") == 3;
@@ -173,7 +185,7 @@ public final class ProjectionLotsEmiTest {
             assert quantity(cancelled, "annules", "test:plate") == 7;
             assert cancelled.getAsJsonArray("restants").isEmpty();
         } else if (scenario.equals("complete_move")) {
-            receiveMachine(owner, 10);
+            receiveExplicitModel(owner, 10);
             var complete = only(project(owner));
             assert complete.get("etat").getAsString().equals("termine");
             inventory = List.of();
@@ -183,7 +195,7 @@ public final class ProjectionLotsEmiTest {
             assert moved.getAsJsonArray("restants").isEmpty();
             assert quantity(moved, "total", "test:plate") == 10;
         } else if (scenario.equals("extension")) {
-            receiveMachine(owner, 3);
+            receiveExplicitModel(owner, 3);
             assert owner.completer(id, recipe, 2);
             var lot = only(project(owner));
             assert quantity(lot, "total", "test:plate") == 14;
@@ -221,6 +233,26 @@ public final class ProjectionLotsEmiTest {
             owner.recevoir(List.of());
             assert !owner.actifs().get(0).suivi().receptionNonAttribuee();
             assert quantity(only(project(owner)), "restants", "test:plate") == 10;
+        } else if (scenario.equals("correlated_machine")
+                || scenario.equals("correlated_machine_independent")) {
+            owner.vider();
+            machine();
+            owner.ajouter(recipe, 5, new BlockPos(0, 64, 0));
+            int second =
+                    scenario.equals("correlated_machine_independent")
+                            ? owner.ajouter(recipe, 5, new BlockPos(0, 64, 0))
+                            : 0;
+            receiveCorrelatedMachine(owner, 3);
+            assert owner.actifs().get(0).suivi().totalRecu() == 3
+                    : "Gameplay receipt remains unchanged";
+            assert owner.actifs().get(0).suivi().receptionNonAttribuee();
+            if (second == 0) excluded(owner);
+            else {
+                assert !owner.actifs().get(1).suivi().receptionNonAttribuee();
+                var retained = only(project(owner));
+                assert retained.get("id").getAsString().endsWith("/" + second);
+                assert quantity(retained, "restants", "test:plate") == 10;
+            }
         } else if (scenario.equals("mixed_craft_machine")) {
             owner.vider();
             machine();
@@ -241,7 +273,7 @@ public final class ProjectionLotsEmiTest {
             assert owner.actifs().get(0).suivi().totalRecu() == 3;
             assert owner.actifs().get(0).suivi().receptionNonAttribuee();
             excluded(owner);
-        } else if (scenario.equals("proved_fluids")) {
+        } else if (scenario.equals("correlated_fluids")) {
             owner.vider();
             machine();
             var fluid = new Fluid("test:water");
@@ -251,14 +283,16 @@ public final class ProjectionLotsEmiTest {
             tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(fluid, 1000));
             GregTechMachines.outputTanks = List.of(tank);
             owner.actualiser();
-            inventory = List.of(stock(EmiStack.of(fluid, null, 300), 300));
+            // A pipe removes fluid, then an unrelated container enters the player inventory.
             tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(fluid, 700));
             owner.actualiser();
+            assert owner.actifs().get(0).suivi().totalRecu() == 0;
+            inventory = List.of(stock(EmiStack.of(fluid, null, 300), 300));
+            owner.actualiser();
             owner.recevoir(List.of());
-            var lot = only(project(owner));
-            assert quantity(lot, "recus", "test:water") == 300;
-            assert quantity(lot, "restants", "test:water") == 700;
-            assert !owner.actifs().get(0).suivi().receptionNonAttribuee();
+            assert owner.actifs().get(0).suivi().totalRecu() == 300;
+            assert owner.actifs().get(0).suivi().receptionNonAttribuee();
+            excluded(owner);
         } else if (scenario.equals("project_revision")
                 || scenario.equals("tree_revision")
                 || scenario.equals("tree_quantity")) {

@@ -329,7 +329,7 @@ def decode_stock(data, context, *, personal):
 def decode_lots(data, context):
     """A lot receipt settles its promise only; it is never an inventory source."""
     _object(data, "Suivi natif")
-    if type(data.get("v")) is not int or data["v"] != 2:
+    if type(data.get("v")) is not int or data["v"] != 3:
         raise ValueError("Version du suivi natif inconnue.")
     available = _boolean(data.get("disponible"), "Disponibilité du suivi")
     revision = _integer(data.get("revision"), "Révision du suivi")

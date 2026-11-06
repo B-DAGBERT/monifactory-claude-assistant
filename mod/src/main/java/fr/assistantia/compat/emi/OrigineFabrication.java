@@ -31,16 +31,6 @@ public final class OrigineFabrication {
     }
 
     private static List<PlanRetrait.Stock<ItemStack>> receptions = List.of();
-    private static List<PlanRetrait.Stock<ItemStack>> receptionsMachine = List.of();
-
-    /** La position ouverte seule ne transforme pas un ancien événement de craft en sortie. */
-    static boolean receptionsMachineProuvees(
-            List<PlanRetrait.Stock<ItemStack>> gains, AbstractContainerMenu ouvert) {
-        if (gains != receptions || ouvert != menu || gains.isEmpty()) return false;
-        for (var gain : gains)
-            if (compte(gains, gain.objet()) > compte(receptionsMachine, gain.objet())) return false;
-        return true;
-    }
 
     @SubscribeEvent
     public static void craft(PlayerEvent.ItemCraftedEvent event) {
@@ -55,7 +45,7 @@ public final class OrigineFabrication {
     public static void vider() {
         crafts.clear();
         totalFabrique.clear();
-        precedent = receptions = receptionsMachine = List.of();
+        precedent = receptions = List.of();
         receptionSortie = new ReceptionSortie<>(ItemStack::isSameItemSameTags);
         slotsSortie = List.of();
         menu = null;
@@ -112,11 +102,8 @@ public final class OrigineFabrication {
         // Le serveur peut synchroniser les poches et le slot de sortie dans deux ticks.
         // Les gains de craft sont exclus du rapprochement pour rester crédités une seule fois.
         var fabriques = List.copyOf(gains);
-        receptionsMachine =
-                slotsSortie.isEmpty()
-                        ? List.of()
-                        : receptionSortie.actualiser(inventaire, maintenant, fabriques);
-        gains.addAll(receptionsMachine);
+        if (!slotsSortie.isEmpty())
+            gains.addAll(receptionSortie.actualiser(inventaire, maintenant, fabriques));
         receptions = List.copyOf(gains);
         for (var gain : gains) {
             var id =

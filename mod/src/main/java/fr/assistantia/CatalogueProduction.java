@@ -79,10 +79,9 @@ public final class CatalogueProduction {
             if (capture == null || !"pret".equals(chaine(state, "etat")) || !valide()) return false;
             for (String key : CATALOGUE_KEYS)
                 if (!state.get(key).equals(metadata.getAsJsonObject().get(key))) return false;
-            return !metadata.getAsJsonObject().has("capture")
-                    || InventaireProduction.captureCourante(
-                            chaine(metadata.getAsJsonObject(), "capture"),
-                            chaine(metadata.getAsJsonObject(), "capture_sha256"));
+            return InventaireProduction.captureCourante(
+                    chaine(metadata.getAsJsonObject(), "capture"),
+                    chaine(metadata.getAsJsonObject(), "capture_sha256"));
         }
     }
 
@@ -182,16 +181,13 @@ public final class CatalogueProduction {
                     JsonParser.parseString(new String(raw, java.nio.charset.StandardCharsets.UTF_8))
                             .getAsJsonObject();
             String nonce = chaine(proof, "nonce");
-            boolean nativeProof = proof.has("capture");
             if (!nonce.matches("[0-9a-f]{32}")
                     || nonce.equals(lastProof)
-                    || proof.size() != PROOF_CONTEXT.size() + (nativeProof ? 4 : 2)
-                    || !new com.google.gson.JsonPrimitive(nativeProof ? 2 : 1)
-                            .equals(proof.get("v"))) return;
+                    || proof.size() != PROOF_CONTEXT.size() + 4
+                    || !new com.google.gson.JsonPrimitive(2).equals(proof.get("v"))) return;
             for (String key : PROOF_CONTEXT) if (!state.get(key).equals(proof.get(key))) return;
-            if (nativeProof
-                    && !InventaireProduction.valideCapture(
-                            chaine(proof, "capture"), chaine(proof, "capture_sha256"))) return;
+            if (!InventaireProduction.valideCapture(
+                    chaine(proof, "capture"), chaine(proof, "capture_sha256"))) return;
             lastProof = nonce;
             long token = request;
             WRITER.execute(() -> ecrirePreuve(proof, token));
