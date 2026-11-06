@@ -9,7 +9,7 @@
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 11  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_SCRIPT = 12  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
 const VERSION_RECETTES = 2 // export des recettes plus ancien : refait au chargement (2 : durée et EU/t des recettes GregTech)
 const COULEURS = { or: 0xFFC94A, blanc: 0xFFFFFF, gris: 0xA8A8A8, vert: 0x6BE36B, bleu: 0x8FC7FF, rouge: 0xFF8A7A, jaune: 0xFFE45C }
 const FOND = 0xB4101418 | 0
@@ -117,6 +117,19 @@ function ecrireMemoire(nom, data) {
   else JsonIO.write(DOSSIER + nom, data)
 }
 
+function amorcerCommande() {
+  derniereCommande = null
+  try {
+    let c = JsonIO.read(DOSSIER + 'commande.json')
+    // Ce qui existe déjà appartient à l'ancien écran/chargement. Une commande apparue
+    // ensuite reste nouvelle, même si aucun fichier n'existait à la connexion.
+    derniereCommande = c == null ? '' : str(c.get('n'))
+  } catch (e) {
+    // Lecture incertaine : conserver la suppression prudente de la première commande lue.
+    noterErreur('initialisation des commandes', e)
+  }
+}
+
 function synchroniserContexte(suivant) {
   if (memeContexte(contexte, suivant)) return
   const monde = suivant == null ? null : suivant.monde
@@ -141,7 +154,8 @@ function synchroniserContexte(suivant) {
     }
   }
   conteneur = ecranPrecedent = mineraiVise = null
-  dimensionPrecedente = derniereCommande = plan = null
+  dimensionPrecedente = plan = null
+  amorcerCommande()
   inventaire = {}
   lignes = []
   manquants = {}

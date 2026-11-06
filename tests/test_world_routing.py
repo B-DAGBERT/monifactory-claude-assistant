@@ -376,7 +376,10 @@ class WorldRoutingTests(unittest.TestCase):
             return function(){};
         }};
         var Client = {player: {rayTrace: () => null}, level: {dimension: 'minecraft:overworld'}};
-        var JsonIO = {read: () => { throw Error('legacy fallback'); },
+        var JsonIO = {read: path => {
+                if (path === 'kubejs/assistant/commande.json') return null;
+                throw Error('legacy fallback');
+            },
             of: v => ({getAsJsonObject: () => v}), write: () => {throw Error('unexpected root write');}};
         var Platform = {isLoaded: () => true};
         var ClientEvents = {tick: fn => {runTick = fn;}, paintScreen: fn => {}};
