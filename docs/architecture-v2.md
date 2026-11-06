@@ -1,5 +1,8 @@
 # Architecture V2 en mode limité
 
+Ce document décrit le candidat hors jeu. Le raccordement à EMI, les preuves en jeu et la
+procédure de qualification sont détaillés dans [Intégration V2 dans Monifactory Expert](integration-v2.md).
+
 ## Périmètre
 
 Le premier lot fournit des calculs locaux à la demande. L’assistant en jeu, les lanceurs et les
