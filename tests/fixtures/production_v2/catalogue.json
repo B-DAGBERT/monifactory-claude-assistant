@@ -1,0 +1,115 @@
+{
+  "schema": "monifactory.production.catalogue",
+  "version": 1,
+  "source": "scenario-bronze",
+  "sha256": "4b600dc897bae346de3cc60fd4d00ee659bdf28ab95c14e55bf74dd27c969774",
+  "catalogue": {
+    "schema": "monifactory.production.recipes",
+    "version": 1,
+    "generation": 1,
+    "recipes": [
+      {
+        "id": "fixture:bronze_alloy",
+        "category": "gtceu:alloy_smelter",
+        "inputs": [
+          {
+            "options": [
+              {
+                "resource": {
+                  "kind": "item",
+                  "id": "fixture:copper",
+                  "unit": "item",
+                  "variant": ""
+                },
+                "quantity": 3
+              }
+            ],
+            "reusable": false
+          },
+          {
+            "options": [
+              {
+                "resource": {
+                  "kind": "item",
+                  "id": "fixture:tin",
+                  "unit": "item",
+                  "variant": ""
+                },
+                "quantity": 1
+              }
+            ],
+            "reusable": false
+          }
+        ],
+        "outputs": [
+          {
+            "amount": {
+              "resource": {
+                "kind": "item",
+                "id": "fixture:bronze",
+                "unit": "item",
+                "variant": ""
+              },
+              "quantity": 4
+            },
+            "chance": {
+              "numerator": 1,
+              "denominator": 1
+            }
+          }
+        ],
+        "machines": [
+          "gtceu:lp_steam_alloy_smelter"
+        ],
+        "duration_ticks": null,
+        "eut": null,
+        "circuit": null,
+        "unsupported": []
+      },
+      {
+        "id": "fixture:bronze_plate",
+        "category": "gtceu:bender",
+        "inputs": [
+          {
+            "options": [
+              {
+                "resource": {
+                  "kind": "item",
+                  "id": "fixture:bronze",
+                  "unit": "item",
+                  "variant": ""
+                },
+                "quantity": 1
+              }
+            ],
+            "reusable": false
+          }
+        ],
+        "outputs": [
+          {
+            "amount": {
+              "resource": {
+                "kind": "item",
+                "id": "fixture:plate",
+                "unit": "item",
+                "variant": ""
+              },
+              "quantity": 1
+            },
+            "chance": {
+              "numerator": 1,
+              "denominator": 1
+            }
+          }
+        ],
+        "machines": [
+          "gtceu:lv_bender"
+        ],
+        "duration_ticks": 10,
+        "eut": 16,
+        "circuit": 1,
+        "unsupported": []
+      }
+    ]
+  }
+}

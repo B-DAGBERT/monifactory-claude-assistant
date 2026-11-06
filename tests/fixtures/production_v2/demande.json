@@ -1,0 +1,43 @@
+{
+  "schema": "monifactory.production.request",
+  "version": 1,
+  "target": {
+    "resource": {
+      "kind": "item",
+      "id": "fixture:plate",
+      "unit": "item",
+      "variant": ""
+    },
+    "quantity": 8
+  },
+  "sources": [
+    {
+      "id": "coffre-cuivre",
+      "contents": [
+        {
+          "resource": {
+            "kind": "item",
+            "id": "fixture:copper",
+            "unit": "item",
+            "variant": ""
+          },
+          "quantity": 6
+        }
+      ]
+    },
+    {
+      "id": "inventaire-etain",
+      "contents": [
+        {
+          "resource": {
+            "kind": "item",
+            "id": "fixture:tin",
+            "unit": "item",
+            "variant": ""
+          },
+          "quantity": 2
+        }
+      ]
+    }
+  ]
+}
