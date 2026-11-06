@@ -189,7 +189,9 @@ public final class OngletBase {
                     statut
                             + (joueurs.isEmpty()
                                     ? ""
-                                    : "\nJoueurs :\n"
+                                    : (Pont.vrai(vue, "serveur")
+                                                    ? "\nJoueurs :\n"
+                                                    : "\nDernières positions connues :\n")
                                             + String.join(
                                                     "\n",
                                                     java.util.stream.StreamSupport.stream(
@@ -291,7 +293,11 @@ public final class OngletBase {
                 false);
         String etat = Pont.texte(m, "etat");
         long vu = (long) Pont.nombre(m, "vu", 0);
-        boolean ancien = vu == 0 || System.currentTimeMillis() - vu > 30000;
+        long age = System.currentTimeMillis() - vu;
+        boolean ancien =
+                m.has("actuel")
+                        ? !Pont.vrai(m, "actuel") || age < 0 || age >= 15000
+                        : vu == 0 || age > 30000;
         g.drawString(
                 mc.font,
                 mc.font.plainSubstrByWidth((ancien ? "Dernier relevé : " : "") + etat, espace - 32),

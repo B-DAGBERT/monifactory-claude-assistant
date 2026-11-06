@@ -482,21 +482,30 @@ def build_mod_view(app):
             "en_cours": bool(live),
             "fin": int(app.message_until * 1000),
         }
-    machines = [
-        {
-            "nom": m["nom"],
-            "etat": machine_status(m),
-            "x": m["x"],
-            "y": m["y"],
-            "z": m["z"],
-            "couleur": machine_color(machine_status(m)),
-            "item": m["bloc"],
-            "dimension": m.get("dimension", ""),
-            "vu": m.get("t", 0),
-        }
-        for m in app.world.machines()
-        if not re.search(r"hatch|_bus$", m["bloc"])
-    ]
+    machines = []
+    for m in app.world.machines():
+        if re.search(r"hatch|_bus$", m["bloc"]):
+            continue
+        status = machine_status(m)
+        live = app.world.observation_live(m)
+        machines.append(
+            {
+                "nom": m["nom"],
+                "etat": status,
+                "x": m["x"],
+                "y": m["y"],
+                "z": m["z"],
+                "couleur": machine_color(status) if live else "gris",
+                "item": m["bloc"],
+                "dimension": m.get("dimension", ""),
+                "vu": m.get("t", 0),
+                "actuel": live,
+            }
+        )
+    info = dict(app.info) if app.info else None
+    if info and getattr(app, "info_request", None):
+        status = app.machine_at(app.info_request)
+        info.update(machine=status, machine_couleur=machine_color(status))
     screen = {
         "statut": app.status,
         "dimension_actuelle": (state or {}).get("dimension", ""),
@@ -589,5 +598,5 @@ def build_mod_view(app):
         "recherche_emi": app.emi_search.view(app.bridge, storage, state, now)
         if hasattr(app, "emi_search")
         else None,
-        "info": dict(app.info) if app.info else None,
+        "info": info,
     }  # une copie : sinon la fiche complétée semble inchangée

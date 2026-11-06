@@ -10,7 +10,7 @@ from datetime import datetime
 from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.veins import find_veins
-from monifactory_assistant.game.world import machine_status
+from monifactory_assistant.game.world import machine_status, observation_date
 from monifactory_assistant.persistence import atomic_json, load_json
 from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import (
@@ -44,6 +44,8 @@ class GameController:
             if not state and self.session_open and time.time() - self.game_lost_at > 60:
                 self.session_open = False
                 self.journal("session", "Fin de la partie")
+            if self.game and (not state or self.game.get("dimension") != state.get("dimension")):
+                self.world.invalidate_live()
             self.game = state
             self.check_craftable()
             if state:
@@ -259,8 +261,8 @@ class GameController:
         self.removed_chests = [r for r in self.removed_chests if time.time() - r[0] < 1800]
 
     def machine_at(self, request):
-        """L'état en direct de la machine regardée, vu par le serveur (vide pour un objet ou un bloc ordinaire)."""
-        if request.get("origine") != "bloc" or not self.world.active:
+        """État observé pour la machine regardée, avec indication de fraîcheur."""
+        if request.get("origine") != "bloc":
             return ""
         position = (request.get("x"), request.get("y"), request.get("z"))
         dimension = request.get("dimension") or (self.game or {}).get("dimension")
@@ -273,7 +275,12 @@ class GameController:
             ),
             None,
         )
-        return machine_status(machine) if machine else ""
+        if not machine:
+            return ""
+        status = machine_status(machine)
+        if self.world.observation_live(machine):
+            return status
+        return f"Dernier relevé ({observation_date(machine.get('t'))}) · {status}"
 
     def send_command(self, action, **data):
         self.bridge.write("commande.json", {"n": str(time.time_ns()), "action": action, **data})

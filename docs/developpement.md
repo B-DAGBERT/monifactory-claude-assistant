@@ -388,7 +388,16 @@ stock serveur mémorisé les coffres filtrés dans les chunks qu’il couvre.
 
 Python valide la structure du relevé avant de fusionner les observations. Il utilise la date
 d’écriture locale du fichier reçu pour comparer les relevés du serveur et les ouvertures de
-coffre. Un fichier périmé ou d’une autre dimension est ignoré.
+coffre. Un fichier périmé ou d’une autre dimension est ignoré. Pendant un flux régulier,
+une trame hors ordre dans la même dimension ne remplace pas le dernier relevé.
+
+Le direct expire après 15 secondes et s’arrête lors d’une perte de connexion ou d’un changement
+de dimension détecté par l’assistant. Seules les machines présentes dans la dernière trame
+valide ont un état en direct. Les machines déjà vues, leurs dates et les coffres restent en
+mémoire. Les dernières positions des autres joueurs restent disponibles avec la date du
+relevé si la liaison s’interrompt. La Base, la fiche de bloc et le contexte partagé par Claude
+et Codex distinguent les états en direct et les observations historiques. Le stockage
+historique reste consultable en client seul.
 
 `StorageMonitor` réutilise la vue fusionnée tant que ses relevés source sont stables. Un changement
 d’inode, de date ou de taille invalide la lecture locale. Une écriture partielle laisse la dernière

@@ -9,7 +9,7 @@ import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.game.context import describe_state, describe_storage
 from monifactory_assistant.game.objectives import item_names, machine_label, needed_machines
 from monifactory_assistant.game.veins import describe_veins
-from monifactory_assistant.game.world import describe_machines, describe_world, machine_color
+from monifactory_assistant.game.world import describe_machines, describe_world
 from monifactory_assistant.persistence import atomic_json
 from monifactory_assistant.platform.hooks import keyboard
 from monifactory_assistant.prompts import ACTIONS_HELP, INFO_REQUEST
@@ -57,13 +57,8 @@ class ConversationController:
         item = str(request["item"])
         if request.get("refaire"):
             self.infos.pop(item, None)
-        status = self.machine_at(request)
-        self.info = {
-            "item": item,
-            "nom": str(request.get("nom") or item),
-            "machine": status,
-            "machine_couleur": machine_color(status),
-        }
+        self.info_request = request
+        self.info = {"item": item, "nom": str(request.get("nom") or item)}
         if item in self.infos:
             self.info.update(self.infos[item], etat="pret")
         else:

@@ -2,6 +2,7 @@
 
 import re
 import time
+from datetime import datetime
 
 from monifactory_assistant.game.snapshots import file_stamp
 from monifactory_assistant.game.storage import Storage, distinct_containers
@@ -75,8 +76,7 @@ def _block_observation(block, dimension, zone, date):
 
 
 class World:
-    """Ce que le script serveur voit autour du joueur : tous les coffres (même jamais ouverts) et l'état des
-    machines GregTech. Gardé en mémoire : on sait encore ce qu'il y a dans la base quand on s'en éloigne."""
+    """Relevés serveur récents et mémoire persistante des blocs précédemment observés."""
 
     def __init__(self):
         saved = load_json(WORLD_FILE, {})
@@ -84,11 +84,27 @@ class World:
         self.players = []
         self.errors = []
         self.last_t = 0  # heure de la dernière vue du serveur (ms)
+        self.live_dimension = None
+        self.last_source_t = None
         self.snapshot_stamp = None
 
     @property
     def active(self):
-        return 0 <= time.time() * 1000 - self.last_t < OBSERVATION_MAX_AGE_MS
+        return (
+            self.live_dimension is not None
+            and 0 <= time.time() * 1000 - self.last_t < OBSERVATION_MAX_AGE_MS
+        )
+
+    def invalidate_live(self):
+        """Une sortie du monde clôt le direct, avec conservation du dernier relevé."""
+        self.live_dimension = None
+
+    def observation_live(self, block):
+        return (
+            self.active
+            and block.get("dimension") == self.live_dimension
+            and block.get("t") == self.last_t
+        )
 
     def poll(self, bridge, dimension=None):
         path = bridge.dir / "monde.json"
@@ -125,6 +141,13 @@ class World:
             snapshot.get("zone"),
             snapshot.get("blocs"),
         )
+        if (
+            isinstance(dimension, str)
+            and getattr(self, "live_dimension", None) == dimension
+            and date - self.last_t < OBSERVATION_MAX_AGE_MS
+            and source_time <= self.last_source_t
+        ):
+            return False
         if (
             not isinstance(dimension, str)
             or not dimension
@@ -180,6 +203,8 @@ class World:
         )
         self.errors = [e for e in errors if isinstance(e, str)] if isinstance(errors, list) else []
         self.last_t = date
+        self.last_source_t = source_time
+        self.live_dimension = dimension
         return True
 
     def containers(self):
@@ -247,6 +272,8 @@ def machine_status(m):
 
 
 def machine_color(status):
+    if status.startswith("Dernier relevé"):
+        return "gris"
     return (
         "rouge"
         if "À SEC" in status or "NON formé" in status
@@ -258,21 +285,40 @@ def machine_color(status):
     )
 
 
+def observation_date(stamp):
+    if type(stamp) in (float, int) and 0 < stamp < 1e16:
+        try:
+            return datetime.fromtimestamp(stamp / 1000).strftime("%d/%m/%Y %H:%M:%S")
+        except (ValueError, OverflowError, OSError):
+            pass
+    return "date inconnue"
+
+
 def describe_world(world, limit=60):
-    if not world.blocks:
-        return ""
-    # Les pièces de multibloc (Hatch, Bus) n'apportent rien : on garde les machines et les contrôleurs
+    live, historical = [], []
     machines = [m for m in world.machines() if not re.search(r"hatch|_bus$", m["bloc"])]
-    lines = [
-        "Machines vues par le serveur (état en direct) : "
-        + " ; ".join(
-            f"{m['nom']} en {m['x']} {m['y']} {m['z']} : {machine_status(m)}"
-            for m in machines[:limit]
-        )
-    ]
-    if world.players:
+    for m in sorted(machines, key=World._date, reverse=True)[:limit]:
+        where = f"{m['nom']} en {m['x']} {m['y']} {m['z']} ({m['dimension']})"
+        if world.observation_live(m):
+            live.append(f"{where} : {machine_status(m)}")
+        else:
+            historical.append(f"{where} : {machine_status(m)} au {observation_date(m.get('t'))}")
+    lines = []
+    if live:
+        lines.append("Machines vues par le serveur (état en direct) : " + " ; ".join(live))
+    if historical:
         lines.append(
-            "Autres joueurs connectés : "
+            "Machines du serveur (historique, état actuel inconnu) : " + " ; ".join(historical)
+        )
+    if world.players:
+        heading = (
+            "Autres joueurs connectés"
+            if world.active
+            else f"Dernières positions connues des autres joueurs ({observation_date(world.last_t)})"
+        )
+        lines.append(
+            heading
+            + " : "
             + " ; ".join(
                 f"{p['nom']} en {p['x']} {p['y']} {p['z']} ({p['dimension']})"
                 for p in world.players
@@ -283,13 +329,9 @@ def describe_world(world, limit=60):
 
 def describe_machines(storage, limit=60):
     if not storage.machines:
-        return (
-            "Machines posées : aucune repérée (elles le sont quand le joueur ouvre leur interface)."
-        )
-    return (
-        "Machines déjà posées (repérées quand le joueur a ouvert leur interface) : "
-        + " ; ".join(
-            f"{m['nom']} [{m['bloc']}] en {int(m['x'])} {int(m['y'])} {int(m['z'])}"
-            for m in storage.machines[:limit]
-        )
+        return "Machines posées : aucune repérée."
+    return "Machines repérées en partie (derniers emplacements observés) : " + " ; ".join(
+        f"{m['nom']} [{m['bloc']}] en {int(m['x'])} {int(m['y'])} {int(m['z'])} "
+        f"({m['dimension']}, {observation_date(m.get('t'))})"
+        for m in storage.machines[:limit]
     )

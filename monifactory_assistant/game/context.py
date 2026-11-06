@@ -3,6 +3,8 @@
 import math
 from collections import defaultdict
 
+from monifactory_assistant.game.world import observation_date
+
 
 def cardinal(dx, dz):
     """Direction d'un déplacement (N, NE, E...), le nord étant vers -Z comme dans Minecraft."""
@@ -27,8 +29,10 @@ def describe_storage(storage, limit=150):
     """Contenu des coffres avec leurs coordonnées, pour que Codex puisse dire où aller chercher un objet."""
     where = defaultdict(list)
     for c in storage.containers:
+        observed = observation_date(c.get("t"))
+        location = f"{int(c['x'])} {int(c['y'])} {int(c['z'])}, {c['dimension']}, {observed}"
         for o in c["objets"]:
-            where[o["item"]].append((int(o["n"]), f"{int(c['x'])} {int(c['y'])} {int(c['z'])}"))
+            where[o["item"]].append((int(o["n"]), location))
     if not where:
         return "Coffres : aucun mémorisé pour l'instant."
     items = sorted(where.items(), key=lambda kv: -sum(n for n, _ in kv[1]))
@@ -39,8 +43,8 @@ def describe_storage(storage, limit=150):
         for item, places in items[:limit]
     ]
     return (
-        f"Dans mes coffres ({len(storage.containers)} mémorisés, quantité et coordonnées x y z) : "
-        + " ; ".join(parts)
+        f"Coffres mémorisés ({len(storage.containers)}, quantités observées aux dates indiquées, "
+        "stock actuel à vérifier) : " + " ; ".join(parts)
     )
 
 
