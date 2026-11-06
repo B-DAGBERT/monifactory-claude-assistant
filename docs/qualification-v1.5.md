@@ -21,7 +21,7 @@ Les identifiants B, J, P et R renvoient aux constats de l’audit. Les validatio
 et Git utilisent des entrées de production, des horloges ou des processus contrôlés et
 des dépôts temporaires. Chaque correction reste réversible par le retrait de son commit.
 Le périmètre Python et Git ci-dessous est **PASS** pour ses contrôles automatisés.
-Il totalise 450 tests et 26 scénarios EMI sur macOS.
+La révision testée `11efdc4` totalise **451 tests** et **26 scénarios EMI** sur macOS.
 
 | ID      | Résultat avant/après                                                                                                                                                                                                                                                                                     | Tests et compatibilité                                                                                                                     | Commit                          |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
@@ -33,6 +33,10 @@ Il totalise 450 tests et 26 scénarios EMI sur macOS.
 | B1 à B4 | Le canal historique réexécutait une demande. Il utilise maintenant la réservation et le reçu existants. Les reçus projet, actions JSON invalides et coordonnées de coffres interdimensions sont pris en charge par les contrôles ciblés. Les numéros invalides sont écartés avant le calcul de fraîcheur | `test_bridge_resilience.py`. Redémarrage, refus de réservation, confirmation perdue, anciens clients et réponses des deux moteurs simulées | `c13537c`, `22c70ef`, `3460a6b` |
 | R4      | L’effacement écrit un seul état final. La copie précédente contient de nouveau l’objectif, les étapes et les données du plan. Un échec laisse également le projet affiché intact                                                                                                                         | `test_project_clear.py`, régression des pauses et projets, comparaison de la sauvegarde octet par octet                                    | `c50c373`                       |
 
+**B6, PASS.** Un ancien fichier ne remplace plus le reçu déjà enregistré pour son numéro.
+Les cas accepté et refusé passent à +46 secondes, sans nouveau tour, dans
+`test_bridge_resilience.py`. Commit `11efdc4`.
+
 ## Correctifs gardés sur la branche de qualification
 
 Ces correctifs sont assemblés dans `codex/v15-qualification`. Ils doivent être essayés
@@ -42,7 +46,7 @@ garde le nom `assistantia-1.0.0-shared.40.jar`. Son empreinte est
 Le script client passe à la version 12. Le script serveur et les formats de migration restent
 inchangés.
 
-Le candidat complet `2022ed8` passe **465 tests** et **26 scénarios EMI** sur macOS. Le
+Le candidat complet `d2dd64d` passe **466 tests** et **26 scénarios EMI** sur macOS. Le
 contrôle Java et la compilation Forge réussissent, ainsi que Ruff, Prettier, `pip check`,
 le contrôle de syntaxe Node et `git diff --check`.
 
@@ -61,6 +65,8 @@ le contrôle de syntaxe Node et `git diff --check`.
   tests de reprise couvrent les interruptions interceptables. L’activation du venv, la fusion
   avant installation dans l’ancien lanceur, la coupure entre déploiement et fusion et un échec
   de la restauration elle-même exigent une qualification de la transaction complète.
+- **R2, limite de couverture.** Le marqueur identifie la révision publiée du catalogue. Il
+  ne rend pas transactionnelle la réécriture de plusieurs fichiers de recettes par KubeJS.
 - **R5, BLOCKED.** Le modèle peut proposer l’effacement d’un plan. La sauvegarde immédiate est
   protégée par R4. L’autorisation explicite en jeu reste à définir pour conserver les commandes
   de suppression légitimes dans la discussion et à la voix.
