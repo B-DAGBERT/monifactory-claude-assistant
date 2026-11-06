@@ -237,9 +237,8 @@ def main():
         App().run()
     except Exception:
         log(traceback.format_exc())
-        messagebox.showerror(
-            "Assistant Minecraft", "L'assistant a planté, détails dans assistant.log."
-        )
+        # The parent limits retries and shows the error if all attempts fail.
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

@@ -90,6 +90,7 @@ class ParityTests(unittest.TestCase):
             "App.on_answer",  # clear the read-only viewer's connection error on success
             "App.on_error",  # retain the writer conflict until a successful reconnect
             "supervise",
+            "main",  # propagate child startup failure to the supervisor; test_runtime_resilience.py
             "build_mod_view",
             "Storage.load",  # indexed neighbors preserve legacy newest-half rule; test_storage_memory.py
             "Storage.__init__",  # cache for the immutable export revision

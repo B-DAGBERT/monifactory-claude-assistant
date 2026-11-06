@@ -107,8 +107,12 @@ class GameController:
             self.flush_coach()
         except Exception:
             log(traceback.format_exc())
-        self.refresh()
-        self.root.after(1000, self.watch_game)
+        try:
+            self.refresh()
+        except Exception:
+            log(traceback.format_exc())
+        finally:
+            self.root.after(1000, self.watch_game)
 
     def check_game(self, state):
         if getattr(self.bridge, "isolated", False) is True and not self.bridge.scope_valid(
