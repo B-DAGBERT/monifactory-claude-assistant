@@ -58,8 +58,9 @@ public class EcranAssistant extends Screen {
     private final List<Button> actionsObjectif = new ArrayList<>();
     private OngletFilons filons;
     private OngletBase base;
-    private Button projets, objectifEmi, masquerMaj, modelesIA, diagnostic;
+    private Button projets, objectifEmi, masquerMaj, modelesIA, diagnostic, production;
     private EcranConfigurationIA configurationIA;
+    private EcranProduction productionEcran;
     private static final AvisMiseAJour AVIS_MAJ =
             new AvisMiseAJour(
                     net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR
@@ -241,6 +242,22 @@ public class EcranAssistant extends Screen {
                                 .bounds(MARGE, MARGE + 26, 100, 20)
                                 .build());
         diagnostic.visible = false;
+        production =
+                addRenderableWidget(
+                        Button.builder(
+                                        Component.literal("Production…"),
+                                        b -> {
+                                            if (productionEcran == null)
+                                                productionEcran = new EcranProduction(this);
+                                            this.minecraft.setScreen(productionEcran);
+                                        })
+                                .bounds(MARGE, MARGE + 26, 104, 18)
+                                .build());
+        production.visible = false;
+        production.setTooltip(
+                net.minecraft.client.gui.components.Tooltip.create(
+                        Component.literal(
+                                "Lire le plan de l’arbre EMI, ses diagnostics ou le projet, sans modifier l’objectif.")));
         modelesIA.visible = false;
         modelesIA.setTooltip(
                 net.minecraft.client.gui.components.Tooltip.create(
@@ -508,11 +525,15 @@ public class EcranAssistant extends Screen {
             haut += 24;
         }
         projets.visible = onglet == OBJECTIF || onglet == PLAN;
+        production.visible = projets.visible || onglet == BASE;
         if (projets.visible) {
             String nomProjet = Pont.texte(partie(ecran, "projets"), "nom");
             projets.setX(MARGE);
             projets.setY(haut);
-            projets.setWidth(this.width - 2 * MARGE);
+            projets.setWidth(this.width - 2 * MARGE - 110);
+            production.setX(this.width - MARGE - 104);
+            production.setY(haut);
+            production.setWidth(104);
             projets.setMessage(
                     Component.literal(
                             this.font.plainSubstrByWidth(
@@ -521,10 +542,15 @@ public class EcranAssistant extends Screen {
                                                     ? "EN PAUSE · "
                                                     : "")
                                             + (nomProjet.isEmpty() ? "Aucun objectif" : nomProjet),
-                                    this.width - 2 * MARGE - 16)));
+                                    projets.getWidth() - 16)));
             projets.setTooltip(
                     net.minecraft.client.gui.components.Tooltip.create(
                             Component.literal("Ouvrir, créer, renommer ou supprimer un projet.")));
+            haut += 24;
+        } else if (onglet == BASE) {
+            production.setX(MARGE);
+            production.setY(haut);
+            production.setWidth(this.width - 2 * MARGE);
             haut += 24;
         }
         boolean enPause = Pont.vrai(ecran, "objectif_en_pause");
