@@ -38,6 +38,8 @@ public final class Filons {
                         t.setDaemon(true);
                         return t;
                     });
+    private static final SauvegardeFilons PUBLICATION =
+            new SauvegardeFilons(IO, Filons::ecrire, System::currentTimeMillis);
     private static final MultiBufferSource.BufferSource TAMPONS_FILONS =
             MultiBufferSource.immediate(new BufferBuilder(32768));
     private static FilonMemoire memoire = new FilonMemoire(true);
@@ -232,6 +234,7 @@ public final class Filons {
             JsonObject actuel = new JsonObject();
             Pont.annoterContexte(actuel);
             if (!actuel.equals(contexteExport)) {
+                PUBLICATION.invaliderExport(DOSSIER.resolve("filons_mod.json"));
                 contexteExport = actuel;
                 modifie = true;
                 sauvegarde = 0; // Republier aussi lorsque la dimension change sans nouveau bloc.
@@ -241,6 +244,7 @@ public final class Filons {
         cibleScan = "";
         positionsLues = positionsNonChargees = 0;
         sauver(true);
+        PUBLICATION.invaliderExport(DOSSIER.resolve("filons_mod.json"));
         connexion = mc.getConnection();
         generation = actuelle;
         contexteExport = new JsonObject();
@@ -281,10 +285,10 @@ public final class Filons {
         monde = id;
         MINERAIS.clear();
         listeControle = contoursDate = sauvegarde = 0;
-        if (Files.exists(fichier(id))) {
-            try {
-                JsonObject data =
-                        JsonParser.parseString(Files.readString(fichier(id))).getAsJsonObject();
+        try {
+            String contenu = PUBLICATION.lire(fichier(id));
+            if (contenu != null) {
+                JsonObject data = JsonParser.parseString(contenu).getAsJsonObject();
                 if (!id.equals(Pont.texte(data, "monde")))
                     throw new IllegalArgumentException("Mauvais monde");
                 for (JsonElement e : Pont.liste(data, "gisements")) {
@@ -326,20 +330,19 @@ public final class Filons {
                         filon.choisirTypes(choisis);
                     }
                 }
-            } catch (Exception e) {
-                try {
-                    Files.copy(
-                            fichier(id),
-                            fichier(id)
-                                    .resolveSibling(
-                                            id + ".illisible-" + System.currentTimeMillis()));
-                } catch (Exception copie) {
-                    LogUtils.getLogger().warn("Sauvegarde filons illisible", copie);
-                }
-                message =
-                        "Mémoire partiellement illisible : copie conservée, nouveau repérage en cours.";
-                LogUtils.getLogger().warn("Lecture des filons", e);
             }
+        } catch (Exception e) {
+            try {
+                Files.copy(
+                        fichier(id),
+                        fichier(id)
+                                .resolveSibling(id + ".illisible-" + System.currentTimeMillis()));
+            } catch (Exception copie) {
+                LogUtils.getLogger().warn("Sauvegarde filons illisible", copie);
+            }
+            message =
+                    "Mémoire partiellement illisible : copie conservée, nouveau repérage en cours.";
+            LogUtils.getLogger().warn("Lecture des filons", e);
         }
         lectureGregtech = 0;
         actualiserGregtech();
@@ -459,23 +462,21 @@ public final class Filons {
         Path destination = fichier(monde);
         modifie = false;
         sauvegarde = System.currentTimeMillis();
-        IO.execute(
-                () -> {
-                    try {
-                        ecrire(destination, texte);
-                        if (exportable) ecrire(DOSSIER.resolve("filons_mod.json"), texteExport);
-                    } catch (Exception e) {
-                        Minecraft.getInstance()
-                                .execute(
-                                        () -> {
-                                            if (connexion != connexionExport
-                                                    || !generation.equals(generationExport)) return;
-                                            message =
-                                                    "Sauvegarde des filons impossible : vérifier l'espace disque.";
-                                            modifie = true;
-                                        });
-                        LogUtils.getLogger().warn("Écriture des filons", e);
-                    }
+        PUBLICATION.enregistrer(
+                destination,
+                texte,
+                exportable ? DOSSIER.resolve("filons_mod.json") : null,
+                texteExport,
+                e -> {
+                    Minecraft.getInstance()
+                            .execute(
+                                    () -> {
+                                        if (connexion != connexionExport
+                                                || !generation.equals(generationExport)) return;
+                                        message =
+                                                "Sauvegarde des filons impossible : vérifier l'espace disque.";
+                                    });
+                    LogUtils.getLogger().warn("Écriture des filons", e);
                 });
     }
 
@@ -532,6 +533,7 @@ public final class Filons {
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        PUBLICATION.reessayer();
         Minecraft mc = Minecraft.getInstance();
         long now = System.currentTimeMillis();
         if (!synchroniserMonde()) return;
