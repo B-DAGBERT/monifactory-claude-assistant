@@ -152,6 +152,9 @@ class ConversationController:
             else QuestionContext()
         )
         parts = []
+        bridge = getattr(self, "bridge", None)
+        if getattr(bridge, "isolated", False) is True:
+            parts.append(bridge.context_hint())
         if self.objective_paused:
             parts.append(
                 "L'objectif est EN PAUSE à la demande du joueur. Ne le relance pas, ne pousse pas "
@@ -258,6 +261,7 @@ class ConversationController:
         return "\n".join(parts)
 
     def start_question(self, text, audio):
+        self.question_scope = getattr(getattr(self, "bridge", None), "scope", None)
         self.busy = True
         self.set_status(
             "Je transcris ta question…"
@@ -269,6 +273,9 @@ class ConversationController:
         ).start()
 
     def work_question(self, text, audio, shot):
+        bridge = getattr(self, "bridge", None)
+        scope = getattr(self, "question_scope", None)
+        scoped = getattr(bridge, "isolated", False) is True
         timing = {"début": time.time()}  # pour le journal : où passe le temps
         try:
             if audio is not None:
@@ -299,6 +306,10 @@ class ConversationController:
                     self.speaker.add(partial[spoken[0] : cut])
                 spoken[0] = cut
 
+            if scoped and (
+                bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
+            ):
+                raise ValueError("Le monde a changé pendant la demande.")
             self.speaker.stop()
             recipes = self.recipe_index.hint(
                 text
@@ -314,6 +325,10 @@ class ConversationController:
             def on_preview(partial):
                 self.events.put(("live_text", readable(visible_text(partial))))
 
+            if scoped and (
+                bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
+            ):
+                raise ValueError("Le monde a changé pendant la préparation de la demande.")
             answer = self.conversation.ask(prompt, on_text, on_tool, on_preview)
             shown = readable(split_actions(answer)[0])
             if self.speak and spoken[0] < len(shown):
@@ -336,6 +351,11 @@ class ConversationController:
         self.set_status(text)
 
     def on_live_text(self, text):
+        bridge = getattr(self, "bridge", None)
+        if getattr(bridge, "isolated", False) is True:
+            scope = getattr(self, "question_scope", None)
+            if bridge.scope != scope or scope is not None and not bridge.scope_valid(scope):
+                return
         self.message, self.message_until = text, 0
         self.refresh()
 
@@ -345,13 +365,23 @@ class ConversationController:
         log(f"Q : {question}\nR : {answer}")
         answer, actions = split_actions(answer)
         answer = readable(answer)
-        self.add_history("claude", answer)
+        bridge = getattr(self, "bridge", None)
+        scope = getattr(self, "question_scope", None)
+        scoped = getattr(bridge, "isolated", False) is True
         self.status = ""
+        if scoped and (
+            bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
+        ):
+            self.add_history("claude", "Réponse de la connexion précédente · " + answer)
+            self.refresh(force=True)
+            return
+        self.add_history("claude", answer)
         self.message, self.message_until = answer, time.time() + 180
         self.refresh(force=True)
         if not self.game:
             self.show_overlay(f"Toi : {question}\n\n{answer}")
-        self.run_actions(actions)
+        if not scoped or bridge.scope_valid(scope):
+            self.run_actions(actions)
 
     def run_actions(self, actions):
         for action in actions:

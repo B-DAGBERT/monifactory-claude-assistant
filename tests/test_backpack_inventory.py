@@ -168,6 +168,7 @@ class BackpackInventoryTests(unittest.TestCase):
             namespace,
         )
         b = namespace["Bridge"]()
+        b.isolated = False  # The legacy state reader is exercised here.
         b.last_state = None
         b.read = lambda name: self.state if name == "etat.json" else self.snapshot
         self.assertEqual(b.state()["inventaire"]["iron"], 12)

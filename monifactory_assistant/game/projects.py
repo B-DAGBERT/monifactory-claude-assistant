@@ -23,8 +23,8 @@ FIELDS = (
 
 class ProjectStore:
     def __init__(self, path):
-        self.path = Path(path)
-        data = load_json(self.path, {}, strict=True)
+        self.path = Path(path) if path is not None else None
+        data = load_json(self.path, {}, strict=True) if self.path is not None else {}
         if not isinstance(data, dict):
             raise ValueError("Sauvegarde des projets illisible : fichier conservé.")
         self.legacy = "projets" not in data
@@ -61,6 +61,8 @@ class ProjectStore:
         return copy.deepcopy(self.current()["etat"])
 
     def save(self, state):
+        if self.path is None:
+            raise ValueError("Aucun monde identifié pour enregistrer le projet.")
         projects = copy.deepcopy(self.projects)
         next(p for p in projects if p["id"] == self.active)["etat"] = copy.deepcopy(state)
         data = dict(state, schema_projets=1, projet_actif=self.active, projets=projects)

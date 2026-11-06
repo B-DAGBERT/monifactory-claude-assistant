@@ -127,6 +127,11 @@ def _view(request, validated, chests):
     number, end, world, dimension, wanted = validated
     count = len(chests)
     return {
+        **{
+            k: request[k]
+            for k in ("monde_actif", "session_monde", "dimension_monde")
+            if k in request
+        },
         "n": number,
         "monde": world,
         "dimension": dimension,
@@ -179,6 +184,8 @@ class RecipeChestSearch:
         except OSError:
             return None
 
+        if getattr(bridge, "isolated", False) is True and not bridge.accepts(self.request):
+            return None
         validated = _validate(self.request, state, now)
         if validated is None:
             return None

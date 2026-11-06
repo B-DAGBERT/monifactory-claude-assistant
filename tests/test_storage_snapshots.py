@@ -648,6 +648,9 @@ class StorageSnapshotTests(unittest.TestCase):
             + receiver
             + """
         var mondeRecu = 0;
+        var contexte = {monde: '', session: '', dimension: ''};
+        function contexteCourant() {return contexte;}
+        function memeContexte(a, b) {return a === b;}
         var DOSSIER = '';
         function premiereValeur(lectures) { return lectures[0](); }
         function nombre(lectures) { return Number(lectures[0]()); }

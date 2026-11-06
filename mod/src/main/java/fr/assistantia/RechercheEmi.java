@@ -17,7 +17,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 /** Recherche explicite d'une recette, locale et distincte de l'objectif et de la discussion. */
 public final class RechercheEmi {
     private static java.util.function.LongSupplier horloge = System::currentTimeMillis;
-    private static String recette = "", monde = "", dimension = "";
+    private static String recette = "", monde = "", dimension = "", contexte = "";
     private static long numero, fin, dernierClic, envoye;
     private static boolean attente, inventaireEnAttente;
     private static MemoireCollecte collecte;
@@ -41,7 +41,9 @@ public final class RechercheEmi {
                 && mc.player != null
                 && mc.getConnection() == connexion
                 && mc.level.dimension().location().toString().equals(dimension)
-                && Filons.monde().equals(monde);
+                && Filons.monde().equals(monde)
+                && !contexte.isEmpty()
+                && contexte.equals(Pont.cleContexte());
     }
 
     public static boolean actif() {
@@ -161,6 +163,7 @@ public final class RechercheEmi {
         monde = Filons.monde();
         dimension = mc.level.dimension().location().toString();
         connexion = mc.getConnection();
+        contexte = Pont.cleContexte();
         fin = now + 600_000;
         collecte = suivi;
         fabricationsPrecedentes = Emi.fabricationsConfirmees();
@@ -216,6 +219,10 @@ public final class RechercheEmi {
     }
 
     private static void transmettre(boolean nouvelEssai) {
+        if (!contexteValide()) {
+            vider();
+            return;
+        }
         if (!nouvelEssai) reessais = 0;
         long now = horloge.getAsLong();
         numero = Math.max(now, numero + 1);
@@ -258,7 +265,7 @@ public final class RechercheEmi {
     private static void vider() {
         RetraitCoffre.arreter();
         AideCoffre.vider();
-        recette = "";
+        recette = contexte = "";
         attente = inventaireEnAttente = false;
         objets = demandes = Set.of();
         quantites = Map.of();
@@ -308,6 +315,7 @@ public final class RechercheEmi {
         }
         JsonObject vue = Pont.partie("recherche_emi");
         if (vue == derniereVue
+                || !Pont.contexteValide(vue)
                 || (long) Pont.nombre(vue, "n", 0) != numero
                 || !monde.equals(Pont.texte(vue, "monde"))
                 || !dimension.equals(Pont.texte(vue, "dimension"))) return;

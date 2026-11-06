@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -55,8 +56,62 @@ public final class Pont {
 
     private Pont() {}
 
+    /** Identité de la connexion et de la dimension, jamais déduite d'une ancienne vue. */
+    public static String cleContexte() {
+        if (!IdentiteMonde.isolation()) return "legacy";
+        String monde = IdentiteMonde.monde(), session = IdentiteMonde.session();
+        var niveau = Minecraft.getInstance().level;
+        if (monde.isEmpty() || session.isEmpty() || niveau == null) return "";
+        return monde + "|" + session + "|" + niveau.dimension().location();
+    }
+
+    private static String chaine(JsonObject objet, String cle) {
+        var valeur = objet.get(cle);
+        return valeur != null && valeur.isJsonPrimitive() && valeur.getAsJsonPrimitive().isString()
+                ? valeur.getAsString()
+                : "";
+    }
+
+    /** Une réponse d'une ancienne connexion ne peut pas redevenir active par son seul mtime. */
+    public static boolean contexteValide(JsonObject objet) {
+        if (!IdentiteMonde.isolation()) return true;
+        String contexte = cleContexte();
+        return !contexte.isEmpty()
+                && contexte.equals(
+                        chaine(objet, "monde_actif")
+                                + "|"
+                                + chaine(objet, "session_monde")
+                                + "|"
+                                + chaine(objet, "dimension_monde"));
+    }
+
+    /** Annote à la création ; une demande déjà annotée ne change jamais de propriétaire. */
+    public static boolean annoterContexte(JsonObject objet) {
+        if (!IdentiteMonde.isolation()) return true;
+        if (objet.has("monde_actif") || objet.has("session_monde") || objet.has("dimension_monde"))
+            return contexteValide(objet);
+        String contexte = cleContexte();
+        if (contexte.isEmpty()) return false;
+        String[] valeurs = contexte.split("\\|", -1);
+        objet.addProperty("monde_actif", valeurs[0]);
+        objet.addProperty("session_monde", valeurs[1]);
+        objet.addProperty("dimension_monde", valeurs[2]);
+        return true;
+    }
+
+    private static void verifierVue() {
+        if (contexteValide(vue)) return;
+        vue = new JsonObject();
+        besoins = cherches = Set.of();
+        cibles = List.of();
+        motifs = List.of();
+        reperes = List.of();
+        dateLue = -1;
+    }
+
     /** Relit vue_mod.json s'il a changé depuis la dernière lecture. */
     public static void rafraichir() {
+        verifierVue();
         try {
             if (!Files.exists(VUE)) {
                 return;
@@ -68,6 +123,7 @@ public final class Pont {
             JsonObject lu =
                     JsonParser.parseString(Files.readString(VUE, StandardCharsets.UTF_8))
                             .getAsJsonObject();
+            if (!contexteValide(lu)) return;
             Set<String> nouveauxBesoins = new HashSet<>();
             for (JsonElement e : tableau(lu, "besoins")) {
                 nouveauxBesoins.add(e.getAsString());
@@ -155,6 +211,7 @@ public final class Pont {
     }
 
     public static JsonObject vue() {
+        verifierVue();
         return vue;
     }
 
@@ -163,11 +220,13 @@ public final class Pont {
      * rien.
      */
     public static boolean retraitCoffres() {
+        verifierVue();
         return !vue.has("retrait_coffres") || vrai(vue, "retrait_coffres");
     }
 
     /** Une partie de la vue (hud, bulle, ecran, recette), ou un objet vide. */
     public static JsonObject partie(String cle) {
+        verifierVue();
         return vue.has(cle) && vue.get(cle).isJsonObject()
                 ? vue.getAsJsonObject(cle)
                 : new JsonObject();
@@ -201,10 +260,12 @@ public final class Pont {
     }
 
     public static Set<String> besoins() {
+        verifierVue();
         return besoins;
     }
 
     public static List<Cible> cibles() {
+        verifierVue();
         return cibles;
     }
 
@@ -213,6 +274,7 @@ public final class Pont {
      * la date).
      */
     public static boolean assistantActif() {
+        verifierVue();
         return dateLue > 0 && System.currentTimeMillis() - dateLue < 20000;
     }
 
@@ -228,6 +290,7 @@ public final class Pont {
      * fois.
      */
     public static boolean relancer() {
+        verifierVue();
         String lanceur = texte(vue, "lanceur");
         if (lanceur.isEmpty() || !Files.exists(Path.of(lanceur)) || relanceEnCours()) {
             return false;
@@ -251,10 +314,12 @@ public final class Pont {
      * Ingot »).
      */
     public static boolean rechercheActive() {
+        verifierVue();
         return !cherches.isEmpty() || !motifs.isEmpty();
     }
 
     public static boolean cherche(String id) {
+        verifierVue();
         if (cherches.contains(id)) {
             return true;
         }
@@ -267,6 +332,7 @@ public final class Pont {
     }
 
     public static List<Repere> reperes() {
+        verifierVue();
         return reperes;
     }
 
@@ -275,6 +341,10 @@ public final class Pont {
      * écrit.
      */
     static void ecrireTexte(String nom, List<String> lignes) {
+        if ("inventaire_details.txt".equals(nom) && IdentiteMonde.isolation()) {
+            ecrireInventaireDetaille(lignes);
+            return;
+        }
         try {
             Files.createDirectories(DOSSIER);
             Path temporaire = DOSSIER.resolve(nom + ".tmp");
@@ -289,10 +359,44 @@ public final class Pont {
         }
     }
 
+    private static void ecrireInventaireDetaille(List<String> lignes) {
+        JsonObject contexte = new JsonObject();
+        if (!annoterContexte(contexte)) return;
+        try {
+            Path dossier = DOSSIER.resolve("mondes").resolve(chaine(contexte, "monde_actif"));
+            Files.createDirectories(dossier);
+            String texte = String.join(System.lineSeparator(), lignes) + System.lineSeparator();
+            byte[] octets = texte.getBytes(StandardCharsets.UTF_8);
+            contexte.addProperty(
+                    "sha256",
+                    java.util.HexFormat.of()
+                            .formatHex(
+                                    java.security.MessageDigest.getInstance("SHA-256")
+                                            .digest(octets)));
+            Path temporaire = dossier.resolve("inventaire_details.txt.tmp");
+            Files.write(temporaire, octets);
+            Files.move(
+                    temporaire,
+                    dossier.resolve("inventaire_details.txt"),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+            temporaire = dossier.resolve("inventaire_details_contexte.json.tmp");
+            Files.writeString(temporaire, contexte.toString(), StandardCharsets.UTF_8);
+            Files.move(
+                    temporaire,
+                    dossier.resolve("inventaire_details_contexte.json"),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException | java.security.NoSuchAlgorithmException e) {
+            LOGGER.warn("Assistant IA : inventaire détaillé non écrit", e);
+        }
+    }
+
     private static long dernierEnvoi;
 
     /** Transmet une demande et indique si son écriture atomique a réussi. */
     public static synchronized boolean envoyer(JsonObject demande) {
+        if (!annoterContexte(demande)) return false;
         if (!demande.has("requete")) {
             dernierEnvoi = Math.max(System.currentTimeMillis(), dernierEnvoi + 1);
             demande.addProperty("n", dernierEnvoi);
@@ -347,6 +451,7 @@ public final class Pont {
     }
 
     private static boolean ecrireDemande(String nom, JsonObject demande) {
+        if (!annoterContexte(demande)) return false;
         try {
             Files.createDirectories(DOSSIER);
             Path temporaire = DOSSIER.resolve(nom + ".tmp");

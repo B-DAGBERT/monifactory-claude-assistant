@@ -157,7 +157,12 @@ class Storage:
         l'écrire) : il ne faut surtout pas croire que tous les coffres ont disparu."""
         data = bridge.read("stockage.json")
         if data is None:
-            return None if (bridge.dir / "stockage.json").exists() else Storage([])
+            path = (
+                bridge.data_path("stockage.json")
+                if hasattr(bridge, "data_path")
+                else bridge.dir / "stockage.json"
+            )
+            return None if path is not None and path.exists() else Storage([])
         # Les coffres mémorisés par une version plus ancienne du script du jeu sont faussés : ignorés
         containers = [c for c in data.get("conteneurs") or [] if c.get("v") == 2]
         # Un grand coffre occupe deux blocs côte à côte : selon le côté ouvert, le jeu le mémorise à l'une
@@ -252,7 +257,13 @@ class StorageMonitor:
         self.server_blocks = self.merged_client = None
 
     def refresh(self, bridge, world):
-        path = bridge.dir / "stockage.json"
+        path = (
+            bridge.data_path("stockage.json")
+            if hasattr(bridge, "data_path")
+            else bridge.dir / "stockage.json"
+        )
+        if path is None:
+            return Storage([])
         try:
             stamp = file_stamp(path)
             if stamp != self.stamp:

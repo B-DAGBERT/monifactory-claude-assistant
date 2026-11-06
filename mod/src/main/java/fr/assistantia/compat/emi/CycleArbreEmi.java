@@ -136,7 +136,10 @@ public final class CycleArbreEmi {
                     com.google.gson.JsonParser.parseString(
                                     item.getTag().getString("assistantia_objectif"))
                             .getAsJsonObject();
+            // Le livre virtuel appartient à sa session d'import, jamais à la connexion suivante.
+            if (!fr.assistantia.Pont.contexteValide(cible)) continue;
             var json = new com.google.gson.JsonObject();
+            if (!fr.assistantia.Pont.annoterContexte(json)) return;
             json.add("projet", cible.get("projet"));
             json.add("version", cible.get("version"));
             var credits =

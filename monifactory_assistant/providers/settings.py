@@ -220,6 +220,8 @@ class AISettings:
         self.request_signature = signature
         if not isinstance(request, dict):
             return False
+        if getattr(bridge, "isolated", False) is True and not bridge.accepts(request):
+            return False
         ident = request.get("n")
         if isinstance(ident, bool) or not isinstance(ident, int) or ident in self.seen:
             return False

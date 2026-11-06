@@ -47,6 +47,8 @@ public class Pont {
  public static java.util.List<String> messages=new java.util.ArrayList<>();
  public record Repere(int x,int y,int z,String dimension,String texte){}
  public static boolean retraitCoffres(){return true;}public static boolean assistantActif(){return actif;}
+ public static String cleContexte(){return "historique";}
+ public static boolean contexteValide(JsonObject v){return true;}
  public static boolean envoyerRechercheEmi(JsonObject j){sends++;if(write)request=j.deepCopy();return write;}
  public static JsonObject partie(String name){return reply;}
  public static String texte(JsonObject j,String k){return j.has(k)&&!j.get(k).isJsonNull()?j.get(k).getAsString():"";}

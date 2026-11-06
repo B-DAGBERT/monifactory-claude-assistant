@@ -78,8 +78,9 @@ def _block_observation(block, dimension, zone, date):
 class World:
     """Relevés serveur récents et mémoire persistante des blocs précédemment observés."""
 
-    def __init__(self):
-        saved = load_json(WORLD_FILE, {})
+    def __init__(self, path=None, *, enabled=True):
+        self.memory_file = (path or WORLD_FILE) if enabled else None
+        saved = load_json(self.memory_file, {}) if self.memory_file is not None else {}
         self.blocks = saved.get("blocs", {})  # clé "dimension|x|y|z" -> bloc vu par le serveur
         self.players = []
         self.errors = []
@@ -186,7 +187,9 @@ class World:
                     updated[key] = {**b, "t": date, "objets": [], "etat": None, "absent": True}
         updated.update(seen)
         if updated != self.blocks:
-            atomic_json(WORLD_FILE, {"blocs": updated}, compact=True)
+            memory_file = getattr(self, "memory_file", WORLD_FILE)
+            if memory_file is not None:
+                atomic_json(memory_file, {"blocs": updated}, compact=True)
             self.blocks = updated
         players, errors = snapshot.get("joueurs"), snapshot.get("erreurs")
         self.players = (

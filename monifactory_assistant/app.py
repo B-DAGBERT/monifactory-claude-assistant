@@ -100,7 +100,7 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.emi_search = RecipeChestSearch()
         self.search = None  # objets à mettre en surbrillance (« trouve-moi mes torches »)
         self.infos = load_json(INFO_FILE, {})
-        self.world = World()  # ce que voit le script serveur
+        self.world = World(enabled=not self.bridge.isolated)  # relevés du script serveur
         self.storage_monitor = StorageMonitor()
         # mod Minecraft : écran de l'assistant, surbrillance, faisceaux
         self.history = recent_history(self.bridge.dir, ai_provider.label())
@@ -120,8 +120,13 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.known_machines = self.known_veins = None
         self.removed_chests = []  # coffres retirés de la mémoire : (heure, coffre, cassé tout seul ?)
         self.forgotten_keys = set()  # coffres que l'on vient de demander au jeu d'oublier
-        self.load_plan()
-        self.load_places()
+        if self.bridge.isolated:
+            self.journal_file = None
+            self.load_plan(None)
+            self.load_places(None)
+        else:
+            self.load_plan()
+            self.load_places()
         # A committed acknowledgement remains visible even if the UI missed the last frame.
         for row in sorted(self.request_queue.rows.values(), key=lambda item: item["n"]):
             if "question" in row:

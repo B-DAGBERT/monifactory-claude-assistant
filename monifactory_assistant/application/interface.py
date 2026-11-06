@@ -110,6 +110,11 @@ class InterfaceController:
             log(traceback.format_exc())
 
     def check_mod_requests(self):
+        if getattr(
+            getattr(self, "bridge", None), "isolated", False
+        ) is True and not self.bridge.scope_valid(self.bridge.scope):
+            self.root.after(300, self.check_mod_requests)
+            return
         try:
             ai_settings = getattr(self, "ai_settings", None)
             if ai_settings is not None and ai_settings.poll(self.bridge, self):
@@ -128,6 +133,11 @@ class InterfaceController:
                 # l'assistant était arrêté, juste avant que le joueur le relance depuis le jeu
                 age = time.time() * 1000 - float(request.get("n") or 0)
                 recent = -5000 <= age < 45000
+                if getattr(
+                    getattr(self, "bridge", None), "isolated", False
+                ) is True and not self.bridge.accepts(request):
+                    self.root.after(300, self.check_mod_requests)
+                    return
                 legacy_n = getattr(self, "legacy_request_n", None)
                 if request.get("n") != legacy_n and recent:
                     self.handle_mod_request(request)
@@ -148,6 +158,10 @@ class InterfaceController:
         self.root.after(300, self.check_mod_requests)
 
     def restore_request_reply(self, request, result):
+        if getattr(
+            getattr(self, "bridge", None), "isolated", False
+        ) is True and not self.bridge.accepts(request):
+            return
         n = request.get("n") or 0
         self.mod_request_n = max(self.mod_request_n or 0, n)
         if request.get("type") == "question" and n < self.question_ack.get("n", 0):
@@ -173,6 +187,10 @@ class InterfaceController:
             }
 
     def dispatch_queued_request(self, request):
+        if getattr(
+            getattr(self, "bridge", None), "isolated", False
+        ) is True and not self.bridge.accepts(request):
+            return {"etat": "refusee", "message": "Demande d’une autre connexion ou dimension."}
         self.mod_request_n = request.get("n")
         reason = ""
         if request.get("projet") is not None and request["projet"] != self.projects.active:
@@ -201,6 +219,10 @@ class InterfaceController:
         return result
 
     def handle_mod_request(self, request):
+        if getattr(
+            getattr(self, "bridge", None), "isolated", False
+        ) is True and not self.bridge.accepts(request):
+            return
         kind = request.get("type")
         if request.get("projet") is not None and request["projet"] != self.projects.active:
             return  # action d'un ancien écran : ne pas la reporter sur le nouveau projet

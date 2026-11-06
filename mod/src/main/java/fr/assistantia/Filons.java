@@ -46,7 +46,11 @@ public final class Filons {
             new HashMap<>();
     private static List<FilonMemoire.Bloc> controles = List.of(), contours = List.of();
     private static int controle;
-    private static String monde = "", affiche = "", cibleScan = "";
+    private static String monde = "", affiche = "", cibleScan = "", generation = "";
+    private static Object connexion;
+    private static JsonObject contexteExport = new JsonObject();
+    private static Object tpConnexion;
+    private static String tpSession = "";
     private static int positionsLues, positionsNonChargees;
     private static long rotationDebut;
     private static long sauvegarde,
@@ -201,6 +205,7 @@ public final class Filons {
     }
 
     private static String identite(Minecraft mc) {
+        if (IdentiteMonde.isolation() && Pont.cleContexte().isEmpty()) return "";
         String origine = GregTechFilons.monde();
         if (origine.isEmpty()) return "";
         try {
@@ -218,15 +223,34 @@ public final class Filons {
     public static boolean synchroniserMonde() {
         Minecraft mc = Minecraft.getInstance();
         String id = mc.level == null || mc.player == null ? "" : identite(mc);
-        if (id.equals(monde)) return !id.isEmpty();
+        String actuelle =
+                IdentiteMonde.isolation()
+                        ? IdentiteMonde.monde() + "|" + IdentiteMonde.session()
+                        : "legacy";
+        if (id.equals(monde) && connexion == mc.getConnection() && generation.equals(actuelle)) {
+            // Une dimension différente conserve les filons du même monde, mais pas son enveloppe.
+            JsonObject actuel = new JsonObject();
+            Pont.annoterContexte(actuel);
+            if (!actuel.equals(contexteExport)) {
+                contexteExport = actuel;
+                modifie = true;
+                sauvegarde = 0; // Republier aussi lorsque la dimension change sans nouveau bloc.
+            }
+            return !id.isEmpty();
+        }
         cibleScan = "";
         positionsLues = positionsNonChargees = 0;
         sauver(true);
+        connexion = mc.getConnection();
+        generation = actuelle;
+        contexteExport = new JsonObject();
+        Pont.annoterContexte(contexteExport);
+        tpConnexion = null;
+        tpSession = "";
         if (id.isEmpty()) {
             monde = affiche = message = "";
             memoire = new FilonMemoire(true);
             scan = new FilonMemoire.Scan();
-            scan.activer(false);
             scan.activer(false);
             controles = contours = List.of();
             MINERAIS.clear();
@@ -424,6 +448,14 @@ public final class Filons {
         j.add("types_affiches_par_filon", filtres);
         j.add("blocs", blocs);
         String texte = j.toString();
+        // La sauvegarde native reste inchangée. L'export transitoire garde l'origine capturée,
+        // même si l'exécuteur IO termine après une déconnexion ou un autre monde.
+        JsonObject export = j.deepCopy();
+        contexteExport.entrySet().forEach(e -> export.add(e.getKey(), e.getValue()));
+        boolean exportable = !IdentiteMonde.isolation() || export.has("session_monde");
+        String texteExport = export.toString();
+        Object connexionExport = connexion;
+        String generationExport = generation;
         Path destination = fichier(monde);
         modifie = false;
         sauvegarde = System.currentTimeMillis();
@@ -431,10 +463,17 @@ public final class Filons {
                 () -> {
                     try {
                         ecrire(destination, texte);
-                        ecrire(DOSSIER.resolve("filons_mod.json"), texte);
+                        if (exportable) ecrire(DOSSIER.resolve("filons_mod.json"), texteExport);
                     } catch (Exception e) {
-                        message = "Sauvegarde des filons impossible : vérifier l'espace disque.";
-                        Minecraft.getInstance().execute(() -> modifie = true);
+                        Minecraft.getInstance()
+                                .execute(
+                                        () -> {
+                                            if (connexion != connexionExport
+                                                    || !generation.equals(generationExport)) return;
+                                            message =
+                                                    "Sauvegarde des filons impossible : vérifier l'espace disque.";
+                                            modifie = true;
+                                        });
                         LogUtils.getLogger().warn("Écriture des filons", e);
                     }
                 });
@@ -505,9 +544,14 @@ public final class Filons {
                                             tpAttendue.x() + .5,
                                             tpAttendue.y(),
                                             tpAttendue.z() + .5)
-                            < .5) finirTP(monde, "Téléportation effectuée.");
+                            < .5)
+                finirTP(monde, tpConnexion, tpSession, "Téléportation effectuée.");
             else if (now - tpDebut > 6000)
-                finirTP(monde, "Téléportation non confirmée : vérifier le message du serveur.");
+                finirTP(
+                        monde,
+                        tpConnexion,
+                        tpSession,
+                        "Téléportation non confirmée : vérifier le message du serveur.");
         }
         if (mc.isPaused() || !scan.actif()) {
             sauver(false);
@@ -697,6 +741,10 @@ public final class Filons {
         }
         FilonMemoire.Position cible = f.ancre;
         String origine = monde;
+        Object connexionOrigine = mc.getConnection();
+        String sessionOrigine = IdentiteMonde.session();
+        tpConnexion = connexionOrigine;
+        tpSession = sessionOrigine;
         tpEnCours = true;
         tpDebut = System.currentTimeMillis();
         message = "Recherche du point libre le plus proche du filon…";
@@ -715,6 +763,8 @@ public final class Filons {
                             if (p == null || !p.hasPermissions(2) || niveau == null) {
                                 finirTP(
                                         origine,
+                                        connexionOrigine,
+                                        sessionOrigine,
                                         "Téléportation refusée : joueur, dimension ou permission indisponible.");
                                 return;
                             }
@@ -742,7 +792,11 @@ public final class Filons {
                                                 niveau.getMaxBuildHeight());
                             if (libre == null
                                     || !niveau.getWorldBorder().isWithinBounds(bloc(libre))) {
-                                finirTP(origine, "Destination hors des limites du monde.");
+                                finirTP(
+                                        origine,
+                                        connexionOrigine,
+                                        sessionOrigine,
+                                        "Destination hors des limites du monde.");
                                 return;
                             }
                             p.teleportTo(
@@ -754,12 +808,18 @@ public final class Filons {
                                     p.getXRot());
                             finirTP(
                                     origine,
+                                    connexionOrigine,
+                                    sessionOrigine,
                                     directe
                                             ? "TP directe au-dessus du filon : emplacement non vérifié."
                                             : "Téléportation effectuée près du filon.");
                         } catch (Exception e) {
                             LogUtils.getLogger().warn("Téléportation filon", e);
-                            finirTP(origine, "Téléportation impossible : voir le journal du jeu.");
+                            finirTP(
+                                    origine,
+                                    connexionOrigine,
+                                    sessionOrigine,
+                                    "Téléportation impossible : voir le journal du jeu.");
                         }
                     });
         } else {
@@ -775,12 +835,20 @@ public final class Filons {
                         FilonMemoire.destinationDirecte(
                                 cible, mc.level.getMinBuildHeight(), mc.level.getMaxBuildHeight());
             if (libre == null || !mc.level.getWorldBorder().isWithinBounds(bloc(libre))) {
-                finirTP(origine, "Destination hors des limites du monde.");
+                finirTP(
+                        origine,
+                        connexionOrigine,
+                        sessionOrigine,
+                        "Destination hors des limites du monde.");
                 return;
             }
             if (mc.player.position().distanceToSqr(libre.x() + .5, libre.y(), libre.z() + .5)
                     < .5) {
-                finirTP(origine, "Tu es déjà à cet emplacement près du filon.");
+                finirTP(
+                        origine,
+                        connexionOrigine,
+                        sessionOrigine,
+                        "Tu es déjà à cet emplacement près du filon.");
                 return;
             }
             tpAttendue = libre;
@@ -793,11 +861,14 @@ public final class Filons {
         }
     }
 
-    private static void finirTP(String origine, String texte) {
+    private static void finirTP(
+            String origine, Object connexionOrigine, String sessionOrigine, String texte) {
         Minecraft.getInstance()
                 .execute(
                         () -> {
-                            if (!monde.equals(origine)) return;
+                            if (!monde.equals(origine)
+                                    || Minecraft.getInstance().getConnection() != connexionOrigine
+                                    || !IdentiteMonde.session().equals(sessionOrigine)) return;
                             tpEnCours = false;
                             tpAttendue = null;
                             message = texte;

@@ -120,7 +120,7 @@ public final class Stats {
                 }
             }
         }
-        StringBuilder nouvelle = new StringBuilder();
+        StringBuilder nouvelle = new StringBuilder(Pont.cleContexte());
         for (int i = 0; i < objets.size(); i++) {
             ItemStack s = objets.get(i);
             nouvelle.append(emplacements.get(i))

@@ -21,8 +21,8 @@ from monifactory_assistant.settings import HOTKEY_PLAN, PLAN_FILE, USEFUL
 class ProjectsController:
     """Projets, pause, progression et préparation de leurs objectifs."""
 
-    def load_plan(self):
-        self.projects = ProjectStore(PLAN_FILE)
+    def load_plan(self, path=...):
+        self.projects = ProjectStore(PLAN_FILE if path is ... else path)
         self.project_feedback = {}
         self.restore_project(self.projects.snapshot())
 
@@ -385,6 +385,7 @@ class ProjectsController:
             return
         if not auto:
             self.speaker.stop()
+        self.plan_scope = getattr(getattr(self, "bridge", None), "scope", None)
         self.busy = True
         self.objective_epoch += 1
         self.plan_done_announced = True
@@ -400,11 +401,16 @@ class ProjectsController:
 
     def work_plan(self, shot, request="", index=None, new_plan=False):
         try:
+            isolated = getattr(self.bridge, "isolated", False) is True
+            if isolated and not self.bridge.scope_valid(self.plan_scope):
+                raise ValueError("Le monde a changé avant la préparation du projet.")
             context = (
                 self.context(shot, with_storage=True)
                 + "\n"
                 + describe_quests(self.bridge.read("quetes.json"))
             )
+            if isolated and not self.bridge.scope_valid(self.plan_scope):
+                raise ValueError("Le monde a changé pendant la préparation du projet.")
             prompt = PLAN_REQUEST.format(context=context) + (NEW_PLAN_EXTRA if new_plan else "")
             if request:
                 what = "le plan" if new_plan else "l'objectif"
@@ -427,6 +433,11 @@ class ProjectsController:
 
     def on_plan_ready(self, plan, request="", index=None, new_plan=False):
         self.busy = False
+        bridge = getattr(self, "bridge", None)
+        if getattr(bridge, "isolated", False) is True and not bridge.scope_valid(self.plan_scope):
+            self.set_status("")
+            self.notify("Le monde a changé. Demande à nouveau ton objectif dans ce monde.", 6)
+            return
         current = self.current_objective()
         if new_plan and plan.get("plan"):
             main = plan["plan"]

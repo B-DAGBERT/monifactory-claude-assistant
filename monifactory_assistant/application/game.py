@@ -7,10 +7,13 @@ import time
 import traceback
 from datetime import datetime
 
+from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
-from monifactory_assistant.game.storage import Storage
+from monifactory_assistant.game.storage import Storage, StorageMonitor
 from monifactory_assistant.game.veins import find_veins
-from monifactory_assistant.game.world import machine_status, observation_date
+from monifactory_assistant.game.world import World, machine_status, observation_date
+from monifactory_assistant.game.world_scope import scope_file, scope_folder
+from monifactory_assistant.paths import ROOT
 from monifactory_assistant.persistence import atomic_json, load_json
 from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import (
@@ -27,15 +30,64 @@ from monifactory_assistant.settings import (
 class GameController:
     """Relevés du jeu, journal, annonces et actions sur le monde."""
 
-    def load_places(self):
-        self.places = load_json(PLACES_FILE, {})
+    def load_places(self, path=...):
+        self.places_file = PLACES_FILE if path is ... else path
+        self.places = load_json(self.places_file, {}) if self.places_file is not None else {}
 
     def save_places(self):
-        atomic_json(PLACES_FILE, self.places)
+        path = getattr(self, "places_file", PLACES_FILE)
+        if path is not None:
+            atomic_json(path, self.places)
+
+    def apply_world_scope(self, scope):
+        """Publish no view from the old partition under the newly observed connection."""
+        previous = getattr(self, "active_world_scope", None)
+        if previous == scope:
+            return
+        self.active_world_scope = None
+        self.game = self.previous_state = None
+        self.guide = self.search = self.info = None
+        self.message, self.message_until = "", 0
+        self.question_ack = {}
+        self.mod_request_n = self.project_reply_n = None
+        self.project_feedback = {}
+        self.last_view = self.last_mod_view = None
+        self.quest_titles = self.known_machines = self.known_veins = None
+        self.veins_read = self.quests_read = 0
+        self.veins = []
+        self.coach_queue = []
+        self.storage_text = self.storage_export_key = None
+        self.removed_chests = []
+        self.forgotten_keys = set()
+        self.storage, self.storage_monitor = Storage([]), StorageMonitor()
+        self.emi_search = RecipeChestSearch()
+        self.objective_epoch += 1
+        self.world.invalidate_live()
+        if scope is None or previous is None or scope.world != previous.world:
+            self.session_open = False
+            self.journal_file = None
+            self.world = World(enabled=False)
+            self.load_plan(None)
+            self.load_places(None)
+            if scope is not None:
+                folder = scope_folder(ROOT, scope.world, create=True)
+                for name in ("monde_memoire.json", "plan_ia.json", "lieux.json"):
+                    scope_file(folder, name + ".bak")
+                self.world = World(scope_file(folder, "monde_memoire.json"))
+                self.load_plan(scope_file(folder, "plan_ia.json"))
+                self.load_places(scope_file(folder, "lieux.json"))
+                self.journal_file = scope_file(folder, "journal.jsonl")
+        self.active_world_scope = scope
 
     def watch_game(self):
         try:
             state = self.bridge.state()
+            if getattr(self.bridge, "isolated", False) is True:
+                try:
+                    self.apply_world_scope(self.bridge.scope if state else None)
+                except (OSError, ValueError):
+                    self.bridge.scope = None
+                    raise
             if state and not self.game:
                 log("Jeu connecté")
                 self.on_game_connected()
@@ -59,6 +111,10 @@ class GameController:
         self.root.after(1000, self.watch_game)
 
     def check_game(self, state):
+        if getattr(self.bridge, "isolated", False) is True and not self.bridge.scope_valid(
+            self.active_world_scope
+        ):
+            return
         self.check_quests()
         for error in state.get("erreurs", []):
             if error not in self.logged_errors:
@@ -108,15 +164,21 @@ class GameController:
         self.update_objective_progress()
 
     def journal(self, kind, text):
-        with JOURNAL_FILE.open("a", encoding="utf-8") as f:
+        path = getattr(self, "journal_file", JOURNAL_FILE)
+        if path is None:
+            return
+        with path.open("a", encoding="utf-8") as f:
             f.write(
                 json.dumps({"t": time.time(), "type": kind, "texte": text}, ensure_ascii=False)
                 + "\n"
             )
 
     def journal_tail(self, count=40):
+        path = getattr(self, "journal_file", JOURNAL_FILE)
+        if path is None:
+            return []
         try:
-            lines = JOURNAL_FILE.read_text(encoding="utf-8").splitlines()[-count:]
+            lines = path.read_text(encoding="utf-8").splitlines()[-count:]
         except OSError:
             return []
         events = []

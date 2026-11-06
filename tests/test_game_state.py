@@ -24,6 +24,7 @@ class GameStateTests(unittest.TestCase):
         exec(compile(ast.Module(body=[bridge], type_ignores=[]), "bridge", "exec"), scope)
         self.bridge = scope["Bridge"]()
         self.frame = {"t": 100_000, "joueur": "test", "dimension": "overworld", "inventaire": {}}
+        self.bridge.isolated = False  # The legacy state reader is exercised here.
         self.bridge.last_state = None
         self.bridge.read = lambda name: self.frame if name == "etat.json" else None
 

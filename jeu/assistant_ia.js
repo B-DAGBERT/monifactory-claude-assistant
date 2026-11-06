@@ -9,7 +9,7 @@
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 10  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_SCRIPT = 11  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
 const VERSION_RECETTES = 2 // export des recettes plus ancien : refait au chargement (2 : durée et EU/t des recettes GregTech)
 const COULEURS = { or: 0xFFC94A, blanc: 0xFFFFFF, gris: 0xA8A8A8, vert: 0x6BE36B, bleu: 0x8FC7FF, rouge: 0xFF8A7A, jaune: 0xFFE45C }
 const FOND = 0xB4101418 | 0
@@ -34,6 +34,14 @@ try {
 } catch (e) { console.warn('Assistant IA : EMI introuvable, pas d\'export des recettes') }
 try { QuestFile = Java.loadClass('dev.ftb.mods.ftbquests.client.ClientQuestFile') } catch (e) { console.warn('Assistant IA : FTB Quests introuvable') }
 
+let IdentiteMonde = null, MemoireMonde = null
+try {
+  IdentiteMonde = Java.loadClass('fr.assistantia.IdentiteMonde')
+  MemoireMonde = Java.loadClass('fr.assistantia.MemoireMondeKubeJS')
+} catch (e) { /* Ancien mod ou fonctionnement KubeJS seul. */ }
+
+let contexte = null
+let memoireMonde = null
 let ticks = 0
 let plan = null          // plan.json : { version, visible, lignes }
 let icones = {}          // id -> ItemStack pour dessiner les icônes
@@ -55,6 +63,91 @@ let mineraisModifies = false
 let ecranPrecedent = null
 let manquants = {}       // coffres mémorisés introuvables à la dernière vérification
 let dimensionPrecedente = null, debutDimension = 0
+
+function isolationDemandee() {
+  if (IdentiteMonde != null) return IdentiteMonde.isolation() == true
+  try {
+    let activation = JsonIO.readJson(DOSSIER + 'isolation_mondes.json')
+    if (activation == null) return false
+    if (!activation.isJsonObject()) return true
+    let objet = activation.getAsJsonObject()
+    let version = objet.get('v'), actif = objet.get('actif')
+    return !(version != null && version.isJsonPrimitive()
+      && version.getAsJsonPrimitive().isNumber() && str(version.getAsString()) === '1'
+      && actif != null && actif.isJsonPrimitive()
+      && actif.getAsJsonPrimitive().isBoolean() && actif.getAsBoolean() == false)
+  } catch (e) { return true }
+}
+
+function contexteCourant() {
+  if (!isolationDemandee()) return { monde: '', session: '', dimension: '' }
+  if (IdentiteMonde == null || MemoireMonde == null || Client.level == null || Client.player == null) return null
+  const monde = str(IdentiteMonde.monde()), session = str(IdentiteMonde.session())
+  if (!/^m1_[0-9a-f]{64}$/.test(monde) || !/^[0-9a-f]{32}$/.test(session)) return null
+  return { monde: monde, session: session, dimension: str(Client.level.dimension) }
+}
+
+function memeContexte(a, b) {
+  return a == null || b == null ? a == b
+    : a.monde === b.monde && a.session === b.session && a.dimension === b.dimension
+}
+
+function annoterTrame(data) {
+  if (contexte != null && contexte.monde) {
+    data.monde_actif = contexte.monde
+    data.session_monde = contexte.session
+    data.dimension_monde = contexte.dimension
+  }
+  return data
+}
+
+function contexteTrame(data) {
+  return contexte != null && (!contexte.monde
+    || str(data.get('monde_actif')) === contexte.monde
+      && str(data.get('session_monde')) === contexte.session
+      && str(data.get('dimension_monde')) === contexte.dimension)
+}
+
+function lireMemoire(nom) {
+  return memoireMonde ? MemoireMonde.lire(memoireMonde, nom) : JsonIO.read(DOSSIER + nom)
+}
+
+function ecrireMemoire(nom, data) {
+  if (memoireMonde) MemoireMonde.ecrire(memoireMonde, nom, JsonIO.of(data).getAsJsonObject())
+  else JsonIO.write(DOSSIER + nom, data)
+}
+
+function synchroniserContexte(suivant) {
+  if (memeContexte(contexte, suivant)) return
+  const monde = suivant == null ? null : suivant.monde
+  if (memoireMonde !== monde) {
+    if (memoireMonde != null) {
+      ecrireStockage()
+      ecrireMinerais()
+    }
+    contexte = null
+    stockage = {}
+    machines = {}
+    minerais = {}
+    memoireMonde = monde
+    if (monde != null) {
+      try {
+        chargerStockage()
+        chargerMinerais()
+      } catch (e) {
+        memoireMonde = null
+        throw e
+      }
+    }
+  }
+  conteneur = ecranPrecedent = mineraiVise = null
+  dimensionPrecedente = derniereCommande = plan = null
+  inventaire = {}
+  lignes = []
+  manquants = {}
+  mondeRecu = 0
+  contexte = suivant
+}
 
 function noterErreur(ou, e) {
   const msg = ou + ' : ' + e
@@ -178,7 +271,7 @@ function lireQuetes(details) {
 function ecrireEtat() {
   const p = Client.player
   const quetes = lireQuetes(false)
-  JsonIO.write(DOSSIER + 'etat.json', {
+  JsonIO.write(DOSSIER + 'etat.json', annoterTrame({
     t: Date.now(),
     version_script: VERSION_SCRIPT,
     serveur_recu: mondeRecu,
@@ -204,21 +297,21 @@ function ecrireEtat() {
     plan_version: plan == null ? 0 : plan.version,
     recettes: etatRecettes,
     erreurs: erreurs
-  })
+  }))
 }
 
 function ecrireQuetes() {
   const quetes = lireQuetes(true)
   if (quetes != null) {
     quetes.t = Date.now()
-    JsonIO.write(DOSSIER + 'quetes.json', quetes)
+    JsonIO.write(DOSSIER + 'quetes.json', annoterTrame(quetes))
   }
 }
 
 // ---------- Mémoire des coffres ----------
 
 function chargerStockage() {
-  const s = JsonIO.read(DOSSIER + 'stockage.json')
+  const s = lireMemoire('stockage.json')
   if (s == null) return
   liste(s.get('conteneurs')).forEach(c => {
     if (Number(c.get('v')) != VERSION_STOCKAGE) return
@@ -242,7 +335,7 @@ function chargerStockage() {
 }
 
 function chargerMinerais() {
-  const s = JsonIO.read(DOSSIER + 'filons.json')
+  const s = lireMemoire('filons.json')
   if (s == null) return
   liste(s.get('blocs')).forEach(c => {
     const entree = {
@@ -371,7 +464,6 @@ function suivreMinerais() {
 
 function ecrireMinerais() {
   if (!mineraisModifies) return
-  mineraisModifies = false
   let blocs = Object.keys(minerais).map(k => minerais[k])
   if (blocs.length > MINERAIS_MAX) {
     blocs.sort((a, b) => b.t - a.t)
@@ -379,7 +471,8 @@ function ecrireMinerais() {
     minerais = {}
     blocs.forEach(b => { minerais[b.cle] = b })
   }
-  JsonIO.write(DOSSIER + 'filons.json', { blocs: blocs })
+  ecrireMemoire('filons.json', { blocs: blocs })
+  mineraisModifies = false
 }
 
 function suivreConteneur() {
@@ -390,13 +483,16 @@ function suivreConteneur() {
   else if (ecran != ecranPrecedent) surOuvertureEcran()
   ecranPrecedent = ecran
   if (conteneur != null) lireConteneur()
-  if (stockageModifie) {
-    stockageModifie = false
-    JsonIO.write(DOSSIER + 'stockage.json', {
-      conteneurs: Object.keys(stockage).map(k => stockage[k]),
-      machines: Object.keys(machines).map(k => machines[k])
-    })
-  }
+  ecrireStockage()
+}
+
+function ecrireStockage() {
+  if (!stockageModifie) return
+  ecrireMemoire('stockage.json', {
+    conteneurs: Object.keys(stockage).map(k => stockage[k]),
+    machines: Object.keys(machines).map(k => machines[k])
+  })
+  stockageModifie = false
 }
 
 // ---------- Export des recettes (EMI) ----------
@@ -506,7 +602,7 @@ function lireLigne(l) {
 
 function lirePlan() {
   const p = JsonIO.read(DOSSIER + 'plan.json')
-  if (p == null) { plan = null; return }
+  if (p == null || !contexteTrame(p)) { plan = null; return }
   plan = {
     version: Number(p.get('version')) || 0,
     visible: str(p.get('visible')) != 'false',
@@ -516,7 +612,7 @@ function lirePlan() {
 
 function lireCommande() {
   const c = JsonIO.read(DOSSIER + 'commande.json')
-  if (c == null) return
+  if (c == null || !contexteTrame(c)) return
   const n = str(c.get('n'))
   if (derniereCommande == null) { derniereCommande = n; return }   // ancienne commande : ignorée au démarrage
   if (n == derniereCommande) return
@@ -679,9 +775,24 @@ function lirePartie(d, cle) {
 function recevoirMonde(event) {
   const d = event.data
   const n = nombre([() => d.getInt('n'), () => d.get('n').getAsInt()])
+  const courant = contexteCourant()
+  if (courant == null || !memeContexte(courant, contexte)) return
+  if (!Number.isSafeInteger(n) || n < 1 || n > 30) return
+  if (courant.monde && (
+    lirePartie(d, 'assistant_monde') !== courant.monde
+    || lirePartie(d, 'assistant_session') !== courant.session
+  )) return
   let json = ''
   for (let i = 0; i < n; i++) json += lirePartie(d, 'p' + i)
-  JsonIO.write(DOSSIER + 'monde.json', JsonIO.parseRaw(json).getAsJsonObject())
+  const trame = JsonIO.parseRaw(json).getAsJsonObject()
+  if (courant.monde) {
+    let dimension = trame.get('dimension')
+    if (dimension == null || str(dimension.getAsString()) !== courant.dimension) return
+    trame.addProperty('monde_actif', courant.monde)
+    trame.addProperty('session_monde', courant.session)
+    trame.addProperty('dimension_monde', courant.dimension)
+  }
+  JsonIO.write(DOSSIER + 'monde.json', trame)
   mondeRecu = Date.now()
 }
 
@@ -694,11 +805,13 @@ function essayer(nom, tache) {
   try { tache() } catch (e) { noterErreur(nom, e) }
 }
 
-essayer('chargement des coffres', chargerStockage)
-essayer('chargement des minerais', chargerMinerais)
-
-ClientEvents.tick(event => {
-  if (Client.player == null || Client.level == null) return
+ClientEvents.tick(function (event) {
+  let courant = null
+  essayer('contexte du monde', function () {
+    courant = contexteCourant()
+    synchroniserContexte(courant)
+  })
+  if (Client.player == null || Client.level == null || courant == null || !memeContexte(contexte, courant)) return
   ticks++
   if (exportRecettes != null) essayer('export des recettes', avancerExportRecettes)
   if (ticks % 10 == 0) {
@@ -713,10 +826,12 @@ ClientEvents.tick(event => {
     essayer('commande', lireCommande)
     essayer('état', ecrireEtat)
   }
-  if (ticks % 100 == 80) essayer('coffres cassés', verifierCoffres)
+  if (ticks % 100 == 80) essayer('coffres cassés', function () { verifierCoffres(); ecrireStockage() })
   if (ticks % 200 == 10) essayer('présence', signalerPresence)
   if (ticks % 200 == 40) essayer('quêtes', ecrireQuetes)
   if (ticks % 100 == 60) essayer('recettes', verifierRecettes)
 })
 
-ClientEvents.paintScreen(event => dessiner(event))
+ClientEvents.paintScreen(function (event) {
+  if (!isolationDemandee() || contexte != null && memeContexte(contexte, contexteCourant())) dessiner(event)
+})

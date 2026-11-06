@@ -75,6 +75,9 @@ public final class EmiObjectif {
 
     /** Construit avant de publier : un échec laisse l'arbre personnel d'EMI intact. */
     public static Resultat preparer(JsonObject objectif) {
+        objectif = objectif.deepCopy();
+        if (!Pont.annoterContexte(objectif))
+            return new Resultat(false, "Connexion changée : attends la mise à jour de l'objectif.");
         if (PauseObjectifEmi.enPause())
             return new Resultat(
                     false, "Objectif en pause : reprends-le avant de rouvrir son arbre EMI.");

@@ -101,7 +101,14 @@ class ParityTests(unittest.TestCase):
             "nearest_vein",  # skip exhausted veins, like the mod does
             "App.set_step",  # unchecking a step only reopens an objective that is no longer done
             "App.update_objective_progress",  # remember which objective was marked done
-            "Bridge.state",  # backpack inventory snapshot; test_backpack_inventory.py
+            "Bridge.state",  # backpack inventory snapshot and optional world scope
+            "Bridge.__init__",
+            "Bridge.read",
+            "Bridge.write",
+            "Bridge.write_text",
+            "App.journal",
+            "App.journal_tail",
+            "App.on_live_text",  # Reject an in-flight reply from an earlier world/session.
             "App.track_targets",  # EMI production proofs replace duplicate return gains; test_objective_pause.py
         }
         # User-requested gameplay extension, covered by test_objective_pause.py.
@@ -173,9 +180,27 @@ class ParityTests(unittest.TestCase):
             checked += 1
         self.assertGreater(checked, 100)
 
-    def test_kubejs_client_script_identical(self):
+    def test_kubejs_gameplay_functions_preserved(self):
         path = "jeu/assistant_ia.js"
-        self.assertEqual(upstream(path), (ROOT / path).read_text())
+        # Only the exchange and persistence entry points gained world validation.
+        pattern = re.compile(r"^function (\w+)\([^\n]*\) \{(?:[^\n]*\}$|\n.*?^\})", re.M | re.S)
+        allowed = {
+            "ecrireEtat",
+            "ecrireQuetes",
+            "chargerStockage",
+            "chargerMinerais",
+            "ecrireMinerais",
+            "suivreConteneur",
+            "lirePlan",
+            "lireCommande",
+            "recevoirMonde",
+        }
+        old = {m[1]: m[0] for m in pattern.finditer(upstream(path))}
+        new = {m[1]: m[0] for m in pattern.finditer((ROOT / path).read_text())}
+        self.assertGreater(len(old), 30)
+        for name, function in old.items():
+            if name not in allowed:
+                self.assertEqual(new.get(name), function, name)
 
     def test_original_info_screen_only_changes_branding(self):
         # AideEcran now intentionally withdraws chest ingredients at the user's request.
