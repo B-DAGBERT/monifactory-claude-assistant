@@ -132,6 +132,27 @@ class WorldFreshnessTests(unittest.TestCase):
         self.assertIn("Camille en 8 64 9", describe_world(self.world))
         self.assertNotIn("Machines", describe_world(self.world))
 
+    def test_game_watch_invalidates_live_status_before_waiting_for_next_packet(self):
+        game = GameController()
+        game.world, game.game = self.world, {"dimension": OVERWORLD}
+        game.session_open = False
+        game.bridge = SimpleNamespace(state=Mock(side_effect=[{"dimension": NETHER}, None]))
+        game.root = Mock()
+        game.check_craftable = game.check_game = game.check_death = game.flush_coach = (
+            game.refresh
+        ) = Mock()
+        self.world.update(frame(MACHINE, players=[PLAYER]))
+        game.watch_game()
+        self.assertEqual(game.game["dimension"], NETHER)
+        self.assertFalse(self.world.active)
+        self.clock.return_value += 3
+        self.world.update(frame(t=START + 3_000, dimension=NETHER, players=[PLAYER]))
+        self.assertTrue(self.world.active)
+        game.watch_game()
+        self.assertIsNone(game.game)
+        self.assertFalse(self.world.active)
+        self.assertEqual(self.world.players, [PLAYER])
+
     def test_machine_card_labels_historical_observation(self):
         game = GameController()
         game.world, game.game = self.world, {"dimension": OVERWORLD}

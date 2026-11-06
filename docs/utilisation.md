@@ -14,6 +14,10 @@ est bloqué pendant la transmission et la réponse ; tu peux préparer la questi
 Le statut indique la transmission, la recherche ou une erreur. Ces fonctions sont locales et
 ne déclenchent aucun appel IA supplémentaire.
 
+Pour une recette ou un objet reconnu dans ta question, l’assistant joint les stocks et les
+machines utiles. Ajoute **contexte complet** dans la question si tu veux aussi lui donner
+les autres relevés et événements. Un état historique indique ce qui a été observé à cette date.
+
 ## Objectif dans EMI
 
 Dans **Y → Objectif** ou **Projet**, **Objectif EMI** met le craft demandé dans l’arbre

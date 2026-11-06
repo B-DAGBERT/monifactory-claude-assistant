@@ -126,6 +126,17 @@ class QuestionContextTests(TestCase):
         ]
         self.assertFalse(question_context("Comment faire Bronze Plate ?", recipes).focused)
 
+    def test_missing_recipe_and_compound_questions_keep_extended_context(self):
+        question = "Comment faire Bronze Plate ?"
+        self.app.recipe_index.by_output.pop(PLATE)
+        self.assertFalse(question_context(question, self.app.recipe_index).focused)
+        self.app.recipe_index.by_output[PLATE] = [RECIPE]
+        self.assertFalse(
+            question_context(
+                "Comment faire Bronze Plate puis la ranger ?", self.app.recipe_index
+            ).focused
+        )
+
     def test_selection_never_changes_local_data_or_recipe_variants(self):
         app = self.app
         before = copy.deepcopy(
