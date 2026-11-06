@@ -325,6 +325,31 @@ public final class ProductionCatalogueTest {
         check(
                 status.get("etat").getAsString().equals("indisponible"),
                 "repeated EMI events must still revoke the published receipt");
+        check(CatalogueProduction.demander(), "request before temporary I/O failure");
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        check(
+                CatalogueProduction.etat().get("etat").getAsString().equals("pret"),
+                "published before temporary I/O failure");
+        Path directory = marker.getParent();
+        Path savedDirectory = directory.resolveSibling("assistant-saved");
+        Files.move(directory, savedDirectory);
+        Files.createFile(directory);
+        try {
+            CatalogueProduction.rechargement();
+            writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        } finally {
+            Files.delete(directory);
+            Files.move(savedDirectory, directory);
+        }
+        for (int i = 0; i < 300; i++) {
+            status = JsonParser.parseString(Files.readString(marker)).getAsJsonObject();
+            if (status.get("etat").getAsString().equals("indisponible")) break;
+            Thread.sleep(10);
+        }
+        check(
+                status.get("etat").getAsString().equals("indisponible"),
+                "revocation must be retried after a temporary publication failure");
         check(CatalogueProduction.demander(), "same tree after reload accepted");
         tree.batches++;
         check(

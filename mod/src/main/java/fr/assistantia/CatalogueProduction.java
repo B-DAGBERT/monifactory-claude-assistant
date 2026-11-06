@@ -4,8 +4,9 @@ import com.google.gson.JsonObject;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
@@ -20,8 +21,8 @@ public final class CatalogueProduction {
     private static final Path STATUS = DIRECTORY.resolve("catalogue_production_etat.json");
     private static final Object LOCK = new Object();
     private static final AtomicLong EPOCH = new AtomicLong();
-    private static final ExecutorService WRITER =
-            Executors.newSingleThreadExecutor(
+    private static final ScheduledExecutorService WRITER =
+            Executors.newSingleThreadScheduledExecutor(
                     task -> {
                         Thread thread = new Thread(task, "assistant-catalogue-production");
                         thread.setDaemon(true);
@@ -208,21 +209,23 @@ public final class CatalogueProduction {
     }
 
     private static void publierEtat(JsonObject value, long token) {
-        WRITER.execute(
-                () -> {
-                    Path temporary = null;
-                    try {
-                        temporary = PublicationCatalogue.preparer(STATUS, value);
-                        synchronized (LOCK) {
-                            if (token == EPOCH.get())
-                                PublicationCatalogue.publier(temporary, STATUS);
-                        }
-                    } catch (Exception ignored) {
-                        /* In-memory UI still exposes the error; no ready ack is sent. */
-                    } finally {
-                        nettoyer(temporary);
-                    }
-                });
+        WRITER.execute(() -> ecrireEtat(value, token));
+    }
+
+    private static void ecrireEtat(JsonObject value, long token) {
+        if (token != EPOCH.get()) return;
+        Path temporary = null;
+        try {
+            temporary = PublicationCatalogue.preparer(STATUS, value);
+            synchronized (LOCK) {
+                if (token == EPOCH.get()) PublicationCatalogue.publier(temporary, STATUS);
+            }
+        } catch (Exception ex) {
+            if (token == EPOCH.get() && "indisponible".equals(chaine(value, "etat")))
+                WRITER.schedule(() -> ecrireEtat(value, token), 1, TimeUnit.SECONDS);
+        } finally {
+            nettoyer(temporary);
+        }
     }
 
     private static void nettoyer(Path path) {
