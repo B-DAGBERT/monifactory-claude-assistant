@@ -26,7 +26,16 @@ public final class ProjectionLotsEmiTest {
     private static ProjectionLotsEmi.Portee portee(
             Object tree, Object connection, Object manager, String project) {
         return new ProjectionLotsEmi.Portee(
-                tree, connection, manager, WORLD, SESSION, "minecraft:overworld", project);
+                tree,
+                connection,
+                manager,
+                WORLD,
+                SESSION,
+                "minecraft:overworld",
+                project,
+                "project-revision",
+                0,
+                1);
     }
 
     private static EmiStack item(String id, int n) {
@@ -63,8 +72,50 @@ public final class ProjectionLotsEmiTest {
     }
 
     private static JsonObject project(SuiviLotsEmi owner) {
-        return ProjectionLotsEmi.lire(
-                owner, scope, inventory, true, context(scope.projet()), catalogue());
+        return ProjectionLotsEmi.lire(owner, scope, inventory, true, currentContext(), catalogue());
+    }
+
+    private static JsonObject currentContext() {
+        var value = context(scope.projet());
+        value.addProperty("revision_projet", scope.revisionProjet());
+        return value;
+    }
+
+    private static void machine() {
+        if (net.minecraft.client.Minecraft.getInstance().player.containerMenu == null)
+            net.minecraft.client.Minecraft.getInstance().player.containerMenu =
+                    new net.minecraft.world.inventory.ChestMenu();
+        GregTechMachines.ui =
+                new GregTechMachines.Interface(new Object(), List.of(), List.of(), null);
+    }
+
+    private static List<PlanRetrait.Stock<ItemStack>> nativeInventory() {
+        return inventory.stream()
+                .filter(s -> !s.objet().getItemStack().isEmpty())
+                .map(s -> new PlanRetrait.Stock<>(s.objet().getItemStack(), s.quantite(), true))
+                .toList();
+    }
+
+    private static void receiveMachine(SuiviLotsEmi owner, int n) {
+        machine();
+        var slot = new net.minecraft.world.inventory.Slot(new Object(), 0);
+        slot.item = new ItemStack("test:plate", n);
+        GregTechMachines.outputSlots = List.of(slot);
+        OrigineFabrication.vider();
+        OrigineFabrication.actualiser(nativeInventory());
+        inventory = List.of(stock(item("test:plate", n), n));
+        slot.item = ItemStack.EMPTY;
+        OrigineFabrication.actualiser(nativeInventory());
+        assert !OrigineFabrication.receptions().isEmpty();
+        owner.recevoir(OrigineFabrication.receptions());
+    }
+
+    private static void excluded(SuiviLotsEmi owner) {
+        var projection = project(owner);
+        assert projection.get("v").getAsInt() == 2;
+        assert projection.get("disponible").getAsBoolean() : projection;
+        assert projection.getAsJsonArray("lots").isEmpty() : projection;
+        assert projection.getAsJsonArray("limites").toString().contains("origine machine prouvée");
     }
 
     private static JsonObject only(JsonObject projection) {
@@ -91,6 +142,11 @@ public final class ProjectionLotsEmiTest {
         EmiRecipe recipe = recipe(output);
         int id = owner.ajouter(recipe, 5, null);
         assert id > 0;
+        if (List.of("partial_cancel", "complete_move", "extension").contains(scenario)) {
+            owner.vider();
+            machine();
+            id = owner.ajouter(recipe, 5, new BlockPos(0, 64, 0));
+        }
         if (scenario.equals("initial")) {
             var view = project(owner);
             var lot = only(view);
@@ -104,9 +160,7 @@ public final class ProjectionLotsEmiTest {
             assert view.get("empreinte").getAsString().matches("[0-9a-f]{64}");
             assert !view.has("reserved") && !lot.has("stock");
         } else if (scenario.equals("partial_cancel")) {
-            inventory = List.of(stock(item("test:plate", 3), 3));
-            owner.recevoir(
-                    List.of(new PlanRetrait.Stock<>(new ItemStack("test:plate", 3), 3, true)));
+            receiveMachine(owner, 3);
             var partial = only(project(owner));
             assert quantity(partial, "total", "test:plate") == 10;
             assert quantity(partial, "recus", "test:plate") == 3;
@@ -119,9 +173,7 @@ public final class ProjectionLotsEmiTest {
             assert quantity(cancelled, "annules", "test:plate") == 7;
             assert cancelled.getAsJsonArray("restants").isEmpty();
         } else if (scenario.equals("complete_move")) {
-            inventory = List.of(stock(item("test:plate", 10), 10));
-            owner.recevoir(
-                    List.of(new PlanRetrait.Stock<>(new ItemStack("test:plate", 10), 10, true)));
+            receiveMachine(owner, 10);
             var complete = only(project(owner));
             assert complete.get("etat").getAsString().equals("termine");
             inventory = List.of();
@@ -131,15 +183,104 @@ public final class ProjectionLotsEmiTest {
             assert moved.getAsJsonArray("restants").isEmpty();
             assert quantity(moved, "total", "test:plate") == 10;
         } else if (scenario.equals("extension")) {
-            inventory = List.of(stock(item("test:plate", 3), 3));
-            owner.recevoir(
-                    List.of(new PlanRetrait.Stock<>(new ItemStack("test:plate", 3), 3, true)));
+            receiveMachine(owner, 3);
             assert owner.completer(id, recipe, 2);
             var lot = only(project(owner));
             assert quantity(lot, "total", "test:plate") == 14;
             assert quantity(lot, "recus", "test:plate") == 3;
             assert quantity(lot, "restants", "test:plate") == 11;
             assert lot.get("id").getAsString().endsWith("/" + id);
+        } else if (scenario.equals("generic_manual") || scenario.equals("generic_machine")) {
+            if (scenario.equals("generic_machine")) {
+                owner.vider();
+                id = owner.ajouter(recipe, 5, new BlockPos(0, 64, 0));
+            }
+            long version = owner.revision();
+            inventory = List.of(stock(item("test:plate", 3), 3));
+            owner.recevoir(List.of());
+            assert owner.actifs().get(0).suivi().totalRecu() == 3 : "Legacy gameplay unchanged";
+            assert owner.actifs().get(0).suivi().receptionNonAttribuee();
+            assert owner.revision() > version;
+            excluded(owner);
+            assert owner.completer(id, recipe, 1);
+            excluded(owner);
+            assert owner.annuler(id);
+            excluded(owner);
+        } else if (scenario.equals("generic_independent")) {
+            int second = owner.ajouter(recipe, 5, null);
+            inventory = List.of(stock(item("test:plate", 3), 3));
+            owner.recevoir(List.of());
+            assert owner.actifs().get(0).suivi().receptionNonAttribuee();
+            assert !owner.actifs().get(1).suivi().receptionNonAttribuee();
+            var retained = only(project(owner));
+            assert retained.get("id").getAsString().endsWith("/" + second);
+            assert quantity(retained, "restants", "test:plate") == 10;
+            assert retained.getAsJsonArray("recus").isEmpty();
+        } else if (scenario.equals("generic_no_match")) {
+            inventory = List.of(stock(item("test:unrelated", 2), 2));
+            owner.recevoir(List.of());
+            assert !owner.actifs().get(0).suivi().receptionNonAttribuee();
+            assert quantity(only(project(owner)), "restants", "test:plate") == 10;
+        } else if (scenario.equals("mixed_craft_machine")) {
+            owner.vider();
+            machine();
+            owner.ajouter(recipe, 5, new BlockPos(0, 64, 0));
+            var slot = new net.minecraft.world.inventory.Slot(new Object(), 0);
+            slot.item = new ItemStack("test:plate", 3);
+            GregTechMachines.outputSlots = List.of(slot);
+            OrigineFabrication.vider();
+            OrigineFabrication.actualiser(nativeInventory());
+            OrigineFabrication.craft(
+                    new net.minecraftforge.event.entity.player.PlayerEvent.ItemCraftedEvent(
+                            net.minecraft.client.Minecraft.getInstance().player,
+                            new ItemStack("test:plate", 1)));
+            inventory = List.of(stock(item("test:plate", 3), 3));
+            slot.item = ItemStack.EMPTY;
+            OrigineFabrication.actualiser(nativeInventory());
+            owner.recevoir(OrigineFabrication.receptions());
+            assert owner.actifs().get(0).suivi().totalRecu() == 3;
+            assert owner.actifs().get(0).suivi().receptionNonAttribuee();
+            excluded(owner);
+        } else if (scenario.equals("proved_fluids")) {
+            owner.vider();
+            machine();
+            var fluid = new Fluid("test:water");
+            inventory = List.of();
+            owner.ajouter(recipe(EmiStack.of(fluid, null, 1000)), 1, new BlockPos(0, 64, 0));
+            var tank = new GregTechMachines.Cuve();
+            tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(fluid, 1000));
+            GregTechMachines.outputTanks = List.of(tank);
+            owner.actualiser();
+            inventory = List.of(stock(EmiStack.of(fluid, null, 300), 300));
+            tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(fluid, 700));
+            owner.actualiser();
+            owner.recevoir(List.of());
+            var lot = only(project(owner));
+            assert quantity(lot, "recus", "test:water") == 300;
+            assert quantity(lot, "restants", "test:water") == 700;
+            assert !owner.actifs().get(0).suivi().receptionNonAttribuee();
+        } else if (scenario.equals("project_revision")
+                || scenario.equals("tree_revision")
+                || scenario.equals("tree_quantity")) {
+            scope =
+                    new ProjectionLotsEmi.Portee(
+                            TREE,
+                            CONNECTION,
+                            MANAGER,
+                            WORLD,
+                            SESSION,
+                            "minecraft:overworld",
+                            "principal",
+                            scenario.equals("project_revision")
+                                    ? "new-revision"
+                                    : "project-revision",
+                            scenario.equals("tree_revision") ? 1 : 0,
+                            scenario.equals("tree_quantity") ? 2 : 1);
+            var result = project(owner);
+            assert result.get("disponible").getAsBoolean();
+            assert result.getAsJsonArray("lots").isEmpty();
+            assert !result.getAsJsonArray("limites").isEmpty();
+            assert owner.actifs().size() == 1;
         } else if (scenario.equals("stock_changed")) {
             var before = project(owner);
             inventory = List.of(stock(item("test:plate", 3), 3));

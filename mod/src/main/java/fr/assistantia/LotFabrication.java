@@ -20,7 +20,7 @@ public final class LotFabrication<T> {
     private final List<PlanRetrait.Stock<T>> attendu;
     private int[] recus;
     private final BiPredicate<T, T> meme;
-    private boolean annule, disponible;
+    private boolean annule, disponible, receptionNonAttribuee;
 
     public LotFabrication(List<PlanRetrait.Stock<T>> attendu, BiPredicate<T, T> meme) {
         this.attendu = new ArrayList<>(attendu);
@@ -86,6 +86,16 @@ public final class LotFabrication<T> {
     }
 
     public List<PlanRetrait.Stock<T>> recevoir(List<PlanRetrait.Stock<T>> gains) {
+        return recevoir(gains, true);
+    }
+
+    /** Un gain historique reste suivi, mais sans devenir une preuve pour un autre calcul. */
+    public boolean receptionNonAttribuee() {
+        return receptionNonAttribuee;
+    }
+
+    public List<PlanRetrait.Stock<T>> recevoir(
+            List<PlanRetrait.Stock<T>> gains, boolean origineProuvee) {
         if (annule) return gains;
         List<PlanRetrait.Stock<T>> nonUtilises = new ArrayList<>();
         for (var gain : gains) {
@@ -93,6 +103,7 @@ public final class LotFabrication<T> {
             for (int i = 0; i < recus.length && reste > 0; i++)
                 if (meme.test(attendu.get(i).objet(), gain.objet())) {
                     int n = Math.min(reste, attendu.get(i).quantite() - recus[i]);
+                    if (n > 0 && !origineProuvee) receptionNonAttribuee = true;
                     recus[i] += n;
                     reste -= n;
                 }

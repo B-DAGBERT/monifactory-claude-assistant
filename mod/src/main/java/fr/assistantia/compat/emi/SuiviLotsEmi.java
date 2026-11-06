@@ -195,7 +195,12 @@ final class SuiviLotsEmi {
             if (ui != null) {
                 for (var lot : lots)
                     if (lot.ici(ui.position())) attendusAutomatiques.addAll(lot.suivi().restants());
-                restants = recevoir(gains, ui.position());
+                restants =
+                        recevoir(
+                                gains,
+                                ui.position(),
+                                OrigineFabrication.receptionsMachineProuvees(
+                                        objets, player.containerMenu));
             }
         } catch (ReflectiveOperationException | RuntimeException e) {
             // Les lots envoyés automatiquement exigent une preuve de leur machine.
@@ -219,7 +224,8 @@ final class SuiviLotsEmi {
                                                                         l.manuel()
                                                                                 || !s.getItemStack()
                                                                                         .isEmpty()))
-                                .toList());
+                                .toList(),
+                        false);
         if (distribution.change()) {
             modifie();
         }
@@ -227,11 +233,16 @@ final class SuiviLotsEmi {
 
     private List<PlanRetrait.Stock<EmiStack>> recevoir(
             List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position) {
+        return recevoir(gains, position, true);
+    }
+
+    private List<PlanRetrait.Stock<EmiStack>> recevoir(
+            List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position, boolean origineProuvee) {
         if (gains.isEmpty()) return gains;
         for (var lot : lots)
             if (lot.ici(position)) {
                 int avant = lot.suivi().totalRecu();
-                gains = lot.suivi().recevoir(gains);
+                gains = lot.suivi().recevoir(gains, origineProuvee);
                 if (avant != lot.suivi().totalRecu()) {
                     modifie();
                 }

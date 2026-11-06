@@ -61,7 +61,7 @@ def _native_lines(native):
     lines.append("Réservations physiques non attestées par le suivi.")
     labels = {
         "en_cours": "En cours",
-        "a_recuperer": "À récupérer",
+        "a_recuperer": "Sortie signalée par EMI",
         "termine": "Réceptionné",
         "annule": "Annulé",
     }

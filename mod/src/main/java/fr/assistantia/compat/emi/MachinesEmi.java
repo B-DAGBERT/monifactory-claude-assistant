@@ -78,6 +78,16 @@ public final class MachinesEmi {
         var vue = fr.assistantia.Pont.partie("ecran");
         var projets = vue.get("projets");
         if (projets == null || !projets.isJsonObject()) return null;
+        var production = vue.get("production_v2");
+        if (production == null || !production.isJsonObject()) return null;
+        var contexte = production.getAsJsonObject().get("contexte");
+        if (contexte == null || !contexte.isJsonObject()) return null;
+        long quantite;
+        try {
+            quantite = arbre.getClass().getField("batches").getLong(arbre);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            return null;
+        }
         return new ProjectionLotsEmi.Portee(
                 arbre,
                 connexion,
@@ -85,7 +95,10 @@ public final class MachinesEmi {
                 fr.assistantia.IdentiteMonde.monde(),
                 fr.assistantia.IdentiteMonde.session(),
                 dimension,
-                ProjectionLotsEmi.texte(projets.getAsJsonObject(), "actif"));
+                ProjectionLotsEmi.texte(projets.getAsJsonObject(), "actif"),
+                ProjectionLotsEmi.texte(contexte.getAsJsonObject(), "revision_projet"),
+                InstantaneArbreEmi.revisionStructureProduction(),
+                quantite);
     }
 
     /** Instantané du propriétaire, sans transfert ni actualisation forcée des réceptions. */

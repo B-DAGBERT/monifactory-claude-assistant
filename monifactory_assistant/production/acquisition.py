@@ -131,30 +131,28 @@ def acquire(bridge, python_root, scope, request, now_ms):
         ]
     )
     native_inventory = False
-    try:
-        if native_v2:
-            raise ValueError("Relevé v2 lu séparément.")
-        data, stamp = read_capture(bridge.dir / "production_v2_inventaire.json", 1024 * 1024)
-        if (
-            not request.get("capture")
-            or data.get("capture") != request["capture"]
-            or not scope.accepts(data)
-        ):
-            raise ValueError("La capture de l'inventaire ne correspond pas au clic.")
-        sources.append(
-            SourceSnapshot(
-                "inventaire_joueur.json",
-                data,
-                "production_v2_inventaire.json",
-                received_at_ms=stamp[1] // 1_000_000,
+    if not native_v2:
+        try:
+            data, stamp = read_capture(bridge.dir / "production_v2_inventaire.json", 1024 * 1024)
+            if (
+                not request.get("capture")
+                or data.get("capture") != request["capture"]
+                or not scope.accepts(data)
+            ):
+                raise ValueError("La capture de l'inventaire ne correspond pas au clic.")
+            sources.append(
+                SourceSnapshot(
+                    "inventaire_joueur.json",
+                    data,
+                    "production_v2_inventaire.json",
+                    received_at_ms=stamp[1] // 1_000_000,
+                )
             )
-        )
-        native_inventory = True
-        limits.append(
-            "Inventaire natif : seuls les objets sans NBT sont comptés ; variantes non attestées."
-        )
-    except (OSError, ValueError, TypeError, RecursionError):
-        if not native_v2:
+            native_inventory = True
+            limits.append(
+                "Inventaire natif : seuls les objets sans NBT sont comptés ; variantes non attestées."
+            )
+        except (OSError, ValueError, TypeError, RecursionError):
             limits.append("Inventaire du clic indisponible ; aucun ancien stock ne le remplace.")
 
     for name in ("etat.json", "monde.json"):

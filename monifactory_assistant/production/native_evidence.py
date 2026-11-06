@@ -329,7 +329,7 @@ def decode_stock(data, context, *, personal):
 def decode_lots(data, context):
     """A lot receipt settles its promise only; it is never an inventory source."""
     _object(data, "Suivi natif")
-    if type(data.get("v")) is not int or data["v"] != 1:
+    if type(data.get("v")) is not int or data["v"] != 2:
         raise ValueError("Version du suivi natif inconnue.")
     available = _boolean(data.get("disponible"), "Disponibilité du suivi")
     revision = _integer(data.get("revision"), "Révision du suivi")
@@ -483,7 +483,10 @@ def decode_native_evidence(data, *, scope, request, now_ms, received_at_ms=None)
     """Reject foreign envelopes; each unavailable stock/lot projection degrades separately."""
     context = _context(data, scope, request, now_ms, received_at_ms)
     try:
-        stock = decode_stock(data.get("stock"), context, personal=data)
+        projection = data.get("stock")
+        if projection is None and data.get("coffre_demande") is True:
+            raise ValueError("Relevé du menu de coffre absent.")
+        stock = decode_stock(projection, context, personal=data)
     except (ValueError, TypeError, RecursionError):
         message = "Relevé du coffre invalide ou indisponible ; seul l’inventaire personnel attesté peut être utilisé."
         try:

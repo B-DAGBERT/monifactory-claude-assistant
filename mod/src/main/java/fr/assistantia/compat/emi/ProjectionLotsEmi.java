@@ -26,7 +26,10 @@ final class ProjectionLotsEmi {
             String monde,
             String session,
             String dimension,
-            String projet) {
+            String projet,
+            String revisionProjet,
+            long revisionArbre,
+            long lotsArbre) {
         boolean accepte(JsonObject contexte) {
             return arbre != null
                     && connexion != null
@@ -37,7 +40,10 @@ final class ProjectionLotsEmi {
                     && session.equals(texte(contexte, "session_monde"))
                     && dimension.equals(texte(contexte, "dimension_monde"))
                     && projet.equals(texte(contexte, "projet"))
-                    && !texte(contexte, "revision_projet").isBlank();
+                    && !revisionProjet.isBlank()
+                    && revisionProjet.equals(texte(contexte, "revision_projet"))
+                    && revisionArbre >= 0
+                    && lotsArbre > 0;
         }
 
         @Override
@@ -49,7 +55,10 @@ final class ProjectionLotsEmi {
                     && monde.equals(p.monde)
                     && session.equals(p.session)
                     && dimension.equals(p.dimension)
-                    && projet.equals(p.projet);
+                    && projet.equals(p.projet)
+                    && revisionProjet.equals(p.revisionProjet)
+                    && revisionArbre == p.revisionArbre
+                    && lotsArbre == p.lotsArbre;
         }
 
         @Override
@@ -61,7 +70,10 @@ final class ProjectionLotsEmi {
                     monde,
                     session,
                     dimension,
-                    projet);
+                    projet,
+                    revisionProjet,
+                    revisionArbre,
+                    lotsArbre);
         }
     }
 
@@ -84,7 +96,7 @@ final class ProjectionLotsEmi {
             JsonObject contexte,
             JsonObject catalogue) {
         JsonObject result = new JsonObject();
-        result.addProperty("v", 1);
+        result.addProperty("v", 2);
         result.addProperty("revision", suivi.revision());
         JsonArray lots = new JsonArray();
         TreeSet<String> limites = new TreeSet<>();
@@ -108,6 +120,11 @@ final class ProjectionLotsEmi {
                     if (!portee.equals(suivi.origine(lot.id()))) {
                         limites.add(
                                 "Lots d'un autre arbre, projet ou contexte non attribué exclus.");
+                        continue;
+                    }
+                    if (lot.suivi().receptionNonAttribuee()) {
+                        limites.add(
+                                "Lots avec gain personnel sans origine machine prouvée exclus du calcul.");
                         continue;
                     }
                     JsonObject valeur;

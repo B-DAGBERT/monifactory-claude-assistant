@@ -27,6 +27,7 @@ public record InstantaneArbreEmi(
             ArbreCollecte.Noeud collecte, PlanMachines.Noeud<EmiStack, EmiRecipe> machines) {}
 
     private static final AtomicLong revision = new AtomicLong();
+    private static final AtomicLong revisionStructure = new AtomicLong();
     private static volatile boolean notificationNative;
     private static Object dernierArbre, derniereRacine;
     private static long derniereRevision, derniereLecture;
@@ -35,7 +36,13 @@ public record InstantaneArbreEmi(
     /** La reconstruction native des enfants peut se faire sur le même objet arbre. */
     public static void arbreModifie() {
         notificationNative = true;
+        revisionStructure.incrementAndGet();
         invalider();
+    }
+
+    /** Un recalcul du scan ne change pas les choix natifs de l'arbre. */
+    public static long revisionStructureProduction() {
+        return revisionStructure.get();
     }
 
     public static long revisionProduction() {

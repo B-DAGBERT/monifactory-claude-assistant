@@ -58,7 +58,7 @@ def fixture(*, personal=2, lots=None, menu=False):
         "inventaire": {IRON.id: personal} if personal else {},
         "stock": {"v": 1, "disponible": False, "mode": "menu_serveur", "limites": []},
         "suivi": {
-            "v": 1,
+            "v": 2,
             "disponible": True,
             "revision": 5,
             "empreinte": "d" * 64,
@@ -367,6 +367,24 @@ class NativeEvidenceTests(unittest.TestCase):
                 self.assertFalse(result.lots_available)
                 self.assertEqual(quantities(result.ledger.sources[0].contents), {IRON: 7})
                 self.assertEqual(result.lots_fingerprint, "")
+
+    def test_obsolete_lot_contract_cannot_credit_its_ambiguous_receipts(self):
+        data, request = fixture(personal=7, lots=[lot(received=3)])
+        data["suivi"]["v"] = 1
+        result = decode(data, request)
+        self.assertTrue(result.stock_available)
+        self.assertFalse(result.lots_available)
+        self.assertEqual(result.ledger.expected, ())
+        self.assertEqual(result.ledger.confirmed, ())
+
+    def test_missing_requested_chest_has_explicit_personal_fallback(self):
+        data, request = fixture(personal=7)
+        data.pop("stock")
+        data["coffre_demande"] = True
+        result = decode(data, request)
+        self.assertTrue(result.stock_available)
+        self.assertEqual(result.stock_mode, "personnel")
+        self.assertTrue(any("Relevé du coffre" in limit for limit in result.limitations))
 
     def test_malformed_followup_keeps_valid_menu_stock_despite_unknown_personal_cache(self):
         data, request = fixture(personal=0, menu=True)

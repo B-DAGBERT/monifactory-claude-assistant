@@ -221,7 +221,7 @@ class ProductionServiceTests(unittest.TestCase):
                     0,
                     inventaire={PLATE.id: received} if received else {},
                     suivi={
-                        "v": 1,
+                        "v": 2,
                         "disponible": True,
                         "revision": received + 1,
                         "empreinte": "a" * 64,

@@ -30,6 +30,11 @@ public final class InstantaneArbreEmiTest {
         arbre.goal.children.add(circuit);
         arbre.goal.children.add(new MaterialNode(pile("test:hammer", 1)));
         InstantaneArbreEmi.arbreModifie();
+        long structural = InstantaneArbreEmi.revisionStructureProduction();
+        long cache = InstantaneArbreEmi.revisionProduction();
+        InstantaneArbreEmi.invalider();
+        assert InstantaneArbreEmi.revisionProduction() > cache;
+        assert InstantaneArbreEmi.revisionStructureProduction() == structural;
         var premiere = InstantaneArbreEmi.lire(arbre);
         assert InstantaneArbreEmi.lire(arbre) == premiere;
         assert premiere.collecte().enfants().size() == 1;
@@ -43,6 +48,7 @@ public final class InstantaneArbreEmiTest {
         assert quantite != premiere && quantite.lots() == 5;
         arbre.goal.children.set(1, new MaterialNode(pile("test:mold", 1)));
         InstantaneArbreEmi.arbreModifie();
+        assert InstantaneArbreEmi.revisionStructureProduction() > structural;
         var modifie = InstantaneArbreEmi.lire(arbre);
         assert !quantite.memeCollecte(modifie);
         assert modifie.accepte(new ItemStack("test:mold", 1));

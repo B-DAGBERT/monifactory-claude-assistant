@@ -48,13 +48,18 @@ public final class ReceptionLots {
     }
 
     public static <T> Resultat<T> repartir(List<PlanRetrait.Stock<T>> gains, List<Source<T>> lots) {
+        return repartir(gains, lots, true);
+    }
+
+    public static <T> Resultat<T> repartir(
+            List<PlanRetrait.Stock<T>> gains, List<Source<T>> lots, boolean origineProuvee) {
         List<PlanRetrait.Stock<T>> disponibles = List.copyOf(gains);
         boolean change = false;
         for (var source : lots) {
             int avant = source.lot().totalRecu();
             var acceptes =
                     disponibles.stream().filter(s -> source.accepte().test(s.objet())).toList();
-            var nonUtilises = new ArrayList<>(source.lot().recevoir(acceptes));
+            var nonUtilises = new ArrayList<>(source.lot().recevoir(acceptes, origineProuvee));
             disponibles.stream()
                     .filter(s -> !source.accepte().test(s.objet()))
                     .forEach(nonUtilises::add);
