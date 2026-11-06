@@ -26,7 +26,13 @@ from monifactory_assistant.providers.responses import (
 )
 from monifactory_assistant.providers.session import ask_claude, tool_status
 from monifactory_assistant.runtime import log
-from monifactory_assistant.settings import HOTKEY_TALK, INFO_FILE, SAMPLE_RATE, SENTENCE_END
+from monifactory_assistant.settings import (
+    HOTKEY_TALK,
+    INFO_FILE,
+    SAMPLE_RATE,
+    SENTENCE_END,
+    SETTINGS,
+)
 
 
 class ConversationController:
@@ -384,14 +390,100 @@ class ConversationController:
             self.run_actions(actions)
 
     def run_actions(self, actions):
-        for action in actions:
-            handler = getattr(self, "action_" + str(action.get("type")), None)
-            if handler is None:
-                log(f"Action inconnue : {action}")
+        # This entry point is exclusively model-sourced. Native menu commands keep their
+        # separate handlers; no field supplied by a model constitutes user consent.
+        allowed = {
+            "surligner",
+            "effacer_surbrillance",
+            "guider",
+            "arreter_guidage",
+            "pause_objectif",
+            "voix",
+            "affichage",
+            "reglage",
+            "memoriser_lieu",
+            "ajouter_objectif",
+        }
+        rejected = not isinstance(actions, list)
+        prepared, new_places = [], set()
+        previous_message = getattr(self, "message", "")
+        for action in actions if isinstance(actions, list) else []:
+            kind = action.get("type") if isinstance(action, dict) else None
+            if not isinstance(kind, str) or kind not in allowed:
+                rejected = True
+                log(f"Action IA refusée : {action}")
                 continue
-            try:
-                handler(action)
-                log(f"Action : {json.dumps(action, ensure_ascii=False)}")
-            except Exception:
-                log(f"Action ratée : {action}\n" + traceback.format_exc())
+            payload = dict(action)
+            if kind == "memoriser_lieu":
+                name = action.get("nom")
+                places = getattr(self, "places", None)
+                if (
+                    not isinstance(name, str)
+                    or not name.strip()
+                    or len(name) > 100
+                    or any(ord(c) < 32 or ord(c) == 127 for c in name)
+                    or not isinstance(places, dict)
+                    or any(not isinstance(key, str) for key in places)
+                    or name.strip().casefold() in {key.strip().casefold() for key in places}
+                    or name.strip().casefold() in new_places
+                ):
+                    rejected = True
+                    continue
+                payload = {"type": kind, "nom": name.strip()}
+                new_places.add(name.strip().casefold())
+            elif kind == "ajouter_objectif":
+                title = action.get("titre") or action.get("demande")
+                if not isinstance(title, str) or not title.strip():
+                    rejected = True
+                    continue
+                # An addition may not forge an active/completed objective through `etat`.
+                payload = {"type": kind, "titre": title.strip(), "etat": "a_faire"}
+                if isinstance(action.get("demande"), str):
+                    payload["demande"] = action["demande"]
+                position = action.get("position")
+                if isinstance(position, int) and not isinstance(position, bool):
+                    payload["position"] = position
+            elif kind in ("reglage", "voix", "affichage"):
+                key = (
+                    action.get("cle")
+                    if kind == "reglage"
+                    else "voix"
+                    if kind == "voix"
+                    else "panneau"
+                )
+                field = "valeur" if kind == "reglage" else "active" if kind == "voix" else "visible"
+                value = action.get(field, True)
+                if (
+                    not isinstance(key, str)
+                    or key not in SETTINGS
+                    or not isinstance(value, bool)
+                    or key == "enchainer"
+                    and value
+                ):
+                    # Enabling auto-next could replace a completed plan indirectly.
+                    rejected = True
+                    continue
+            handler = getattr(self, "action_" + kind, None)
+            if not callable(handler):
+                rejected = True
+                continue
+            prepared.append((handler, payload))
+        # Validate the whole response before effects: an otherwise harmless addition must
+        # not mutate the project when it accompanies an unauthorized destructive action.
+        if not rejected:
+            for handler, payload in prepared:
+                try:
+                    handler(payload)
+                    log(f"Action : {json.dumps(payload, ensure_ascii=False)}")
+                except Exception:
+                    log(f"Action ratée : {payload}\n" + traceback.format_exc())
+        if rejected:
+            notice = (
+                "Certaines actions proposées n’ont pas été exécutées. La discussion ne peut pas "
+                "effacer, remplacer ou réinitialiser tes données. Les commandes du projet restent "
+                "disponibles dans le menu en jeu."
+            )
+            self.add_history("claude", notice)
+            self.message = (previous_message + "\n\n" if previous_message else "") + notice
+            self.message_until = time.time() + 180
         self.refresh(force=True)

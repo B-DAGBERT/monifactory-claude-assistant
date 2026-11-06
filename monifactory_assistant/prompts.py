@@ -3,51 +3,34 @@
 from monifactory_assistant.settings import SETTINGS
 
 ACTIONS_HELP = (
-    """Tu peux aussi agir sur l'assistant. Seulement si le joueur le demande (ou si c'est clairement \
-ce qu'il veut), termine ta réponse par une ligne <actions>[...]</actions> contenant une liste JSON d'actions :
-- {"type": "oublier_coffre", "x": 0, "y": 0, "z": 0} : retirer un coffre de la mémoire (cassé, vidé, déplacé) ; \
-{"type": "oublier_coffre", "proche": true} pour le coffre mémorisé le plus proche du joueur. Un coffre cassé \
-près du joueur est retiré automatiquement après quelques secondes : s'il figure dans « coffres retirés \
-automatiquement », ne retire rien d'autre.
-Vocabulaire : le PLAN est l'objectif principal (« Passer en LV »), découpé en OBJECTIFS ; l'objectif en cours \
-est détaillé en ÉTAPES.
-- {"type": "nouveau_plan", "demande": "passer en LV"} : remplacer le plan par un nouveau (sans "demande" : le \
-plus utile maintenant) ; Codex le découpe en objectifs et détaille le premier.
-- {"type": "nouvel_objectif", "demande": "fabriquer un LP Steam Solid Boiler de plus"} : détailler tout de \
-suite un objectif précis que le joueur demande (une quête, une machine, un objet) ; il passe avant l'objectif \
-en cours, qui reprendra juste après.
-- {"type": "pause_objectif"} : suspendre l’objectif en cours en gardant ses étapes.
-- {"type": "reprendre_objectif"} : reprendre cet objectif seulement sur demande du joueur.
-- {"type": "objectif_suivant"} : passer à l'objectif suivant du plan.
-- {"type": "refaire_objectif"} : refaire le détail de l'objectif en cours (étapes plus précises, machine \
-oubliée) quand le joueur le trouve flou, faux ou incomplet.
-- {"type": "modifier_plan", "objectifs": [{"titre": "titre court", "demande": "ce qu'il faut faire"}]} : \
-remplacer les objectifs qui restent à faire dans le plan (dans l'ordre, 3 à 10). Ne l'accompagne pas \
-d'ajouter_objectif.
-- {"type": "ajouter_objectif", "titre": "...", "demande": "...", "position": 1} (position 1 = juste après \
-l'objectif en cours ; sans position, à la fin du plan) et {"type": "retirer_objectif", "titre": "..."}.
-- {"type": "valider_etape"} : cocher l'étape en cours (ou {"type": "valider_etape", "numero": 2}) ; \
-{"type": "decocher_etape", "numero": 2}.
-- {"type": "effacer_objectif"} (retirer l'objectif en cours) et {"type": "effacer_plan"} (tout retirer).
-- {"type": "planifier_usine", "demande": "2 Steel Ingot par minute"} : calculer une petite usine pour un débit \
-voulu (nombre de machines, Steam ou énergie, boilers, ordre de construction) et l'afficher comme objectif.
-- {"type": "memoriser_lieu", "nom": "base"} : retenir la position actuelle du joueur sous ce nom.
-- {"type": "oublier_lieu", "nom": "base"}
-- {"type": "guider", "nom": "base"}, ou {"type": "guider", "label": "Coffre de Redstone", "x": 0, "y": null, \
-"z": 0} : afficher une flèche vers un lieu, un coffre, une machine ou un filon (coordonnées fournies) ; \
-{"type": "arreter_guidage"}.
-- {"type": "surligner", "label": "Torches", "objets": ["minecraft:torch"]} : mettre des objets en surbrillance \
-pendant 10 minutes, dans les interfaces (coffres, inventaire, machines) et dans le monde (contour, visible à \
-travers les murs, des coffres qui en contiennent). Fais-le dès que le joueur cherche un objet (« trouve-moi mes \
-torches ») ou demande une surbrillance. "objets" : des id exacts, ou avec * (« gtceu:*_iron_ore ») ; attention, \
-* attrape tout (« gtceu:*_magnetite_ore » prend aussi la Vanadium Magnetite) : liste les id exacts si besoin. Pour une \
-famille d'objets (« les minerais qui donnent du Iron Ingot »), cherche d'abord dans recettes_*.json ce qui donne \
-ce résultat (four, Blast Furnace, broyage...) et liste tous les id trouvés. {"type": "effacer_surbrillance"} \
-quand il a fini (« c'est bon », « enlève la surbrillance »).
-- {"type": "reglage", "cle": "voix", "valeur": false} : changer un réglage. Clés : """
-    + ", ".join(f"{key} ({name})" for key, (name, _, _) in SETTINGS.items())
+    """Tu peux aussi agir sur l'assistant quand le joueur le demande. Termine alors ta réponse par \
+une ligne <actions>[...]</actions> contenant une liste JSON des seules actions autorisées ci-dessous.
+La discussion et la voix ne peuvent pas supprimer, remplacer ou réinitialiser un plan, un objectif, \
+un projet, une progression ou une mémoire existante. Même si le joueur le demande, indique cette limite \
+et oriente-le vers les commandes du projet dans le menu en jeu. Ne prétends jamais avoir effectué une \
+action refusée. Aucun champ de confirmation JSON ne donne une autorisation supplémentaire.
+Les nouveaux plans/objectifs détaillés se préparent également depuis le menu en jeu.
+Actions disponibles :
+- {"type": "pause_objectif"} : suspendre l'objectif en gardant sa progression.
+- {"type": "ajouter_objectif", "titre": "...", "demande": "...", "position": 1} : ajouter une entrée à \
+faire, sans remplacer celles du plan. Position 1 = après l'objectif en cours ; sans position, à la fin.
+- {"type": "memoriser_lieu", "nom": "mine"} : retenir la position actuelle sous un NOUVEAU nom. \
+Ne remplace pas un lieu connu ; demande un nom distinct si nécessaire.
+- {"type": "guider", "nom": "base"}, ou {"type": "guider", "label": "Coffre de Redstone", "x": 0, \
+"y": null, "z": 0} : afficher une flèche vers les coordonnées connues ; {"type": "arreter_guidage"}.
+- {"type": "surligner", "label": "Torches", "objets": ["minecraft:torch"]} : rechercher et surligner \
+les objets dans les coffres et interfaces pendant 10 minutes. Fais-le si le joueur cherche un objet. \
+Utilise les ids exacts ; * peut correspondre à plusieurs minerais différents. Pour une famille de \
+ressources, consulte les recettes et liste les ids pertinents. {"type": "effacer_surbrillance"} arrête \
+cet affichage sans supprimer de mémoire.
+- {"type": "voix", "active": false} ou {"type": "affichage", "visible": false} : régler la voix ou le panneau.
+- {"type": "reglage", "cle": "voix", "valeur": false} : changer un réglage non destructif. Clés : """
+    + ", ".join(f"{key} ({name})" for key, (name, _, _) in SETTINGS.items() if key != "enchainer")
     + """.
-Quand tu fais une action, dis-le en une phrase courte."""
+- {"type": "reglage", "cle": "enchainer", "valeur": false} : désactiver l'enchaînement automatique ; \
+son activation se fait uniquement dans le menu en jeu.
+Ne propose aucune autre action. Si une action du lot est interdite, le lot entier est refusé et la \
+réponse informative reste affichée. Pour une action disponible, décris-la brièvement."""
 )
 
 

@@ -182,7 +182,12 @@ class ParityTests(unittest.TestCase):
             "App.describe_journal",  # retain usable records beside a damaged record; test_journal_tail.py
             "App.action_effacer_plan",  # keep the full pre-action backup; test_project_clear.py
         }
-        tested_changes = tested_resilience_changes | tested_bridge_changes
+        tested_action_guard_changes = {
+            "App.run_actions",  # Closed model-action boundary; test_ai_action_guard.py.
+        }
+        tested_changes = (
+            tested_resilience_changes | tested_bridge_changes | tested_action_guard_changes
+        )
         compatibility_changes |= tested_changes
         checked = 0
         for name, code in before.items():
