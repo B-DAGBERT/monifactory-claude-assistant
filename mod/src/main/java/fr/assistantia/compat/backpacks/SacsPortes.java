@@ -17,6 +17,10 @@ public final class SacsPortes {
         UUID assistantia$id();
 
         CompoundTag assistantia$contenu();
+
+        Object assistantia$connexion();
+
+        void assistantia$connexion(Object connexion);
     }
 
     public interface Lecteur {
