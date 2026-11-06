@@ -148,6 +148,8 @@ def question_context(question, recipes):
             "usine",
             "automatiser",
             "historique",
+            "puis",
+            "sinon",
             "avant",
             "depuis",
             "encore",
@@ -205,7 +207,7 @@ def question_context(question, recipes):
     # Sans recette/stock explicitement demandé, ne pas réduire sur le seul nom de la machine.
     if not (storage or recipe):
         return full
-    if storage and recipe:
+    if recipe and (storage or any(not recipes.by_output.get(item) for item in targets)):
         return full
     selected, machines = set(targets), set(targets) if machine else set()
     if recipe or machine:
