@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from monifactory_assistant.game.world_scope import scope_file
 from monifactory_assistant.production.catalog import CatalogueReader, decode_document
 from monifactory_assistant.production.planner import ProductionLot, StockLedger, StockSource, plan
 from monifactory_assistant.production.recipes import Amount, Resource
@@ -85,7 +86,7 @@ def main(argv=None):
         view = CatalogueReader(args.catalogue, args.source).refresh()
         if view.catalog is None:
             raise ValueError(view.reason)
-        with args.demande.open("rb") as source:
+        with scope_file(args.demande.parent, args.demande.name).open("rb") as source:
             raw = source.read(4_194_305)
         if len(raw) > 4_194_304:
             raise ValueError("Demande trop volumineuse.")

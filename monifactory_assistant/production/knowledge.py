@@ -117,6 +117,7 @@ class Evidence:
     observed_at_ms: int | None = None
     received_at_ms: int | None = None
     schema_version: str | int | None = None
+    capture_id: str | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "status", KnowledgeStatus(self.status))
@@ -237,7 +238,10 @@ class KnowledgeSnapshot:
                 return tuple(personal)
             if result:
                 # Even direct offline constructors must not combine successive server surveys.
-                latest = max(result, key=_priority).evidence[0]
+                latest_row = max(result, key=_priority)
+                latest = latest_row.evidence[0]
+                if latest.capture_id is None:
+                    return (latest_row,)
                 result = [
                     row for row in result if _generation(row.evidence[0]) == _generation(latest)
                 ]
@@ -320,6 +324,10 @@ class _Builder:
         session = data.get("session_monde")
         dimension = data.get("dimension_monde", data.get("dimension"))
         stamp = _timestamp(data.get("t"))
+        capture_id = None
+        if source.name == "monde.json" and isinstance(source.data, Mapping):
+            content = json.dumps(_plain(data), ensure_ascii=True, sort_keys=True)
+            capture_id = hashlib.sha256(content.encode("ascii")).hexdigest()
         known = source.name in _LIVE_FOR or source.name in _HISTORIES
         available = (
             source.authorized is True
@@ -355,10 +363,20 @@ class _Builder:
             stamp,
             source.received_at_ms,
             data.get("v", data.get("version_script")),
+            capture_id,
         )
 
     def read(self, source):
-        proof = self.evidence(source)
+        try:
+            proof = self.evidence(source)
+        except (ValueError, TypeError, RecursionError, OverflowError):
+            proof = Evidence(
+                source.name,
+                source.reference,
+                KnowledgeStatus.UNKNOWN,
+                Freshness.UNAVAILABLE,
+                Completeness.UNAVAILABLE,
+            )
         if proof.freshness == Freshness.UNAVAILABLE:
             self.sources.append(proof)
             self.limits.append(
@@ -709,10 +727,17 @@ def _priority(observation):
 
 def _generation(proof):
     # One authorized server packet may also describe players in other dimensions.
-    return proof.source, proof.world, proof.session, proof.observed_at_ms, proof.received_at_ms
+    return (
+        proof.source,
+        proof.world,
+        proof.session,
+        proof.observed_at_ms,
+        proof.received_at_ms,
+        proof.capture_id,
+    )
 
 
-def _latest_server_frame(rows):
+def _latest_server_frame(rows, limitations, sources):
     """Successive complete files are separate surveys, never simultaneous stock locations."""
     current = [
         row
@@ -721,20 +746,38 @@ def _latest_server_frame(rows):
     ]
     if not current:
         return rows
-    latest = max(current, key=_priority).evidence[0]
-    return [
-        replace(
-            row,
-            evidence=tuple(
-                replace(proof, freshness=Freshness.HISTORICAL)
-                if proof.source == "monde.json"
-                and proof.freshness == Freshness.LIVE
-                and _generation(proof) != _generation(latest)
-                else proof
-                for proof in row.evidence
-            ),
+
+    def clock(proof):
+        return (
+            proof.received_at_ms if proof.received_at_ms is not None else -1,
+            proof.observed_at_ms if proof.observed_at_ms is not None else -1,
         )
-        for row in rows
+
+    latest = max((row.evidence[0] for row in current), key=clock)
+    tied = [row.evidence[0] for row in current if clock(row.evidence[0]) == clock(latest)]
+    conflict = len({proof.capture_id for proof in tied}) > 1
+    if conflict:
+        limitations.append(
+            "Captures serveur différentes aux mêmes dates : stock et état courant inconnus."
+        )
+
+    def contextualize(proof):
+        if proof.source != "monde.json" or proof.freshness != Freshness.LIVE:
+            return proof
+        if clock(proof) == clock(latest) and conflict:
+            return replace(
+                proof,
+                status=KnowledgeStatus.UNKNOWN,
+                freshness=Freshness.STALE,
+                completeness=Completeness.UNKNOWN,
+            )
+        if _generation(proof) != _generation(latest):
+            return replace(proof, freshness=Freshness.HISTORICAL)
+        return proof
+
+    sources[:] = [contextualize(proof) for proof in sources]
+    return [
+        replace(row, evidence=tuple(contextualize(proof) for proof in row.evidence)) for row in rows
     ]
 
 
@@ -940,7 +983,10 @@ def build_knowledge(
                 "Inventaire d'un autre joueur exclu de la disponibilité personnelle."
             )
             builder.rows = [row for row in builder.rows if row not in incompatible]
-    rows, history = _merge(_covered_absences(_latest_server_frame(builder.rows)), builder.limits)
+    rows, history = _merge(
+        _covered_absences(_latest_server_frame(builder.rows, builder.limits, builder.sources)),
+        builder.limits,
+    )
     rows = _deduplicate_storage(rows)
     limits = [
         *builder.limits,

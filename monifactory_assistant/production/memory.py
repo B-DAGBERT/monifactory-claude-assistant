@@ -1,5 +1,6 @@
 """Read existing project saves and retrieve reviewed notes without a second project store."""
 
+import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass
@@ -42,7 +43,7 @@ class ProjectSummary:
     completed: int
     total: int
     steps: tuple[SavedStep, ...]
-    source: str = "plan_ia.json"
+    source: str
 
 
 def read_projects(root: Path, game_data: Path, scope: WorldScope | None):
@@ -56,6 +57,12 @@ def read_projects(root: Path, game_data: Path, scope: WorldScope | None):
     before = file_stamp(path), file_stamp(backup)
     if before == (None, None):
         return ()
+    # ProjectStore recovers from .bak if the primary is unreadable or not a dictionary.
+    try:
+        primary_valid = isinstance(json.loads(path.read_text(encoding="utf-8")), dict)
+    except (OSError, ValueError):
+        primary_valid = False
+    source = path.name if primary_valid else backup.name
     store = ProjectStore(path)
     state = store.snapshot()
     saved_projects = {entry["id"]: entry["etat"] for entry in store.projects}
@@ -80,6 +87,7 @@ def read_projects(root: Path, game_data: Path, scope: WorldScope | None):
                 entry["faits"],
                 entry["total"],
                 steps,
+                source,
             )
         )
     if (file_stamp(path), file_stamp(backup)) != before:

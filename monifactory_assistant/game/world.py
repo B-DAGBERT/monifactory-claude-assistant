@@ -6,8 +6,8 @@ from datetime import datetime
 
 from monifactory_assistant.game.snapshots import file_stamp
 from monifactory_assistant.game.storage import Storage, distinct_containers
+from monifactory_assistant.paths import WORLD_FILE
 from monifactory_assistant.persistence import atomic_json, load_json
-from monifactory_assistant.settings import WORLD_FILE
 
 OBSERVATION_MAX_AGE_MS = 15_000
 MAX_INTEGER = 2**53 - 1

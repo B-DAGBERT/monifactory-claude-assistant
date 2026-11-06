@@ -5,6 +5,7 @@ import subprocess
 
 from monifactory_assistant.config import minecraft_dir
 from monifactory_assistant.paths import ROOT as HERE
+from monifactory_assistant.paths import WORLD_FILE as WORLD_FILE
 
 MINECRAFT_DIR = minecraft_dir()
 
@@ -84,10 +85,6 @@ PLAN_FILE = HERE / "plan_ia.json"
 PLACES_FILE = HERE / "lieux.json"
 
 JOURNAL_FILE = HERE / "journal.jsonl"
-
-WORLD_FILE = (
-    HERE / "monde_memoire.json"
-)  # ce que le serveur a vu (coffres, machines), gardé entre deux parties
 
 INFO_FILE = HERE / "fiches.json"  # fiches « à quoi ça sert » déjà rédigées par Codex (touche I)
 

@@ -85,6 +85,7 @@ class ProjectMemoryTests(unittest.TestCase):
         path.write_text("{", encoding="utf-8")
         (summary,) = read_projects(self.root, self.game, self.first)
         self.assertEqual(summary.name, "Cuivre")
+        self.assertEqual(summary.source, "plan_ia.json.bak")
         self.assertEqual(path.read_text(encoding="utf-8"), "{")
 
     def test_notes_keep_history_conflicts_and_scope(self):

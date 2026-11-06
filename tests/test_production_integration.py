@@ -1,6 +1,7 @@
 """Replay a small production chain across catalogue, knowledge, planning and diagnosis."""
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -57,6 +58,21 @@ class ProductionIntegrationTests(unittest.TestCase):
             self.catalogue,
             catalogue_document("test-catalogue", Catalog(1, (BEND, SMELT)).to_dict()),
         )
+
+    def test_importing_calculations_does_not_load_the_local_game_configuration(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                "import sys; import monifactory_assistant.production.analysis; "
+                "assert 'monifactory_assistant.config' not in sys.modules",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_reliable_stock_and_explainable_machine_observation_from_one_snapshot(self):
         identity = {**SCOPE.fields(), "dimension": SCOPE.dimension, "t": NOW - 10}
@@ -203,3 +219,24 @@ class ProductionIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(attested.plan.status, "complete")
         self.assertEqual(len(attested.stock_proofs), 2)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO non disponible")
+    def test_command_rejects_a_stream_instead_of_waiting_for_another_process(self):
+        os.mkfifo(self.request)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-m",
+                "monifactory_assistant.commands.plan_production",
+                str(self.catalogue),
+                str(self.request),
+                "--source",
+                "test-catalogue",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(result.stdout)

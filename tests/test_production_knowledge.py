@@ -356,7 +356,12 @@ class ProductionKnowledgeTests(unittest.TestCase):
         for ordered in (captures, list(reversed(captures))):
             result = view(*ordered)
             self.assertEqual(result.availability(), {})
-            self.assertTrue(any("contradictoires" in message for message in result.limitations))
+            self.assertTrue(
+                any(
+                    "contradictoires" in message or "Captures serveur différentes" in message
+                    for message in result.limitations
+                )
+            )
             self.assertEqual(
                 result.select("storage")[0].evidence[0].status, KnowledgeStatus.UNKNOWN
             )
@@ -391,6 +396,53 @@ class ProductionKnowledgeTests(unittest.TestCase):
                 ),
                 1,
             )
+
+    def test_distinct_server_contents_with_identical_dates_cannot_share_a_stock_frame(self):
+        first = source("monde.json", frame(block(0)), reference="first")
+        second = source("monde.json", frame(block(32)), reference="second")
+        for captures in ((first, second), (second, first)):
+            for coherent in (False, True):
+                result = view(*captures, stock_frame_coherent=coherent)
+                self.assertEqual(result.availability(), {})
+                self.assertEqual(len(result.select("storage")), 2)
+                self.assertTrue(
+                    all(
+                        row.evidence[0].status == KnowledgeStatus.UNKNOWN
+                        for row in result.select("storage")
+                    )
+                )
+                self.assertEqual(
+                    len({row.evidence[0].capture_id for row in result.select("storage")}), 2
+                )
+                self.assertTrue(all(proof.freshness == Freshness.STALE for proof in result.sources))
+
+    def test_missing_server_clock_does_not_crash_a_tied_local_receipt(self):
+        data = frame(block(0))
+        del data["t"]
+        invalid = source("monde.json", data)
+        valid = source("monde.json", frame(block(32)))
+        for captures in ((invalid, valid), (valid, invalid)):
+            result = view(*captures)
+            self.assertEqual(result.availability(), {IRON: 10})
+            self.assertEqual(result.availability_observations()[0].position, (32, 64, 0))
+            self.assertEqual(
+                {proof.freshness for proof in result.sources},
+                {Freshness.UNAVAILABLE, Freshness.LIVE},
+            )
+
+    def test_unserializable_frame_metadata_cannot_escape_the_source_boundary(self):
+        invalid = source("monde.json", {**frame(block()), 1: "not a JSON object key"})
+        result = view(invalid)
+        self.assertEqual(result.observations, ())
+        self.assertEqual(result.sources[0].freshness, Freshness.UNAVAILABLE)
+
+    def test_same_local_receipt_uses_server_order_without_depending_on_input_order(self):
+        first = source("monde.json", frame(block(0), t=NOW - 10))
+        second = source("monde.json", frame(block(32), t=NOW))
+        for captures in ((first, second), (second, first)):
+            result = view(*captures)
+            self.assertEqual(result.availability(), {IRON: 10})
+            self.assertEqual(result.availability_observations()[0].position, (32, 64, 0))
 
     def test_server_clock_offset_does_not_keep_old_stock_when_new_survey_omits_it(self):
         older = source("monde.json", frame(block(), t=NOW + 100_000), received=NOW - 1000)
