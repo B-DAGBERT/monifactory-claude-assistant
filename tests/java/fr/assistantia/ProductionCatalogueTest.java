@@ -8,6 +8,7 @@ import fr.assistantia.compat.emi.CatalogueEmi;
 import fr.assistantia.compat.emi.RecetteProduction;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.*;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.crafting.Ingredient;
 
@@ -301,6 +302,30 @@ public final class ProductionCatalogueTest {
         check(
                 CatalogueProduction.etat().get("generation").equals(ready.get("generation")),
                 "no duplicate generation");
+        var writerField = CatalogueProduction.class.getDeclaredField("WRITER");
+        writerField.setAccessible(true);
+        ExecutorService writer = (ExecutorService) writerField.get(null);
+        CountDownLatch unblockWriter = new CountDownLatch(1);
+        writer.execute(
+                () -> {
+                    try {
+                        unblockWriter.await();
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+        try {
+            CatalogueProduction.rechargement();
+            CatalogueProduction.rechargement();
+        } finally {
+            unblockWriter.countDown();
+        }
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        status = JsonParser.parseString(Files.readString(marker)).getAsJsonObject();
+        check(
+                status.get("etat").getAsString().equals("indisponible"),
+                "repeated EMI events must still revoke the published receipt");
+        check(CatalogueProduction.demander(), "same tree after reload accepted");
         tree.batches++;
         check(
                 CatalogueProduction.etat().get("etat").getAsString().equals("indisponible"),

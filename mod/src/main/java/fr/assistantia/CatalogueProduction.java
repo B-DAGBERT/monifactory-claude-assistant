@@ -40,7 +40,6 @@ public final class CatalogueProduction {
         synchronized (LOCK) {
             if (capture != null)
                 echec("Les recettes ou la sélection EMI ont changé. Relance le calcul.");
-            else EPOCH.incrementAndGet();
         }
     }
 
