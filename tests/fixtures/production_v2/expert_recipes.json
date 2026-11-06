@@ -1,0 +1,525 @@
+{
+  "schema": "monifactory.production.recipes",
+  "version": 1,
+  "generation": 1,
+  "recipes": [
+    {
+      "category": "gtceu:alloy_smelter",
+      "duration_ticks": 200,
+      "eut": 16,
+      "id": "gtceu:alloy_smelter/copper_ingot_and_tin_ingot_into_bronze",
+      "inputs": [
+        {
+          "options": [
+            {
+              "quantity": 3,
+              "resource": {
+                "id": "minecraft:copper_ingot",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        },
+        {
+          "options": [
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "gtceu:tin_ingot",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        }
+      ],
+      "machines": [
+        "gtceu:ev_alloy_smelter",
+        "gtceu:hp_steam_alloy_smelter",
+        "gtceu:hv_alloy_smelter",
+        "gtceu:iv_alloy_smelter",
+        "gtceu:luv_alloy_smelter",
+        "gtceu:lv_alloy_smelter",
+        "gtceu:mv_alloy_smelter",
+        "gtceu:opv_alloy_smelter",
+        "gtceu:uev_alloy_smelter",
+        "gtceu:uhv_alloy_smelter",
+        "gtceu:uiv_alloy_smelter",
+        "gtceu:uv_alloy_smelter",
+        "gtceu:uxv_alloy_smelter",
+        "gtceu:zpm_alloy_smelter"
+      ],
+      "outputs": [
+        {
+          "amount": {
+            "quantity": 4,
+            "resource": {
+              "id": "gtceu:bronze_ingot",
+              "kind": "item",
+              "unit": "item",
+              "variant": ""
+            }
+          },
+          "chance": {
+            "denominator": 10000,
+            "numerator": 10000
+          }
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "category": "gtceu:bender",
+      "circuit": 1,
+      "duration_ticks": 76,
+      "eut": 24,
+      "id": "gtceu:bender/bend_bronze_to_plate",
+      "inputs": [
+        {
+          "options": [
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "gtceu:bronze_ingot",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        }
+      ],
+      "machines": [
+        "gtceu:ev_bender",
+        "gtceu:hv_bender",
+        "gtceu:iv_bender",
+        "gtceu:luv_bender",
+        "gtceu:lv_bender",
+        "gtceu:mv_bender",
+        "gtceu:opv_bender",
+        "gtceu:uev_bender",
+        "gtceu:uhv_bender",
+        "gtceu:uiv_bender",
+        "gtceu:uv_bender",
+        "gtceu:uxv_bender",
+        "gtceu:zpm_bender"
+      ],
+      "outputs": [
+        {
+          "amount": {
+            "quantity": 1,
+            "resource": {
+              "id": "gtceu:bronze_plate",
+              "kind": "item",
+              "unit": "item",
+              "variant": ""
+            }
+          },
+          "chance": {
+            "denominator": 10000,
+            "numerator": 10000
+          }
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "category": "gtceu:cutter",
+      "duration_ticks": 1216,
+      "eut": 30,
+      "id": "gtceu:cutter/cut_bronze_block_to_plate_water",
+      "inputs": [
+        {
+          "options": [
+            {
+              "quantity": 57,
+              "resource": {
+                "id": "minecraft:water",
+                "kind": "fluid",
+                "unit": "mB",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        },
+        {
+          "options": [
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "chisel_chipped_integration:metal_bronze_bolted",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            },
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "chisel_chipped_integration:metal_bronze_caution",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            },
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "chisel_chipped_integration:metal_bronze_egregious",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            },
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "chisel_chipped_integration:metal_bronze_industrial_relic",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            },
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "chisel_chipped_integration:metal_bronze_scaffold",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            },
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "chisel_chipped_integration:metal_bronze_shipping_crate",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            },
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "chisel_chipped_integration:metal_bronze_thermal",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            },
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "gtceu:bronze_block",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        }
+      ],
+      "machines": [
+        "gtceu:ev_cutter",
+        "gtceu:hv_cutter",
+        "gtceu:iv_cutter",
+        "gtceu:luv_cutter",
+        "gtceu:lv_cutter",
+        "gtceu:mv_cutter",
+        "gtceu:opv_cutter",
+        "gtceu:uev_cutter",
+        "gtceu:uhv_cutter",
+        "gtceu:uiv_cutter",
+        "gtceu:uv_cutter",
+        "gtceu:uxv_cutter",
+        "gtceu:zpm_cutter"
+      ],
+      "outputs": [
+        {
+          "amount": {
+            "quantity": 9,
+            "resource": {
+              "id": "gtceu:bronze_plate",
+              "kind": "item",
+              "unit": "item",
+              "variant": ""
+            }
+          },
+          "chance": {
+            "denominator": 10000,
+            "numerator": 10000
+          }
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "category": "gtceu:fluid_solidifier",
+      "duration_ticks": 40,
+      "eut": 7,
+      "id": "gtceu:fluid_solidifier/solidify_bronze_to_plate",
+      "inputs": [
+        {
+          "options": [
+            {
+              "quantity": 144,
+              "resource": {
+                "id": "gtceu:bronze",
+                "kind": "fluid",
+                "unit": "mB",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        },
+        {
+          "options": [
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "gtceu:plate_casting_mold",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": true
+        }
+      ],
+      "machines": [
+        "gtceu:ev_fluid_solidifier",
+        "gtceu:hv_fluid_solidifier",
+        "gtceu:iv_fluid_solidifier",
+        "gtceu:large_solidifier",
+        "gtceu:luv_fluid_solidifier",
+        "gtceu:lv_fluid_solidifier",
+        "gtceu:mv_fluid_solidifier",
+        "gtceu:opv_fluid_solidifier",
+        "gtceu:uev_fluid_solidifier",
+        "gtceu:uhv_fluid_solidifier",
+        "gtceu:uiv_fluid_solidifier",
+        "gtceu:uv_fluid_solidifier",
+        "gtceu:uxv_fluid_solidifier",
+        "gtceu:zpm_fluid_solidifier"
+      ],
+      "outputs": [
+        {
+          "amount": {
+            "quantity": 1,
+            "resource": {
+              "id": "gtceu:bronze_plate",
+              "kind": "item",
+              "unit": "item",
+              "variant": ""
+            }
+          },
+          "chance": {
+            "denominator": 10000,
+            "numerator": 10000
+          }
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "category": "gtceu:forge_hammer",
+      "duration_ticks": 76,
+      "eut": 16,
+      "id": "gtceu:forge_hammer/hammer_bronze_to_plate",
+      "inputs": [
+        {
+          "options": [
+            {
+              "quantity": 3,
+              "resource": {
+                "id": "gtceu:bronze_ingot",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        }
+      ],
+      "machines": [
+        "gtceu:ev_forge_hammer",
+        "gtceu:hp_steam_forge_hammer",
+        "gtceu:hv_forge_hammer",
+        "gtceu:iv_forge_hammer",
+        "gtceu:luv_forge_hammer",
+        "gtceu:lv_forge_hammer",
+        "gtceu:mv_forge_hammer",
+        "gtceu:opv_forge_hammer",
+        "gtceu:uev_forge_hammer",
+        "gtceu:uhv_forge_hammer",
+        "gtceu:uiv_forge_hammer",
+        "gtceu:uv_forge_hammer",
+        "gtceu:uxv_forge_hammer",
+        "gtceu:zpm_forge_hammer"
+      ],
+      "outputs": [
+        {
+          "amount": {
+            "quantity": 2,
+            "resource": {
+              "id": "gtceu:bronze_plate",
+              "kind": "item",
+              "unit": "item",
+              "variant": ""
+            }
+          },
+          "chance": {
+            "denominator": 10000,
+            "numerator": 10000
+          }
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "category": "gtceu:macerator",
+      "duration_ticks": 66,
+      "eut": 2,
+      "id": "gtceu:macerator/macerate_gilded_blackstone",
+      "inputs": [
+        {
+          "options": [
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "minecraft:gilded_blackstone",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        }
+      ],
+      "machines": [
+        "gtceu:ev_large_miner",
+        "gtceu:ev_macerator",
+        "gtceu:hp_steam_macerator",
+        "gtceu:hv_macerator",
+        "gtceu:iv_large_miner",
+        "gtceu:iv_macerator",
+        "gtceu:large_maceration_tower",
+        "gtceu:lp_steam_macerator",
+        "gtceu:luv_large_miner",
+        "gtceu:luv_macerator",
+        "gtceu:lv_macerator",
+        "gtceu:mv_macerator",
+        "gtceu:opv_macerator",
+        "gtceu:steam_grinder",
+        "gtceu:uev_macerator",
+        "gtceu:uhv_macerator",
+        "gtceu:uiv_macerator",
+        "gtceu:uv_macerator",
+        "gtceu:uxv_macerator",
+        "gtceu:zpm_macerator"
+      ],
+      "outputs": [
+        {
+          "amount": {
+            "quantity": 1,
+            "resource": {
+              "id": "gtceu:blackstone_dust",
+              "kind": "item",
+              "unit": "item",
+              "variant": ""
+            }
+          },
+          "chance": {
+            "denominator": 10000,
+            "numerator": 10000
+          }
+        },
+        {
+          "amount": {
+            "quantity": 1,
+            "resource": {
+              "id": "gtceu:gold_dust",
+              "kind": "item",
+              "unit": "item",
+              "variant": ""
+            }
+          },
+          "chance": {
+            "denominator": 10000,
+            "numerator": 2500
+          }
+        }
+      ],
+      "unsupported": []
+    },
+    {
+      "category": "gtceu:wiremill",
+      "circuit": 2,
+      "duration_ticks": 63,
+      "eut": 7,
+      "id": "gtceu:wiremill/mill_copper_wire_2",
+      "inputs": [
+        {
+          "options": [
+            {
+              "quantity": 1,
+              "resource": {
+                "id": "minecraft:copper_ingot",
+                "kind": "item",
+                "unit": "item",
+                "variant": ""
+              }
+            }
+          ],
+          "reusable": false
+        }
+      ],
+      "machines": [
+        "gtceu:ev_wiremill",
+        "gtceu:hv_wiremill",
+        "gtceu:iv_wiremill",
+        "gtceu:large_wiremill",
+        "gtceu:luv_wiremill",
+        "gtceu:lv_wiremill",
+        "gtceu:mv_wiremill",
+        "gtceu:opv_wiremill",
+        "gtceu:uev_wiremill",
+        "gtceu:uhv_wiremill",
+        "gtceu:uiv_wiremill",
+        "gtceu:uv_wiremill",
+        "gtceu:uxv_wiremill",
+        "gtceu:zpm_wiremill"
+      ],
+      "outputs": [
+        {
+          "amount": {
+            "quantity": 1,
+            "resource": {
+              "id": "gtceu:copper_double_wire",
+              "kind": "item",
+              "unit": "item",
+              "variant": ""
+            }
+          },
+          "chance": {
+            "denominator": 10000,
+            "numerator": 10000
+          }
+        }
+      ],
+      "unsupported": []
+    }
+  ]
+}

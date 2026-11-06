@@ -7,6 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from monifactory_assistant.game.objectives import machine_label
 from monifactory_assistant.game.world_scope import scope_file
 from monifactory_assistant.production.acquisition import (
     acquire,
@@ -37,6 +38,13 @@ def _safe(text, limit=300):
 
 def _amount(amount):
     return f"{amount.quantity} {amount.resource.unit} {amount.resource.id}"
+
+
+def _compatible_posts(step):
+    names = [machine_label(machine) for machine in step.machines[:3]]
+    if len(step.machines) > len(names):
+        names.append(f"{len(step.machines) - len(names)} autres")
+    return "Postes compatibles · " + ", ".join(names)
 
 
 def _proof_text(proof):
@@ -535,17 +543,6 @@ class ProductionService:
                 ]
                 if request["operation"] == "plan":
                     lines.extend(
-                        f"{index + 1}. {step.batches} fabrication(s) · {step.recipe_id}"
-                        + (" · circuit " + str(step.circuit) if step.circuit is not None else "")
-                        for index, step in enumerate(analysis.plan.steps[:100])
-                    )
-                    lines.extend(
-                        "Machine requise : " + machine
-                        for machine in sorted(
-                            {machine for step in analysis.plan.steps for machine in step.machines}
-                        )[:40]
-                    )
-                    lines.extend(
                         "Disponible attesté : " + _amount(Amount(entry.resource, entry.quantity))
                         for entry in analysis.plan.allocations[:40]
                         if entry.source_kind == "physical"
@@ -557,6 +554,13 @@ class ProductionService:
                     lines.extend(
                         "À attendre : " + _amount(amount) for amount in analysis.plan.waiting[:30]
                     )
+                    for index, step in enumerate(analysis.plan.steps[:64], 1):
+                        lines.append(
+                            f"{index}. {step.batches} fabrication(s) · {step.recipe_id}"
+                            + (f" · circuit {step.circuit}" if step.circuit is not None else "")
+                        )
+                        if step.machines:
+                            lines.append(_compatible_posts(step))
                     lines.extend(
                         "Limite : " + _safe(issue.message) for issue in analysis.plan.issues[:25]
                     )

@@ -165,6 +165,8 @@ class ProductionServiceTests(unittest.TestCase):
         self.assertEqual(result["etat"], "pret")
         self.assertEqual(result["rapport"]["missing"], [])
         self.assertEqual(result["rapport"]["steps"][0]["batches"], 8)
+        self.assertTrue(any(line.startswith("Postes compatibles · ") for line in result["lignes"]))
+        self.assertFalse(any(line.startswith("Machine requise") for line in result["lignes"]))
         self.assertEqual({p.name: p.read_bytes() for p in self.data.iterdir()}, before)
         self.assertTrue(self.app.objective_paused)
         self.assertEqual(self.app.plan_version, 1)
