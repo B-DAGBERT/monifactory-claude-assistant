@@ -505,7 +505,8 @@ def build_mod_view(app):
     info = dict(app.info) if app.info else None
     if info and getattr(app, "info_request", None):
         status = app.machine_at(app.info_request)
-        info.update(machine=status, machine_couleur=machine_color(status))
+        color = "gris" if status.startswith("Dernier relevé") else machine_color(status)
+        info.update(machine=status, machine_couleur=color)
     screen = {
         "statut": app.status,
         "dimension_actuelle": (state or {}).get("dimension", ""),

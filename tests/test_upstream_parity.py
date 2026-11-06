@@ -148,6 +148,12 @@ class ParityTests(unittest.TestCase):
             "World.__init__",
             "World.update",
             "World.active",  # validate freshness on the client clock; test_storage_snapshots.py
+            # Historic server observations retain dates and are labelled in both providers.
+            # The card's status is recalculated when rendering; test_world_freshness.py.
+            "describe_world",
+            "describe_machines",
+            "describe_storage",
+            "App.show_info",
             "App.load_places",
             "App.save_places",
             "App.set_setting",

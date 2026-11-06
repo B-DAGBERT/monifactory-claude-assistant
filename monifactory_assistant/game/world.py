@@ -272,8 +272,6 @@ def machine_status(m):
 
 
 def machine_color(status):
-    if status.startswith("Dernier relevé"):
-        return "gris"
     return (
         "rouge"
         if "À SEC" in status or "NON formé" in status
