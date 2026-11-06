@@ -136,6 +136,17 @@ class AutomaticUpdateTests(unittest.TestCase):
         self.assertEqual(self.updater.check()["state"], "current")
         self.assertEqual(self.updater.builds, 1)
 
+    def test_ignored_private_plan_tracked_upstream_is_never_overwritten(self):
+        private_plan = (self.client / "plan_ia.json").read_bytes()
+        (self.source / "plan_ia.json").write_text('{"paused":false,"owner":"upstream"}')
+        self.git("add", "-f", "plan_ia.json")
+        self.git("commit", "-m", "Accidentally tracked plan")
+        self.git("push", "origin", "main")
+        self.assertEqual(self.git("status", "--porcelain", cwd=self.client), "")
+        self.assertEqual(self.updater.check()["state"], "failed")
+        self.assertEqual((self.client / "plan_ia.json").read_bytes(), private_plan)
+        self.assert_unchanged()
+
     def test_open_or_unknown_game_defers_without_updating_sources(self):
         for running in (True, None):
             self.updater.game_running.return_value = running

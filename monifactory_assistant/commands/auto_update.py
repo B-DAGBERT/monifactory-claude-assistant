@@ -346,7 +346,7 @@ class AutoUpdater:
             if need_mod:
                 backup = self.deploy(stage)
             try:
-                self.git("merge", "--ff-only", target, timeout=30)
+                self.git("merge", "--no-overwrite-ignore", "--ff-only", target, timeout=30)
             except (OSError, subprocess.SubprocessError):
                 if backup is not None:
                     self.restore(backup)

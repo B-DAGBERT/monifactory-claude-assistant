@@ -48,10 +48,10 @@ def main():
         require_published(BRANCH)
     if current != BRANCH:
         if run("branch", "--list", BRANCH):
-            run("switch", BRANCH)
+            run("switch", "--no-overwrite-ignore", BRANCH)
         else:
-            run("switch", "--no-track", "-c", BRANCH, target)
-    run("merge", "--ff-only", target)
+            run("switch", "--no-overwrite-ignore", "--no-track", "-c", BRANCH, target)
+    run("merge", "--no-overwrite-ignore", "--ff-only", target)
     # Register main for future plain git pull commands, including single-branch clones.
     refspecs = run("config", "--get-all", "remote.origin.fetch").splitlines()
     main_refspec = f"refs/heads/{BRANCH}:refs/remotes/origin/{BRANCH}"

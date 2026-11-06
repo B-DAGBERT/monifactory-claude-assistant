@@ -91,6 +91,42 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual((self.client / name).read_text(), text)
         self.assertEqual((self.client / "codex.local.json").read_text(), '{"private":true}\n')
 
+    def publish_private_plan(self):
+        (self.source / "plan_ia.json").write_text('{"objectif_en_pause":false}')
+        self.git("add", "-f", "plan_ia.json")
+        self.git("commit", "-m", "Accidentally tracked private plan")
+        self.git("push", "origin", "main")
+
+    def assert_private_collision_refused(self, before, branch):
+        self.assertEqual(self.git("status", "--porcelain", cwd=self.client), "")
+        result = self.update()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("INSTALLER_CALLED", result.stdout)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), before)
+        self.assertEqual(self.git("branch", "--show-current", cwd=self.client), branch)
+        for name, text in self.personal.items():
+            self.assertEqual((self.client / name).read_text(), text)
+
+    def test_ignored_private_plan_tracked_upstream_blocks_fast_forward(self):
+        before = self.git("rev-parse", "HEAD", cwd=self.client)
+        self.publish_private_plan()
+        self.assert_private_collision_refused(before, "main")
+
+    def test_legacy_switch_to_existing_main_preserves_ignored_plan(self):
+        before = self.git("rev-parse", "HEAD", cwd=self.client)
+        self.git("switch", "-c", "shared-assistant", cwd=self.client)
+        self.publish_private_plan()
+        self.git("fetch", "origin", cwd=self.client)
+        self.git("branch", "-f", "main", "origin/main", cwd=self.client)
+        self.assert_private_collision_refused(before, "shared-assistant")
+
+    def test_legacy_creation_of_main_preserves_ignored_plan(self):
+        before = self.git("rev-parse", "HEAD", cwd=self.client)
+        self.git("branch", "-m", "shared-assistant", cwd=self.client)
+        self.publish_private_plan()
+        self.assert_private_collision_refused(before, "shared-assistant")
+        self.assertEqual(self.git("branch", "--list", "main", cwd=self.client), "")
+
     def test_legacy_branches_migrate_to_main_and_preserve_preferences(self):
         self.assertEqual(
             self.git("ls-remote", "--heads", "origin", "shared-assistant", "codex-compat"), ""
