@@ -82,13 +82,17 @@ public final class OrigineFabrication {
                                 slot.getItem().copy(), slot.getItem().getCount(), true));
         List<PlanRetrait.Stock<ItemStack>> gains = new ArrayList<>();
         List<ItemStack> vus = new ArrayList<>();
-        for (var pile : inventaire) {
-            ItemStack item = pile.objet();
-            if (vus.stream().anyMatch(s -> ItemStack.isSameItemSameTags(s, item))) continue;
-            vus.add(item);
-            int gain = Math.max(0, compte(inventaire, item) - compte(precedent, item));
-            boolean craft = crafts.stream().anyMatch(s -> s.getItem() == item.getItem());
-            if (craft && gain > 0) gains.add(new PlanRetrait.Stock<>(item.copy(), gain, true));
+        if (!crafts.isEmpty()) {
+            for (var pile : inventaire) {
+                ItemStack item = pile.objet();
+                // Sans événement sur cet item, son gain ne constitue aucune preuve de craft.
+                // Filtrer avant les comptages évite de comparer tout un backpack à chaque tick.
+                if (crafts.stream().noneMatch(s -> s.getItem() == item.getItem())) continue;
+                if (vus.stream().anyMatch(s -> ItemStack.isSameItemSameTags(s, item))) continue;
+                vus.add(item);
+                int gain = Math.max(0, compte(inventaire, item) - compte(precedent, item));
+                if (gain > 0) gains.add(new PlanRetrait.Stock<>(item.copy(), gain, true));
+            }
         }
         // Le serveur peut synchroniser les poches et le slot de sortie dans deux ticks.
         // Les gains de craft sont exclus du rapprochement pour rester crédités une seule fois.
