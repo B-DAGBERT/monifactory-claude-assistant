@@ -47,6 +47,7 @@ METHODS = {
     "start_objective",
     "action_effacer_objectif",
     "action_effacer_plan",
+    "clear_objective",
     "action_pause_objectif",
     "action_reprendre_objectif",
     "handle_mod_request",

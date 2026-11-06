@@ -508,18 +508,28 @@ class ProjectsController:
         self.set_objective_paused(False)
 
     def action_effacer_objectif(self, _action):
-        self.objective_paused = False
-        self.objective_epoch += 1
-        current = self.current_objective()
-        if current is not None:
-            self.objectives[current]["etat"] = "a_faire"
-        self.plan, self.reached, self.done_steps, self.undone_steps = None, set(), set(), set()
-        self.save_plan()
+        self.clear_objective(whole_plan=False)
 
-    def action_effacer_plan(self, action):
-        self.action_effacer_objectif(action)
-        self.objectives, self.plan_title, self.plan_why = [], "", ""
-        self.save_plan()
+    def action_effacer_plan(self, _action):
+        self.clear_objective(whole_plan=True)
+
+    def clear_objective(self, *, whole_plan):
+        state = self.project_snapshot()
+        main = state["plan_principal"]
+        if whole_plan:
+            main.update(titre="", pourquoi="", objectifs=[])
+        else:
+            current = self.current_objective()
+            if current is not None:
+                objectives = self.objectives.copy()
+                objectives[current] = {**objectives[current], "etat": "a_faire"}
+                main["objectifs"] = objectives
+        state.update(
+            objectif_en_pause=False, plan=None, atteints=[], etapes_faites=[], etapes_decochees=[]
+        )
+        # Keep the last complete project as the immediate backup before changing the view.
+        self.projects.save(state)
+        self.restore_project(state)
 
     def action_modifier_plan(self, action):
         """Remplace les objectifs qui restent à faire (ceux faits et celui en cours ne bougent pas)."""

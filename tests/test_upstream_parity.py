@@ -180,6 +180,7 @@ class ParityTests(unittest.TestCase):
             "App.check_craftable",  # publish only a complete current catalog; test_recipe_loading.py
             "App.load_recipes",
             "App.describe_journal",  # retain usable records beside a damaged record; test_journal_tail.py
+            "App.action_effacer_plan",  # keep the full pre-action backup; test_project_clear.py
         }
         tested_changes = tested_resilience_changes | tested_bridge_changes
         compatibility_changes |= tested_changes
