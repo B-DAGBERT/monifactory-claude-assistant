@@ -81,9 +81,15 @@ def backup_json(path, raw=None):
         _replace_bytes(path.with_name(path.name + ".bak"), raw, mode)
 
 
-def atomic_json(path, value, *, backup=True):
+def atomic_json(path, value, *, backup=True, compact=False):
     path = Path(path)
-    raw = json.dumps(value, ensure_ascii=False, indent=1, allow_nan=False).encode("utf-8")
+    raw = json.dumps(
+        value,
+        ensure_ascii=False,
+        indent=None if compact else 1,
+        separators=(",", ":") if compact else None,
+        allow_nan=False,
+    ).encode("utf-8")
     with _LOCK:
         try:
             mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600

@@ -101,6 +101,147 @@ class StorageSnapshotTests(unittest.TestCase):
                 self.assertEqual(scan.call_count, 2)
                 self.assertIsNone(service.view(bridge, storage, b, 601))
 
+    def test_search_ignores_heartbeat_only_after_choosing_the_newest_stock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = {
+                "actif": True,
+                "n": 1,
+                "fin": 600,
+                "monde": "test",
+                "dimension": "test:world",
+                "objets": ["test:plate"],
+            }
+            (root / "recherche_emi.json").write_text(json.dumps(request), encoding="utf-8")
+            bridge = SimpleNamespace(
+                dir=root,
+                read=lambda name: json.loads((root / name).read_text(encoding="utf-8")),
+            )
+            state = {"dimension": "test:world", "x": 0, "y": 64, "z": 0}
+            chest = {
+                **state,
+                "bloc": "minecraft:barrel",
+                "t": 2000,
+                "objets": [{"item": "test:plate", "n": 2}],
+            }
+            client = Storage([chest])
+            wire = {
+                "dimension": "test:world",
+                "zone": [0, 0, 0, 0],
+                "blocs": [{"p": [0, 64, 0], "b": "minecraft:barrel", "o": [["test:plate", 7]]}],
+            }
+            search = RecipeChestSearch()
+            from monifactory_assistant.game.emi_search import _matching_chests
+
+            with (
+                patch("monifactory_assistant.game.world.WORLD_FILE", root / "memory.json"),
+                patch(
+                    "monifactory_assistant.game.emi_search._matching_chests", wraps=_matching_chests
+                ) as matching,
+            ):
+                world = World()
+                for stamp, count in ((1000, 2), (3000, 7), (4000, 7)):
+                    self.assertTrue(world.update({**wire, "t": stamp}))
+                    view = search.view(bridge, world.merged(client), state, 0)
+                    self.assertEqual(view["coffres"][0]["n"], count)
+                self.assertEqual(matching.call_count, 2)
+
+                # Un même inventaire déplacé change ses contours et le coffre vide retire le précédent.
+                moved = [
+                    {"p": [0, 64, 0], "b": "minecraft:barrel", "o": []},
+                    {"p": [2, 64, 0], "b": "minecraft:barrel", "o": [["test:plate", 7]]},
+                ]
+                self.assertTrue(world.update({**wire, "t": 5000, "blocs": moved}))
+                view = search.view(bridge, world.merged(client), state, 0)
+                self.assertEqual([row["x"] for row in view["coffres"]], [2])
+                self.assertEqual(matching.call_count, 3)
+
+                # Un client ancien peut fournir plusieurs observations brutes au même emplacement.
+                duplicate = {**chest, "t": 1900, "objets": [{"item": "test:plate", "n": 13}]}
+                for t, count in ((1900, 2), (2100, 13)):
+                    raw = [{**duplicate, "t": t}, chest]
+                    view = search.view(bridge, Storage(raw), state, 0)
+                    self.assertEqual(view["coffres"][0]["n"], count)
+                self.assertEqual(matching.call_count, 5)
+
+    def test_emi_cache_freezes_counts_and_revalidates_invalid_items(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = {
+                "actif": True,
+                "n": 1,
+                "fin": 600,
+                "monde": "test",
+                "dimension": "test:world",
+                "objets": ["test:plate"],
+            }
+            (root / "recherche_emi.json").write_text(json.dumps(request), encoding="utf-8")
+            bridge = SimpleNamespace(dir=root, read=lambda _: request)
+            state = {"dimension": "test:world", "x": 0, "y": 64, "z": 0}
+            stack = {"item": "test:plate", "n": 1}
+            chest = {**state, "bloc": "minecraft:barrel", "objets": [stack]}
+            search = RecipeChestSearch()
+            self.assertEqual(search.view(bridge, Storage([chest]), state, 0)["coffres"][0]["n"], 1)
+            invalid = {**chest, "objets": [{**stack, "n": True}]}
+            self.assertEqual(search.view(bridge, Storage([invalid]), state, 0)["coffres"], [])
+            search.view(bridge, Storage([chest]), state, 0)
+            stack["n"] = 9
+            self.assertEqual(
+                search.view(bridge, Storage([chest.copy()]), state, 0)["coffres"][0]["n"], 9
+            )
+
+    def test_world_keeps_unchanged_dates_durable_and_recovers_atomic_write(self):
+        from monifactory_assistant import persistence
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "world.json"
+            frame = {
+                "dimension": "test:world",
+                "zone": [0, 0, 0, 0],
+                "blocs": [
+                    {"p": [0, 64, 0], "b": "minecraft:barrel", "o": [["test:plate", 1]]},
+                    {"p": [1, 64, 0], "b": "gtceu:lv_bender", "m": {"s": "IDLE"}},
+                ],
+            }
+            with patch("monifactory_assistant.game.world.WORLD_FILE", path):
+                world = World()
+                for i in range(200):
+                    self.assertTrue(world.update({**frame, "t": 1000 + 3000 * i}))
+                previous = world.blocks.copy()
+                self.assertEqual(World().blocks, previous)
+                self.assertTrue(all(b["t"] == 598_000 for b in previous.values()))
+                self.assertNotIn(b"\n", path.read_bytes())
+
+                replace = persistence._replace_bytes
+                changed = {
+                    "p": [1, 64, 0],
+                    "b": "gtceu:lv_bender",
+                    "m": {"s": "WORKING", "pr": 1, "du": 2},
+                }
+
+                def fail_primary(target, raw, mode):
+                    if target == path:
+                        raise PermissionError("fichier ouvert par un autre programme")
+                    return replace(target, raw, mode)
+
+                with patch.object(persistence, "_replace_bytes", side_effect=fail_primary):
+                    with self.assertRaises(PermissionError):
+                        world.update({**frame, "t": 601_000, "blocs": [changed]})
+                self.assertEqual(world.blocks, previous)
+                self.assertEqual(World().blocks, previous)
+
+                # Un fichier temporaire interrompu reste ignoré. Une copie principale
+                # incomplète peut être restaurée depuis la sauvegarde atomique.
+                (path.parent / ".world.json-interrompu.tmp").write_text(
+                    '{"blocs":', encoding="utf-8"
+                )
+                self.assertEqual(World().blocks, previous)
+                path.write_text('{"blocs":', encoding="utf-8")
+                self.assertEqual(World().blocks, previous)
+                self.assertTrue(world.update({**frame, "t": 601_000, "blocs": [changed]}))
+                self.assertEqual(World().machines()[0]["etat"]["s"], "WORKING")
+                self.assertEqual(World().containers()[0]["t"], 598_000)
+
     def run_server_script(self, before, after):
         node = shutil.which("node")
         if not node:

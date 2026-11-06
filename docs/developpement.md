@@ -440,3 +440,30 @@ Les quatre autres prompts (machine, projet, demande ambiguë, contexte complet) 
 empreinte SHA-256 avant et après. Les tests vérifient la recette exacte, les stocks rares,
 les machines compatibles, les dates et les positions des deux joueurs. Les temps de réponse
 et la qualité des modèles en partie réelle ne sont pas mesurés ici.
+
+## Écritures de la mémoire serveur et recherche EMI
+
+La mémoire serveur est écrite en JSON compact avec le même schéma. Chaque observation et sa date
+restent enregistrées immédiatement avec remplacement atomique et copie de récupération. La fusion
+choisit toujours la source la plus récente avant de préparer la recherche. Le cache EMI compare
+ensuite les positions et les inventaires sous une forme immuable. Les positions en conflit et les
+stocks invalides repassent par le calcul normal.
+
+`python -m tests.benchmarks.storage_snapshots` simule 200 relevés identiques sur dix minutes,
+avec 600 blocs dont 100 machines et une recherche active. Pour comparer à `03bb988`, exécuter le
+même fichier dans un dossier temporaire avec `PYTHONPATH` sur la référence. Résultats sur
+macOS ARM64, trois répétitions avec chaque version :
+
+| Mesure                                         | Avant          | Après          |
+| ---------------------------------------------- | -------------- | -------------- |
+| Remplacements atomiques, sauvegardes comprises | 399            | 399            |
+| Volume écrit                                   | 227,69 Mo      | 142,54 Mo      |
+| Reconstructions de la recherche EMI            | 200            | 1              |
+| Temps CPU médian pour les 200 cycles           | 6,57 s         | 3,42 s         |
+| P95 médian par cycle                           | 44,62 ms       | 21,26 ms       |
+| Lecture au redémarrage                         | 2,38 à 3,55 ms | 2,22 à 2,42 ms |
+
+Les 600 observations et leurs dates sont relues à l'identique. Le test de refus de remplacement
+vérifie la reprise sans état partiel, puis la restauration après fichier principal incomplet.
+Les tests de stock couvrent aussi le changement de source, le déplacement d'objets, l'ajout
+et le retrait de coffres, et les relevés incomplets. Les temps sont ceux du scénario local.

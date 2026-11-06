@@ -186,7 +186,7 @@ class World:
                     updated[key] = {**b, "t": date, "objets": [], "etat": None, "absent": True}
         updated.update(seen)
         if updated != self.blocks:
-            atomic_json(WORLD_FILE, {"blocs": updated})
+            atomic_json(WORLD_FILE, {"blocs": updated}, compact=True)
             self.blocks = updated
         players, errors = snapshot.get("joueurs"), snapshot.get("erreurs")
         self.players = (

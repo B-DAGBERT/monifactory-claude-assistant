@@ -4,7 +4,7 @@ import math
 import re
 
 from monifactory_assistant.game.snapshots import file_stamp
-from monifactory_assistant.game.storage import grouped_containers, position
+from monifactory_assistant.game.storage import grouped_containers, inventory_key, position
 
 ITEM = re.compile(r"[a-z0-9_.-]+:[a-z0-9_./-]+\Z")
 
@@ -34,6 +34,24 @@ def _validate(request, state, now):
 def _timestamp(chest):
     value = chest.get("t", 0)
     return value if isinstance(value, (int, float)) and math.isfinite(value) else 0
+
+
+def _stock_content(containers, dimension):
+    """Describe the search input after fusion, omitting timestamps only when positions are unique."""
+    content = {}
+    for chest in containers:
+        if not isinstance(chest, dict) or chest.get("dimension") != dimension:
+            continue
+        coordinates = position(chest)
+        if coordinates is None:
+            continue
+        if coordinates in content:
+            return None  # Conflicting raw observations still need timestamp ordering.
+        block, items = chest.get("bloc", ""), inventory_key(chest)
+        if not isinstance(block, str) or items is None:
+            return None
+        content[coordinates] = (block, items)
+    return tuple(content.items())
 
 
 def _matching_chests(containers, dimension, wanted):
@@ -142,6 +160,7 @@ class RecipeChestSearch:
         self.request = None
         self.storage = None
         self.criteria = None
+        self.stock_content = None
         self.matches = []
         self.origin = None
         self.ordered = []
@@ -166,11 +185,12 @@ class RecipeChestSearch:
         _, _, world, dimension, wanted = validated
         criteria = world, dimension, wanted
         if storage is not self.storage or criteria != self.criteria:
-            self.matches = _matching_chests(
-                getattr(storage, "raw", storage.containers), dimension, wanted
-            )
-            self.storage, self.criteria = storage, criteria
-            self.origin = None
+            containers = getattr(storage, "raw", storage.containers)
+            content = _stock_content(containers, dimension)
+            if criteria != self.criteria or content is None or content != self.stock_content:
+                self.matches = _matching_chests(containers, dimension, wanted)
+                self.origin = None
+            self.storage, self.criteria, self.stock_content = storage, criteria, content
         origin = _origin(state)
         if origin != self.origin:
             self.ordered = _ordered(self.matches, origin)
