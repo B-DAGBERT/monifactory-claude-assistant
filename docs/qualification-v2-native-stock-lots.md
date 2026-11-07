@@ -1,6 +1,6 @@
 # Qualification V2 des preuves natives de stock et de fabrication
 
-**Candidat de qualification.** Le calculateur conserve le Recipe Tree EMI et le planificateur existants. Le nouveau pont permet d'utiliser les quantités dont la provenance peut être contrôlée, puis sépare la collecte, la production attendue et la réception.
+**Publication shared.45 autorisée sur main le 7 novembre 2026. Qualification partielle.** Damien a demandé l'intégration après le compte rendu des 664 tests, des essais Mac et des limites des preuves natives. Windows 11, Claude, NTFS et FTB Chunks en multijoueur restent à qualifier. Le calculateur conserve le Recipe Tree EMI et le planificateur existants. Le nouveau pont permet d'utiliser les quantités dont la provenance peut être contrôlée, puis sépare la collecte, la production attendue et la réception.
 
 ## A — État Git et artefacts
 
@@ -241,5 +241,4 @@ Reprendre [la procédure à deux joueurs](recette-v2-multijoueur.md) sur le mêm
 **Verdict PARTIAL.** Le candidat fournit une allocation native à partir d'un coffre ouvert
 et les attentes des lots EMI dont la portée et l'état sont vérifiables. Les réservations
 physiques et les réceptions GregTech restent indéterminées en l'absence de preuve de
-transaction. La branche de qualification est locale. Le bundle Git vérifié contient le code et les guides de ce candidat. Les validations réelles Windows/FTB
-et les parcours GregTech restant sans preuve doivent être consignés avant toute fusion sur `main`. Une validation sur la branche publique shared.42 reste une preuve historique.
+transaction. Le 7 novembre 2026, Damien a autorisé la publication de ce périmètre sur `main` après présentation de ces limites. Le code publié est celui des essais Mac et des 664 tests. Le bundle Git vérifié permet aussi de rejouer la qualification du candidat initial. Les essais Windows/FTB et les parcours GregTech sans preuve restent à consigner. Leur absence conserve le verdict **PARTIAL**. Une validation sur la branche publique shared.42 reste une preuve historique.

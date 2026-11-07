@@ -24,6 +24,7 @@ chaque poste. Les conversations, relevés de coffres et objectifs restent locaux
 | Avancer étape par étape                   | **Y → Objectif** ; **Mes projets ▾** pour ouvrir, créer, renommer ou supprimer.                        |
 | Mettre un objectif en attente             | **Objectif / Projet → Mettre en pause**. Le statut apparaît dans les deux onglets.                     |
 | Préparer le craft complet                 | **Objectif EMI**, puis choisir les branches de **Recipe Tree**.                                        |
+| Calculer les besoins de production        | **Y → Production**, depuis l’arbre EMI ou un coffre ouvert pour utiliser son relevé courant.           |
 | Chercher les ingrédients                  | **Coffres**, à droite de Recipe Tree. Un second clic arrête le scan.                                   |
 | Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.                                 |
 | Utiliser une machine                      | Contour rouge, puis **Envoyer** dans sa fenêtre. Récupérer soi-même les sorties.                       |
@@ -53,6 +54,7 @@ le menu en jeu pendant la qualification du consentement R5.
 - [Conversation Codex et panneau en lecture seule](docs/codex.md)
 - [Partager une fonctionnalité avec un collègue](docs/collaboration.md)
 - [Scénarios EMI basiques et complexes à la demande](docs/scenarios.md)
+- [Production shared.45, preuves natives et qualification Mac/Windows](docs/qualification-v2-native-stock-lots.md)
 - [Organisation du code, formatage et tests](docs/developpement.md)
 - [Qualification de l’isolation des mondes et procédure de restauration](docs/isolation-mondes.md)
 - [Audit d’architecture V1.5](docs/audit-architecture-v1.5.md) et [qualification des correctifs](docs/qualification-v1.5.md)
