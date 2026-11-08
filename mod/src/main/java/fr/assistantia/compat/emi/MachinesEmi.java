@@ -766,6 +766,7 @@ public final class MachinesEmi {
 
     private static void actualiserInterface() {
         if (ecran == null || EnvoiMachine.occupe()) return;
+        actualise = System.currentTimeMillis();
         actualiserArbre();
         try {
             var ui = GregTechMachines.ouvrir(ecran.getMenu());
