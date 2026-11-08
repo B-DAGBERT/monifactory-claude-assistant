@@ -49,20 +49,45 @@ LDLib déportés. Cliquer sur une icône sélectionne ce produit et ouvre sa rec
 
 Pendant un envoi, la progression est affichée et les doubles clics sont ignorés. Fermer le menu, arrêter l’arbre ou mettre l’objectif en pause interrompt les actions restantes. Si le serveur refuse un transfert ou qu’une case change, les clics ne sont pas répétés automatiquement : vérifier les entrées et l’objet éventuellement sur le curseur avant de réessayer. Les machines sans entrées accessibles ne permettent pas cet envoi.
 
+## Dans quel ordre fabriquer ?
+
+**Suivi** et le panneau de la machine classent les opérations selon les dépendances de l’arbre EMI choisi et les ressources utilisables :
+
+| Groupe              | Ce qu’il contient                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------- |
+| À lancer maintenant | Au moins une fabrication réalisable avec les ingrédients physiques et les préconditions vérifiées. |
+| À préparer          | Une collecte, un déplacement d’objets ou un réglage reste nécessaire.                              |
+| En cours            | Les lots existants et leurs sorties attendues, séparés du stock disponible.                        |
+| Étapes suivantes    | Une dépendance, une ressource ou une information manque ; le détail indique le blocage.            |
+
+**Prêt** recommande **une fabrication**, sans garantir que toute la quantité restante peut être lancée. Le nombre de fabrications encore nécessaires reste inchangé. Les composants déjà disponibles et les lots en attente gardent leur rôle dans le calcul des besoins.
+
+Les recommandations partagent virtuellement les ressources : quatre lingots ne peuvent pas rendre simultanément prêts deux crafts qui en consomment trois chacun. **Stock partagé · autre priorité** signale une alternative ; choisir cette recette reste possible si le contrôle actuel de la machine l’autorise. Ce classement ne réserve ni ne déplace d’objet dans le jeu.
+
+Pour ce classement, un coffre compte seulement lorsque son menu natif est encore ouvert et son contenu attesté. Ouvrir **Suivi** depuis ce coffre conserve cette lecture ; les anciens relevés mémorisés n’annoncent pas un craft prêt. Un objet attesté dans le sac ou le coffre reste à ramener dans les poches. Une machine non vérifiée apparaît dans **Étapes suivantes**, même si ses ingrédients sont possédés. Le menu de la machine ouverte contrôle ses entrées, son circuit et les possibilités d’envoi ; cela ne garantit pas son alimentation en énergie.
+
+Dans **Suivi**, cliquer sur un titre replie ou déplie son groupe ; **Tout déplier / Tout replier** agit sur l’ensemble. Les deux premiers groupes sont ouverts au départ. S’ils sont vides, le premier groupe disponible s’ouvre, sans modifier ensuite un choix de repli explicite. Le détail complet reste accessible au survol.
+
+L’ordre se réactualise avec les données utiles. La sélection reste attachée à la recette et au lot, même si leur place change. Dans une machine, un choix explicite est conservé tant que la recette est encore proposée. Un clic visant un ancien arbre, une ancienne quantité ou un contexte remplacé est refusé : attendre le nouvel affichage puis sélectionner à nouveau. Aucun craft, transfert ou changement d’objectif ne démarre automatiquement.
+
 ## Suivi et reprise
 
 Le bouton **Suivi** est placé à côté de **Coffres**, en bas d’EMI. Dans le panneau d’une machine, **En cours de craft** permet directement de déclarer le lot sélectionné. Chaque ligne affiche le produit, le nombre de fabrications et son état :
 
-| État             | Signification                                                                                                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| À collecter      | Il manque encore des ingrédients dans l’inventaire pour un lot.                                                                                               |
-| Circuit à régler | Le réglage virtuel de la machine doit être corrigé avant l’envoi.                                                                                             |
-| À envoyer        | Les ingrédients d’au moins une fabrication machine sont disponibles. Le panneau de la machine vérifie ensuite ses entrées, sa place et son activité.          |
-| À sortir du sac  | Les ingrédients sont possédés mais doivent être déplacés dans les poches avant utilisation.                                                                   |
-| À fabriquer      | Les ingrédients d’au moins une fabrication manuelle sont disponibles.                                                                                         |
-| En machine       | Le dépôt a réussi ou le lot a été déclaré manuellement ; ses sorties garanties restent réservées. Cela ne garantit pas que la machine reçoit assez d’énergie. |
-| À récupérer      | Une sortie attendue a été observée dans l’interface de cette machine.                                                                                         |
-| Terminé          | Les résultats attendus ont été récupérés.                                                                                                                     |
+| État                               | Signification                                                                                       |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Prêt                               | Une fabrication est recommandée ; consulter le panneau pour les quantités effectivement envoyables. |
+| À récupérer dans les poches        | Les ressources sont attestées, mais pas encore toutes utilisables directement.                      |
+| Circuit à régler                   | Corriger le réglage virtuel indiqué avant l’envoi.                                                  |
+| Déjà en machine                    | Les ingrédients sont déjà dans les entrées ; vérifier le lancement.                                 |
+| Stock partagé · autre priorité     | Une autre recommandation utilise les mêmes ressources.                                              |
+| Machine à vérifier / Stock inconnu | Les informations disponibles ne permettent pas d’annoncer le craft prêt.                            |
+| Attend : … / Manque : …            | Préparer le composant ou trouver la ressource indiquée.                                             |
+| Cycle détecté                      | Revoir les branches choisies dans EMI ; cette chaîne n’est pas ordonnançable telle quelle.          |
+| En machine                         | Lot envoyé ou déclaré manuellement ; ses sorties restent attendues.                                 |
+| À récupérer / Terminé              | État de récupération estimé par le suivi client. Vérifier la sortie ou le stock réel.               |
+
+Les états des lots conservent le fonctionnement du suivi local. Une réception déduite uniquement de mouvements proches n’est pas une preuve de transfert exact : **Production V2** exclut les lots affectés de ses allocations.
 
 Sélectionner une recette donne accès à **Recette** et **En cours de craft**. Ce bouton sert aux fabrications déjà lancées manuellement. Pour **moins de 64 résultats**, il marque directement toute la quantité restante, sans fenêtre. À partir de **64 résultats**, il ouvre le choix de quantité : saisir le nombre de fabrications ou choisir **Tout le lot**, puis confirmer. Le seuil tient compte des objets produits par fabrication ; les fluides et sous-produits aléatoires ne déclenchent pas la fenêtre. Le nombre de résultats réservé est affiché avant confirmation. Seules les sorties objets garanties sont réservées pour un lot manuel. Leur réception réelle réduit la réservation, y compris si les objets arrivent dans le backpack. Les objets déjà possédés au moment de la déclaration ne valident pas ce lot. Ranger puis reprendre le même résultat ne valide pas une deuxième unité ; une nouvelle fabrication prouvée reste comptée même si le premier résultat a été rangé. Une réservation ne fait jamais avancer à elle seule l’objectif. Un lot déclaré manuellement n’a pas de position de machine : il reste visible dans **Suivi** et ne bloque pas l’ouverture d’une autre machine. Pour un lot encore en attente, le même emplacement propose **Annuler le lot**. Échap depuis la recette ramène au suivi ; **Retour** ramène au menu précédent.
 

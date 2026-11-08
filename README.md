@@ -19,21 +19,22 @@ chaque poste. Les conversations, relevés de coffres et objectifs restent locaux
 
 ## Trouver la bonne fonction
 
-| Besoin                                    | Où aller                                                                                               |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Avancer étape par étape                   | **Y → Objectif** ; **Mes projets ▾** pour ouvrir, créer, renommer ou supprimer.                        |
-| Mettre un objectif en attente             | **Objectif / Projet → Mettre en pause**. Le statut apparaît dans les deux onglets.                     |
-| Préparer le craft complet                 | **Objectif EMI**, puis choisir les branches de **Recipe Tree**.                                        |
-| Calculer les besoins de production        | **Y → Production**, depuis l’arbre EMI ou un coffre ouvert pour utiliser son relevé courant.           |
-| Chercher les ingrédients                  | **Coffres**, à droite de Recipe Tree. Un second clic arrête le scan.                                   |
-| Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.                                 |
-| Utiliser une machine                      | Contour rouge, puis **Envoyer** dans sa fenêtre. Récupérer soi-même les sorties.                       |
-| Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                                             |
-| Voir les stocks ou les filons connus      | **Y → Base / Filons**.                                                                                 |
-| Poser une question                        | **Y → Discussion**.                                                                                    |
-| Comprendre un problème                    | **Y → Réglages → Diagnostic…** : connexion, inventaire, EMI, transferts et erreurs.                    |
-| Régler l’affichage et la luminosité       | **Y → Réglages**, onglet le plus à droite.                                                             |
-| Choisir les modèles et la réflexion       | **Y → Réglages → Modèles IA…**, choisir dans la liste puis **Appliquer** pour les prochaines demandes. |
+| Besoin                                    | Où aller                                                                                                       |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Avancer étape par étape                   | **Y → Objectif** ; **Mes projets ▾** pour ouvrir, créer, renommer ou supprimer.                                |
+| Mettre un objectif en attente             | **Objectif / Projet → Mettre en pause**. Le statut apparaît dans les deux onglets.                             |
+| Préparer le craft complet                 | **Objectif EMI**, puis choisir les branches de **Recipe Tree**.                                                |
+| Calculer les besoins de production        | **Y → Production**, depuis l’arbre EMI ou un coffre ouvert pour utiliser son relevé courant.                   |
+| Chercher les ingrédients                  | **Coffres**, à droite de Recipe Tree. Un second clic arrête le scan.                                           |
+| Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.                                         |
+| Utiliser une machine                      | Contour rouge, puis **Envoyer** dans sa fenêtre. Récupérer soi-même les sorties.                               |
+| Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                                                     |
+| Savoir quoi fabriquer en premier          | **Suivi**, groupes À lancer maintenant / À préparer. Le panneau machine classe aussi ses recettes compatibles. |
+| Voir les stocks ou les filons connus      | **Y → Base / Filons**.                                                                                         |
+| Poser une question                        | **Y → Discussion**.                                                                                            |
+| Comprendre un problème                    | **Y → Réglages → Diagnostic…** : connexion, inventaire, EMI, transferts et erreurs.                            |
+| Régler l’affichage et la luminosité       | **Y → Réglages**, onglet le plus à droite.                                                                     |
+| Choisir les modèles et la réflexion       | **Y → Réglages → Modèles IA…**, choisir dans la liste puis **Appliquer** pour les prochaines demandes.         |
 
 Le contenu des **Sophisticated Backpacks portés** compte dans les besoins, EMI et l’avancement.
 Les boutons de transfert utilisent les cases accessibles : sortir les ingrédients du sac pour les envoyer.
@@ -51,6 +52,7 @@ le menu en jeu pendant la qualification du consentement R5.
 
 - [Utilisation des menus, objectifs et filons](docs/utilisation.md)
 - [Collecte EMI, machines, backpack et limites du suivi](docs/emi-transferts.md)
+- [Ordre des fabrications, priorités et qualification shared.46](docs/ordonnancement-machines.md)
 - [Conversation Codex et panneau en lecture seule](docs/codex.md)
 - [Partager une fonctionnalité avec un collègue](docs/collaboration.md)
 - [Scénarios EMI basiques et complexes à la demande](docs/scenarios.md)
