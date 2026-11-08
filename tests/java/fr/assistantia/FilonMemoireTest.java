@@ -23,6 +23,7 @@ public final class FilonMemoireTest {
         importHistorique();
         pauseScan();
         scanPonctuel();
+        scanCuboideUraninite();
         fraicheur();
         arrivee();
         mondeActif();
@@ -391,6 +392,44 @@ public final class FilonMemoireTest {
         verifier(
                 scan.suivant(centre) != null && !scan.termine(),
                 "Reprise automatique après 100 % sans dépassement du curseur");
+    }
+
+    static void scanCuboideUraninite() {
+        var centre = p(100, 40, -100);
+        var minerai = p(125, 15, -100);
+        var scan = new FilonMemoire.Scan();
+        scan.lancerPonctuel(centre);
+        boolean atteint = false;
+        for (FilonMemoire.Position bloc; (bloc = scan.suivant(centre)) != null; )
+            atteint |= bloc.equals(minerai);
+        verifier(!atteint, "Le cube historique manque le minerai bas et décalé");
+
+        var volume = FilonMemoire.VolumeScan.cuboide(centre, 30, 10, 40, 7);
+        verifier(
+                volume != null && volume.total() == 44 * 44 * 32,
+                "Bornes du générateur cuboïde de l’uraninite");
+        verifier(
+                volume.contient(p(86, 9, -114)) && volume.contient(p(129, 40, -71)),
+                "Bornes basses et hautes incluses");
+        verifier(
+                !volume.contient(p(130, 40, -71)) && !volume.contient(p(86, 8, -114)),
+                "Bords exclus");
+        scan.lancerPonctuel(centre, volume);
+        Set<FilonMemoire.Position> visites = new HashSet<>();
+        for (FilonMemoire.Position bloc; (bloc = scan.suivant(p(0, 60, -200))) != null; ) {
+            verifier(
+                    volume.contient(bloc) && visites.add(bloc),
+                    "Une seule visite par position du volume");
+        }
+        verifier(
+                visites.contains(minerai) && visites.size() == volume.total(),
+                "Le parcours atteint le minerai et couvre tout le volume");
+        verifier(scan.termine() && scan.pourcentage() == 100, "Fin automatique à 100 %");
+        scan.activer(true);
+        verifier(scan.volume() == null && scan.suivant(centre).equals(centre), "Reprise standard");
+        verifier(
+                FilonMemoire.VolumeScan.cuboide(centre, 128, 0, 320, 7) == null,
+                "Volume trop coûteux refusé");
     }
 
     static void fraicheur() {

@@ -197,9 +197,11 @@ n’est nécessaire.
 
 ## Filons : scan, marquage et téléportation
 
-Sélectionner un filon puis **Scanner** : le scan vise son centre GregTech, même si tu es
-à la surface. Le pourcentage apparaît dans le statut du bas et sur le bouton du filon pendant
-son scan. Le scan ponctuel s’arrête à la fin de son parcours.
+Sélectionner un filon puis **Scanner**. Pour un filon cuboïde reconnu par GregTech, le scan
+couvre les hauteurs et l’étendue horizontale indiquées par son générateur. Les autres filons
+gardent la recherche à 16 blocs du repère. Seuls les blocs chargés sont lus. Le pourcentage
+apparaît pendant le parcours, qui s’arrête automatiquement. Un résultat vide laisse le total du
+gisement inconnu.
 
 Les deux lignes en haut regroupent **recherche / tri**, puis **Épuisés masqués / Vue / Blocs**.
 Les boutons **Vue** et **Blocs** changent de valeur à chaque clic, avec sauvegarde locale immédiate :

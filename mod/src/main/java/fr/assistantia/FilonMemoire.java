@@ -42,6 +42,7 @@ public final class FilonMemoire {
         public final List<Bloc> blocs = new ArrayList<>();
         public String definition = "", nom = "";
         public Set<String> composition = Set.of();
+        Object definitionNative; // disponible uniquement après lecture du journal de la connexion
         public boolean epuise; // état du journal GregTech
         private boolean epuiseManuel;
 
@@ -226,10 +227,16 @@ public final class FilonMemoire {
     // Les accès d'observation placent les blocs revus en fin de liste (LRU).
     private final Map<String, Bloc> blocs = new LinkedHashMap<>(16, .75f, true);
     private Position zoneScan;
+    private VolumeScan volumeProtege;
     private long remplaces;
 
     public void protegerScan(Position centre) {
+        protegerScan(centre, null);
+    }
+
+    public void protegerScan(Position centre, VolumeScan volume) {
         zoneScan = centre;
+        volumeProtege = volume;
     }
 
     public long remplaces() {
@@ -251,7 +258,11 @@ public final class FilonMemoire {
             var it = blocs.values().iterator();
             while (it.hasNext() && retires.size() < LOT_ROTATION) {
                 Bloc b = it.next();
-                if (passe == 0 ? b.retire : !dansZone(b.position, zoneScan)) {
+                boolean protege =
+                        volumeProtege == null
+                                ? dansZone(b.position, zoneScan)
+                                : volumeProtege.contient(b.position);
+                if (passe == 0 ? b.retire : !protege) {
                     retires.add(b);
                     it.remove();
                 }
@@ -352,6 +363,50 @@ public final class FilonMemoire {
         f.blocs.add(b);
     }
 
+    /** Enveloppe des positions possibles du générateur cuboïde GTCEu 7.5. */
+    public record VolumeScan(Position minimum, int largeur, int hauteur) {
+        static VolumeScan cuboide(Position ancre, int taille, int minY, int maxY, int couches) {
+            if (taille < 2
+                    || taille > 128
+                    || minY < -4095
+                    || maxY > 4095
+                    || (long) maxY - minY <= 5
+                    || couches < 1
+                    || couches > 128) return null;
+            int marge = taille / 2 - 1;
+            int largeur = 16 + 2 * marge;
+            // GT tire le bas dans [minY - 1, maxY - 7], puis parcourt 0 à couches inclus.
+            int hauteur = maxY - 7 + couches - (minY - 1) + 1;
+            if ((long) largeur * largeur * hauteur > 500_000) return null;
+            return new VolumeScan(
+                    new Position(ancre.dimension, ancre.x - marge, minY - 1, ancre.z - marge),
+                    largeur,
+                    hauteur);
+        }
+
+        int total() {
+            return largeur * largeur * hauteur;
+        }
+
+        Position position(int index) {
+            return new Position(
+                    minimum.dimension,
+                    minimum.x + index % largeur,
+                    minimum.y + index / (largeur * largeur),
+                    minimum.z + index / largeur % largeur);
+        }
+
+        boolean contient(Position position) {
+            return minimum.dimension.equals(position.dimension)
+                    && position.x >= minimum.x
+                    && position.x < minimum.x + largeur
+                    && position.y >= minimum.y
+                    && position.y < minimum.y + hauteur
+                    && position.z >= minimum.z
+                    && position.z < minimum.z + largeur;
+        }
+    }
+
     /** Cube parcouru de façon incrémentale, pas de scan complet par image. */
     public static final class Scan {
         public static final int RAYON = 16, COTE = 2 * RAYON + 1, TOTAL = COTE * COTE * COTE;
@@ -371,6 +426,7 @@ public final class FilonMemoire {
         }
 
         private Position centre;
+        private VolumeScan volume;
         private int index;
         private boolean actif = true, ponctuel, termine;
 
@@ -391,7 +447,12 @@ public final class FilonMemoire {
         }
 
         public void lancerPonctuel(Position joueur) {
+            lancerPonctuel(joueur, null);
+        }
+
+        public void lancerPonctuel(Position joueur, VolumeScan volume) {
             centre = joueur;
+            this.volume = volume;
             index = 0;
             actif = ponctuel = true;
             termine = false;
@@ -401,12 +462,21 @@ public final class FilonMemoire {
             if (actif == valeur) return false;
             actif = valeur;
             ponctuel = termine = false;
-            if (index == TOTAL) index = 0;
+            if (volume != null || index == TOTAL) index = 0;
+            volume = null;
             return true;
         }
 
         public Position centre() {
             return centre;
+        }
+
+        public VolumeScan volume() {
+            return volume;
+        }
+
+        private int total() {
+            return volume == null ? TOTAL : volume.total();
         }
 
         public Position suivant(Position joueur) {
@@ -419,14 +489,19 @@ public final class FilonMemoire {
                 centre = joueur;
                 index = 0;
             }
-            int i = ORDRE[index++];
-            Position resultat =
-                    new Position(
-                            centre.dimension,
-                            centre.x + i % COTE - RAYON,
-                            centre.y + i / (COTE * COTE) - RAYON,
-                            centre.z + i / COTE % COTE - RAYON);
-            if (index == TOTAL) {
+            Position resultat;
+            if (volume != null) {
+                resultat = volume.position(index++);
+            } else {
+                int i = ORDRE[index++];
+                resultat =
+                        new Position(
+                                centre.dimension,
+                                centre.x + i % COTE - RAYON,
+                                centre.y + i / (COTE * COTE) - RAYON,
+                                centre.z + i / COTE % COTE - RAYON);
+            }
+            if (index == total()) {
                 if (ponctuel) {
                     actif = ponctuel = false;
                     termine = true;
@@ -439,7 +514,7 @@ public final class FilonMemoire {
         }
 
         public int pourcentage() {
-            return index * 100 / TOTAL;
+            return index * 100 / total();
         }
     }
 

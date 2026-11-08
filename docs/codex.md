@@ -154,7 +154,7 @@ Les données proviennent du cache de prospection de GTCEu 7 (intégration vérif
 Les gisements déjà découverts sont récupérés, sans IA et sans nouveau scan de blocs.
 Seule la dimension active du monde identifié par GregTech est affichée.
 
-- **Scanner ce filon** (dans sa fiche) : un passage à 16 blocs autour du centre du gisement sélectionné,
+- **Scanner ce filon** (dans sa fiche) : un passage dans la zone du générateur GregTech pour les filons cuboïdes reconnus, ou à 16 blocs autour du repère,
   même si le joueur se trouve au-dessus. Le centre doit être chargé côté client. Le bilan distingue les
   positions vérifiées et celles non chargées, et ne garantit pas la totalité du gisement.
 - **Scanner autour de moi** (en haut) : un passage dans un cube à 16 blocs du point de départ, avec progression,

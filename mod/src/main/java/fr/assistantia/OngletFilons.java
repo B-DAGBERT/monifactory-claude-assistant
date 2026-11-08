@@ -493,7 +493,7 @@ public final class OngletFilons {
                                                     + " %. Fin automatique."
                                             : !raisonScan.isEmpty()
                                                     ? raisonScan
-                                                    : "Scanner les blocs chargés à 16 blocs du centre de ce filon.")));
+                                                    : "Scanner les blocs chargés dans la zone de ce filon.")));
             teleporter.active = raison.isEmpty();
             teleporter.setMessage(Component.literal(Filons.tpEnCours() ? "TP…" : "TP"));
             teleporter.setTooltip(

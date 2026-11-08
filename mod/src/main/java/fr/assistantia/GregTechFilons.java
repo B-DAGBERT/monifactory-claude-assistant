@@ -136,6 +136,7 @@ public final class GregTechFilons {
                                                     .getMethod("getName", vein.getClass())
                                                     .invoke(null, vein))
                                     .getString();
+                    Object definition = appel(vein, "definition");
                     change |=
                             memoire.gisement(
                                     cle,
@@ -143,8 +144,9 @@ public final class GregTechFilons {
                                             dim, centre.getX(), centre.getY(), centre.getZ()),
                                     type,
                                     nom,
-                                    composition(appel(vein, "definition")),
+                                    composition(definition),
                                     (boolean) appel(vein, "depleted"));
+                    memoire.filon(cle).definitionNative = definition;
                 }
             erreur = "";
             return change;
@@ -152,6 +154,45 @@ public final class GregTechFilons {
             echec(e);
             return false;
         }
+    }
+
+    static FilonMemoire.VolumeScan volumeScan(FilonMemoire.Filon filon) {
+        if (filon.definitionNative == null) return null;
+        try {
+            Object generateur = appel(filon.definitionNative, "veinGenerator");
+            Class<?> type = generateur.getClass();
+            if (!type.getName()
+                    .equals(BASE + "api.data.worldgen.generator.veins.CuboidVeinGenerator"))
+                return null;
+            var taille =
+                    (net.minecraft.util.valueproviders.IntProvider)
+                            appel(filon.definitionNative, "clusterSize");
+            int couches =
+                    couches(type, generateur, "top", 2)
+                            + couches(type, generateur, "middle", 3)
+                            + couches(type, generateur, "bottom", 2);
+            return FilonMemoire.VolumeScan.cuboide(
+                    filon.ancre,
+                    taille.getMaxValue(),
+                    champ(type, "minY").getInt(generateur),
+                    champ(type, "maxY").getInt(generateur),
+                    couches);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null; // définition absente ou inconnue : conserver le scan de proximité
+        }
+    }
+
+    private static Field champ(Class<?> type, String nom) throws ReflectiveOperationException {
+        Field field = type.getDeclaredField(nom);
+        field.setAccessible(true);
+        return field;
+    }
+
+    private static int couches(Class<?> type, Object generateur, String nom, int defaut)
+            throws ReflectiveOperationException {
+        Object couche = champ(type, nom).get(generateur);
+        int nombre = couche.getClass().getField("layers").getInt(couche);
+        return nombre == -1 ? defaut : nombre;
     }
 
     /** En solo seulement : prospection GT native des 9 chunks déjà chargés au point de départ. */

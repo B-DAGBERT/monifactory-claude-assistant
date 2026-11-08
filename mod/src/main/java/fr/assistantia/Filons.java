@@ -153,12 +153,15 @@ public final class Filons {
         }
         cibleScan = id;
         positionsLues = positionsNonChargees = 0;
-        scan.lancerPonctuel(f.ancre);
-        memoire.protegerScan(f.ancre);
+        var volume = GregTechFilons.volumeScan(f);
+        scan.lancerPonctuel(f.ancre, volume);
+        memoire.protegerScan(f.ancre, volume);
         rotationDebut = memoire.remplaces();
         prochainScan = System.currentTimeMillis() + 650;
         message =
-                "Scan du filon sélectionné : 16 blocs autour de son centre, uniquement dans les chunks chargés.";
+                volume == null
+                        ? "Scan du filon : 16 blocs autour du centre, dans les chunks chargés."
+                        : "Scan du filon : zone du générateur GregTech, dans les chunks chargés.";
         modifie = true;
         sauver(true);
     }
@@ -575,7 +578,7 @@ public final class Filons {
         for (int n = 0; n < 192 && System.nanoTime() < limite; n++) {
             var suivante = scan.suivant(joueur);
             if (suivante == null) break;
-            memoire.protegerScan(scan.centre());
+            memoire.protegerScan(scan.centre(), scan.volume());
             if (!mc.level.isOutsideBuildHeight(bloc(suivante))) {
                 if (mc.level.hasChunkAt(bloc(suivante))) {
                     observer(mc.level, suivante, now);
@@ -596,7 +599,9 @@ public final class Filons {
                                                     ? " autour de toi"
                                                     : " du filon : "
                                                             + f.restants()
-                                                            + " blocs repérés")
+                                                            + (f.restants() == 0
+                                                                    ? " bloc repéré dans la zone vérifiée"
+                                                                    : " blocs repérés"))
                                             + " · "
                                             + positionsLues
                                             + " positions vérifiées"
