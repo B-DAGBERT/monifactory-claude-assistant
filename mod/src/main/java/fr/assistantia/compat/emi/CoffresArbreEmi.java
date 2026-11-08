@@ -97,10 +97,7 @@ public final class CoffresArbreEmi {
                 && !name.equals("dev.emi.emi.screen.RecipeScreen")
                 && !name.equals("dev.emi.emi.screen.BoMScreen")) return;
         var scan = new BoutonOutilEmi(Component.literal("Coffres OFF"), b -> basculer());
-        var suivi =
-                new BoutonOutilEmi(
-                        Component.literal("Suivi"),
-                        b -> Minecraft.getInstance().setScreen(new SuiviEmiEcran(screen)));
+        var suivi = new BoutonOutilEmi(Component.literal("Suivi"), b -> ouvrirSuivi(screen));
         var sac =
                 new BoutonOutilEmi(
                         Component.literal("Sac"),
@@ -110,7 +107,7 @@ public final class CoffresArbreEmi {
         var menu =
                 new BoutonOutilEmi(
                         Component.literal("Aide…"),
-                        b -> Minecraft.getInstance().setScreen(new Menu(screen)));
+                        b -> ouvrirDepuisCoffre(screen, new Menu(screen)));
         boutons.put(screen, scan);
         suivis.put(screen, suivi);
         sacs.put(screen, sac);
@@ -131,6 +128,15 @@ public final class CoffresArbreEmi {
 
     private static List<Map<Screen, Button>> cartes() {
         return List.of(boutons, suivis, sacs, menus);
+    }
+
+    private static void ouvrirSuivi(Screen parent) {
+        ouvrirDepuisCoffre(parent, new SuiviEmiEcran(parent));
+    }
+
+    private static void ouvrirDepuisCoffre(Screen parent, Screen suivant) {
+        if (!fr.assistantia.StockProduction.ouvrirSuivi(parent, suivant))
+            Minecraft.getInstance().setScreen(suivant);
     }
 
     private static void masquer(Screen screen) {
@@ -281,11 +287,15 @@ public final class CoffresArbreEmi {
     /** Repli unique : aucune rangée supplémentaire ne recouvre les contrôles des autres mods. */
     private static final class Menu extends Screen {
         private final Screen parent;
+        private final Object connexionOuverture, mondeOuverture;
         private Button scan, suivi, sac;
 
         Menu(Screen parent) {
             super(Component.literal("Outils EMI"));
             this.parent = parent;
+            var mc = Minecraft.getInstance();
+            connexionOuverture = mc.getConnection();
+            mondeOuverture = mc.level;
         }
 
         @Override
@@ -305,7 +315,7 @@ public final class CoffresArbreEmi {
                     addRenderableWidget(
                             Button.builder(
                                             Component.literal("Suivi des fabrications"),
-                                            b -> minecraft.setScreen(new SuiviEmiEcran(parent)))
+                                            b -> ouvrirSuivi(parent))
                                     .bounds(x, 86, largeur, 20)
                                     .build());
             sac =
@@ -353,7 +363,15 @@ public final class CoffresArbreEmi {
 
         @Override
         public void onClose() {
-            if (minecraft != null) minecraft.setScreen(parent);
+            if (minecraft == null) return;
+            boolean contexte =
+                    connexionOuverture == minecraft.getConnection()
+                            && mondeOuverture == minecraft.level;
+            boolean menu =
+                    !(parent instanceof AbstractContainerScreen<?> conteneur)
+                            || minecraft.player != null
+                                    && minecraft.player.containerMenu == conteneur.getMenu();
+            minecraft.setScreen(contexte && menu ? parent : null);
         }
 
         @Override

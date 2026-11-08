@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.Connection;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -253,6 +254,42 @@ public final class StockProductionTest {
                 "reconnect rejects old parent even before tick");
     }
 
+    private static void suivi() {
+        var m = menu(false);
+        full(m);
+        var parent = (AbstractContainerScreen<?>) MC.screen;
+        var suivant = new Screen();
+        check(!StockProduction.ouvrirSuivi(parent, null), "null target rejected");
+        check(!StockProduction.ouvrirSuivi(parent, parent), "same screen rejected");
+        check(MC.screen == parent && parent.removed == 0, "refusal leaves menu untouched");
+        check(StockProduction.ouvrirSuivi(parent, suivant), "attested chest opens follow-up");
+        check(
+                MC.screen == suivant && parent.removed == 0 && MC.player.containerMenu == m,
+                "follow-up preserves the native container");
+        check(capture() != null, "same full packet remains available in follow-up");
+        check(!StockProduction.garderMenu(parent), "preservation only during transition");
+        check(!StockProduction.ouvrirSuivi(parent, new Screen()), "stale screen cannot reopen");
+        MC.setScreen(new Screen());
+        check(
+                capture() != null && StockProduction.retourPossible(parent),
+                "compact tools then follow-up keep the same native menu without a new packet");
+        StockProduction.variation(MC.listener.getConnection());
+        check(capture() == null, "stock changes revoke evidence in follow-up");
+        check(StockProduction.retourPossible(parent), "delta still permits native return");
+        MC.setScreen(parent);
+        check(!StockProduction.ouvrirSuivi(parent, suivant), "no stale packet accepted");
+        check(MC.screen == parent, "unattested refusal leaves chest open");
+        full(m);
+        var stranger = new AbstractContainerScreen<>(new ChestMenu());
+        MC.screen = stranger;
+        check(!StockProduction.ouvrirSuivi(stranger, suivant), "foreign parent menu rejected");
+        MC.screen = parent;
+        check(StockProduction.ouvrirSuivi(parent, suivant), "reopened packet usable");
+        MC.level.dim = "minecraft:the_nether";
+        check(!StockProduction.retourPossible(parent), "dimension change revokes old parent");
+        check(capture() == null, "dimension change revokes chest source before tick");
+    }
+
     public static void main(String[] args) {
         switch (args[0]) {
             case "sources" -> sources();
@@ -261,6 +298,7 @@ public final class StockProductionTest {
             case "bounds" -> bounds();
             case "sophisticated" -> sophisticated();
             case "screen" -> screen();
+            case "suivi" -> suivi();
             default -> throw new AssertionError(args[0]);
         }
     }

@@ -111,6 +111,9 @@ class NativeStockTests(unittest.TestCase):
     def test_screen_transition_no_removal_and_old_parent_rejected(self):
         self.run_case("screen")
 
+    def test_followup_preserves_only_current_attested_chest_and_safe_return(self):
+        self.run_case("suivi")
+
     def test_packet_and_click_hooks_are_registered_and_read_only(self):
         import json
 

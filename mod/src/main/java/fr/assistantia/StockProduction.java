@@ -337,13 +337,24 @@ public final class StockProduction {
     }
 
     public static void ouvrir(AbstractContainerScreen<?> parent) {
+        ouvrirSuivi(parent, EcranProduction.depuisCoffre(parent));
+    }
+
+    /** Préserve le coffre attesté pendant une consultation, sans accepter un ancien écran. */
+    public static boolean ouvrirSuivi(Screen parent, Screen suivant) {
         var mc = Minecraft.getInstance();
-        if (mc.screen != parent || !menuDisponible()) return;
-        retour = parent;
+        if (!(parent instanceof AbstractContainerScreen<?> conteneur)
+                || mc.screen != parent
+                || suivant == null
+                || suivant == parent
+                || !menuDisponible()
+                || mc.player.containerMenu != conteneur.getMenu()) return false;
+        retour = conteneur;
         retourPortee = portee();
-        transition = parent;
+        transition = conteneur;
         try {
-            mc.setScreen(EcranProduction.depuisCoffre(parent));
+            mc.setScreen(suivant);
+            return true;
         } finally {
             transition = null;
         }

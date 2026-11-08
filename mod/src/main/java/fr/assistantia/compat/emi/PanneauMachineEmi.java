@@ -5,6 +5,7 @@ import dev.emi.emi.api.stack.EmiIngredient;
 import fr.assistantia.DispositionCoffre.Disposition;
 import fr.assistantia.PanneauAssistant;
 import fr.assistantia.PlanMachines;
+import fr.assistantia.OrdreMachines;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -27,7 +28,8 @@ final class PanneauMachineEmi {
             boolean occupe,
             boolean circuit,
             boolean declarable,
-            boolean synchronise) {}
+            boolean synchronise,
+            java.util.Map<EmiRecipe, OrdreMachines.Ligne<EmiRecipe>> priorites) {}
 
     static void afficher(ScreenEvent.Render.Post event, Vue vue) {
         var d = vue.disposition();
@@ -73,6 +75,22 @@ final class PanneauMachineEmi {
                         .get(0)
                         .render(g, z.x() + 1, z.y() + 1, 0, EmiIngredient.RENDER_ICON);
             if (op.fois() > 0) PanneauAssistant.nombre(g, font, z, op.fois());
+            var priorite = vue.priorites().get(op.recette());
+            int couleur =
+                    priorite == null
+                            ? 0xFF55BBDD
+                            : switch (priorite.groupe()) {
+                                case PRET -> 0xFF66CC88;
+                                case PREPARER -> 0xFFFFCC55;
+                                case EN_COURS -> 0xFF55BBDD;
+                                case ETAPES -> 0xFF888888;
+                            };
+            g.fill(
+                    z.x(),
+                    z.y() + z.hauteur() - 2,
+                    z.x() + z.largeur(),
+                    z.y() + z.hauteur(),
+                    couleur);
             if (z.contient(mx, my)) {
                 tooltip = new ArrayList<>();
                 tooltip.add(
@@ -86,6 +104,11 @@ final class PanneauMachineEmi {
                                                 ? op.fois() + " fabrications restantes"
                                                 : "Lot en cours · récupère le résultat à sa sortie")
                                 .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
+                if (priorite != null) {
+                    tooltip.add(Component.literal(priorite.raison()));
+                    if (priorite.foisPretes() > 0)
+                        tooltip.add(Component.literal("Ingrédients alloués pour 1 fabrication."));
+                }
                 tooltip.add(
                         Component.literal(
                                         occupe

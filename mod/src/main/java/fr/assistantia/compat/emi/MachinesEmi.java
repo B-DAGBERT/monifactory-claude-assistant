@@ -8,6 +8,7 @@ import fr.assistantia.DispositionCoffre;
 import fr.assistantia.Lignes;
 import fr.assistantia.PanneauAssistant;
 import fr.assistantia.PlanMachines;
+import fr.assistantia.OrdreMachines;
 import fr.assistantia.LotFabrication;
 import fr.assistantia.PlanRetrait;
 import fr.assistantia.DispositionCoffre.Disposition;
@@ -41,6 +42,17 @@ public final class MachinesEmi {
     private static AbstractContainerScreen<?> ecran;
     private static Disposition disposition;
     private static int choix, page;
+    private static boolean choixExplicite;
+    private static List<PlanMachines.Operation<EmiRecipe>> affichees = List.of();
+    private static Disposition dispositionAffichee;
+    private static EmiRecipe recetteAffichee;
+    private static Object arbreAffiche;
+    private static long revisionAffichee, quantiteAffichee;
+    private static String contextePriorites = "", contexteAffiche = "";
+    private static int pageAffichee;
+    private static java.util.Map<EmiRecipe, OrdreMachines.Ligne<EmiRecipe>> prioritesLocales =
+            java.util.Map.of();
+    private static String problemeOrdre = "";
     private static EnvoiMachine.Plan plan;
     private static long actualise;
     private static final SuiviLotsEmi lots =
@@ -64,7 +76,50 @@ public final class MachinesEmi {
     private static boolean erreurSignalee, erreurInterfaceSignalee;
 
     public record Ligne(
-            int lot, EmiRecipe recette, int fois, String etat, boolean annulable, String detail) {}
+            int lot,
+            EmiRecipe recette,
+            int fois,
+            String etat,
+            boolean annulable,
+            String detail,
+            int groupe) {
+        public Ligne(
+                int lot,
+                EmiRecipe recette,
+                int fois,
+                String etat,
+                boolean annulable,
+                String detail) {
+            this(lot, recette, fois, etat, annulable, detail, lot > 0 ? 2 : 3);
+        }
+    }
+
+    public static String problemeOrdre() {
+        return problemeOrdre;
+    }
+
+    /** Identité de navigation, y compris lorsque le service Production n'est pas disponible. */
+    public static String contexteSelection() {
+        var vue = fr.assistantia.Pont.partie("ecran");
+        String projet = "";
+        var projets = vue.get("projets");
+        if (projets != null && projets.isJsonObject())
+            projet = ProjectionLotsEmi.texte(projets.getAsJsonObject(), "actif");
+        String revision = "";
+        var production = vue.get("production_v2");
+        if (production != null && production.isJsonObject()) {
+            var contexte = production.getAsJsonObject().get("contexte");
+            if (contexte != null && contexte.isJsonObject())
+                revision = ProjectionLotsEmi.texte(contexte.getAsJsonObject(), "revision_projet");
+        }
+        return fr.assistantia.Pont.cleContexte()
+                + "|"
+                + projet
+                + "|"
+                + ProjectionLotsEmi.texte(vue, "objectif_version")
+                + "|"
+                + revision;
+    }
 
     private static ProjectionLotsEmi.Portee porteeProduction() {
         var mc = Minecraft.getInstance();
@@ -193,37 +248,55 @@ public final class MachinesEmi {
 
     public static List<Ligne> lignes() {
         actualiserArbre();
-        if (actif() == null) return List.of();
+        if (actif() == null || instantane == null) return List.of();
         List<Ligne> lignes = new ArrayList<>();
-        var stock = inventaire();
-        stock.addAll(completerOutils(stock));
-        var disponibles = inventaire(false);
-        disponibles.addAll(completerOutils(disponibles));
-        for (var o : toutes) {
-            if (o.recette().getId() != null
-                    && o.recette().getId().getNamespace().equals("assistantia")) continue;
-            boolean pret = ingredientsDisponibles(o.recette(), stock);
-            lignes.add(
-                    new Ligne(
-                            -1,
-                            o.recette(),
-                            o.fois(),
-                            !fr.assistantia.InventaireJoueur.synchronise()
-                                    ? "Lecture du sac…"
-                                    : circuitARegler(o.recette())
-                                            ? "Circuit à régler"
-                                            : pret
-                                                    ? (!ingredientsDisponibles(
-                                                                    o.recette(), disponibles)
-                                                            ? "À sortir du sac"
-                                                            : estGT(o.recette())
-                                                                    ? "À envoyer"
-                                                                    : "À fabriquer")
-                                                    : "À collecter",
-                            false,
-                            circuitARegler(o.recette())
-                                    ? plan.probleme()
-                                    : o.recette().getCategory().getName().getString()));
+        var operationsVisibles =
+                toutes.stream()
+                        .filter(
+                                o ->
+                                        o.recette().getId() == null
+                                                || !o.recette()
+                                                        .getId()
+                                                        .getNamespace()
+                                                        .equals("assistantia"))
+                        .toList();
+        try {
+            var ordre = OrdonnancementEmi.calculer(instantane, operationsVisibles, menuCourant());
+            for (var recommandation : ordre.lignes()) {
+                var operation = recommandation.operation();
+                String detail =
+                        operation.recette().getCategory().getName().getString()
+                                + " · "
+                                + (recommandation.foisPretes() > 0
+                                        ? "1 fabrication recommandée sur " + operation.fois()
+                                        : recommandation.raison());
+                lignes.add(
+                        new Ligne(
+                                -1,
+                                operation.recette(),
+                                operation.fois(),
+                                etat(recommandation),
+                                false,
+                                detail,
+                                recommandation.groupe().ordinal()));
+            }
+        } catch (RuntimeException error) {
+            problemeOrdre = "Ordre indisponible · vérifie l’arbre EMI.";
+            if (!erreurSignalee) {
+                com.mojang.logging.LogUtils.getLogger()
+                        .warn("Assistant : ordre EMI indisponible", error);
+                erreurSignalee = true;
+            }
+            for (var operation : operationsVisibles)
+                lignes.add(
+                        new Ligne(
+                                -1,
+                                operation.recette(),
+                                operation.fois(),
+                                "Stock inconnu",
+                                false,
+                                problemeOrdre,
+                                3));
         }
         for (var lot : lots.actifs())
             if (lot.suivi().etat() != LotFabrication.Etat.ANNULE)
@@ -238,8 +311,34 @@ public final class MachinesEmi {
                                         + "/"
                                         + lot.suivi().total()
                                         + " récupérés · "
-                                        + lot.lieu()));
+                                        + lot.lieu(),
+                                2));
+        lignes.sort(java.util.Comparator.comparingInt(Ligne::groupe));
         return List.copyOf(lignes);
+    }
+
+    private static AbstractContainerScreen<?> menuCourant() {
+        var mc = Minecraft.getInstance();
+        return ecran != null && mc.player != null && mc.player.containerMenu == ecran.getMenu()
+                ? ecran
+                : null;
+    }
+
+    private static String etat(OrdreMachines.Ligne<EmiRecipe> ligne) {
+        if (ligne.cycle()) return "Cycle détecté";
+        if (ligne.mode() == OrdreMachines.Mode.PRET) return "Prêt";
+        if (ligne.conflit()) return "Stock partagé · autre priorité";
+        String raison = ligne.raison();
+        if (raison.startsWith("Circuit")) return "Circuit à régler";
+        if (raison.startsWith("Machine")) return "Machine à vérifier";
+        if (raison.startsWith("Poste")) return "Poste à vérifier";
+        if (raison.startsWith("Réglage du circuit")) return "Circuit inconnu";
+        if (raison.startsWith("Fluide ou capacité")) return "Fluide à vérifier";
+        if (raison.startsWith("Déjà en machine")) return "Déjà en machine";
+        if (ligne.mode() == OrdreMachines.Mode.PREPARER)
+            return raison.isEmpty() ? "À préparer" : raison;
+        if (ligne.mode() == OrdreMachines.Mode.INCONNU) return "Stock inconnu";
+        return raison.isEmpty() ? "Étape suivante" : raison;
     }
 
     public static int declarables(EmiRecipe recette) {
@@ -444,39 +543,6 @@ public final class MachinesEmi {
                 .equals("com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe");
     }
 
-    private static boolean ingredientsDisponibles(
-            EmiRecipe r, List<PlanRetrait.Stock<EmiStack>> stock) {
-        var demandes = new ArrayList<PlanRetrait.Besoin<EmiStack>>();
-        var ingredients = new ArrayList<>(r.getInputs());
-        ingredients.addAll(r.getCatalysts());
-        var outils = new java.util.HashMap<String, Integer>();
-        for (int index = 0; index < ingredients.size(); index++) {
-            var i = ingredients.get(index);
-            boolean catalyst = index >= r.getInputs().size() || i.getChance() == 0;
-            if (i.isEmpty() || ComparaisonEmi.circuitVirtuel(r, i, catalyst)) continue;
-            int besoin = PlanMachines.produit(i.getAmount(), 1);
-            if (catalyst) {
-                String key =
-                        i.getEmiStacks().stream()
-                                .map(v -> v.getId() + "|" + v.getNbt())
-                                .sorted()
-                                .toList()
-                                .toString();
-                int deja = outils.getOrDefault(key, 0);
-                outils.merge(key, besoin, Math::max);
-                besoin = Math.max(0, besoin - deja);
-            }
-            if (besoin > 0)
-                demandes.add(
-                        new PlanRetrait.Besoin<>(
-                                s ->
-                                        i.getEmiStacks().stream()
-                                                .anyMatch(v -> ComparaisonEmi.meme(s, v)),
-                                besoin));
-        }
-        return PlanRetrait.calculer(stock, demandes).manquants() == 0;
-    }
-
     private static boolean compatible(Object machine, EmiRecipe recipe) {
         return compatibilites
                 .computeIfAbsent(machine, k -> new java.util.HashMap<>())
@@ -556,6 +622,12 @@ public final class MachinesEmi {
             lots.oublierInterface();
             toutes = List.of();
             calculPrecedent = "";
+            problemeOrdre = "";
+            choixExplicite = false;
+            affichees = List.of();
+            dispositionAffichee = null;
+            recetteAffichee = null;
+            prioritesLocales = java.util.Map.of();
             compatibilites.clear();
             if (current != null || connexion != mc.getConnection()) dernierTermine = false;
             operations = locales = List.of();
@@ -598,9 +670,11 @@ public final class MachinesEmi {
             for (var lot : lots.actifs()) stock.addAll(lot.suivi().restants());
             toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
+            problemeOrdre = "";
         } catch (ReflectiveOperationException | RuntimeException e) {
             operations = toutes = List.of();
             calculPrecedent = "";
+            problemeOrdre = "Arbre EMI invalide ou cyclique · choisis une autre branche.";
             if (!erreurSignalee) {
                 com.mojang.logging.LogUtils.getLogger()
                         .warn("Assistant : étapes machines EMI indisponibles", e);
@@ -669,7 +743,10 @@ public final class MachinesEmi {
         // comme lors d'un redimensionnement, au lieu de revenir au premier produit.
         boolean retour = ecran == s;
         if (!retour) {
-            locales = List.of();
+            locales = affichees = List.of();
+            choixExplicite = false;
+            dispositionAffichee = null;
+            recetteAffichee = null;
             choix = page = 0;
             EnvoiMachine.effacerStatut();
         }
@@ -706,16 +783,33 @@ public final class MachinesEmi {
                                                     GregTechMachines.compatible(
                                                             ui.machine(), o.recette()))
                                     .toList());
+            var ordre = OrdonnancementEmi.calculer(instantane, visibles, ecran);
+            var priorites =
+                    new java.util.LinkedHashMap<EmiRecipe, OrdreMachines.Ligne<EmiRecipe>>();
+            for (var ligne : ordre.lignes()) priorites.put(ligne.operation().recette(), ligne);
+            prioritesLocales = java.util.Map.copyOf(priorites);
+            visibles = new ArrayList<>();
+            for (var ligne : ordre.lignes())
+                if (ligne.groupe().ordinal() < 2) visibles.add(ligne.operation());
             for (var lot : lots.actifs())
                 if (lot.ici(ui.position())
                         && lot.suivi().annulable()
+                        && priorites.keySet().stream().noneMatch(r -> r == lot.recette())
                         && visibles.stream().noneMatch(o -> o.recette() == lot.recette()))
                     visibles.add(new PlanMachines.Operation<>(lot.recette(), 0));
+            for (var ligne : ordre.lignes())
+                if (ligne.groupe().ordinal() >= 2) visibles.add(ligne.operation());
             locales = List.copyOf(visibles);
-            choix = Math.min(choix, Math.max(0, locales.size() - 1));
-            if (precedent != null)
+            choix = 0;
+            boolean conserve = false;
+            if (choixExplicite && precedent != null)
                 for (int i = 0; i < locales.size(); i++)
-                    if (locales.get(i).recette() == precedent.recette()) choix = i;
+                    if (locales.get(i).recette() == precedent.recette()) {
+                        choix = i;
+                        conserve = true;
+                        break;
+                    }
+            if (!conserve) choixExplicite = false;
             var selected = selection();
             if (selected == null) {
                 disposition = null;
@@ -735,6 +829,10 @@ public final class MachinesEmi {
                             46,
                             104);
             page = Math.min(page, (locales.size() - 1) / disposition.parPage());
+            if (choixExplicite
+                    && (choix < page * disposition.parPage()
+                            || choix >= (page + 1) * disposition.parPage()))
+                page = choix / disposition.parPage();
         } catch (ReflectiveOperationException | RuntimeException e) {
             // Un panneau indisponible ne doit jamais interrompre le rendu du jeu entier.
             disposition = null;
@@ -746,6 +844,7 @@ public final class MachinesEmi {
                 erreurInterfaceSignalee = true;
             }
         }
+        contextePriorites = contexteSelection();
         actualise = System.currentTimeMillis();
     }
 
@@ -762,7 +861,20 @@ public final class MachinesEmi {
     @SubscribeEvent
     public static void rendu(ScreenEvent.Render.Post event) {
         var selected = selection();
-        if (!affiche(event.getScreen()) || disposition == null || selected == null) return;
+        if (!affiche(event.getScreen()) || disposition == null || selected == null) {
+            affichees = List.of();
+            dispositionAffichee = null;
+            recetteAffichee = null;
+            return;
+        }
+        affichees = locales;
+        pageAffichee = page;
+        dispositionAffichee = disposition;
+        recetteAffichee = selected.recette();
+        arbreAffiche = actif();
+        revisionAffichee = InstantaneArbreEmi.revisionStructureProduction();
+        quantiteAffichee = instantane == null ? -1 : instantane.lots();
+        contexteAffiche = contextePriorites;
         PanneauMachineEmi.afficher(
                 event,
                 new PanneauMachineEmi.Vue(
@@ -773,11 +885,12 @@ public final class MachinesEmi {
                         plan,
                         etatSelection(),
                         selected.fois() == 0 ? quantiteSelection() : "",
-                        EnvoiMachine.statut(),
+                        EnvoiMachine.statut().isEmpty() ? problemeOrdre : EnvoiMachine.statut(),
                         EnvoiMachine.occupe(),
                         circuitARegler(selected.recette()),
                         declarables(selected.recette()) > 0,
-                        fr.assistantia.InventaireJoueur.synchronise()));
+                        fr.assistantia.InventaireJoueur.synchronise(),
+                        prioritesLocales));
     }
 
     private static String quantiteSelection() {
@@ -804,7 +917,13 @@ public final class MachinesEmi {
         if (op == null) return "À collecter";
         if (op.fois() > 0) {
             if (circuitARegler(op.recette())) return "Circuit à régler";
-            return plan != null && plan.possible() ? "À envoyer" : "À collecter";
+            var priorite = prioritesLocales.get(op.recette());
+            if (priorite != null) {
+                if (priorite.conflit() && plan != null && plan.possible())
+                    return "Autre priorité · stock partagé";
+                return etat(priorite);
+            }
+            return "Stock inconnu";
         }
         return lots.actifs().stream()
                 .filter(l -> l.recette() == op.recette() && l.suivi().annulable())
@@ -814,7 +933,10 @@ public final class MachinesEmi {
     }
 
     private static boolean surPanneau(Screen screen, double x, double y) {
-        return affiche(screen) && disposition != null && disposition.cadre().contient(x, y);
+        return affiche(screen)
+                && disposition != null
+                && dispositionAffichee != null
+                && dispositionAffichee.cadre().contient(x, y);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -822,10 +944,10 @@ public final class MachinesEmi {
         if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
         event.setCanceled(true);
         if (event.getButton() != 0 || EnvoiMachine.occupe()) return;
-        var d = disposition;
+        var d = dispositionAffichee;
         double x = event.getMouseX(), y = event.getMouseY();
         if (d.prendre().contient(x, y)) {
-            actualiserInterface();
+            if (!selectionnerAffichee(recetteAffichee)) return;
             var op = selection();
             var envoi = plan;
             if (op != null && envoi != null && envoi.possible()) {
@@ -848,25 +970,67 @@ public final class MachinesEmi {
                 }
             }
         } else if (d.tout().contient(x, y)) {
+            if (!selectionnerAffichee(recetteAffichee)) return;
             var op = selection();
             if (op != null && op.fois() > 0 && declarables(op.recette()) > 0) {
                 PanneauAssistant.son();
                 DeclarerFabricationEcran.ouvrir(ecran, op.recette());
             }
-        } else if (d.pages() && d.precedent().contient(x, y)) page = Math.max(0, page - 1);
+        } else if (d.pages() && d.precedent().contient(x, y)) page = Math.max(0, pageAffichee - 1);
         else if (d.pages() && d.suivant().contient(x, y))
-            page = Math.min((locales.size() - 1) / d.parPage(), page + 1);
+            page = Math.min((affichees.size() - 1) / d.parPage(), pageAffichee + 1);
         else
             for (int rang = 0; rang < d.parPage(); rang++) {
-                int i = page * d.parPage() + rang;
-                if (i < locales.size() && d.icone(rang).contient(x, y)) {
-                    choix = i;
+                int i = pageAffichee * d.parPage() + rang;
+                if (i < affichees.size() && d.icone(rang).contient(x, y)) {
+                    var recette = affichees.get(i).recette();
+                    if (!selectionnerAffichee(recette)) return;
                     actualise = 0;
                     PanneauAssistant.son();
-                    dev.emi.emi.api.EmiApi.displayRecipe(locales.get(i).recette());
+                    dev.emi.emi.api.EmiApi.displayRecipe(recette);
                     break;
                 }
             }
+    }
+
+    /** Le clic désigne la recette rendue, même si les priorités ont changé entre deux ticks. */
+    private static boolean selectionnerAffichee(EmiRecipe recette) {
+        var mc = Minecraft.getInstance();
+        if (recette == null
+                || arbreAffiche != actif()
+                || revisionAffichee != InstantaneArbreEmi.revisionStructureProduction()
+                || !quantiteAfficheeValide()
+                || !contexteAffiche.equals(contexteSelection())
+                || mc.player == null
+                || ecran == null
+                || mc.player.containerMenu != ecran.getMenu()) {
+            problemeOrdre = "Contexte modifié · attends le nouvel affichage.";
+            return false;
+        }
+        actualiserInterface();
+        for (int i = 0; i < locales.size(); i++)
+            if (locales.get(i).recette() == recette) {
+                choix = i;
+                choixExplicite = true;
+                var operation = locales.get(i);
+                plan =
+                        operation.fois() > 0
+                                ? EnvoiMachine.preparer(ecran, recette, operation.fois())
+                                : null;
+                return true;
+            }
+        problemeOrdre = "Recette modifiée · attends le nouvel affichage.";
+        return false;
+    }
+
+    private static boolean quantiteAfficheeValide() {
+        try {
+            return arbreAffiche != null
+                    && arbreAffiche.getClass().getField("batches").getLong(arbreAffiche)
+                            == quantiteAffichee;
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            return false;
+        }
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
