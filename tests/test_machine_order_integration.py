@@ -174,6 +174,16 @@ public class OrderIntegrationTest {
     a.category="minecraft:stonecutting";mode(calculate(null,a),a,OrdreMachines.Mode.INCONNU);
     a.category="minecraft:crafting";mode(calculate(null,a),a,OrdreMachines.Mode.PRET);
    }
+   case "cache_explicit_lifecycle_invalidation" -> {
+    mc.player.inventory.items.add(new ItemStack("test:iron",3));var a=gt(item("test:iron",3));var screen=machine();
+    var vue=new InstantaneArbreEmi(node(a));var ops=List.of(new PlanMachines.Operation<EmiRecipe>(a,7));
+    var first=OrdonnancementEmi.calculer(vue,ops,screen);mode(first,a,OrdreMachines.Mode.PRET);
+    assert OrdonnancementEmi.calculer(vue,ops,screen)==first;
+    int reads=StockProduction.reads,preflight=EnvoiMachine.reads;
+    OrdonnancementEmi.invalider();OrdonnancementEmi.invalider();
+    var rebuilt=OrdonnancementEmi.calculer(vue,ops,screen);assert rebuilt!=first:"lifecycle invalidation discards the cached result";
+    mode(rebuilt,a,OrdreMachines.Mode.PRET);assert StockProduction.reads==reads+1&&EnvoiMachine.reads==preflight+1:"rebuild requires fresh native evidence";
+   }
    case "cache_rechecks_current_evidence" -> {
     var iron=new ItemStack("test:iron",3);mc.player.inventory.items.add(iron);var a=gt(item("test:iron",3));var screen=machine();
     var vue=new InstantaneArbreEmi(node(a));var ops=List.of(new PlanMachines.Operation<EmiRecipe>(a,7));
@@ -258,6 +268,7 @@ class MachineOrderIntegrationTests(unittest.TestCase):
                 "unreadable_circuit_never_ready",
                 "consumed_damageable_not_shared_tool",
                 "unknown_non_gregtech_station",
+                "cache_explicit_lifecycle_invalidation",
             ):
                 with self.subTest(case=case):
                     result = subprocess.run(

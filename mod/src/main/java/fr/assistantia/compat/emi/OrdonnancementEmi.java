@@ -38,6 +38,10 @@ final class OrdonnancementEmi {
 
     private OrdonnancementEmi() {}
 
+    static void invalider() {
+        dernier = null;
+    }
+
     static OrdreMachines.Resultat<EmiRecipe> calculer(
             InstantaneArbreEmi vue,
             List<PlanMachines.Operation<EmiRecipe>> operations,

@@ -609,6 +609,7 @@ public final class MachinesEmi {
         Object current = actif();
         String dim = mc.level == null ? "" : mc.level.dimension().location().toString();
         if (current != arbre || connexion != mc.getConnection() || !dim.equals(dimension)) {
+            OrdonnancementEmi.invalider();
             EnvoiMachine.arreter();
             if ((current == null && !fr.assistantia.PauseObjectifEmi.enPause())
                     || connexion != mc.getConnection()
