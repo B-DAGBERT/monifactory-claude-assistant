@@ -202,6 +202,8 @@ class ParityTests(unittest.TestCase):
         path = "jeu/assistant_ia.js"
         # Only the exchange and persistence entry points gained world validation.
         pattern = re.compile(r"^function (\w+)\([^\n]*\) \{(?:[^\n]*\}$|\n.*?^\})", re.M | re.S)
+        # ecrireEtat, ecrireQuetes, suivreConteneur and recevoirMonde also write only on change
+        # (or debounced) and hand file work to the mod's writer thread; test_kubejs_exports.py.
         allowed = {
             "ecrireEtat",
             "ecrireQuetes",
