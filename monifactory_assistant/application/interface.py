@@ -20,18 +20,22 @@ from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import BG, FG, FG_DIM, SETTINGS, SETTINGS_FILE
 from monifactory_assistant.ui.views import build_mod_view
 
+# Valeurs du diagnostic qui bougent sans que rien ne change pour le joueur : la durée du calcul de
+# la vue (à chaque image) et la date du relevé d'inventaire (à chaque écriture d'etat.json, toutes
+# les 1 à 2 s). Seules, elles ne font pas réécrire vue_mod.json, que le mod relirait et
+# réanalyserait en entier ; elles suivent le prochain vrai changement, au plus tard le battement
+# « vie » des 5 secondes. L'âge du relevé, compté par le mod depuis cette date, garde donc au plus
+# 5 s de retard.
+VOLATILES = ("rendu_ms", "inventaire_t")
+
 
 def comparable_view(view):
-    """La vue sans la durée de son propre calcul, qui varie à chaque image : cette durée seule ne
-    fait pas réécrire vue_mod.json (le mod relirait et réanalyserait tout le fichier). Elle suit le
-    prochain vrai changement, au plus tard le battement « vie » des 5 secondes."""
+    """La vue sans les valeurs volatiles du diagnostic, pour décider de réécrire vue_mod.json."""
     diagnostic = ((view or {}).get("ecran") or {}).get("diagnostic")
-    if not isinstance(diagnostic, dict) or "rendu_ms" not in diagnostic:
+    if not isinstance(diagnostic, dict) or not any(cle in diagnostic for cle in VOLATILES):
         return view
-    return {
-        **view,
-        "ecran": {**view["ecran"], "diagnostic": {**diagnostic, "rendu_ms": None}},
-    }
+    stable = {**diagnostic, **{cle: None for cle in VOLATILES if cle in diagnostic}}
+    return {**view, "ecran": {**view["ecran"], "diagnostic": stable}}
 
 
 class InterfaceController:
