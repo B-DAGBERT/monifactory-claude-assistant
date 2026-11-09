@@ -24,8 +24,42 @@ public final class SauvegardeFilonsTest {
         acquittementAncien(dossier);
         refusExecuteur(dossier);
         departSansPublication(dossier);
+        contenuParesseux(dossier);
         System.out.println(
-                "Publication filons : reconnexion, reprise, ordre et acquittements validés");
+                "Publication filons : reconnexion, reprise, ordre, acquittements et texte calcule"
+                        + " sur le thread IO valides");
+    }
+
+    /** Le texte se calcule une seule fois, sur l'exécuteur IO, jamais au moment d'enregistrer. */
+    static void contenuParesseux(Path dossier) throws Exception {
+        var file = new ArrayDeque<Runnable>();
+        var calculs = new AtomicInteger();
+        var threads = new java.util.ArrayList<String>();
+        Object source = new Object();
+        Path a = dossier.resolve("paresseux.json"),
+                export = dossier.resolve("export-paresseux.json");
+        var sauvegarde = new SauvegardeFilons(file::add, Files::writeString, () -> 0);
+        var natif =
+                new SauvegardeFilons.Contenu(
+                        () -> {
+                            calculs.incrementAndGet();
+                            threads.add(Thread.currentThread().getName());
+                            return APRES;
+                        },
+                        source);
+        var resume = new SauvegardeFilons.Contenu(() -> "resume", null);
+        sauvegarde.enregistrer(a, natif, export, resume, SauvegardeFilonsTest::erreurInattendue);
+        assert calculs.get() == 0 : "Aucun calcul de texte sur le thread client";
+        assert sauvegarde.attente(a).source() == source
+                : "La reconnexion reprend l'instantané lui-même, sans relire le fichier";
+        var io = new Thread(() -> file.remove().run(), "io-test");
+        io.start();
+        io.join();
+        assert calculs.get() == 1 && threads.equals(java.util.List.of("io-test"))
+                : "Texte calculé une fois, sur le thread d'écriture";
+        assert Files.readString(a).equals(APRES) && Files.readString(export).equals("resume");
+        assert sauvegarde.attente(a) == null : "Acquitté après écriture";
+        assert sauvegarde.lire(a).equals(APRES) && calculs.get() == 1;
     }
 
     static void reconnexion(Path dossier) throws Exception {

@@ -527,6 +527,29 @@ class ProductionKnowledgeTests(unittest.TestCase):
             result.select("vein_exhaustion")[0].evidence[0].status, KnowledgeStatus.USER_CONFIRMED
         )
 
+    def test_compact_vein_summary_counts_without_block_positions(self):
+        deposit = {
+            "id": "v",
+            "definition": "gtceu:coal_vein",
+            "dimension": DIM,
+            "x": 0,
+            "y": 64,
+            "z": 0,
+            "composition": ["gtceu:coal_ore"],
+            "restants": 61,
+            "mines": 1439,
+            "verification": NOW - 60_000,
+        }
+        payload = {"v": 2, "source": "gregtech", "t": NOW, "gisements": [deposit]}
+        vein = view(source("filons_mod.json", payload)).select("vein")[0]
+        self.assertEqual((vein.value["observed_blocks"], vein.value["mined_blocks"]), (61, 1439))
+        self.assertEqual(vein.value["latest_block_observed_at_ms"], NOW - 60_000)
+        self.assertIsNone(vein.value["remaining_total"])
+        for bad in (-1, True, 1.5, "61"):
+            with self.subTest(bad=bad):
+                broken = {**payload, "gisements": [{**deposit, "restants": bad}]}
+                self.assertEqual(view(source("filons_mod.json", broken)).select("vein"), ())
+
     def test_malformed_counts_boolean_nonfinite_and_unsupported_versions_are_not_zero(self):
         for bad in (-1, True, float("nan"), float("inf"), 1.5, 10**400):
             with self.subTest(bad=str(bad)):

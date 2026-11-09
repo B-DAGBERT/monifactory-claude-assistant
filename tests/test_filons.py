@@ -22,7 +22,14 @@ class FilonsTests(unittest.TestCase):
             n
             for n in tree.body
             if isinstance(n, ast.FunctionDef)
-            and n.name in {"ore_material", "find_veins", "describe_veins"}
+            and n.name
+            in {
+                "ore_material",
+                "find_veins",
+                "describe_veins",
+                "_summary_veins",
+                "vein_files_stamp",
+            }
             or isinstance(n, ast.Assign)
             and any(isinstance(t, ast.Name) and t.id == "STONE_PREFIXES" for t in n.targets)
         ]
@@ -30,6 +37,7 @@ class FilonsTests(unittest.TestCase):
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "assistant_mc.py", "exec"), namespace)
         self.find = namespace["find_veins"]
         self.describe = namespace["describe_veins"]
+        self.stamp = namespace["vein_files_stamp"]
         self.block = {
             "bloc": "minecraft:iron_ore",
             "x": 1,
@@ -141,6 +149,107 @@ class FilonsTests(unittest.TestCase):
         deposit["epuise"] = True
         self.assertIn("épuisé selon GregTech", self.describe(self.find(bridge), None))
 
+    def summary(self, **vein):
+        deposit = {
+            "id": "gt|a",
+            "nom": "Redstone Vein",
+            "definition": "gtceu:redstone_vein_ow",
+            "dimension": "minecraft:overworld",
+            "x": 10,
+            "y": -20,
+            "z": 30,
+            "epuise": False,
+            "epuise_manuel": False,
+            "composition": [
+                "gtceu:redstone_ore",
+                "gtceu:deepslate_redstone_ore",
+                "gtceu:deepslate_ruby_ore",
+            ],
+            "restants": 100,
+            "mines": 1400,
+            "trouves": 1500,
+            "scan": "complet",
+            "presque_epuise": True,
+            "verification": 1234,
+            "minerais": {
+                "gtceu:redstone_ore": [40, 600],
+                "gtceu:deepslate_redstone_ore": [60, 800],
+            },
+            **vein,
+        }
+        return {
+            "v": 2,
+            "monde": "a" * 24,
+            "source": "gregtech",
+            "resume": True,
+            "t": 99,
+            "gisements": [deposit],
+        }
+
+    def test_compact_summary_counts_per_material_without_block_positions(self):
+        data = self.summary()
+        veins = self.find(SimpleNamespace(read=lambda n: data if n == "filons_mod.json" else None))
+        by_material = {v["minerai"]: v for v in veins}
+        self.assertEqual(set(by_material), {"redstone", "ruby"})
+        redstone = by_material["redstone"]
+        self.assertEqual(
+            (redstone["vus"], redstone["mines"], redstone["trouves"]), (100, 1400, 1500)
+        )
+        self.assertEqual((by_material["ruby"]["vus"], by_material["ruby"]["mines"]), (0, 0))
+        self.assertTrue(redstone["complet"] and redstone["presque_epuise"])
+        self.assertFalse(redstone["partiel"])
+        self.assertEqual(redstone["t"], 1234)
+        description = self.describe(veins, None)
+        self.assertIn("100 blocs restants sur 1500 trouvés", description)
+        self.assertIn("presque épuisé", description)
+
+    def test_planet_stone_variants_are_one_material(self):
+        data = self.summary(
+            composition=[
+                "gtceu:moon_asbestos_ore",
+                "gtceu:glacio_asbestos_ore",
+                "gtceu:asbestos_ore",
+            ],
+            minerais={"gtceu:moon_asbestos_ore": [3, 1], "gtceu:asbestos_ore": [2, 0]},
+        )
+        veins = self.find(SimpleNamespace(read=lambda n: data if n == "filons_mod.json" else None))
+        self.assertEqual(
+            [(v["minerai"], v["vus"], v["mines"]) for v in veins], [("asbestos", 5, 1)]
+        )
+
+    def test_compact_summary_partial_scan_and_manual_exhaustion(self):
+        data = self.summary(scan="partiel", presque_epuise=False, epuise_manuel=True)
+        bridge = SimpleNamespace(read=lambda n: data if n == "filons_mod.json" else None)
+        veins = self.find(bridge)
+        self.assertTrue(all(v["partiel"] and v["epuise"] for v in veins))
+        description = self.describe(veins, None)
+        self.assertIn("marqué épuisé par le joueur", description)
+        self.assertIn("limites du gisement non vérifiées", description)
+        data["gisements"][0]["minerais"] = {"gtceu:redstone_ore": "abîmé"}
+        self.assertEqual(self.find(bridge)[0]["vus"], 0)
+
+    def test_newer_summary_version_keeps_counts_and_ignores_stale_kubejs_file(self):
+        files = {
+            "filons_mod.json": {**self.summary(), "v": 3},
+            "filons.json": {"blocs": [self.block]},
+        }
+        veins = self.find(SimpleNamespace(read=files.get))
+        self.assertEqual({v["minerai"] for v in veins}, {"redstone", "ruby"})
+        self.assertEqual(max(v["vus"] for v in veins), 100)
+
+    def test_vein_files_stamp_changes_only_with_files_or_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            bridge = SimpleNamespace(data_path=lambda name: folder / name, scope="A")
+            empty = self.stamp(bridge)
+            (folder / "filons_mod.json").write_text("{}")
+            written = self.stamp(bridge)
+            self.assertNotEqual(empty, written)
+            self.assertEqual(written, self.stamp(bridge))
+            bridge.scope = "B"
+            self.assertNotEqual(written, self.stamp(bridge))
+        self.assertIsNone(self.stamp(SimpleNamespace(read=lambda name: None)))
+
     def test_java_scanner_model_and_safe_destination(self):
         java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
         if not (java_home / "bin/javac").exists():
@@ -160,27 +269,46 @@ class FilonsTests(unittest.TestCase):
         )
         if not javac or not java:
             self.skipTest("JDK 17 required for the Java scanner tests")
+        gson = next((Path.home() / ".gradle/caches").glob("**/gson-2.10.1.jar"), None)
+        if gson is None:
+            self.skipTest("Gson required for the vein save format")
         with tempfile.TemporaryDirectory() as directory:
-            sources = [
-                ROOT / "mod/src/main/java/fr/assistantia/FilonMemoire.java",
-                ROOT / "mod/src/main/java/fr/assistantia/DispositionFilons.java",
-                ROOT / "tests/java/fr/assistantia/FilonMemoireTest.java",
+            names = [
+                "TableLong",
+                "VolumeFilon",
+                "FilonMemoire",
+                "ScanFilon",
+                "VerificationFilons",
+                "InstantaneFilons",
+                "FormatFilons",
+                "CouleursFilons",
+                "DispositionFilons",
             ]
-            subprocess.run(
-                [javac, "-encoding", "UTF-8", "-d", directory, *map(str, sources)],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            result = subprocess.run(
-                [java, "-ea", "-cp", directory, "fr.assistantia.FilonMemoireTest"],
+            sources = [ROOT / f"mod/src/main/java/fr/assistantia/{name}.java" for name in names]
+            sources.append(ROOT / "tests/java/fr/assistantia/FilonMemoireTest.java")
+            compiled = subprocess.run(
+                [javac, "-encoding", "UTF-8", "-cp", str(gson), "-d", directory]
+                + list(map(str, sources)),
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=30,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            result = subprocess.run(
+                [
+                    java,
+                    "-ea",
+                    "-cp",
+                    os.pathsep.join([directory, str(gson)]),
+                    "fr.assistantia.FilonMemoireTest",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("19 scénarios filons validés", result.stdout)
+            self.assertIn("21 scenarios filons valides", result.stdout)
 
 
 if __name__ == "__main__":

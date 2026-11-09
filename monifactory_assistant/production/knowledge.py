@@ -629,18 +629,37 @@ class _Builder:
             )
 
     def veins(self, data, proof):
+        summary = type(data.get("v")) is int and data["v"] == 2
         if (
             type(data.get("v")) is not int
-            or data["v"] != 1
+            or data["v"] not in (1, 2)
             or data.get("source") != "gregtech"
             or not isinstance(data.get("gisements"), (list, tuple))
-            or not isinstance(data.get("blocs"), (list, tuple))
+            or not summary
+            and not isinstance(data.get("blocs"), (list, tuple))
         ):
             raise ValueError("Journal GregTech invalide.")
         # The export timestamp is not a new observation of each previously remembered ore.
         proof = replace(proof, freshness=Freshness.HISTORICAL, observed_at_ms=None, session=None)
         counts, dates, positions = defaultdict(lambda: [0, 0]), defaultdict(list), set()
-        for block in data["blocs"]:
+        if summary:
+            # Version 2 : comptes par gisement, sans position de bloc.
+            for vein in data["gisements"]:
+                dimension, _, _ = _location(vein)
+                observed, mined = vein.get("restants"), vein.get("mines")
+                if (
+                    not isinstance(vein.get("id"), str)
+                    or type(observed) is not int
+                    or type(mined) is not int
+                    or observed < 0
+                    or mined < 0
+                ):
+                    raise ValueError("Compte de filon invalide.")
+                counts[(vein["id"], dimension)] = [observed, mined]
+                date = _timestamp(vein.get("verification"))
+                if date is not None:
+                    dates[(vein["id"], dimension)].append(date)
+        for block in data.get("blocs", ()) if not summary else ():
             dimension, coords, key = _location(block)
             if (
                 key in positions

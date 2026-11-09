@@ -107,16 +107,23 @@ public class MiningUiTest {
    b.regler(100,20,10,200);assert b.taille()==10;b.defiler(-1);assert b.position()==30;
    b.aller(150);assert b.position()==150;b.aller(-5);assert b.position()==0;b.aller(9999);assert b.position()==190:"anchored position stays within the content";
   }else if(c.equals("style")){
-   var d=StyleFilons.defaut();assert d.maximum()==192&&d.intensite()==0;
-   assert new StyleFilons(-2,-4).maximum()==1&&new StyleFilons(99999,7).maximum()==4096;
-   assert d.surface()&&d.alpha(0,true)<.3&&d.alpha(0,false)==0;
-   var total=d.vueSuivante();assert !total.surface()&&total.alpha(0,false)>.1&&total.alpha(0,false)<total.alpha(0,true);
+   var d=StyleFilons.defaut();assert d.maximum()==512&&d.intensite()==1&&d.epaisseur()==1&&!d.remplissage():"clearly visible default";
+   assert new StyleFilons(-2,-4).maximum()==1&&new StyleFilons(99999,7).maximum()==4096&&new StyleFilons(1,99).intensite()==3;
+   assert d.surface()&&d.alpha(0,true)>.6&&d.alpha(0,false)==0;
+   var total=d.vueSuivante();assert !total.surface()&&total.alpha(0,false)>.3&&total.alpha(0,false)<total.alpha(0,true);
    assert total.vueSuivante().equals(d);
-   assert d.budgetSuivant().maximum()==512&&d.budgetSuivant().surface();
+   assert d.budgetSuivant().maximum()==1024&&d.budgetSuivant().surface();
    assert new StyleFilons(4096,1,false).budgetSuivant().equals(new StyleFilons(64,1,false));
    assert new StyleFilons(256,2,false).budgetSuivant().equals(new StyleFilons(512,2,false));
-   assert d.alpha(0,true)>d.alpha(32*32,true)&&d.alpha(65*65,true)==0;
+   assert d.alpha(0,true)>d.alpha(32*32,true)&&d.alpha(97*97,true)==0&&d.alpha(-1,true)==0;
+   assert d.alpha(96*96,true)>=.55*d.alpha(0,true):"gentle distance fade";
    assert new StyleFilons(10,2).alpha(0,true)>d.alpha(0,true);
+   var e=d;for(int i=0;i<4;i++){e=e.epaisseurSuivante();}assert e.equals(d)&&d.epaisseurSuivante().epaisseur()==2:"four thickness levels";
+   assert d.largeur(1920)>2&&d.largeur(1920)==StyleFilons.EPAISSEURS[1]&&d.largeur(3840)==2*d.largeur(1920)&&d.largeur(800)==d.largeur(1920);
+   assert new StyleFilons(64,1,true,0,false).largeur(1920)>1:"never back to 1 px";
+   var f=d;for(int i=0;i<4;i++){assert f.lisere()==(f.intensite()==3);f=f.intensiteSuivante();}assert f.equals(d);
+   assert d.alphaFaces(0,true)==0&&d.remplissageInverse().alphaFaces(0,true)>0&&d.remplissageInverse().alphaFaces(0,true)<d.alpha(0,true);
+   assert d.remplissageInverse().remplissageInverse().equals(d)&&d.nom().equals("Normale")&&d.nomEpaisseur().equals("Normale");
   }else if(c.equals("toolbar")){
    for(int room=-10;room<1500;room++)for(var widths:List.of(new int[]{80,42,52,48},new int[]{120,65,83,60},new int[]{30,25,29,30})){
     var b=BarreOutilsEmi.calculer(46,218,room,widths[0],widths[1],widths[2],widths[3]);
@@ -137,15 +144,21 @@ public class MiningUiTest {
    assert ListeSac.lire(List.of(a),"cuivre").isEmpty();
   }else if(c.startsWith("config")){
    boolean ok=AffichageFilons.sauver(new StyleFilons(512,1,false));
-   if(c.equals("config-fail")){assert !ok&&Filons.invalidations==0&&AffichageFilons.style().maximum()==192;}
+   if(c.equals("config-fail")){assert !ok&&Filons.invalidations==0&&AffichageFilons.style().equals(StyleFilons.defaut());}
    else {assert ok&&AffichageFilons.style().equals(new StyleFilons(512,1,false))&&Filons.invalidations==1;
     String json=Files.readString(Path.of(System.getProperty("test.config"),"assistantia-filons-visuel.json"));
-    assert json.contains("512")&&json.contains("\"surface\":false");
+    assert json.contains("512")&&json.contains("\"surface\":false")&&json.contains("\"v\":2")&&json.contains("\"epaisseur\":1")&&json.contains("\"remplissage\":false");
    }
   }else if(c.equals("load")){
    assert AffichageFilons.style().maximum()==512&&AffichageFilons.style().intensite()==1&&AffichageFilons.style().surface();
   }else if(c.equals("load-total")){
    assert AffichageFilons.style().equals(new StyleFilons(1024,2,false));
+  }else if(c.equals("load-player")){
+   var s=AffichageFilons.style();assert s.maximum()==4096&&!s.surface()&&s.intensite()==StyleFilons.INTENSITE_DEFAUT&&s.epaisseur()==StyleFilons.EPAISSEUR_DEFAUT:"old default intensity 0 becomes visible";
+  }else if(c.equals("load-v2")){
+   assert AffichageFilons.style().equals(new StyleFilons(64,0,true,3,true)):"a chosen intensity is kept";
+  }else if(c.equals("load-partial")){
+   var s=AffichageFilons.style();assert s.maximum()==StyleFilons.defaut().maximum()&&s.epaisseur()==2&&!s.surface():"one bad field never resets the others";
   }else if(c.equals("corrupt")){
    assert AffichageFilons.style().equals(StyleFilons.defaut());
   }else if(c.equals("bag-screen")){
@@ -268,6 +281,18 @@ class MiningUiTests(unittest.TestCase):
 
     def test_display_total_mode_reloaded(self):
         self.run_case("load-total", initial='{"maximum":1024,"intensite":2,"surface":false}')
+
+    def test_player_settings_from_before_intensity_button_become_visible(self):
+        self.run_case("load-player", initial='{"maximum":4096,"intensite":0,"surface":false}')
+
+    def test_new_display_settings_reloaded(self):
+        self.run_case(
+            "load-v2",
+            initial='{"v":2,"maximum":64,"intensite":0,"surface":true,"epaisseur":3,"remplissage":true}',
+        )
+
+    def test_partial_display_settings_keep_valid_fields(self):
+        self.run_case("load-partial", initial='{"v":2,"maximum":"x","epaisseur":2,"surface":false}')
 
     def test_corrupt_display_settings_default(self):
         self.run_case("corrupt", initial="{broken")
