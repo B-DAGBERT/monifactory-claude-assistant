@@ -80,12 +80,16 @@ public final class AnalyseRecette {
         }
 
         boolean meme(Cle autre) {
+            return memeStructure(autre) && lots == autre.lots;
+        }
+
+        /** Même arbre réel et mêmes choix ; seule la quantité (lots) peut différer. */
+        boolean memeStructure(Cle autre) {
             return autre != null
                     && arbre == autre.arbre
                     && racine == autre.racine
                     && recetteRacine == autre.recetteRacine
                     && enfants == autre.enfants
-                    && lots == autre.lots
                     && resolutions == autre.resolutions
                     && gestion == autre.gestion;
         }
@@ -279,7 +283,8 @@ public final class AnalyseRecette {
         // Un tick qui relit l'arbre ou refait le plan n'avance pas l'analyse des alternatives.
         boolean reconstruit = false;
         if (!actuelle.meme(cle)) {
-            nouvelArbre(actuelle);
+            if (lecture != null && actuelle.memeStructure(cle)) nouvelleQuantite(actuelle);
+            else nouvelArbre(actuelle);
             reconstruit = true;
         }
         if (lecture == null) {
@@ -345,22 +350,28 @@ public final class AnalyseRecette {
 
     private static void nouvelArbre(Cle suivante) {
         var arbrePrecedent = cle == null ? null : cle.arbre();
-        oublier(arbrePrecedent != suivante.arbre());
+        boolean memeArbre = arbrePrecedent == suivante.arbre();
+        // Même arbre réel modifié : les étapes et les repères restent visibles jusqu'au nouveau
+        // plan, au lieu de disparaître pendant son calcul.
+        var anciennes = RangsRecette.conservees(memeArbre, etapes);
+        var anciennesRecettes = memeArbre ? recettesPlan : Set.<EmiRecipe>of();
+        oublier(!memeArbre);
+        etapes = anciennes;
+        recettesPlan = anciennesRecettes;
         cle = suivante;
         generation++;
         erreur = "";
-        if (arbrePrecedent != suivante.arbre()) annulations.clear();
+        if (!memeArbre) annulations.clear();
         try {
             lecture = ArbreRecette.lire(suivante.arbre());
             instantane = InstantaneArbreEmi.lire(suivante.arbre());
         } catch (IllegalArgumentException limite) {
             // Bornes de lecture (profondeur, nombre de nœuds) ou cycle : une limite, pas une panne.
-            lecture = null;
-            erreur = "Arbre EMI trop grand ou cyclique : réduis la sélection dans Recipe Tree.";
+            arbreIllisible(
+                    "Arbre EMI trop grand ou cyclique : réduis la sélection dans Recipe Tree.");
             return;
         } catch (ReflectiveOperationException | RuntimeException illisible) {
-            lecture = null;
-            erreur = "Arbre EMI illisible · détails dans le journal du jeu.";
+            arbreIllisible("Arbre EMI illisible · détails dans le journal du jeu.");
             if (!erreurLectureSignalee) {
                 com.mojang.logging.LogUtils.getLogger()
                         .warn("Assistant : lecture de l'arbre EMI impossible", illisible);
@@ -370,6 +381,61 @@ public final class AnalyseRecette {
         }
         evaluateur = new ChaineRecette<>(new SourceEmi(suivante.arbre()));
         // La racine compte comme les autres : le but choisi peut lui-même avoir mieux.
+        for (var choisi : SelectionAlternatives.choisir(descriptions(), MAX_NOEUDS_ANALYSES)) {
+            var noeud = lecture.noeuds().get(choisi.index());
+            var analyse =
+                    new Analyse(noeud, noeud.ingredient().getEmiStacks().get(0), choisi.racine());
+            analyse.besoin = choisi.besoin();
+            analyses.add(analyse);
+        }
+        for (var analyse : analyses) taches.add(new Producteurs(analyse));
+        tachesTotales = taches.size();
+        // Une vraie modification vient du joueur (les arbres temporaires d'EMI ne comptent plus) :
+        // le suivi relit l'arbre et le plan se refait tout de suite, sans attendre la limite de
+        // coût réservée aux recalculs répétés du même arbre.
+        if (memeArbre) MachinesEmi.relireArbre();
+        if (etapes.isEmpty()) planAttente = "Calcul du plan…";
+        actualiserPlan();
+        sale = true;
+    }
+
+    /**
+     * Arbre illisible : aucune étape ni aucun numéro d'avant ne reste affiché derrière l'erreur.
+     */
+    private static void arbreIllisible(String message) {
+        lecture = null;
+        erreur = message;
+        etapes = List.of();
+        recettesPlan = Set.of();
+        ReperesRecette.publier(Map.of());
+    }
+
+    /**
+     * Seule la quantité (lots) a changé, par exemple à la molette dans Recipe Tree : les chaînes et
+     * les alternatives restent valables ; le plan suit au rythme habituel, sans disparaître.
+     */
+    private static void nouvelleQuantite(Cle suivante) {
+        cle = suivante;
+        generation++;
+        propositions = Map.of();
+        try {
+            lecture = ArbreRecette.lire(suivante.arbre());
+            instantane = InstantaneArbreEmi.lire(suivante.arbre());
+        } catch (ReflectiveOperationException | RuntimeException illisible) {
+            nouvelArbre(suivante); // lecture impossible : repartir proprement, avec son message
+            return;
+        }
+        Map<EmiIngredient, Double> besoins = new HashMap<>();
+        var noeuds = lecture.noeuds();
+        for (var choisi : SelectionAlternatives.choisir(descriptions(), MAX_NOEUDS_ANALYSES))
+            besoins.put(noeuds.get(choisi.index()).ingredient(), choisi.besoin());
+        for (var analyse : analyses)
+            analyse.besoin = besoins.getOrDefault(analyse.noeud.ingredient(), analyse.besoin);
+        cleEtapes = cleIntrouvables = null;
+        sale = true;
+    }
+
+    private static List<SelectionAlternatives.Noeud<EmiIngredient>> descriptions() {
         List<SelectionAlternatives.Noeud<EmiIngredient>> descriptions = new ArrayList<>();
         for (var noeud : lecture.noeuds())
             descriptions.add(
@@ -382,19 +448,7 @@ public final class AnalyseRecette {
                             noeud.recette() != null && assistant(noeud.recette()),
                             noeud.ingredient().getEmiStacks().size(),
                             noeud.besoin()));
-        for (var choisi : SelectionAlternatives.choisir(descriptions, MAX_NOEUDS_ANALYSES)) {
-            var noeud = lecture.noeuds().get(choisi.index());
-            var analyse =
-                    new Analyse(noeud, noeud.ingredient().getEmiStacks().get(0), choisi.racine());
-            analyse.besoin = choisi.besoin();
-            analyses.add(analyse);
-        }
-        for (var analyse : analyses) taches.add(new Producteurs(analyse));
-        tachesTotales = taches.size();
-        // Jamais de plan forcé : il se refait au prochain créneau permis par sa limite de coût.
-        planAttente = "Calcul du plan…";
-        if (ticks >= prochainPlan) actualiserPlan();
-        sale = true;
+        return descriptions;
     }
 
     private static boolean assistant(EmiRecipe r) {
@@ -575,23 +629,33 @@ public final class AnalyseRecette {
             if (etapes.isEmpty()) attendre("Lecture du sac en cours…");
             return false;
         }
-        // Arbre suivi : adopter l'instantané et les opérations du suivi, même après son
-        // « Recalculer », pour garder ses lots et ses crédits.
+        // Toujours l'instantané de l'arbre actuel (mis en cache par InstantaneArbreEmi), jamais un
+        // plus ancien.
+        InstantaneArbreEmi vue;
+        try {
+            vue = InstantaneArbreEmi.lire(cle.arbre());
+        } catch (ReflectiveOperationException | RuntimeException illisible) {
+            if (etapes.isEmpty()) attendre("Arbre EMI illisible pour le plan.");
+            return false;
+        }
+        instantane = vue;
+        // Arbre suivi : reprendre les opérations du suivi (ses lots et ses crédits), y compris
+        // après « Recalculer », seulement quand il a lu ce même instantané ; sinon attendre son
+        // relevé, en gardant les étapes affichées.
         boolean suivi = MachinesEmi.arbreSuivi() == cle.arbre();
-        var vue = instantane;
         List<PlanMachines.Operation<EmiRecipe>> operationsSuivies = null;
-        if (suivi) {
-            var instantaneSuivi = MachinesEmi.instantaneSuivi();
-            if (instantaneSuivi != null) {
+        switch (RangsRecette.source(suivi, MachinesEmi.instantaneSuivi(), vue, attenteSuivi, 3)) {
+            case SUIVI -> {
                 attenteSuivi = 0;
-                vue = instantaneSuivi;
                 operationsSuivies = MachinesEmi.operationsSuivies();
-            } else if (++attenteSuivi < 4) {
+            }
+            case ATTENDRE -> {
+                attenteSuivi++;
                 if (etapes.isEmpty()) attendre("Calcul du plan…");
                 return false;
-            } else suivi = false; // le suivi ne lit pas cet arbre : calcul local
+            }
+            case LOCAL -> suivi = false; // arbre non suivi, ou le suivi ne le relit pas
         }
-        if (vue == null) return false;
         String signature =
                 System.identityHashCode(vue)
                         + "|"
@@ -608,7 +672,6 @@ public final class AnalyseRecette {
                         + InventaireJoueur.disponible();
         if (signature.equals(clePlan)) return false;
         clePlan = signature;
-        instantane = vue;
         long debut = System.nanoTime();
         try {
             ordonner(vue, operationsSuivies, suivi);

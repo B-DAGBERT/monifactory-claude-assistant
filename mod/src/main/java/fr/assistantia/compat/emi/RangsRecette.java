@@ -136,6 +136,36 @@ public final class RangsRecette {
         return meilleur;
     }
 
+    /** Origine des opérations du plan d'un arbre. */
+    public enum Source {
+        /** Opérations du suivi des fabrications (lots et crédits compris). */
+        SUIVI,
+        /** Le suivi n'a pas encore relu cet arbre : garder le plan affiché et réessayer. */
+        ATTENDRE,
+        /** Calcul local depuis l'inventaire. */
+        LOCAL
+    }
+
+    /**
+     * Les opérations du suivi ne sont reprises que s'il a lu exactement l'instantané de l'arbre
+     * actuel ; un instantané plus ancien (arbre modifié depuis) n'est jamais adopté. Après {@code
+     * max} essais sans relevé, le plan est calculé localement.
+     */
+    public static Source source(
+            boolean suivi, Object instantaneSuivi, Object courant, int essais, int max) {
+        if (!suivi) return Source.LOCAL;
+        if (instantaneSuivi != null && instantaneSuivi == courant) return Source.SUIVI;
+        return essais < max ? Source.ATTENDRE : Source.LOCAL;
+    }
+
+    /**
+     * Étapes gardées pendant le calcul du plan d'un arbre modifié : celles du même arbre restent
+     * affichées (onglet, HUD, repères) jusqu'au nouveau plan ; un autre arbre repart de zéro.
+     */
+    public static <R> List<Etape<R>> conservees(boolean memeArbre, List<Etape<R>> etapes) {
+        return memeArbre ? etapes : List.of();
+    }
+
     /** L'étape à mettre en avant (HUD, étoile) : la première action possible, sinon la première. */
     public static <R> Etape<R> suivante(List<Etape<R>> etapes) {
         for (var etape : etapes) if (etape.statut().actionnable()) return etape;
