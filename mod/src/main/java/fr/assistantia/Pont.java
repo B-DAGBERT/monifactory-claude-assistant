@@ -402,7 +402,9 @@ public final class Pont {
             demande.addProperty("n", dernierEnvoi);
             demande.addProperty("requete", java.util.UUID.randomUUID().toString());
             // La dimension du clic : l'assistant refuse l'action si le joueur en a changé depuis.
-            if (!"reglage".equals(texte(demande, "type")))
+            // Production porte déjà son propre contexte (monde, connexion, dimension).
+            String type = texte(demande, "type");
+            if (!"reglage".equals(type) && !"production_v2".equals(type))
                 demande.addProperty(
                         "dimension_envoi", texte(partie("ecran"), "dimension_actuelle"));
         }
