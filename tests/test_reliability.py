@@ -303,6 +303,33 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
         written = app.bridge.write.call_args.args[1]
         self.assertEqual(written["ecran"]["diagnostic"], {"rendu_ms": 5.1, "file": 2})
 
+    def test_inventory_date_alone_waits_for_the_heartbeat(self):
+        # etat.json is rewritten every 1-2 s with a new date: only the 5 s "vie" heartbeat (or a
+        # real change) rewrites the view, which then carries the latest date for the mod's age.
+        app = InterfaceController()
+        app.bridge = SimpleNamespace(write=Mock())
+        app.last_mod_view = None
+        dates = iter([1_000, 2_000, 3_000, 4_000, 6_000, 7_000])
+        heartbeats = iter([0, 0, 0, 0, 1, 1])
+
+        def diagnostic(_app):
+            return {"inventaire_t": next(dates), "rendu_ms": 1.0, "file": 0}
+
+        with (
+            patch(
+                "monifactory_assistant.application.interface.build_mod_view",
+                side_effect=lambda _app: {"vie": next(heartbeats), "ecran": {"machines": []}},
+            ),
+            patch("monifactory_assistant.application.interface.diagnostic_view", diagnostic),
+        ):
+            for _ in range(6):
+                app.refresh_views()
+        self.assertEqual(app.bridge.write.call_count, 2)
+        first, second = (call.args[1] for call in app.bridge.write.call_args_list)
+        self.assertEqual(first["ecran"]["diagnostic"]["inventaire_t"], 1_000)
+        self.assertEqual(second["vie"], 1)
+        self.assertEqual(second["ecran"]["diagnostic"]["inventaire_t"], 6_000)
+
     def test_valid_receipt_survives_file_delete_failure_without_reexecution(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

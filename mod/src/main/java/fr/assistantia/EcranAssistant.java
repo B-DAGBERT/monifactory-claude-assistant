@@ -50,7 +50,7 @@ public class EcranAssistant extends Screen {
             this.titre = titre;
         }
 
-        /** Calculé dans le jeu, sans l'assistant : ni ligne d'état ni bouton Relancer. */
+        /** Calculé dans le jeu, sans l'assistant : ligne d'état seulement s'il est arrêté. */
         boolean local() {
             return this == RECETTE || this == FILONS;
         }
@@ -228,7 +228,8 @@ public class EcranAssistant extends Screen {
         filons = new OngletFilons();
         filons.init(w -> addRenderableWidget(w), this.height);
         discussion.init(this.font, w -> addRenderableWidget(w));
-        setInitialFocus(saisie);
+        // Assistant arrêté : le champ reste sans focus pour que son indice gris le dise.
+        if (Pont.assistantActif()) setInitialFocus(saisie);
     }
 
     private void ouvrirProduction() {
@@ -393,8 +394,10 @@ public class EcranAssistant extends Screen {
             y += Theme.BOUTON + Theme.ECART;
         }
 
-        boolean ligneEtat = !onglet.local();
-        relancer.visible = ligneEtat && !actif && !Pont.relanceEnCours();
+        // Recette et Filons se passent de l'assistant : sa ligne d'état n'y vient que s'il est
+        // arrêté, avec Relancer, car la question en bas ne partira pas.
+        boolean ligneEtat = !onglet.local() || !actif;
+        relancer.visible = !actif && !Pont.relanceEnCours();
         if (ligneEtat) dessinerStatut(g, statut(ecran, actif), sourisX, sourisY);
         int basContenu = (ligneEtat ? ligneStatut : ligneQuestion) - Theme.ECART;
         int largeur = contenuDroite - contenuX;
@@ -412,7 +415,7 @@ public class EcranAssistant extends Screen {
 
     // ---------- Ligne d'état ----------
 
-    /** État de l'assistant pour les onglets qui dépendent de lui (Base, Discussion, Réglages). */
+    /** État de l'assistant : sur Base, Discussion, Réglages, et partout quand il est arrêté. */
     private Statut statut(JsonObject ecran, boolean actif) {
         if (!actif) {
             if (Pont.relanceEnCours())

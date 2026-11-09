@@ -192,7 +192,8 @@ public class VeinTabTest {
     var epuise=exact(h,"Épuisé");assert epuise.genre()==Theme.Genre.PRINCIPAL:"Épuisé proposé en action principale";
     assert exact(h,"Scanner").genre()==Theme.Genre.NORMAL;
     assert boutons(h).stream().filter(w->w.getMessage().getString().equals("Afficher")).count()>=2:"au moins deux lignes à "+taille[0];
-    for(String t:GuiGraphics.textes)assert !t.endsWith("…")||t.equals("Affichage…")||t.startsWith("Garnet"):"texte coupé inattendu : "+t;
+    // « Chercher un minerai… » : l'indice complet du champ (dessiné par ChampTheme), pas une coupe.
+    for(String t:GuiGraphics.textes)assert !t.endsWith("…")||t.equals("Affichage…")||t.equals("Chercher un minerai…")||t.startsWith("Garnet"):"texte coupé inattendu : "+t;
     if(taille[0]==320){
      var menu=bouton(h,"Affichage");assert !boutons(h).stream().anyMatch(w->w.getMessage().getString().startsWith("Intensité")):"réglages repliés à 320";
      assert h.onglet.cliquer(menu.getX()+1,menu.getY()+1,0)==false;menu.onPress();

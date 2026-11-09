@@ -91,6 +91,16 @@ public class Pont {public static JsonObject vue=new JsonObject();public static b
  public static boolean envoyer(JsonObject j){j.addProperty("n",1000+envois.size());envois.add(j.deepCopy());return true;}
  public static net.minecraft.world.item.ItemStack objet(String id){return new net.minecraft.world.item.ItemStack(id);}}
 """,
+        "net.minecraft.client.gui.GuiGraphics": """
+import net.minecraft.client.gui.Font;import net.minecraft.util.FormattedCharSequence;
+public class GuiGraphics {public static java.util.List<String> textes=new java.util.ArrayList<>();
+ public static java.util.List<int[]> positions=new java.util.ArrayList<>();
+ public void fill(int a,int b,int c,int d,int color){}public void renderOutline(int x,int y,int w,int h,int c){}
+ public int drawString(Font f,String s,int x,int y,int c,boolean shadow){textes.add(s);positions.add(new int[]{x,y,f.width(s),c});return x;}
+ public int drawString(Font f,FormattedCharSequence s,int x,int y,int c,boolean shadow){StringBuilder b=new StringBuilder();s.accept((i,st,p)->{b.appendCodePoint(p);return true;});return drawString(f,b.toString(),x,y,c,shadow);}
+ public void renderItem(net.minecraft.world.item.ItemStack s,int x,int y){}
+ public void enableScissor(int a,int b,int c,int d){}public void disableScissor(){}}
+""",
         "fr.assistantia.Hud": "public class Hud {public static int couleur(String n){return 0x6BE36B;}}",
         "fr.assistantia.Fullbright": """
 public class Fullbright {public static final String CLE="local_fullbright";public static boolean actif;
@@ -158,6 +168,12 @@ public class DashboardLayoutTest {
   for(int i=0;i<v.size();i++)for(int j=i+1;j<v.size();j++){int[] a=boite(v.get(i)),b=boite(v.get(j));
    assert a[0]+a[2]<=b[0]||b[0]+b[2]<=a[0]||a[1]+a[3]<=b[1]||b[1]+b[3]<=a[1]:cas+": overlap "+v.get(i).getMessage().getString()+" / "+v.get(j).getMessage().getString();}
  }
+ /** The hint is drawn grey, inside the field's text area, cut with « … » when longer. */
+ static void indice(ChampTheme champ,String debut,String cas){
+  int[] p=ecrit(debut);assert p!=null:cas+": hint drawn";
+  assert p[3]==Theme.TEXTE_SECONDAIRE:cas+": grey hint";
+  assert p[0]==champ.getX()+4&&p[0]+p[2]<=champ.getX()+champ.getWidth()-4:cas+": hint inside the field "+Arrays.toString(p);
+ }
  static JsonObject reglage(String cle,String nom,String description,boolean valeur){var r=new JsonObject();r.addProperty("cle",cle);r.addProperty("nom",nom);r.addProperty("description",description);r.addProperty("valeur",valeur);return r;}
  public static void main(String[] args){
   var mc=Minecraft.getInstance();
@@ -191,6 +207,9 @@ public class DashboardLayoutTest {
    var champ=question(s);var envoyer=bouton(s,"Envoyer");
    assert envoyer.genre()==Theme.Genre.PRINCIPAL&&champ.getY()-1==envoyer.getY()&&champ.getHeight()+2==envoyer.getHeight():cas+": question bar and Envoyer share one height";
    int ligneStatut=envoyer.getY()-Theme.ECART-Theme.BOUTON;
+   assert champ.isFocused():cas+": running assistant: the question field has the focus";
+   render(s);assert ecrit("Une question")==null:cas+": no hint over a focused field";
+   champ.setFocused(false);render(s);indice(champ,"Une question",cas+" hint");champ.setFocused(true);
    for(int i=0;i<ONGLETS.length;i++){
     onglets.get(i).onPress();render(s);String onglet=cas+" "+ONGLETS[i];
     for(int k=0;k<ONGLETS.length;k++)assert onglets.get(k).choisi()==(k==i)&&onglets.get(k).active:onglet+": open tab underlined, every tab clickable";
@@ -208,8 +227,21 @@ public class DashboardLayoutTest {
    int[] arret=ecrit("Assistant arrêté");
    assert relancer.visible&&arret!=null&&arret[2]>0&&arret[0]+arret[2]<=relancer.getX()-Theme.ECART:cas+": stopped status beside Relancer";
    dedans(s,cas+" stopped");
-   onglets.get(0).onPress();render(s);assert !relancer.visible&&ecrit("Assistant arrêté")==null:cas+": Recette works without the assistant";
-   Pont.actif=true;
+   onglets.get(0).onPress();render(s);
+   assert relancer.visible&&ecrit("Assistant arrêté")!=null&&OngletRecette.zone[3]<=ligneStatut-Theme.ECART:cas+": stopped assistant shown on Recette too";
+   dedans(s,cas+" stopped Recette");
+   onglets.get(3).onPress();render(s);assert relancer.visible&&ecrit("Assistant arrêté")!=null:cas+": and on Filons";
+   Pont.actif=true;onglets.get(0).onPress();render(s);
+   assert !relancer.visible&&ecrit("●")==null&&OngletRecette.zone[3]==champ.getY()-1-Theme.ECART:cas+": running assistant: Recette keeps its full height";
+   // Opened while the assistant is stopped: Recette shows the status and Relancer, the field
+   // keeps no focus so its grey hint says the question cannot leave.
+   Pont.actif=false;var arretee=new EcranAssistant();mc.screen=arretee;arretee.init(mc,w,h);
+   bouton(arretee,"Recette").onPress();render(arretee);var champArret=question(arretee);
+   assert !champArret.isFocused()&&bouton(arretee,"Relancer l’assistant").visible&&ecrit("Assistant arrêté")!=null:cas+": stopped at opening";
+   indice(champArret,"L’assistant est arrêté",cas+" stopped hint");
+   if(w==320)assert GuiGraphics.textes.stream().anyMatch(t->t.startsWith("L’assistant est arrêté")&&t.endsWith(Theme.POINTS)):"long hint cut at 320";
+   dedans(arretee,cas+" stopped at opening");
+   Pont.actif=true;mc.screen=s;render(s);
    // Update banner: themed, Masquer at the standard height, the content starts below it.
    ecran.addProperty("mise_a_jour","Mise à jour prête : relance l’assistant pour l’installer, puis Minecraft pour le mod.");ecran.addProperty("mise_a_jour_id","maj-"+w);
    render(s);var masquer=bouton(s,"Masquer");
@@ -234,7 +266,16 @@ public class DashboardLayoutTest {
    s.mouseScrolled(w/2,h/2,10);render(s);
    assert bouton(s,"Derniers messages ↓").visible:cas+": scrolled up";
    dedans(s,cas+" discussion scrolled");
-   bouton(s,"Derniers messages ↓").onPress();render(s);assert !bouton(s,"Derniers messages ↓").visible;
+   var derniers=bouton(s,"Derniers messages ↓");int[] dessous=null;
+   for(int k=0;k<120&&dessous==null&&derniers.visible;k++){
+    for(int i=0;i<GuiGraphics.textes.size();i++){int[] t=GuiGraphics.positions.get(i);
+     if(GuiGraphics.textes.get(i).equals("Copier")&&t[0]<derniers.getX()+derniers.getWidth()&&t[0]+t[2]>derniers.getX()&&t[1]<derniers.getY()+derniers.getHeight()&&t[1]+9>derniers.getY())dessous=t;}
+    if(dessous==null){s.mouseScrolled(w/2,h/2,-1.0/33);render(s);}}
+   assert dessous!=null&&derniers.visible:cas+": a Copier label lies under the button";
+   int cx=(Math.max(dessous[0],derniers.getX())+Math.min(dessous[0]+dessous[2],derniers.getX()+derniers.getWidth()))/2;
+   int cy=(Math.max(dessous[1],derniers.getY())+Math.min(dessous[1]+9,derniers.getY()+derniers.getHeight()))/2;
+   s.mouseClicked(cx,cy,0);render(s);
+   assert mc.keyboardHandler.copie.isEmpty()&&!derniers.visible:cas+": the button wins over the card under it";
    // Base: machines in cards, the list scrolls with the wheel.
    onglets.get(1).onPress();render(s);
    assert GuiGraphics.textes.stream().anyMatch(t->t.startsWith("20 machines · 12 coffres")):cas+": summary line";
