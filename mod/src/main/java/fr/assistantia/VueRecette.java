@@ -19,9 +19,15 @@ public record VueRecette(
         String annulation,
         String avancement,
         String remarque,
+        String plan,
         long revision,
         EtapeSuivante suivante) {
 
+    /**
+     * {@code plan} : raison pour laquelle le plan n'est pas encore calculé (sac en lecture, calcul
+     * en attente, arbre trop grand…), vide une fois le plan calculé. Un plan vide et calculé
+     * signifie au contraire que tout est déjà en stock.
+     */
     public VueRecette {
         message = texte(message);
         etapes = List.copyOf(etapes);
@@ -31,6 +37,7 @@ public record VueRecette(
         annulation = texte(annulation);
         avancement = texte(avancement);
         remarque = texte(remarque);
+        plan = texte(plan);
     }
 
     public enum Etat {
@@ -143,7 +150,7 @@ public record VueRecette(
 
     public static VueRecette vide(Etat etat, String message) {
         return new VueRecette(
-                etat, message, null, List.of(), List.of(), List.of(), List.of(), "", "", "", 0,
+                etat, message, null, List.of(), List.of(), List.of(), List.of(), "", "", "", "", 0,
                 null);
     }
 

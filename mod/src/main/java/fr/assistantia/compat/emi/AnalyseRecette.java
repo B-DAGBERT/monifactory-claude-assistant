@@ -40,6 +40,10 @@ import net.minecraftforge.fluids.FluidUtil;
  */
 public final class AnalyseRecette {
     private static final long BUDGET_NS = 1_000_000L;
+
+    /** Développements de chaînes au plus par tick (une évaluation en fait au plus 256). */
+    static final int MAX_EXPANSIONS_TICK = 96;
+
     static final int MAX_CANDIDATS = 32,
             MAX_PRODUCTEURS = 1024,
             MAX_NOEUDS_ANALYSES = 256,
@@ -48,7 +52,71 @@ public final class AnalyseRecette {
             MAX_MACHINES = 6,
             MAX_REPERES = 16;
 
-    private record Cle(Object arbre, Object racine, long lots, long structure, Object gestion) {}
+    /**
+     * Identité de l'arbre réel analysé, sans la révision globale (augmentée aussi par les arbres
+     * temporaires d'EMI) : chaque recalcul réel recrée la liste des enfants du but, et un choix de
+     * recette pour le but change sa recette. Toutes les comparaisons sont des identités.
+     */
+    private static final class Cle {
+        final Object arbre, racine, recetteRacine, enfants, gestion;
+        final long lots;
+        final int resolutions;
+
+        Cle(
+                Object arbre,
+                Object racine,
+                Object recetteRacine,
+                Object enfants,
+                long lots,
+                int resolutions,
+                Object gestion) {
+            this.arbre = arbre;
+            this.racine = racine;
+            this.recetteRacine = recetteRacine;
+            this.enfants = enfants;
+            this.lots = lots;
+            this.resolutions = resolutions;
+            this.gestion = gestion;
+        }
+
+        boolean meme(Cle autre) {
+            return autre != null
+                    && arbre == autre.arbre
+                    && racine == autre.racine
+                    && recetteRacine == autre.recetteRacine
+                    && enfants == autre.enfants
+                    && lots == autre.lots
+                    && resolutions == autre.resolutions
+                    && gestion == autre.gestion;
+        }
+
+        Object arbre() {
+            return arbre;
+        }
+
+        Object racine() {
+            return racine;
+        }
+
+        long lots() {
+            return lots;
+        }
+
+        Object gestion() {
+            return gestion;
+        }
+    }
+
+    private static Cle cleActuelle(Object arbre) throws ReflectiveOperationException {
+        return new Cle(
+                arbre,
+                ArbreRecette.racine(arbre),
+                ArbreRecette.recetteRacine(arbre),
+                ArbreRecette.enfantsRacine(arbre),
+                ArbreRecette.lots(arbre),
+                ArbreRecette.resolutions(arbre).size(),
+                EmiApi.getRecipeManager());
+    }
 
     private record Candidat(EmiRecipe recette, ChaineRecette.Chaine chaine, Object poste) {}
 
@@ -60,9 +128,11 @@ public final class AnalyseRecette {
         ChaineRecette.Chaine actuelle;
         final List<Candidat> candidats = new ArrayList<>();
         int restants = -1;
-        // Décision mise en cache tant que les possessions et la liste des candidats sont stables.
+        // Décision mise en cache tant que les possessions, leur complétude et la liste des
+        // candidats sont stables.
         long revisionDecision = -1;
         int candidatsDecision = -1;
+        boolean completDecision;
         Candidat meilleure, avecMachine;
         Object posteManquant;
 
@@ -85,7 +155,7 @@ public final class AnalyseRecette {
     private record Evaluation(Analyse analyse, EmiRecipe recette, boolean actuelle)
             implements Tache {}
 
-    private record Proposition(Analyse analyse, Candidat candidat, long structure) {}
+    private record Proposition(Analyse analyse, Candidat candidat, Cle arbre) {}
 
     /** {@code racine} : état exact du but avant « Appliquer », null pour un autre nœud. */
     private record Annulation(
@@ -114,6 +184,16 @@ public final class AnalyseRecette {
     private static List<RangsRecette.Etape<EmiRecipe>> etapes = List.of();
     private static Set<EmiRecipe> recettesPlan = Set.of();
     private static String clePlan = "";
+
+    /** Raison pour laquelle le plan n'est pas (encore) calculé ; vide une fois calculé. */
+    private static String planAttente = "";
+
+    private static long generation;
+    private static boolean erreurLectureSignalee;
+    private static int attenteSuivi;
+    private static Object gestionEtabli;
+    private static final Map<EmiRecipe, ChaineRecette.Recette<EmiIngredient>> LECTURES =
+            new IdentityHashMap<>();
     private static Map<String, Proposition> propositions = Map.of();
     private static final ArrayDeque<Annulation> annulations = new ArrayDeque<>();
     private static CleReperes cleReperes;
@@ -192,27 +272,31 @@ public final class AnalyseRecette {
         }
         Cle actuelle;
         try {
-            actuelle =
-                    new Cle(
-                            arbre,
-                            ArbreRecette.racine(arbre),
-                            ArbreRecette.lots(arbre),
-                            InstantaneArbreEmi.revisionStructureProduction(),
-                            EmiApi.getRecipeManager());
+            actuelle = cleActuelle(arbre);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Arbre EMI illisible", e);
         }
-        if (!actuelle.equals(cle)) nouvelArbre(actuelle);
+        // Un tick qui relit l'arbre ou refait le plan n'avance pas l'analyse des alternatives.
+        boolean reconstruit = false;
+        if (!actuelle.meme(cle)) {
+            nouvelArbre(actuelle);
+            reconstruit = true;
+        }
         if (lecture == null) {
             publierVide(VueRecette.Etat.ERREUR, erreur);
             return;
         }
-        if (ticks >= prochainPlan && ticks % 10 == 0) actualiserPlan(false);
-        long limite = System.nanoTime() + BUDGET_NS;
-        while (!taches.isEmpty() && System.nanoTime() < limite) {
-            executer(taches.pollFirst());
-            tachesFaites++;
-            sale = true;
+        if (ticks >= prochainPlan && ticks % 10 == 0) reconstruit |= actualiserPlan();
+        if (!reconstruit) {
+            long limite = System.nanoTime() + BUDGET_NS;
+            long expansions = evaluateur.expansions();
+            while (!taches.isEmpty()
+                    && System.nanoTime() < limite
+                    && evaluateur.expansions() - expansions < MAX_EXPANSIONS_TICK) {
+                executer(taches.pollFirst());
+                tachesFaites++;
+                sale = true;
+            }
         }
         if (ticks % 10 == 5) actualiserReperes();
         long maintenant = System.currentTimeMillis();
@@ -246,6 +330,9 @@ public final class AnalyseRecette {
         etapes = List.of();
         recettesPlan = Set.of();
         clePlan = "";
+        planAttente = "";
+        attenteSuivi = 0;
+        LECTURES.clear();
         propositions = Map.of();
         cleReperes = null;
         cleEtapes = cleIntrouvables = null;
@@ -260,14 +347,25 @@ public final class AnalyseRecette {
         var arbrePrecedent = cle == null ? null : cle.arbre();
         oublier(arbrePrecedent != suivante.arbre());
         cle = suivante;
+        generation++;
         erreur = "";
         if (arbrePrecedent != suivante.arbre()) annulations.clear();
         try {
             lecture = ArbreRecette.lire(suivante.arbre());
             instantane = InstantaneArbreEmi.lire(suivante.arbre());
-        } catch (ReflectiveOperationException | RuntimeException e) {
+        } catch (IllegalArgumentException limite) {
+            // Bornes de lecture (profondeur, nombre de nœuds) ou cycle : une limite, pas une panne.
             lecture = null;
-            erreur = "Arbre EMI trop grand ou illisible : réduis la sélection dans Recipe Tree.";
+            erreur = "Arbre EMI trop grand ou cyclique : réduis la sélection dans Recipe Tree.";
+            return;
+        } catch (ReflectiveOperationException | RuntimeException illisible) {
+            lecture = null;
+            erreur = "Arbre EMI illisible · détails dans le journal du jeu.";
+            if (!erreurLectureSignalee) {
+                com.mojang.logging.LogUtils.getLogger()
+                        .warn("Assistant : lecture de l'arbre EMI impossible", illisible);
+                erreurLectureSignalee = true;
+            }
             return;
         }
         evaluateur = new ChaineRecette<>(new SourceEmi(suivante.arbre()));
@@ -293,7 +391,9 @@ public final class AnalyseRecette {
         }
         for (var analyse : analyses) taches.add(new Producteurs(analyse));
         tachesTotales = taches.size();
-        actualiserPlan(true);
+        // Jamais de plan forcé : il se refait au prochain créneau permis par sa limite de coût.
+        planAttente = "Calcul du plan…";
+        if (ticks >= prochainPlan) actualiserPlan();
         sale = true;
     }
 
@@ -376,17 +476,11 @@ public final class AnalyseRecette {
         }
         double eu = 0, duree = 0;
         try {
-            Object gt = GregTechMachines.recette(recette);
+            Object gt = GregTechRecette.recette(recette);
             if (gt != null) {
-                duree = gt.getClass().getField("duration").getInt(gt);
-                Object energie = gt.getClass().getMethod("getInputEUt").invoke(gt);
-                long tension =
-                        ((Number) energie.getClass().getMethod("voltage").invoke(energie))
-                                .longValue();
-                long amperes =
-                        ((Number) energie.getClass().getMethod("amperage").invoke(energie))
-                                .longValue();
-                eu = (double) tension * amperes * duree;
+                double[] cout = GregTechRecette.cout(gt);
+                eu = cout[0];
+                duree = cout[1];
             }
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // Énergie inconnue : seul critère de départage, jamais une raison de refuser.
@@ -470,13 +564,40 @@ public final class AnalyseRecette {
 
     // ---------- Plan ----------
 
-    private static void actualiserPlan(boolean force) {
-        if (lecture == null || instantane == null || !InventaireJoueur.synchronise()) return;
-        var arbreSuivi = MachinesEmi.arbreSuivi();
-        boolean suivi = arbreSuivi == cle.arbre() && MachinesEmi.instantaneSuivi() == instantane;
-        var operationsSuivies = suivi ? MachinesEmi.operationsSuivies() : null;
+    /**
+     * Refait l'ordre du plan si ses entrées ont changé, dans la limite de coût : jamais forcé.
+     *
+     * @return vrai si un calcul a eu lieu ; ce tick n'avance alors pas les alternatives
+     */
+    private static boolean actualiserPlan() {
+        if (lecture == null) return false;
+        if (!InventaireJoueur.synchronise()) {
+            if (etapes.isEmpty()) attendre("Lecture du sac en cours…");
+            return false;
+        }
+        // Arbre suivi : adopter l'instantané et les opérations du suivi, même après son
+        // « Recalculer », pour garder ses lots et ses crédits.
+        boolean suivi = MachinesEmi.arbreSuivi() == cle.arbre();
+        var vue = instantane;
+        List<PlanMachines.Operation<EmiRecipe>> operationsSuivies = null;
+        if (suivi) {
+            var instantaneSuivi = MachinesEmi.instantaneSuivi();
+            if (instantaneSuivi != null) {
+                attenteSuivi = 0;
+                vue = instantaneSuivi;
+                operationsSuivies = MachinesEmi.operationsSuivies();
+            } else if (++attenteSuivi < 4) {
+                if (etapes.isEmpty()) attendre("Calcul du plan…");
+                return false;
+            } else suivi = false; // le suivi ne lit pas cet arbre : calcul local
+        }
+        if (vue == null) return false;
         String signature =
-                PossessionsRecette.revision()
+                System.identityHashCode(vue)
+                        + "|"
+                        + suivi
+                        + "|"
+                        + PossessionsRecette.revision()
                         + "|"
                         + (suivi ? System.identityHashCode(operationsSuivies) : stockSignature())
                         + "|"
@@ -485,28 +606,51 @@ public final class AnalyseRecette {
                         + CoffresConnus.etat().revision()
                         + "|"
                         + InventaireJoueur.disponible();
-        if (!force && signature.equals(clePlan)) return;
+        if (signature.equals(clePlan)) return false;
         clePlan = signature;
+        instantane = vue;
         long debut = System.nanoTime();
         try {
-            ordonner(operationsSuivies, suivi);
+            ordonner(vue, operationsSuivies, suivi);
         } finally {
-            // Un très grand plan coûte plusieurs millisecondes : le relire moins souvent.
-            prochainPlan = ticks + (System.nanoTime() - debut > 5_000_000L ? 60 : 0);
+            // Un grand plan coûte plusieurs millisecondes : le refaire moins souvent.
+            long duree = System.nanoTime() - debut;
+            prochainPlan = ticks + (duree > 5_000_000L ? 100 : duree > 1_500_000L ? 40 : 0);
+        }
+        return true;
+    }
+
+    /** Plan non calculé : l'onglet l'affiche avec sa raison, jamais « rien à fabriquer ». */
+    private static void attendre(String raison) {
+        if (!raison.equals(planAttente)) {
+            planAttente = raison;
+            sale = true;
         }
     }
 
     private static void ordonner(
-            List<PlanMachines.Operation<EmiRecipe>> operationsSuivies, boolean suivi) {
+            InstantaneArbreEmi vue,
+            List<PlanMachines.Operation<EmiRecipe>> operationsSuivies,
+            boolean suivi) {
         List<PlanMachines.Operation<EmiRecipe>> operations;
         try {
             operations =
                     operationsSuivies != null
                             ? operationsSuivies
-                            : PlanMachines.calculer(
-                                    instantane.machines(), instantane.lots(), stockEmi());
+                            : PlanMachines.calculer(vue.machines(), vue.lots(), stockEmi());
         } catch (RuntimeException e) {
-            operations = List.of();
+            etapes = List.of();
+            recettesPlan = Set.of();
+            attendre(
+                    "Plan impossible : "
+                            + (e.getMessage() == null ? "arbre illisible" : e.getMessage()));
+            return;
+        }
+        if (suivi && operations.isEmpty() && !MachinesEmi.problemeOrdre().isEmpty()) {
+            etapes = List.of();
+            recettesPlan = Set.of();
+            attendre(MachinesEmi.problemeOrdre());
+            return;
         }
         var visibles = operations.stream().filter(o -> !assistant(o.recette())).toList();
         Map<EmiRecipe, List<OrdreMachines.Regle<OrdonnancementEmi.Objet>>> regles =
@@ -520,7 +664,7 @@ public final class AnalyseRecette {
         if (InventaireJoueur.disponible()) sources.addAll(coffres(visibles));
         var ordre =
                 OrdreMachines.calculer(
-                        instantane.machines(),
+                        vue.machines(),
                         visibles,
                         r -> regles.getOrDefault(r, List.of()),
                         sources,
@@ -542,6 +686,7 @@ public final class AnalyseRecette {
         Set<EmiRecipe> recettes = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         for (var o : visibles) recettes.add(o.recette());
         recettesPlan = recettes;
+        planAttente = "";
         cleReperes = null;
         sale = true;
     }
@@ -608,11 +753,32 @@ public final class AnalyseRecette {
             case RANGEE -> OrdreMachines.Condition.preparer(
                     (machine ? "Machine à poser : " : "Poste à poser : ") + nom);
             case AUCUNE -> new OrdreMachines.Condition(
-                    OrdreMachines.Mode.BLOQUE,
-                    (machine ? "Machine manquante : " : "Poste manquant : ") + nom);
+                    OrdreMachines.Mode.BLOQUE, manque(poste, nom));
             case INCONNUE -> new OrdreMachines.Condition(
                     OrdreMachines.Mode.INCONNU, "Poste à vérifier : " + nom);
         };
+    }
+
+    /**
+     * Raison d'un poste absent. Décision C : quand la tension manque, on le dit sans nommer de
+     * machine plus puissante ; seul un type de machine absent, dans les tensions déjà possédées,
+     * est nommé « manquant ».
+     */
+    private static String manque(Object poste, String nom) {
+        if (poste instanceof PossessionsRecette.PosteGT gt) {
+            var possedee = PossessionsRecette.atelierSousTier(gt);
+            var nommable = PossessionsRecette.atelier(gt);
+            return DecisionTension.raison(
+                    possedee == null ? null : possedee.nom(), nommable == null ? null : nom);
+        }
+        return "Poste manquant : " + nom;
+    }
+
+    /** Le poste manque faute de tension, pas de type de machine (décision C). */
+    private static boolean tension(Object poste) {
+        return poste instanceof PossessionsRecette.PosteGT gt
+                && PossessionsRecette.possession(gt) == PossessionsRecette.Possession.AUCUNE
+                && (PossessionsRecette.sousTier(gt) || PossessionsRecette.atelier(gt) == null);
     }
 
     /** Un lot en cours dont une sortie attendue est un ingrédient de cette recette. */
@@ -762,8 +928,9 @@ public final class AnalyseRecette {
                 annulation(),
                 avancement,
                 remarque,
+                etapes.isEmpty() ? planAttente : "",
                 ++revisionVue,
-                vueSuivante);
+                etapes.isEmpty() ? null : vueSuivante);
     }
 
     private static VueRecette.Objet cible() {
@@ -845,7 +1012,9 @@ public final class AnalyseRecette {
                         + switch (PossessionsRecette.possession(poste)) {
                             case POSEE -> PossessionsRecette.etabli(poste) ? "" : " (posé)";
                             case RANGEE -> " (rangé, à poser)";
-                            case AUCUNE -> " (manquant)";
+                            case AUCUNE -> tension(poste)
+                                    ? " (tension insuffisante)"
+                                    : " (manquant)";
                             case INCONNUE -> " (à vérifier)";
                         });
         if (!circuit.isEmpty()) detail.add(circuit);
@@ -874,7 +1043,9 @@ public final class AnalyseRecette {
             case ATTEND -> "Ordre : passe après l’étape qui fabrique son ingrédient.";
             case MANQUE -> "Ordre : une matière manque encore, les étapes possibles passent avant.";
             case POSTE_MANQUANT -> "Ordre : aucune machine possédée ne sait faire cette recette.";
-            default -> "Ordre : les étapes qui débloquent le plus d’autres étapes passent en premier.";
+            default -> e.raison().startsWith("Tension insuffisante")
+                    ? "Ordre : tes machines de ce type n’ont pas la tension de cette recette."
+                    : "Ordre : les étapes qui débloquent le plus d’autres étapes passent en premier.";
         };
     }
 
@@ -882,6 +1053,7 @@ public final class AnalyseRecette {
     private static String court(String raison) {
         if (raison.startsWith("Manque : ")) return "Manque " + raison.substring(9);
         if (raison.startsWith("Machine manquante")) return "Machine manquante";
+        if (raison.startsWith("Tension insuffisante")) return "Tension insuffisante";
         if (raison.startsWith("Poste manquant")) return "Poste manquant";
         if (raison.startsWith("Machine à poser")) return "Machine à poser";
         if (raison.startsWith("Poste à poser")) return "Poste à poser";
@@ -897,7 +1069,7 @@ public final class AnalyseRecette {
 
     private static String circuit(EmiRecipe recette) {
         try {
-            Object gt = GregTechMachines.recette(recette);
+            Object gt = GregTechRecette.recette(recette);
             if (gt == null) return "";
             return "Circuit " + ConfigurationCircuit.lire(gt);
         } catch (ReflectiveOperationException | RuntimeException sansCircuit) {
@@ -910,7 +1082,12 @@ public final class AnalyseRecette {
         Map<String, Long> quantites = new LinkedHashMap<>();
         Map<String, String> noms = new HashMap<>();
         Set<String> outils = new java.util.LinkedHashSet<>();
-        for (var entree : lire(recette, null).entrees()) {
+        var lue = LECTURES.get(recette);
+        if (lue == null) {
+            lue = lire(recette, null);
+            if (LECTURES.size() < 4096) LECTURES.put(recette, lue);
+        }
+        for (var entree : lue.entrees()) {
             var pile = premiere(entree.ingredient());
             if (pile == null) continue;
             String nom = pile.getName().getString();
@@ -950,15 +1127,21 @@ public final class AnalyseRecette {
     /** Décision d'un nœud : meilleure alternative faisable, ou meilleure avec machine à faire. */
     private static void decider(Analyse analyse) {
         long revision = PossessionsRecette.revision();
+        boolean complet = PossessionsRecette.complet();
         if (analyse.revisionDecision == revision
-                && analyse.candidatsDecision == analyse.candidats.size()) return;
+                && analyse.candidatsDecision == analyse.candidats.size()
+                && analyse.completDecision == complet) return;
         analyse.revisionDecision = revision;
         analyse.candidatsDecision = analyse.candidats.size();
+        analyse.completDecision = complet;
         analyse.meilleure = analyse.avecMachine = null;
         analyse.posteManquant = null;
         for (var c : analyse.candidats) {
             if (!ComparaisonAlternatives.meilleure(c.chaine(), analyse.actuelle)) continue;
             if (introduitIntrouvable(c.chaine(), analyse.actuelle)) continue;
+            // Moules, lentilles, formes d'extrudeuse : un outil nouveau doit déjà être possédé.
+            if (!ComparaisonAlternatives.outilsPossedes(
+                    c.chaine(), analyse.actuelle, AnalyseRecette::possede, complet)) continue;
             Object manquant = null;
             boolean faisable = true;
             for (Object poste : c.chaine().postes()) {
@@ -1070,14 +1253,10 @@ public final class AnalyseRecette {
             String gain =
                     ComparaisonAlternatives.gain(
                             c.chaine(), analyse.actuelle, AnalyseRecette::nom, nomProduit);
-            // Identité stable : révision de l'arbre, ingrédient résolu et recette proposée.
+            // Identité stable : lecture de l'arbre, ingrédient résolu et recette proposée.
             String id =
-                    cle.structure()
-                            + "|"
-                            + cle(analyse.noeud.ingredient())
-                            + "|"
-                            + c.recette().getId();
-            nouvelles.put(id, new Proposition(analyse, c, cle.structure()));
+                    generation + "|" + cle(analyse.noeud.ingredient()) + "|" + c.recette().getId();
+            nouvelles.put(id, new Proposition(analyse, c, cle));
             var actuelle = analyse.noeud.recette();
             String detail =
                     nomProduit
@@ -1154,13 +1333,16 @@ public final class AnalyseRecette {
     /** Le premier atelier du poste fabricable avec ce qu'a le joueur, du moins puissant au plus. */
     private static Facile facile(Object poste) {
         if (!PossessionsRecette.complet()) return null;
+        verifierGestion();
         if (revisionFaciles != PossessionsRecette.revision()) {
             FACILES.clear();
             revisionFaciles = PossessionsRecette.revision();
         }
-        var ateliers = PossessionsRecette.ateliers(poste);
-        for (int i = 0; i < ateliers.size() && i < 3; i++) {
-            var atelier = ateliers.get(i);
+        int essais = 0;
+        for (var atelier : PossessionsRecette.ateliers(poste)) {
+            // Décision C : jamais une machine électrique au-dessus des tensions déjà possédées.
+            if (!PossessionsRecette.proposable(atelier)) continue;
+            if (++essais > 3) break;
             var resultat =
                     FACILES.computeIfAbsent(
                             atelier.id(),
@@ -1176,7 +1358,26 @@ public final class AnalyseRecette {
     }
 
     /** Recettes d'établi produisant un objet, lues une fois par génération de recettes EMI. */
+    /** Les recettes d'établi et les résultats « facile » dépendent de la génération EMI. */
+    private static void verifierGestion() {
+        var gestion = EmiApi.getRecipeManager();
+        if (gestion != gestionEtabli) {
+            ETABLI.clear();
+            FACILES.clear();
+            gestionEtabli = gestion;
+        }
+    }
+
+    /**
+     * Un outil (clé de matière) présent dans l'inventaire, le sac, un coffre connu ou une machine.
+     */
+    private static boolean possede(String cle) {
+        return cle.startsWith("objet:")
+                && PossessionsRecette.stock().getOrDefault(cle.substring(6), 0L) > 0;
+    }
+
     private static List<FabricationFacile.Recette> etabli(String objet) {
+        verifierGestion();
         var connues = ETABLI.get(objet);
         if (connues != null) return connues;
         List<FabricationFacile.Recette> liste = new ArrayList<>();
@@ -1335,11 +1536,8 @@ public final class AnalyseRecette {
         if (proposition == null || cle == null)
             return "Alternative périmée · attends le nouvel affichage.";
         Object arbre = ArbreEmi.consulte();
-        if (arbre != cle.arbre()
-                || ArbreRecette.racine(arbre) != cle.racine()
-                || ArbreRecette.lots(arbre) != cle.lots()
-                || InstantaneArbreEmi.revisionStructureProduction() != proposition.structure()
-                || EmiApi.getRecipeManager() != cle.gestion())
+        // Même arbre réel que celui analysé : but, structure, lots, résolutions et recettes EMI.
+        if (arbre == null || !cleActuelle(arbre).meme(proposition.arbre()))
             return "Arbre EMI modifié · attends le nouvel affichage.";
         var analyse = proposition.analyse();
         var ingredient = analyse.noeud.ingredient();

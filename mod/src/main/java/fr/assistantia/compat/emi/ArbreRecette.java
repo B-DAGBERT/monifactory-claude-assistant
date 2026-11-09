@@ -89,6 +89,18 @@ final class ArbreRecette {
         classeNoeud = type;
     }
 
+    /**
+     * Liste des enfants du but : chaque recalcul réel de l'arbre la recrée (le but est redéfini en
+     * premier), alors qu'un arbre temporaire d'EMI n'y touche pas. Son identité date la structure.
+     */
+    static Object enfantsRacine(Object arbre) throws ReflectiveOperationException {
+        charger(arbre);
+        Object goal = but.get(arbre);
+        if (goal == null) return null;
+        chargerNoeud(goal.getClass());
+        return enfants.get(goal);
+    }
+
     /** Recette actuelle du but (la racine ne passe pas par {@code getRecipe}). */
     static EmiRecipe recetteRacine(Object arbre) throws ReflectiveOperationException {
         charger(arbre);
