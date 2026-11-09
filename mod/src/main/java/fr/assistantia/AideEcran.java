@@ -352,11 +352,8 @@ public final class AideEcran {
         page = Math.max(0, Math.min(derniere(), page + sens));
     }
 
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public static void relache(ScreenEvent.MouseButtonReleased.Pre event) {
-        if (surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY()))
-            event.setCanceled(true);
-    }
+    // Pas d'annulation du relâchement selon sa position : RelachementSouris retient celui des clics
+    // pris par le panneau, et un glisser commencé dans l'établi doit s'y terminer.
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void molette(ScreenEvent.MouseScrolled.Pre event) {

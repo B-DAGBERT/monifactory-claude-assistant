@@ -62,6 +62,12 @@ public class RelachementTest {
   RelachementSouris.appui(pris);var annule=new ScreenEvent.MouseButtonReleased.Pre(coffre,0);annule.setCanceled(true);
   RelachementSouris.relache(annule);appui(coffre,0,false);assert !relache(coffre,0):"un relâchement déjà annulé termine aussi l'appui";
   appui(coffre,1,true);assert !relache(coffre,0)&&!relache(coffre,1):"un autre bouton ne termine pas l'appui, l'attente est levée";
+  // Au-dessus de la barre EMI ou d'un panneau, seul l'appui décide, jamais la position.
+  appui(coffre,0,false);assert !relache(coffre,0):"appui dans une case, relâché sur la barre : le coffre termine sa répartition";
+  Screen creatif=new AbstractContainerScreen<Object>("créatif");
+  appui(creatif,0,false);assert !relache(creatif,0):"barre du créatif glissée jusqu'à la barre EMI : le défilement s'arrête";
+  appui(machine,0,false);assert !relache(machine,0):"glisser d'un widget GT terminé sur le panneau machine : transmis";
+  appui(coffre,0,true);assert relache(coffre,0):"appui sur la barre puis relâché : retenu";
   System.out.println("Relachement OK");
  }
 }
@@ -105,7 +111,7 @@ class MouseReleaseTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("Relachement OK", result.stdout)
 
-    def test_every_panel_press_is_taken_with_its_release(self):
+    def test_panels_take_their_press_and_never_a_release_by_position(self):
         client = (JAVA / "Client.java").read_text(encoding="utf-8")
         self.assertIn("register(RelachementSouris.class)", client)
         for nom in (
@@ -120,7 +126,9 @@ class MouseReleaseTests(unittest.TestCase):
             with self.subTest(nom=nom):
                 self.assertIn("RelachementSouris.consommer(event)", clic)
                 self.assertNotIn("setCanceled", clic)
-                self.assertIn("void relache(ScreenEvent.MouseButtonReleased.Pre event)", source)
+                # Un relâchement au-dessus du panneau ou de la barre, d'un glisser commencé dans le
+                # conteneur, doit lui parvenir : seul RelachementSouris décide, selon l'appui.
+                self.assertNotIn("MouseButtonReleased", source)
         # Un bouton grisé de la barre EMI prend aussi le clic : isMouseOver l'ignorerait.
         barre = (JAVA / "compat/emi/CoffresArbreEmi.java").read_text(encoding="utf-8")
         self.assertIsNone(re.search(r"isMouseOver\(", barre))

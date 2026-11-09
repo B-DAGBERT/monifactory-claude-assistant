@@ -277,13 +277,8 @@ public final class CoffresArbreEmi {
         fr.assistantia.RelachementSouris.consommer(event);
         if (bouton.active)
             bouton.mouseClicked(event.getMouseX(), event.getMouseY(), event.getButton());
-    }
-
-    /** Relâché sur la barre, un clic commencé ailleurs ne va pas non plus au conteneur. */
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public static void relache(ScreenEvent.MouseButtonReleased.Pre event) {
-        if (sous(event.getScreen(), event.getMouseX(), event.getMouseY()) != null)
-            event.setCanceled(true);
+        // Le relâchement est retenu par RelachementSouris, pas selon sa position : un glisser
+        // commencé dans le conteneur (répartition, barre du créatif, widget GT) doit s'y terminer.
     }
 
     public static fr.assistantia.DispositionCoffre.Zone zoneSuivi(Screen screen) {
