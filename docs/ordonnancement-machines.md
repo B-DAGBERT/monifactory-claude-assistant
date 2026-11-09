@@ -166,3 +166,13 @@ Vérifier la cible de la simulation, fermer les processus de la copie, puis inst
 - `SuiviEmiEcran` gère groupes, défilement, sélection et retours.
 - `StockProduction` et `CoffresArbreEmi` préservent le menu attesté pendant la navigation vers Suivi ou Aide.
 - Les tests dédiés gardent les scénarios d'ordre, de passerelle, de navigation et de non-régression.
+
+## Onglet Recette et repères dans le monde
+
+L'onglet **Y → Recette** réutilise cet ordre pour numéroter le plan de l'arbre choisi dans Recipe Tree. `AnalyseRecette` transmet à `OrdreMachines.calculer` les opérations de `PlanMachines`, celles du suivi lorsque l'arbre est actif, et les règles d'`OrdonnancementEmi`. Les préconditions diffèrent : une machine posée compte comme disponible sans ouvrir son menu, une machine rangée demande d'être posée et un poste absent bloque l'étape. La mémoire des coffres s'ajoute aux poches et au sac avec l'origine coffre, donc comme stock à récupérer et jamais comme stock directement utilisable. Les rangs peuvent ainsi différer des groupes du suivi, qui exigent le menu natif.
+
+`RangsRecette` numérote les lignes dans l'ordre des groupes : À lancer maintenant, À préparer, lots en cours, puis Étapes suivantes. Une étape bloquée par une dépendance indique « Attend l'étape N ». La première étape actionnable porte la ★ dans l'onglet et dans le panneau en haut à gauche.
+
+Dans le monde, chaque machine entourée en rouge reçoit le rang de son lot en cours, sinon celui de la première étape compatible qu'elle sait faire. La ★ va à la machine la plus proche de la première étape machine actionnable ; une étape non actionnable est grisée. Les repères sont recalculés pendant le tick, toutes les dix ticks et seulement si l'ordre, les machines ou les lots changent, pour 16 machines au plus. `ReperesRecette` les dessine après les contours rouges, sans calcul au rendu. Comme la lecture de l'ordre du suivi, ce calcul ne crée ni réservation ni crédit.
+
+Depuis le retrait des projets et des objectifs, le contexte revérifié avant une action se limite au monde, à la connexion, à la dimension et à l'arbre ; la pause d'objectif n'existe plus et seul l'arrêt de l'arbre interrompt le suivi.
