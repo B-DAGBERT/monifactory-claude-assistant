@@ -4,6 +4,7 @@ import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.api.stack.Comparison;
+import net.minecraft.world.item.Item;
 
 public final class ComparaisonEmi {
     private ComparaisonEmi() {}
@@ -55,16 +56,16 @@ public final class ComparaisonEmi {
      * recette dans le jeu : avant, un outil entamé ou chargé n'était pas toujours surligné.
      */
     public static boolean meme(EmiStack reel, EmiStack attendu) {
-        if (circuit(attendu)) return circuit(reel);
+        // Appelé des milliers de fois par image (Coffres ON) : d'abord la clé, sans rien créer.
+        // Deux objets différents ne sont jamais le même ; ni copie d'ItemStack ni nom de registre.
+        Object cle = attendu.getKey();
+        if (cle == null || !cle.equals(reel.getKey())) return false;
         if (reel.isEqual(attendu)) return true;
-        var objet = attendu.getItemStack();
-        return !objet.isEmpty()
-                && outil(objet)
-                && !reel.getItemStack().isEmpty()
-                && reel.getItemStack().getItem() == objet.getItem();
+        // Même objet, données différentes : réglage de circuit, ou usure et charge d'un outil.
+        return circuit(attendu) || cle instanceof Item item && outil(item);
     }
 
-    private static boolean outil(net.minecraft.world.item.ItemStack objet) {
-        return objet.isDamageableItem() || OUTIL_GT != null && OUTIL_GT.isInstance(objet.getItem());
+    private static boolean outil(Item item) {
+        return item.canBeDepleted() || OUTIL_GT != null && OUTIL_GT.isInstance(item);
     }
 }

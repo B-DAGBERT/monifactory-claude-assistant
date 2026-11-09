@@ -9,9 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = {
+    "net.minecraft.world.item.Item": """
+public class Item {public boolean usable;public boolean canBeDepleted(){return usable;}}
+""",
     "net.minecraft.world.item.ItemStack": """
-public record ItemStack(Object getItem) {public boolean isEmpty(){return getItem==null;}
- public boolean isDamageableItem(){return getItem instanceof String s&&s.startsWith("damageable");}}
+public record ItemStack(Object getItem) {public boolean isEmpty(){return getItem==null;}}
 """,
     "dev.emi.emi.api.stack.Comparison": """
 public class Comparison {public static final Comparison DEFAULT_COMPARISON=new Comparison();
@@ -27,7 +29,8 @@ public class EmiStack implements EmiIngredient {
  public EmiStack(String i,Object t,int d,long n){id=i;item=t;damage=d;amount=n;}
  public EmiStack copy(){var s=new EmiStack(id,item,damage,amount);s.comparison=comparison;return s;}
  public EmiStack comparison(java.util.function.Function<Comparison,Comparison> f){comparison=f.apply(comparison);return this;}
- public net.minecraft.world.item.ItemStack getItemStack(){return new net.minecraft.world.item.ItemStack(item);}
+ public static int copies;public Object getKey(){return item;}
+ public net.minecraft.world.item.ItemStack getItemStack(){copies++;return new net.minecraft.world.item.ItemStack(item);}
  public String getId(){return id;} public java.util.List<EmiStack> getEmiStacks(){return java.util.List.of(this);}
  public boolean isEqual(EmiStack s){return item==s.item&&(comparison!=Comparison.NBT&&s.comparison!=Comparison.NBT||damage==s.damage);}}
 """,
@@ -40,7 +43,7 @@ package fr.assistantia;
 import fr.assistantia.compat.emi.ComparaisonEmi;
 import dev.emi.emi.api.stack.*;
 public class EmiComparisonTest {
- static final class Tool implements com.gregtechceu.gtceu.api.item.IGTTool {}
+ static final class Tool extends net.minecraft.world.item.Item implements com.gregtechceu.gtceu.api.item.IGTTool {}
  public static void main(String[] args) {
   var hammer=new Tool();var otherMaterial=new Tool();
   var worn=new EmiStack("gtceu:steel_hammer",hammer,311,1);
@@ -61,10 +64,16 @@ public class EmiComparisonTest {
   // Player report: worn or charged tools were not always highlighted in the backpack.
   assert !worn.isEqual(fresh)&&ComparaisonEmi.meme(worn,fresh):"a worn or charged GT tool is the same tool";
   assert !ComparaisonEmi.meme(worn,new EmiStack("gtceu:iron_hammer",otherMaterial,0,1)):"another material stays another tool";
-  var shears=new EmiStack("minecraft:shears","damageable shears",40,1);shears.comparison=Comparison.NBT;
-  assert ComparaisonEmi.meme(shears,new EmiStack("minecraft:shears","damageable shears",0,1)):"any worn damageable tool";
-  var strictItem=new EmiStack("other:data",customItem,1,1);strictItem.comparison=Comparison.NBT;
-  assert !ComparaisonEmi.meme(strictItem,new EmiStack("other:data",customItem,2,1)):"NBT still matters for non-tools";
+  var cisailles=new net.minecraft.world.item.Item();cisailles.usable=true;
+  var shears=new EmiStack("minecraft:shears",cisailles,40,1);shears.comparison=Comparison.NBT;
+  assert ComparaisonEmi.meme(shears,new EmiStack("minecraft:shears",cisailles,0,1)):"any worn damageable tool";
+  var donnees=new net.minecraft.world.item.Item();
+  var strictItem=new EmiStack("other:data",donnees,1,1);strictItem.comparison=Comparison.NBT;
+  assert !ComparaisonEmi.meme(strictItem,new EmiStack("other:data",donnees,2,1)):"NBT still matters for non-tools";
+  // Player report: Coffres ON stuttered. Comparing never copies an item stack.
+  EmiStack.copies=0;
+  for(int i=0;i<1000;i++){ComparaisonEmi.meme(worn,fresh);ComparaisonEmi.meme(fresh,shears);ComparaisonEmi.meme(strictItem,fresh);}
+  assert EmiStack.copies==0:"no ItemStack copy per comparison: "+EmiStack.copies;
   var gt=new com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe();
   var circuit=new EmiStack("gtceu:programmed_circuit",new Object(),99,1);
   assert ComparaisonEmi.circuitVirtuel(gt,circuit,true);
@@ -73,6 +82,9 @@ public class EmiComparisonTest {
   assert !ComparaisonEmi.circuitVirtuel(new dev.emi.emi.api.recipe.EmiRecipe(){},circuit,true):"other recipe catalysts preserved";
   assert !ComparaisonEmi.circuitVirtuel(gt,()->java.util.List.of(),true);
   assert !ComparaisonEmi.circuitVirtuel(gt,()->java.util.List.of(circuit,fresh),true):"mixed alternative is not purely virtual";
+  var circuitBis=new EmiStack("gtceu:programmed_circuit",circuit.item,3,1);circuitBis.comparison=Comparison.NBT;circuit.comparison=Comparison.NBT;
+  assert ComparaisonEmi.meme(circuitBis,circuit):"any circuit configuration";
+  assert !ComparaisonEmi.meme(fresh,circuit):"not a circuit";
  }
 }
 """

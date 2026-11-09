@@ -230,6 +230,22 @@ public final class GregTechMachines {
         }
     }
 
+    /**
+     * La machine travaille encore (recette en cours), d'après l'état synchronisé avec le client ;
+     * faux si l'état est illisible. Un lot dont les premières sorties arrivent n'est pas fini tant
+     * que sa machine travaille.
+     */
+    public static boolean enMarche(Object machine) {
+        if (machine == null) return false;
+        try {
+            Object logique = appeler(machine, "getRecipeLogic");
+            return "WORKING".equals(String.valueOf(appeler(logique, "getStatus")))
+                    || ((Number) appeler(logique, "getProgress")).intValue() > 0;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return false;
+        }
+    }
+
     public static boolean occupe(Object machine) {
         try {
             Object logique = appeler(machine, "getRecipeLogic");

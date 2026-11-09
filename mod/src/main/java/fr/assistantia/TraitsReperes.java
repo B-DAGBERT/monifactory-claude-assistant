@@ -43,7 +43,8 @@ public final class TraitsReperes {
         String nom = idBloc.substring(deuxPoints + 1);
         if (nom.contains("controller") || nom.contains("extension")) return false;
         if (nom.contains("drawer")) return true;
-        return espace.equals("functionalstorage") && nom.matches(".*_[124]");
+        return espace.equals("functionalstorage")
+                && (nom.endsWith("_1") || nom.endsWith("_2") || nom.endsWith("_4"));
     }
 
     /**
