@@ -160,16 +160,20 @@ def _published_place(entry):
     return {"v": 2, "bloc": block, "dimension": dimension, "x": x, "y": y, "z": z, "t": int(date)}
 
 
-def known_chests(storage):
-    """Coffres fusionnés (mémoire du client et relevé du serveur) publiés pour l'onglet Recette du mod.
+def known_chests(observations):
+    """Relevés du serveur (drawers, coffres jamais ouverts…) publiés pour l'onglet Recette du mod.
 
-    Les observations vides retenues par la fusion sont publiées aussi : plus récentes qu'un ancien
-    contenu mémorisé par le client au même endroit, elles le masquent dans le mod comme ici.
+    Seulement ceux du serveur : le mod lit lui-même la mémoire du client (stockage.json) et garde,
+    par position, l'observation la plus récente. Recopier ici les coffres du client garderait un
+    coffre que le client a oublié (cassé, « oublie ce coffre ») tant que l'assistant ne republie pas.
+    Les relevés vides (coffre vidé, bloc disparu) sont publiés : plus récents qu'un ancien contenu
+    mémorisé par le client au même endroit, ils le masquent. Les deux moitiés d'un double coffre vu
+    par le serveur portent le même inventaire : la seconde est publiée vide, à la même date.
     """
-    containers, seen = [], set()
-    empty = (c for c in storage.raw if isinstance(c, dict) and c.get("objets") == [])
-    for chest in [*storage.containers, *empty]:
-        place = _published_place(chest) if isinstance(chest, dict) else None
+    raw = [o for o in observations if isinstance(o, dict) and o.get("etat") is None]
+    containers, seen, stocks = [], set(), set()
+    for chest, stock in grouped_containers(raw):
+        place = _published_place(chest)
         counts = inventory_key(chest) if place is not None else None
         if counts is None:
             continue
@@ -177,16 +181,22 @@ def known_chests(storage):
         if here in seen:
             continue
         seen.add(here)
+        absorbed = stock in stocks
+        stocks.add(stock)
         name = chest.get("nom")
         entry = {"v": 2, "bloc": place["bloc"]}
         if isinstance(name, str) and name:
             entry["nom"] = name
         entry.update(place)
-        entry["objets"] = [{"item": item, "n": n} for item, n in counts]
+        entry["objets"] = [] if absorbed else [{"item": item, "n": n} for item, n in counts]
         containers.append(entry)
     machines = [
         place
-        for place in (_published_place(m) for m in storage.machines if isinstance(m, dict))
+        for place in (
+            _published_place(m)
+            for m in observations
+            if isinstance(m, dict) and m.get("etat") is not None and not m.get("absent")
+        )
         if place is not None
     ]
     return {"v": 2, "conteneurs": containers, "machines": machines}

@@ -129,7 +129,8 @@ def const_dans_un_bloc_de_fermeture(code):
             fonctions[-1]["fermeture"] = True
         elif t == "const":
             interieur = [g for g in pile if g != "objet"]
-            if interieur and interieur[-1] == "bloc":
+            en_tete_de_boucle = re.search(r"\bfor\s*\(\s*$", propre[: m.start()]) is not None
+            if en_tete_de_boucle or interieur and interieur[-1] == "bloc":
                 fonctions[-1]["consts"].append(propre.count("\n", 0, m.start()) + 1)
     if fonctions[0]["fermeture"]:
         fautes.extend(fonctions[0]["consts"])
@@ -145,6 +146,9 @@ class RhinoConstTests(unittest.TestCase):
         self.assertEqual(const_dans_un_bloc_de_fermeture(echoue), [1])
         self.assertEqual(const_dans_un_bloc_de_fermeture(avec_let), [])
         self.assertEqual(const_dans_un_bloc_de_fermeture(sans_fermeture), [])
+        # Par prudence, l'en-tête d'une boucle compte comme un bloc.
+        boucle = "function f(l){ const g = () => 1; for (const x of l) { g() } }"
+        self.assertEqual(const_dans_un_bloc_de_fermeture(boucle), [1])
 
     def test_detector_ignores_strings_regexes_objects_and_arrow_bodies(self):
         code = (

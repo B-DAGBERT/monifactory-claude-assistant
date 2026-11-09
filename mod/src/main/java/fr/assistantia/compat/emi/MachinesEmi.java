@@ -125,16 +125,26 @@ public final class MachinesEmi {
      * Ce que les coffres connus contiennent des objets de l'arbre, à récupérer : jamais dans les
      * poches, mais plus à fabriquer. Les variantes NBT ne sont pas distinguées par la mémoire des
      * coffres : la variante de l'arbre est reprise telle quelle.
+     *
+     * @param dejaComptes ce que le plan compte déjà et qui peut se trouver dans un coffre : sorties
+     *     attendues des lots (souvent dans le coffre de sortie de la machine) et objets crédités
+     *     sortis des poches. Retiré des coffres pour ne jamais compter deux fois ; dans le doute,
+     *     le plan garde une fabrication de trop plutôt qu'une de moins.
      */
-    static List<PlanRetrait.Stock<EmiStack>> stockCoffres(InstantaneArbreEmi vue) {
+    static List<PlanRetrait.Stock<EmiStack>> stockCoffres(
+            InstantaneArbreEmi vue, List<PlanRetrait.Stock<EmiStack>> dejaComptes) {
         var coffres = fr.assistantia.CoffresConnus.etat();
         if (!coffres.pret() || coffres.objets().isEmpty() || vue == null) return List.of();
+        var deja = new java.util.HashMap<String, Long>();
+        for (var s : dejaComptes)
+            if (!s.objet().getItemStack().isEmpty())
+                deja.merge(s.objet().getId().toString(), (long) s.quantite(), Long::sum);
         var vus = new java.util.HashSet<String>();
         List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
         for (var variante : vue.variantes()) {
             String id = variante.getId().toString();
             if (!vus.add(id)) continue;
-            long n = coffres.objets().getOrDefault(id, 0L);
+            long n = coffres.objets().getOrDefault(id, 0L) - deja.getOrDefault(id, 0L);
             if (n <= 0) continue;
             stock.add(
                     new PlanRetrait.Stock<>(variante.copy(), (int) Math.min(1_000_000L, n), false));
@@ -717,7 +727,8 @@ public final class MachinesEmi {
                                             new PlanRetrait.Stock<>(
                                                     EmiStack.of(c.objet()), c.quantite(), true))
                             .toList();
-            stock.addAll(creditsAcquis(stock, finaux));
+            var credites = creditsAcquis(stock, finaux);
+            stock.addAll(credites);
             stock.addAll(finaux);
             stock.addAll(completerOutils(stock));
             String cle =
@@ -730,10 +741,15 @@ public final class MachinesEmi {
             calculPrecedent = cle;
             // Les réceptions sorties des poches gardent un crédit de travail accompli.
             // Les quantités restantes seules restent réservées et recherchées en jaune.
-            for (var lot : lots.actifs()) stock.addAll(lot.suivi().restants());
+            List<PlanRetrait.Stock<EmiStack>> horsPoches = new ArrayList<>(credites);
+            horsPoches.addAll(finaux);
+            for (var lot : lots.actifs()) {
+                stock.addAll(lot.suivi().restants());
+                horsPoches.addAll(lot.suivi().restants());
+            }
             toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
-            var coffres = stockCoffres(vue);
+            var coffres = stockCoffres(vue, horsPoches);
             if (coffres.isEmpty()) utiles = toutes;
             else {
                 stock.addAll(coffres);

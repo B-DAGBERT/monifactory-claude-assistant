@@ -145,7 +145,7 @@ class GameController:
                     self.logged_errors.add(error)
                     log("Erreur sur le serveur : " + error)
         storage = self.storage_monitor.refresh(self.bridge, self.world)
-        self.publish_known_chests(storage)
+        self.publish_known_chests(self.world)
         if storage is not self.storage:
             self.check_new_machines(storage)
         export_key = storage.export_key()
@@ -177,20 +177,26 @@ class GameController:
             self.notify(f"Tu es arrivé : {self.guide['label']}.", 8, speak=True)
             self.guide = None
 
-    def publish_known_chests(self, storage):
-        """Coffres fusionnés pour l'onglet Recette du mod (coffres_connus.json), écrits s'ils changent."""
+    def publish_known_chests(self, world):
+        """Relevés du serveur pour l'onglet Recette du mod (coffres_connus.json), écrits s'ils changent.
+
+        La mémoire du serveur est remplacée à chaque relevé qui la modifie : même objet, rien à faire.
+        """
+        blocks = getattr(world, "blocks", None)
+        if not isinstance(blocks, dict):
+            return
         published = getattr(self, "known_chests_published", None)
-        if published is not None and published[0] is storage:
+        if published is not None and published[0] is blocks:
             return
         if self.bridge.data_path("coffres_connus.json") is None:
             return
-        text = json.dumps(known_chests(storage), ensure_ascii=False, separators=(",", ":"))
+        text = json.dumps(known_chests(blocks.values()), ensure_ascii=False, separators=(",", ":"))
         if published is None or published[1] != text:
             try:
                 self.bridge.write_text("coffres_connus.json", text)
             except (OSError, RuntimeError):
                 return  # Le mod garde sa dernière lecture ; nouvel essai au prochain cycle.
-        self.known_chests_published = (storage, text)
+        self.known_chests_published = (blocks, text)
 
     def journal(self, kind, text):
         path = getattr(self, "journal_file", JOURNAL_FILE)

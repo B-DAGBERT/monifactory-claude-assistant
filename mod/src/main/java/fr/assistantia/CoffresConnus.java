@@ -28,12 +28,12 @@ import net.minecraftforge.fml.loading.FMLPaths;
 
 /**
  * Lecture seule des coffres connus : la mémoire du script client ({@code stockage.json}, coffres
- * ouverts par le joueur) et la fusion publiée par l'assistant avec le relevé du serveur ({@code
- * coffres_connus.json}, tiroirs et coffres jamais ouverts compris). Pour une même position, le
- * relevé le plus récent gagne ; à date égale, celui de l'assistant. Donne les totaux par objet et
- * les blocs à interface connus. Les fichiers sont lus hors du thread de rendu, seulement quand la
- * date ou la taille de l'un d'eux change ; les variantes NBT ne sont pas distinguées, comme dans
- * les mémoires elles-mêmes.
+ * ouverts par le joueur) et les relevés du serveur publiés par l'assistant ({@code
+ * coffres_connus.json}, tiroirs et coffres jamais ouverts compris, jamais une copie du client).
+ * Pour une même position, le relevé le plus récent gagne ; à date égale, celui du serveur. Donne
+ * les totaux par objet et les blocs à interface connus. Les fichiers sont lus hors du thread de
+ * rendu, seulement quand la date ou la taille de l'un d'eux change ; les variantes NBT ne sont pas
+ * distinguées, comme dans les mémoires elles-mêmes.
  */
 public final class CoffresConnus {
     private static final Pattern MONDE = Pattern.compile("m1_[0-9a-f]{64}");

@@ -269,9 +269,11 @@ final class ArbreRecette {
 
     @SuppressWarnings("unchecked")
     private static Map<EmiIngredient, EmiRecipe> defauts() throws ReflectiveOperationException {
-        if (ajoutees == null) {
-            ajoutees = Class.forName("dev.emi.emi.bom.BoM").getField("addedRecipes");
+        if (ajoutees == null || sauver == null) {
+            // Les deux ou aucun : jamais une recette par défaut changée sans pouvoir l'enregistrer.
+            var champ = Class.forName("dev.emi.emi.bom.BoM").getField("addedRecipes");
             sauver = Class.forName("dev.emi.emi.runtime.EmiPersistentData").getMethod("save");
+            ajoutees = champ;
         }
         return (Map<EmiIngredient, EmiRecipe>) ajoutees.get(null);
     }
@@ -288,7 +290,14 @@ final class ArbreRecette {
         var defauts = defauts();
         var avant = new Defaut(cle, defauts.containsKey(cle), defauts.get(cle));
         defauts.put(cle, choisie);
-        sauver.invoke(null);
+        try {
+            sauver.invoke(null);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // Non enregistrée : rien ne change, le choix restera local à l'arbre.
+            if (avant.avait()) defauts.put(cle, avant.recette());
+            else defauts.remove(cle);
+            throw e;
+        }
         return avant;
     }
 

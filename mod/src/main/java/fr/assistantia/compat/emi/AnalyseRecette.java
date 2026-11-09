@@ -46,6 +46,7 @@ public final class AnalyseRecette {
 
     static final int MAX_CANDIDATS = 32,
             MAX_PRODUCTEURS = 1024,
+            MAX_PRODUCTEURS_ESTIMES = 192,
             MAX_NOEUDS_ANALYSES = 256,
             MAX_ALTERNATIVES = 12,
             MAX_INTROUVABLES = 24,
@@ -530,8 +531,10 @@ public final class AnalyseRecette {
         Object connu = PRODUCTEURS.get(cle);
         if (connu != null) return connu instanceof EmiRecipe r ? r : null;
         EmiRecipe choisie = null;
-        for (var p : producteursSurs(pile, null)) {
+        int essais = 0; // borné : une matière très commune reste une matière de base
+        for (var p : producteursSurs(pile, null, MAX_PRODUCTEURS_ESTIMES)) {
             if (p.cout() <= 0) continue; // générateur : ne consomme rien, matière brute
+            if (++essais > 4) break;
             if (decomposition(p.recette(), pile)) continue;
             choisie = p.recette();
             break;
@@ -704,8 +707,9 @@ public final class AnalyseRecette {
     /** Producteurs exacts et sûrs du produit, les moins coûteux au premier niveau d'abord. */
     private static List<EmiRecipe> candidats(Analyse analyse) {
         List<EmiRecipe> liste = new ArrayList<>();
-        for (var p : producteursSurs(analyse.produit, analyse.noeud.recette())) {
-            if (liste.size() >= MAX_CANDIDATS) break;
+        int verifiees = 0;
+        for (var p : producteursSurs(analyse.produit, analyse.noeud.recette(), MAX_PRODUCTEURS)) {
+            if (liste.size() >= MAX_CANDIDATS || ++verifiees > 2 * MAX_CANDIDATS) break;
             // Défaire un objet fabriqué à partir du produit n'est jamais une meilleure façon.
             if (decomposition(p.recette(), analyse.produit)) continue;
             liste.add(p.recette());
@@ -714,7 +718,7 @@ public final class AnalyseRecette {
     }
 
     /** Recettes sûres du produit qui ne le consomment pas, triées par coût du premier niveau. */
-    private static List<Prerang> producteursSurs(EmiStack produit, EmiRecipe exclue) {
+    private static List<Prerang> producteursSurs(EmiStack produit, EmiRecipe exclue, int max) {
         List<EmiRecipe> tous;
         try {
             tous = EmiApi.getRecipeManager().getRecipesByOutput(produit);
@@ -724,7 +728,7 @@ public final class AnalyseRecette {
         List<Prerang> retenus = new ArrayList<>();
         int vus = 0;
         for (EmiRecipe r : tous) {
-            if (++vus > MAX_PRODUCTEURS) break;
+            if (++vus > max) break;
             if (r == exclue) continue;
             double production = sure(r, produit);
             if (production <= 0) continue; // sortie seulement probable : jamais proposée
@@ -835,7 +839,7 @@ public final class AnalyseRecette {
                 // Ce qui est déjà rangé dans un coffre connu n'est plus à fabriquer, seulement à
                 // récupérer : comme pour la surbrillance des machines d'un arbre suivi.
                 var stock = stockEmi();
-                stock.addAll(MachinesEmi.stockCoffres(vue));
+                stock.addAll(MachinesEmi.stockCoffres(vue, List.of()));
                 operations = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             }
         } catch (RuntimeException e) {
@@ -1858,9 +1862,11 @@ public final class AnalyseRecette {
         String occupe = occupe();
         if (occupe != null) return occupe;
         while (!annulations.isEmpty() && !valide(annulations.peekFirst())) annulations.pollFirst();
-        var a = annulations.pollFirst();
+        var a = annulations.peekFirst();
         if (a == null) return "Rien à annuler dans cet arbre.";
+        // Refusé : le choix reste annulable (recette par défaut d'EMI comprise).
         if (ArbreEmi.consulte() != a.arbre()) return "Arbre EMI modifié · rien n’a été changé.";
+        annulations.pollFirst();
         // La recette par défaut d'abord : la résolution rétablie ensuite recalcule l'arbre avec.
         if (a.defaut() != null) ArbreRecette.restaurerDefaut(a.defaut());
         if (a.racine() != null) ArbreRecette.restaurerRacine(a.arbre(), a.racine());
