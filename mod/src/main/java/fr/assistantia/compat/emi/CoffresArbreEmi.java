@@ -253,19 +253,37 @@ public final class CoffresArbreEmi {
         if (zone != null) bouton.zone(zone.x(), zone.y(), zone.largeur());
     }
 
+    /** Le bouton visible de la barre sous la souris, grisé compris. */
+    private static BoutonTheme sous(Screen screen, double x, double y) {
+        for (var carte : cartes()) {
+            BoutonTheme b = carte.get(screen);
+            if (b != null
+                    && b.visible
+                    && x >= b.getX()
+                    && x < b.getX() + b.getWidth()
+                    && y >= b.getY()
+                    && y < b.getY() + b.getHeight()) return b;
+        }
+        return null;
+    }
+
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
-        for (var carte : cartes()) {
-            BoutonTheme bouton = carte.get(event.getScreen());
-            if (bouton == null
-                    || !bouton.visible
-                    || !bouton.isMouseOver(event.getMouseX(), event.getMouseY())) continue;
-            if (bouton.active)
-                bouton.mouseClicked(event.getMouseX(), event.getMouseY(), event.getButton());
-            // EMI ne doit pas également prendre ce clic pour un objet placé derrière.
+        BoutonTheme bouton = sous(event.getScreen(), event.getMouseX(), event.getMouseY());
+        if (bouton == null) return;
+        // Ni EMI ni le conteneur ne prennent ce clic, même sur un bouton grisé, ni son relâchement
+        // :
+        // le conteneur jetterait au sol l'objet tenu au curseur.
+        fr.assistantia.RelachementSouris.consommer(event);
+        if (bouton.active)
+            bouton.mouseClicked(event.getMouseX(), event.getMouseY(), event.getButton());
+    }
+
+    /** Relâché sur la barre, un clic commencé ailleurs ne va pas non plus au conteneur. */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void relache(ScreenEvent.MouseButtonReleased.Pre event) {
+        if (sous(event.getScreen(), event.getMouseX(), event.getMouseY()) != null)
             event.setCanceled(true);
-            return;
-        }
     }
 
     public static fr.assistantia.DispositionCoffre.Zone zoneSuivi(Screen screen) {

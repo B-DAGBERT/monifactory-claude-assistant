@@ -327,7 +327,7 @@ public final class AideEcran {
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
         double mx = event.getMouseX(), my = event.getMouseY();
         if (!surPanneau(event.getScreen(), mx, my)) return;
-        event.setCanceled(true); // jamais de clic qui traverse vers l'établi ou EMI
+        RelachementSouris.consommer(event); // jamais de clic qui traverse vers l'établi ou EMI
         if (event.getButton() != 0) return;
         Disposition d = disposition;
         if (d.prendre().contient(mx, my)) {

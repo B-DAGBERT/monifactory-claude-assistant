@@ -273,7 +273,7 @@ class CraftingPanelTests(unittest.TestCase):
         self.assertIn("DispositionCoffre.calculer(", source)
         self.assertIn("PanneauAssistant.occupee(", source)
         self.assertIn("AideEcran.zoneEmi(screen)", plugin)
-        # Les clics sur le panneau ne traversent jamais vers l'établi ou EMI.
-        self.assertIn("event.setCanceled(true); // jamais de clic qui traverse", source)
+        # Les clics sur le panneau ne traversent jamais vers l'établi ou EMI, ni leur relâchement.
+        self.assertIn("RelachementSouris.consommer(event); // jamais de clic qui traverse", source)
         self.assertNotIn("plainSubstrByWidth", source)
         self.assertNotIn("Button.builder", source)

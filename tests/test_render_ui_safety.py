@@ -84,6 +84,17 @@ public class MachinesEmi {public static int max=10,calls,last;public static bool
 # celui-ci compile l'écran contre une copie complétée de ce qu'appelle le thème.
 ECRAN_STUBS = dict(STUBS)
 ECRAN_STUBS.update(stubs_theme.STUBS)
+# Le champ retient sa place : son contour doit occuper la rangée de 16 px de ses boutons.
+ECRAN_STUBS["net.minecraft.client.gui.components.EditBox"] = ECRAN_STUBS[
+    "net.minecraft.client.gui.components.EditBox"
+].replace(
+    "public EditBox(Font f,int x,int y,int w,int h,Component c){}",
+    "public int x,y,w,h;"
+    "public EditBox(Font f,int x,int y,int w,int h,Component c){this.x=x;this.y=y;this.w=w;this.h=h;}"
+    "public int getX(){return x;}public int getY(){return y;}"
+    "public int getWidth(){return w;}public int getHeight(){return h;}"
+    "public void setX(int v){x=v;}public void setY(int v){y=v;}public void setWidth(int v){w=v;}",
+)
 for _nom, _ajouts in (
     ("net.minecraft.client.gui.GuiGraphics", stubs_theme.GRAPHIQUES),
     ("net.minecraft.client.gui.screens.Screen", stubs_theme.ECRAN),
@@ -180,6 +191,13 @@ public class RenderUiSafetyTest {
    assert MachinesEmi.calls==0&&mc.screen==screen;
   } else if(args[0].equals("escape")){
    screen.keyPressed(256,0,0);assert mc.screen==parent&&MachinesEmi.calls==0;
+  } else if(args[0].equals("row")){
+   for(int envoyes:new int[]{0,64})for(int[] t:new int[][]{{320,240},{640,480}}){
+    screen=new DeclarerFabricationEcran(parent,recipe,envoyes,200,1);mc.screen=screen;screen.init(mc,t[0],t[1]);
+    var champ=input(screen);var tout=button(screen,"Tout le lot");
+    assert champ.y-1==tout.y&&champ.h+2==tout.h&&tout.h==16:"field outline is the 16 px row of its buttons";
+    assert champ.x+champ.w+1<tout.x:"field outline stops before the buttons";
+   }
   }
  }
 }
@@ -276,6 +294,9 @@ class RenderUiSafetyTests(unittest.TestCase):
 
     def test_escape_returns_to_follow_up_without_declaration(self):
         self.run_case("escape")
+
+    def test_quantity_field_outline_matches_its_button_row(self):
+        self.run_case("row")
 
     def test_sent_batch_or_whole_lot_and_stale_tree(self):
         for case in ("sent", "all", "changed-tree"):
