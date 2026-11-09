@@ -1,9 +1,6 @@
 package fr.assistantia;
 
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Checkbox;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -11,6 +8,7 @@ import java.util.*;
 
 /** Brouillon local : Échap annule, seule la validation change la surbrillance. */
 public final class EcranBlocsFilon extends Screen {
+    private static final int LIGNE = 20;
     private final Screen parent;
     private final String monde, filon, dimension;
     private List<String> types = List.of();
@@ -19,8 +17,10 @@ public final class EcranBlocsFilon extends Screen {
     private final Map<String, Boolean> choix = new LinkedHashMap<>();
     private final Map<String, Long> clics = new HashMap<>();
     private final long ouvert = System.currentTimeMillis();
-    private Button appliquer;
-    private int page, parPage, gauche, largeur;
+    private final BarreDefilement barre = new BarreDefilement();
+    private BoutonTheme appliquer, toutCocher, toutDecocher;
+    private Theme.Fenetre fenetre;
+    private int listeY, listeBas;
     private long prochainLot;
     private boolean valide;
     private String erreur = "";
@@ -55,88 +55,36 @@ public final class EcranBlocsFilon extends Screen {
     }
 
     private int selectionRestante() {
-        var f = Filons.memoire().filon(filon);
-        if (f == null) return 0;
-        return f.types().entrySet().stream()
-                .filter(e -> choix.getOrDefault(e.getKey(), false))
-                .mapToInt(Map.Entry::getValue)
-                .sum();
-    }
-
-    private Button bouton(String titre, int x, int y, int largeur, Button.OnPress action) {
-        return addRenderableWidget(
-                Button.builder(Component.literal(titre), action).bounds(x, y, largeur, 20).build());
+        int n = 0;
+        for (var e : quantites.entrySet())
+            if (choix.getOrDefault(e.getKey(), false)) n += e.getValue();
+        return n;
     }
 
     @Override
     protected void init() {
-        largeur = Math.min(440, width - 20);
-        gauche = (width - largeur) / 2;
-        parPage = Math.max(1, (height - 148) / 22);
-        actualiserTypes();
-        int pages = Math.max(1, (types.size() + parPage - 1) / parPage);
-        page = Math.min(page, pages - 1);
-        for (int i = page * parPage; i < Math.min(types.size(), (page + 1) * parPage); i++) {
-            String type = types.get(i);
-            String label =
-                    Filons.nom(type)
-                            + " · "
-                            + quantites.getOrDefault(type, 0)
-                            + " observés proches";
-            Checkbox caseType =
-                    new Checkbox(
-                            gauche,
-                            66 + (i - page * parPage) * 22,
-                            largeur,
-                            20,
-                            Component.literal(font.plainSubstrByWidth(label, largeur - 26)),
-                            choix.get(type)) {
-                        @Override
-                        public void onPress() {
-                            long now = System.currentTimeMillis();
-                            if (now - ouvert < 350 || now - clics.getOrDefault(type, 0L) < 650)
-                                return;
-                            clics.put(type, now);
-                            super.onPress();
-                            choix.put(type, selected());
-                            erreur = "";
-                        }
-                    };
-            caseType.setTooltip(Tooltip.create(Component.literal(label + "\n" + type)));
-            addRenderableWidget(caseType);
-        }
-        var precedent = bouton("Précédent", gauche, height - 76, 90, b -> changerPage(-1));
-        var suivant =
-                bouton("Suivant", gauche + largeur - 90, height - 76, 90, b -> changerPage(1));
-        precedent.active = page > 0;
-        suivant.active = page + 1 < pages;
-        int demi = (largeur - 6) / 2;
-        bouton("Tout cocher", gauche, height - 52, demi, b -> tout(true)).active = !types.isEmpty();
-        bouton(
-                                "Tout décocher",
-                                gauche + demi + 6,
-                                height - 52,
-                                largeur - demi - 6,
-                                b -> tout(false))
-                        .active =
-                !types.isEmpty();
-        // Davantage de place pour le libellé principal dans les petites fenêtres.
+        fenetre = Theme.Fenetre.centree(width, height, 380);
+        int cx = fenetre.contenuX(), cl = fenetre.contenuLargeur();
+        int demi = (cl - Theme.ECART) / 2;
+        int bas = fenetre.basBoutons();
         appliquer =
-                bouton(
-                        "Afficher la sélection",
-                        gauche,
-                        height - 28,
-                        largeur - 86,
-                        b -> appliquer());
-        bouton("Annuler", gauche + largeur - 80, height - 28, 80, b -> onClose());
-    }
-
-    private void changerPage(int delta) {
-        long now = System.currentTimeMillis();
-        if (now - ouvert < 350 || now < prochainLot) return;
-        prochainLot = now + 350;
-        page += delta;
-        rebuildWidgets();
+                addRenderableWidget(
+                        BoutonTheme.creer("Afficher la sélection", b -> appliquer())
+                                .zone(cx, bas, demi)
+                                .genre(Theme.Genre.PRINCIPAL));
+        addRenderableWidget(
+                BoutonTheme.creer("Annuler", b -> onClose())
+                        .zone(cx + demi + Theme.ECART, bas, cl - demi - Theme.ECART));
+        int haut = bas - Theme.ECART - Theme.BOUTON;
+        toutCocher =
+                addRenderableWidget(
+                        BoutonTheme.creer("Tout cocher", b -> tout(true)).zone(cx, haut, demi));
+        toutDecocher =
+                addRenderableWidget(
+                        BoutonTheme.creer("Tout décocher", b -> tout(false))
+                                .zone(cx + demi + Theme.ECART, haut, cl - demi - Theme.ECART));
+        listeY = fenetre.contenuY() + 2 * Theme.LIGNE + Theme.ECART;
+        listeBas = haut - Theme.ECART;
     }
 
     private void tout(boolean valeur) {
@@ -145,7 +93,14 @@ public final class EcranBlocsFilon extends Screen {
         prochainLot = now + 650;
         choix.replaceAll((type, ancien) -> valeur);
         erreur = "";
-        rebuildWidgets();
+    }
+
+    private void basculer(String type) {
+        long now = System.currentTimeMillis();
+        if (now - ouvert < 350 || now - clics.getOrDefault(type, 0L) < 650) return;
+        clics.put(type, now);
+        choix.put(type, !choix.getOrDefault(type, false));
+        erreur = "";
     }
 
     private void appliquer() {
@@ -165,31 +120,121 @@ public final class EcranBlocsFilon extends Screen {
             onClose();
             return;
         }
-        if (System.currentTimeMillis() >= prochaineActualisation && actualiserTypes())
-            rebuildWidgets();
+        if (System.currentTimeMillis() >= prochaineActualisation) actualiserTypes();
+        if (!(minecraft != null && minecraft.mouseHandler.isLeftPressed())) barre.relacher();
         renderBackground(g);
-        g.drawCenteredString(font, title, width / 2, 12, Hud.OR);
-        g.drawCenteredString(
-                font, "Coche les minerais à mettre en surbrillance", width / 2, 28, Hud.BLANC);
+        var f = Filons.memoire().filon(filon);
+        fenetre.dessiner(g, font, title.getString(), f == null ? "" : f.nom, mx, my);
+        int cx = fenetre.contenuX(), cl = fenetre.contenuLargeur();
+        int y = fenetre.contenuY();
+        Theme.texte(
+                g,
+                font,
+                "Coche les minerais à mettre en surbrillance.",
+                cx,
+                y,
+                cl,
+                Theme.TEXTE_SECONDAIRE,
+                mx,
+                my);
         int nombre = selectionRestante();
         String statut =
                 types.isEmpty()
-                        ? "Aucun bloc repéré : utilise Scanner ce filon."
-                        : erreur.isEmpty()
-                                ? nombre == 0
-                                        ? "Sélectionne au moins un type."
-                                        : nombre + " blocs compatibles observés · total inconnu"
-                                : erreur;
-        g.drawCenteredString(
-                font, font.plainSubstrByWidth(statut, largeur), width / 2, 46, Hud.JAUNE);
-        int pages = Math.max(1, (types.size() + parPage - 1) / parPage);
-        g.drawCenteredString(font, (page + 1) + " / " + pages, width / 2, height - 70, Hud.GRIS);
+                        ? "Aucun minerai repéré : utilise Scanner dans la fiche du filon."
+                        : !erreur.isEmpty()
+                                ? erreur
+                                : nombre == 0
+                                        ? "Sélectionne au moins un minerai."
+                                        : nombre + " minerais choisis, encore en place.";
+        Theme.texte(
+                g,
+                font,
+                statut,
+                cx,
+                y + Theme.LIGNE,
+                cl,
+                erreur.isEmpty() && nombre > 0 ? Theme.VERT : Theme.JAUNE,
+                mx,
+                my);
+        barre.regler(cx + cl - Theme.DEFILEMENT, listeY, listeBas - listeY, types.size() * LIGNE);
+        int place = cl - (barre.visible() ? Theme.DEFILEMENT + 3 : 0);
+        g.enableScissor(cx, listeY, cx + place, listeBas);
+        int premier = barre.position() / LIGNE, decalage = barre.position() % LIGNE;
+        for (int i = premier; i < types.size(); i++) {
+            int ly = listeY - decalage + (i - premier) * LIGNE;
+            if (ly >= listeBas) break;
+            String type = types.get(i);
+            boolean coche = choix.getOrDefault(type, false);
+            boolean survol =
+                    mx >= cx
+                            && mx < cx + place
+                            && my >= ly
+                            && my < ly + LIGNE - 2
+                            && my >= listeY
+                            && my < listeBas;
+            if (coche) Theme.carteChoisie(g, cx, ly, place, LIGNE - 2);
+            else Theme.carte(g, cx, ly, place, LIGNE - 2, survol);
+            // Case à cocher du thème : contour, coche dorée.
+            int bx = cx + 4, by = ly + 4;
+            g.fill(bx, by, bx + 10, by + 10, Theme.FOND);
+            g.renderOutline(bx, by, 10, 10, coche ? Theme.ACCENT : Theme.BORDURE_SURVOL);
+            if (coche) g.fill(bx + 2, by + 2, bx + 8, by + 8, Theme.ACCENT);
+            g.renderItem(Pont.objet(type), cx + 18, ly + 1);
+            String quantite = "× " + quantites.getOrDefault(type, 0);
+            int ql = font.width(quantite);
+            Theme.texte(
+                    g,
+                    font,
+                    Filons.nom(type),
+                    cx + 38,
+                    ly + 5,
+                    place - 46 - ql,
+                    Theme.TEXTE,
+                    mx,
+                    my);
+            g.drawString(
+                    font, quantite, cx + place - 4 - ql, ly + 5, Theme.TEXTE_SECONDAIRE, false);
+        }
+        g.disableScissor();
+        Theme.barre(g, barre, mx, my);
+        long now = System.currentTimeMillis();
+        boolean pret = now - ouvert >= 350 && now >= prochainLot;
         appliquer.active =
-                !valide
-                        && nombre > 0
-                        && Filons.affichageDisponible()
-                        && System.currentTimeMillis() - ouvert >= 350;
+                !valide && nombre > 0 && Filons.affichageDisponible() && now - ouvert >= 350;
+        toutCocher.active = toutDecocher.active = !types.isEmpty() && pret;
         super.render(g, mx, my, partialTick);
+    }
+
+    @Override
+    public boolean mouseClicked(double mx, double my, int bouton) {
+        if (barre.cliquer(mx, my, bouton)) return true;
+        int cx = fenetre.contenuX(),
+                place = fenetre.contenuLargeur() - (barre.visible() ? Theme.DEFILEMENT + 3 : 0);
+        if (bouton == 0 && mx >= cx && mx < cx + place && my >= listeY && my < listeBas) {
+            int i = (int) (my - listeY + barre.position()) / LIGNE;
+            if (i >= 0 && i < types.size()) {
+                basculer(types.get(i));
+                return true;
+            }
+        }
+        return super.mouseClicked(mx, my, bouton);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mx, double my, double delta) {
+        barre.defiler(delta);
+        return true;
+    }
+
+    @Override
+    public boolean mouseDragged(double mx, double my, int bouton, double dx, double dy) {
+        return barre.glisser(my) || super.mouseDragged(mx, my, bouton, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double mx, double my, int bouton) {
+        barre.relacher();
+        return super.mouseReleased(mx, my, bouton);
     }
 
     @Override

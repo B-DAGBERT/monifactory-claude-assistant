@@ -9,18 +9,55 @@ import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
-/** Conserve chaque dernier instantané jusqu'à sa publication par l'exécuteur IO séquentiel. */
+/**
+ * Conserve chaque dernier instantané jusqu'à sa publication par l'exécuteur IO séquentiel.
+ *
+ * <p>Le texte d'un instantané est calculé une seule fois, sur l'exécuteur IO (jamais sur le thread
+ * client) : le thread client ne fait que copier ses tableaux.
+ */
 final class SauvegardeFilons {
     interface Ecriture {
         void ecrire(Path destination, String contenu) throws IOException;
+    }
+
+    /** Texte calculé à la demande et mémorisé ; {@link #source} garde l'objet d'origine. */
+    static final class Contenu {
+        private final Supplier<String> calcul;
+        private final Object source;
+        private volatile String texte;
+
+        Contenu(Supplier<String> calcul, Object source) {
+            this.calcul = calcul;
+            this.source = source;
+        }
+
+        static Contenu texte(String texte) {
+            var c = new Contenu(() -> texte, texte);
+            c.texte = texte;
+            return c;
+        }
+
+        String texte() {
+            String t = texte;
+            if (t != null) return t;
+            synchronized (this) {
+                if (texte == null) texte = calcul.get();
+                return texte;
+            }
+        }
+
+        Object source() {
+            return source;
+        }
     }
 
     private static final long DELAI_REPRISE = 10_000;
 
     private static final class Instantane {
         final Path destination, export;
-        final String contenu, contenuExport;
+        final Contenu contenu, contenuExport;
         final Consumer<Exception> erreur;
         final long revision;
         boolean enCours;
@@ -28,9 +65,9 @@ final class SauvegardeFilons {
 
         Instantane(
                 Path destination,
-                String contenu,
+                Contenu contenu,
                 Path export,
-                String contenuExport,
+                Contenu contenuExport,
                 Consumer<Exception> erreur,
                 long revision) {
             this.destination = destination;
@@ -55,15 +92,20 @@ final class SauvegardeFilons {
         this.horloge = horloge;
     }
 
+    /** Dernier contenu connu : instantané pas encore écrit, sinon le fichier, sinon null. */
     String lire(Path destination) throws IOException {
-        synchronized (this) {
-            var instantane = enAttente.get(destination);
-            if (instantane != null) return instantane.contenu;
-            // L'acquittement ne retire l'instantané qu'après le remplacement atomique du fichier.
-        }
+        Contenu contenu = attente(destination);
+        if (contenu != null) return contenu.texte();
+        // L'acquittement ne retire l'instantané qu'après le remplacement atomique du fichier.
         return Files.exists(destination)
                 ? Files.readString(destination, StandardCharsets.UTF_8)
                 : null;
+    }
+
+    /** Instantané pas encore écrit pour ce fichier, ou null. */
+    synchronized Contenu attente(Path destination) {
+        var instantane = enAttente.get(destination);
+        return instantane == null ? null : instantane.contenu;
     }
 
     void enregistrer(
@@ -71,6 +113,20 @@ final class SauvegardeFilons {
             String contenu,
             Path export,
             String contenuExport,
+            Consumer<Exception> erreur) {
+        enregistrer(
+                destination,
+                Contenu.texte(contenu),
+                export,
+                contenuExport == null ? null : Contenu.texte(contenuExport),
+                erreur);
+    }
+
+    void enregistrer(
+            Path destination,
+            Contenu contenu,
+            Path export,
+            Contenu contenuExport,
             Consumer<Exception> erreur) {
         Instantane instantane;
         synchronized (this) {
@@ -89,6 +145,7 @@ final class SauvegardeFilons {
     void reessayer() {
         Instantane[] attente;
         synchronized (this) {
+            if (enAttente.isEmpty()) return;
             attente = enAttente.values().toArray(Instantane[]::new);
         }
         for (var instantane : attente) soumettre(instantane);
@@ -113,7 +170,7 @@ final class SauvegardeFilons {
             if (enAttente.get(instantane.destination) != instantane) return;
         }
         try {
-            ecriture.ecrire(instantane.destination, instantane.contenu);
+            ecriture.ecrire(instantane.destination, instantane.contenu.texte());
             boolean exporter;
             synchronized (this) {
                 exporter =
@@ -122,7 +179,8 @@ final class SauvegardeFilons {
                                         .equals(exports.get(instantane.export));
             }
             // Une reprise de l'ancien monde ne remplace jamais l'export du monde plus récent.
-            if (exporter) ecriture.ecrire(instantane.export, instantane.contenuExport);
+            if (exporter && instantane.contenuExport != null)
+                ecriture.ecrire(instantane.export, instantane.contenuExport.texte());
             synchronized (this) {
                 enAttente.remove(instantane.destination, instantane);
             }
