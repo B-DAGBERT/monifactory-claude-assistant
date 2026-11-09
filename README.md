@@ -73,6 +73,8 @@ locale démarre. Le bouton **Masquer** ferme l’avis de cette version.
 Un changement du mod Java demande de **quitter complètement puis relancer Minecraft**.
 Changer de monde ou recharger les ressources ne recharge pas le mod. Après une modification Python,
 relancer aussi l’assistant. Une installation ancienne peut nécessiter **Mettre à jour** une première fois.
+Tant que l’ancien mod reste chargé, un bouton retiré (Objectif suivant, Mettre en pause…) répond
+« Fonction retirée : relance Minecraft pour charger la nouvelle version du mod. ».
 
 ## Développer
 

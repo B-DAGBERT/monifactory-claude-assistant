@@ -5,14 +5,19 @@
 ## Discussion dans Minecraft
 
 Dans **Y → Discussion**, les questions et les réponses sont séparées, avec un bouton **Copier**
-pour chaque message. La molette, la barre de défilement et Page précédente / Page suivante
-permettent de relire l’historique. **Derniers messages** ramène à la réponse en cours.
+pour chaque message. La molette, la barre de défilement (que l’on peut faire glisser) et les
+touches Page précédente / Page suivante permettent de relire l’historique. **Derniers messages**
+ramène à la réponse en cours.
 
 Le brouillon reste disponible quand tu fermes le menu ou redimensionnes le jeu, pendant cette
 session Minecraft. Il est effacé uniquement après réception par l’assistant. Un second envoi
 est bloqué pendant la transmission et la réponse ; tu peux préparer la question suivante.
-Le statut indique la transmission, la recherche ou une erreur. Ces fonctions sont locales et
-ne déclenchent aucun appel IA supplémentaire.
+La ligne de statut, au-dessus de la question, indique le moteur, la transmission, la recherche ou
+une erreur. Ces fonctions sont locales et ne déclenchent aucun appel IA supplémentaire.
+
+Si l’assistant est arrêté, chaque onglet affiche **● Assistant arrêté** avec **Relancer
+l’assistant**, et le champ de question le rappelle en gris. Recette et Filons continuent de
+fonctionner sans lui.
 
 Pour une recette ou un objet reconnu dans ta question, l’assistant joint les stocks et les
 machines utiles. Ajoute **contexte complet** dans la question si tu veux aussi lui donner
@@ -36,10 +41,11 @@ sur une icône ouvre ses recettes dans EMI.
   indique le produit, le poste (établi ou machine), le circuit, les entrées et l’état, par exemple
   **Prête**, **Machine à poser**, **Attend l’étape 2**, **Manque …** ou **En machine**. La première
   étape où tu peux agir porte une **★**. Le survol détaille l’étape et explique sa place.
-- **Meilleures alternatives** : une autre recette pour un produit de l’arbre, avec le gain en
-  clair, par exemple « 1 Iron Ingot au lieu de 2 par Iron Plate · 2 étapes au lieu de 12 ».
-  **Appliquer** la choisit dans cet arbre seulement ; **Annuler : …** rétablit le choix précédent.
-  Les favoris et les recettes par défaut d’EMI ne sont jamais modifiés.
+- **Meilleures alternatives** : une autre recette pour un produit de l’arbre, objet final compris,
+  avec le gain en clair, par exemple « 1 Iron Ingot au lieu de 2 par Iron Plate · 2 étapes au lieu
+  de 12 ». **Appliquer** la choisit dans cet arbre seulement ; **Annuler : …** rétablit le choix
+  précédent. Pour l’objet final, la quantité visée est conservée. Les favoris et les recettes par
+  défaut d’EMI ne sont jamais modifiés.
 - **Introuvable** : une matière de base de l’arbre absente de l’inventaire, du sac, des coffres
   connus et des lots en cours. C’est une simple information, sans bouton.
 - **Machine à fabriquer** : une machine que tu n’as pas encore, faisable à l’établi avec ce que
@@ -49,11 +55,18 @@ sur une icône ouvre ses recettes dans EMI.
 Une alternative n’est proposée que si elle est **strictement meilleure** : moins de matière sans
 plus d’une étape supplémentaire, autant de matière ou moins avec moins d’étapes, ou au moins deux
 fois moins d’étapes (sur une chaîne d’au moins quatre) sans plus de matière au total. Ses postes
-doivent être posés, portés ou rangés dans un coffre connu, et elle ne doit pas demander de matière
-introuvable. Les sous-ingrédients suivent les choix actuels de l’arbre, sinon les défauts d’EMI.
+et ses outils réutilisables (moules, lentilles, formes d’extrudeuse) doivent être posés, portés ou
+rangés dans un coffre connu, et elle ne doit pas demander de matière introuvable. Les
+sous-ingrédients suivent les choix actuels de l’arbre, sinon les défauts d’EMI.
 **Machine à fabriquer** n’apparaît que si tu n’as aucune machine de ce type et qu’elle se fabrique
 à l’établi avec l’inventaire, le sac et les coffres connus, avec au plus un niveau de sous-craft.
-Une montée de tier n’est jamais proposée.
+Une montée de tier n’est jamais proposée : si une étape demande plus de tension que ta machine, elle
+indique « Tension insuffisante (Basic Bender possédé) », et aucune machine au-delà de ta plus forte
+tension n’est nommée ni proposée.
+
+Si le plan ne peut pas encore être calculé (inventaire ou sac pas encore synchronisés, par exemple),
+l’onglet affiche **Plan non calculé** avec la raison au lieu de « Rien à fabriquer ». Une lecture
+impossible de l’arbre EMI affiche « Arbre EMI illisible · détails dans le journal ».
 
 Dans le monde, les machines entourées en rouge affichent le numéro de leur étape. La **★** dorée
 marque la plus proche machine de la première étape machine à faire, un numéro grisé signale une
@@ -66,10 +79,9 @@ La prochaine étape s’affiche aussi dans le panneau en haut à gauche, par exe
 jeu** masque ce panneau ; les réponses de l’assistant restent dans leur bulle.
 
 Limites : les coûts sont comparés par unité produite et peuvent être fractionnaires ; un tag compte
-pour sa première variante ; un multibloc est supposé assez puissant ; « facile » ignore le NBT. La
-recette de l’objet final reste celle choisie dans EMI : les alternatives portent sur ses
-ingrédients. Changer d’objet dans Recipe Tree efface l’historique d’**Annuler**, limité aux huit
-derniers choix.
+pour sa première variante ; un multibloc est supposé assez puissant ; « facile » ignore le NBT.
+Changer d’objet dans Recipe Tree efface l’historique d’**Annuler**, limité aux huit derniers
+choix.
 
 ## Backpack comme inventaire
 
@@ -82,7 +94,9 @@ La barre près de Recipe Tree propose **Coffres OFF / ON**, **Suivi** et **Sac N
 Les boutons restent sur une seule ligne, avec une largeur calculée sur leur texte.
 Si la place manque à côté de la recherche EMI, **Aide…** ouvre les trois actions.
 Échap ou **Retour à EMI** retrouve l’écran précédent. Les infobulles précisent l’action
-et la raison d’un bouton désactivé.
+et la raison d’un bouton désactivé. Un clic sur cette barre ou sur un panneau de l’assistant,
+même sur un bouton grisé, ne fait jamais tomber ni poser l’objet tenu au curseur ; revenir de
+**Suivi**, **Sac** ou d’un menu non plus.
 
 Le bouton **Sac N**, près de **Coffres** et **Suivi** dans EMI, ouvre la liste des
 objets présents dans tes backpacks portés, chacun sur une carte avec sa quantité, et une
@@ -242,9 +256,11 @@ revérifiés en continu, et les plus proches du filon surligné à chaque tick. 
 compté dans les trouvés. Un relevé de plus de dix minutes est signalé comme ancien. La discussion
 reçoit les mêmes comptes.
 
-Quand il reste au plus **10 %** des minerais trouvés (au moins 16 trouvés et aucune zone en
-attente), la liste affiche **presque épuisé** et **Épuisé** devient le bouton vert. Le filon n’est
-jamais marqué tout seul. **Épuisé** ajoute un marquage personnel, enregistré pour le monde actif :
+Quand il reste au plus **10 %** des minerais trouvés (au moins 16 trouvés, après un scan complet
+et sans zone en attente), la liste affiche **presque épuisé** et **Épuisé** devient le bouton vert.
+Un filon vu seulement en partie (ancien relevé, scan arrêté) n’est jamais déclaré presque épuisé :
+la fiche indique « Peu de minerai vu : scanne pour confirmer. » et **Scanner** devient le bouton
+principal. Le filon n’est jamais marqué tout seul. **Épuisé** ajoute un marquage personnel, enregistré pour le monde actif :
 le filon disparaît de la liste si les épuisés sont masqués. Pour annuler, choisir **Épuisés
 visibles**, sélectionner le filon, puis **Rétablir**. Les relevés et le journal GregTech restent
 conservés.
@@ -281,6 +297,10 @@ seul leur nombre est gardé, ce qui conserve le total trouvé. Les filons GregTe
 d’affichage et les marquages « épuisé » restent conservés. Il n’y a pas de bouton global Tout
 masquer ni de vidage manuel des relevés.
 
+La liste garde sa position de défilement quand tu reviens du choix des minerais ou que la fenêtre
+change de taille ; elle revient en haut après un changement de monde, de dimension, de recherche ou
+de tri.
+
 Limites : un filon voisin non prospecté qui contient les mêmes minerais n’est pas séparé du filon
 scanné ; les minerais des chunks non chargés ne sont revérifiés qu’à leur chargement.
 
@@ -308,21 +328,25 @@ restent séparés ; une machine unique apparaît directement. La recherche et le
 de s’appliquer aux machines du groupe.
 
 **Production…**, dans Base, lit le plan ou le diagnostic de l’arbre EMI choisi, sans rien modifier
-dans le jeu. Son ancien onglet Projet a disparu.
+dans le jeu. Son ancien onglet Projet a disparu. Dans la discussion, seule une question qui vise ce
+calcul (« plan de production », « diagnostic de production »…) demande d’ouvrir Production ; une
+question sur « cette recette » ou « cette machine » reçoit une réponse normale.
 
 ## Diagnostic et demandes en attente
 
 **Y → Réglages → Diagnostic…** affiche la version du mod réellement chargée, la révision de
 l’assistant, l’âge du relevé d’inventaire, la synchronisation du backpack, l’état du serveur,
 l’arbre EMI, le scan des coffres, les transferts, la dernière demande et les erreurs relevées.
-Le panneau se rafraîchit automatiquement et possède une pagination. **Retour** ou Échap revient
-aux réglages. L’ouvrir ne lance aucune demande IA.
+Le panneau se rafraîchit automatiquement et défile à la molette ou avec sa barre. **Retour** ou
+Échap revient aux réglages. L’ouvrir ne lance aucune demande IA.
 
-Pour limiter les saccades, les relevés ne sont réécrits qu’à un changement. Au repos, l’âge du
-relevé d’inventaire peut donc atteindre 2 à 3 secondes : il est confirmé toutes les deux secondes.
-« Coffre mémorisé » peut arriver jusqu’à deux secondes après l’ouverture d’un coffre. L’assistant
-voit la progression d’une tâche de quête au plus toutes les 30 secondes, et une quête terminée en
-moins de dix secondes.
+Pour limiter les saccades, les relevés ne sont réécrits qu’à un changement, sur un fil d’écriture
+séparé : le jeu n’attend plus le disque. L’âge affiché du relevé d’inventaire peut donc atteindre
+environ 5 secondes au repos. « Coffre mémorisé » arrive dès la première modification d’un coffre
+ouvert ; les suivantes sont regroupées toutes les deux secondes et tout est écrit à la fermeture,
+ainsi qu’à une déconnexion brutale (expulsion, redémarrage du serveur). L’assistant voit la
+progression d’une tâche de quête au plus toutes les 30 secondes, et une quête terminée en moins de
+dix secondes.
 
 Avec shared.31 et l’assistant à jour, chaque clic destiné à l’assistant est enregistré séparément.
 Une demande reste valable 45 secondes ; une action liée à une ancienne connexion ou une ancienne

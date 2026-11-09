@@ -494,16 +494,25 @@ et le retrait de coffres, et les relevés incomplets. Les temps sont ceux du sc�
 ## Onglet Recette
 
 `compat/emi/AnalyseRecette` lit l’arbre consulté dans Recipe Tree pendant le tick client, par tâches
-bornées à environ 1 ms par tick : lecture de l’arbre et ordre du plan à chaque changement, puis
-alternatives recette par recette. Il publie une `VueRecette` immuable ; l’onglet, le panneau du HUD
-(`Hud.source`) et les repères ne font que la dessiner. Un plan qui coûte plus de 5 ms est relu moins
-souvent.
+bornées à environ 1 ms et 96 développements par tick : lecture de l’arbre et ordre du plan à chaque
+changement, puis alternatives recette par recette, jamais sur un tick de relecture ou de plan. Il
+publie une `VueRecette` immuable ; l’onglet, le panneau du HUD (`Hud.source`) et les repères ne font
+que la dessiner. Un plan qui coûte plus de 1,5 ms attend 40 ticks, plus de 5 ms 100 ticks. Un plan
+impossible à calculer garde un état distinct (« Plan non calculé » et sa raison). Les accès
+réflexifs aux recettes GregTech sont mis en cache par classe (`GregTechRecette`).
+
+La clé de l’arbre suit l’arbre réel (objet, recette et enfants du but, lots, résolutions, gestionnaire
+de recettes). Le mixin de `MaterialNode.defineRecipe` passe par `ArbreReel` : seul le but de
+`BoM.tree` déclenche `arbreModifie` et `CatalogueProduction.rechargement`, une fois par recalcul
+réel. Les arbres temporaires qu’EMI construit pour l’infobulle de coût (`RecipeCostTooltipComponent`,
+à chaque image) n’invalident plus ni la Recette, ni le Suivi, ni les captures Production.
 
 `ArbreRecette` lit l’arbre EMI par réflexion et n’écrit que ses résolutions locales
 (`addResolution`), jamais `BoM.addRecipe`, la sauvegarde EMI ni les favoris. **Appliquer** revérifie
 l’arbre, sa révision, le choix actuel et la recette avant d’écrire, et refuse pendant un transfert.
-**Annuler** garde huit choix et se vide quand l’arbre change d’objet. Le nœud racine, l’objet final
-de l’arbre, n’est pas analysé.
+**Annuler** garde huit choix et se vide quand l’arbre change d’objet. Le nœud racine est analysé
+comme les autres ; pour lui, `resoudreRacine` remet la quantité par lot et les lots d’avant, car le
+chemin natif remet `goal.amount` à 1, et `restaurerRacine` rétablit exactement l’état précédent.
 
 `ChaineRecette` évalue le coût d’une sous-chaîne par unité produite en suivant les choix de l’arbre,
 puis les défauts EMI ; `ComparaisonAlternatives` applique les règles « strictement meilleure » et
@@ -511,9 +520,13 @@ rédige le gain. Les candidats sont les producteurs à sortie garantie, 32 au pl
 au premier niveau d’abord, hors recyclage, recettes désactivées et recettes qui consomment leur
 produit. `PossessionsRecette` relève les postes posés (rayon de 48 blocs, une rangée de chunks par
 tick, relevé serveur de la Base et blocs déjà ouverts), portés ou rangés (inventaire, sac, coffres
-connus lus hors du rendu par `CoffresConnus`) et les sorties attendues des lots. Une machine du bon
-type mais trop faible écarte la proposition : jamais de montée de tier. `FabricationFacile` limite
-« facile » à une recette d’établi couverte par le stock, avec au plus un niveau de sous-craft.
+connus lus hors du rendu par `CoffresConnus`) et les sorties attendues des lots. Les outils
+réutilisables nouveaux (moules, lentilles, formes) doivent aussi être possédés. `DecisionTension`
+applique la décision du joueur : une machine du bon type mais trop faible donne « Tension
+insuffisante (… possédé) », le poste affiché reste la machine possédée et aucune machine au-delà de
+la plus forte tension possédée n’est nommée ni proposée. `FabricationFacile` limite « facile » à une
+recette d’établi couverte par le stock, avec au plus un niveau de sous-craft ; ses caches sont vidés
+quand le gestionnaire de recettes EMI change.
 `MatieresArbreEmi` fournit les matières premières de l’arbre au **Tri : recette** des filons.
 
 `test_recipe_tab.py` (écran à 320 × 240 contre des stubs) et `RecetteMoteurTest` (chaînes,
@@ -567,11 +580,34 @@ et les raccourcis Mac (signal toutes les 500 ms) l’utilisent aussi.
 fil d’écriture, le relevé du serveur (`monde.json`) y est assemblé et vérifié, et la progression des
 quêtes FTB se compare par empreinte. Le script réécrit `etat.json` seulement s’il change, avec une
 confirmation toutes les 2 s, et `quetes.json` quand une quête change (vérifié toutes les 10 s), au
-plus toutes les 30 s pour une simple progression de tâche. La mémoire des coffres (`stockage.json`)
-reste écrite par le script, au plus toutes les 2 s pendant un rangement et à la fermeture. Sans le
-mod, le script écrit directement comme avant. Il ne dessine plus de panneau et l’assistant n’écrit
-plus `plan.json` ; `fabrication_emi.json` a aussi disparu. `VERSION_SCRIPT` vaut 13 : l’assistant
-demande F3 + T si le jeu exécute un script plus ancien.
+plus toutes les 30 s pour une simple progression de tâche ; un relevé abandonné (`perdu`) est
+republié au contrôle suivant. Les nombres entiers sont réécrits en entiers (le `JSON.stringify` de
+Rhino écrit des doubles). La mémoire des coffres (`stockage.json`) est écrite au premier changement
+d’un écran ouvert, puis au plus toutes les 2 s, à la fermeture et quand le joueur disparaît (expulsion,
+redémarrage du serveur).
+
+Les mémoires KubeJS (`MemoireMondeKubeJS` : `stockage.json`, et `filons.json` sans le suivi natif)
+passent aussi par ce fil : le script n’attend jamais le disque et relit depuis la mémoire une écriture
+encore en file. Ce sont des données du joueur, jamais abandonnées : une erreur disque est retentée au
+plus une fois par seconde jusqu’à réussite, avec fsync seulement pour une partition isolée ; une
+partition refusée par ses contrôles est abandonnée aussitôt. Chaque erreur est rendue une seule fois
+au script, sans bloquer le changement de monde. Toute erreur, `Error` comprise, libère ou replanifie
+la tâche. Les temporaires s’appellent `.ecriture-<nom>-<n>.tmp`, hors des motifs de la migration et
+de la sauvegarde. `IdentiteMonde` ne garde qu’une référence faible au serveur solo.
+
+Sans le mod, le script écrit directement comme avant. Il ne dessine plus de panneau et l’assistant
+n’écrit plus `plan.json` ; `fabrication_emi.json` a aussi disparu. `VERSION_SCRIPT` vaut 13 :
+l’assistant demande F3 + T si le jeu exécute un script plus ancien.
+
+`RelachementSouris` empêche qu’un clic sur la barre EMI ou un panneau de l’assistant (bouton grisé
+compris), ou un retour vers le coffre ou la machine, laisse le relâchement atteindre le conteneur :
+`AbstractContainerScreen.mouseReleased` jetterait l’objet tenu au curseur. Il suit un appui à la fois.
+
+Côté assistant, `interface.unsupported_request` refuse explicitement les demandes d’un ancien mod :
+boutons retirés (« Fonction retirée : relance Minecraft… ») et demandes inconnues. Pour une version,
+le contexte Production publie encore `projet` et `revision_projet` constants (à retirer ensuite).
+`vue_mod.json` ignore `rendu_ms` et `inventaire_t` pour décider d’une réécriture : il change sur un
+vrai changement ou au battement « vie » de 5 s.
 
 `EcrituresTest`, `test_change_only_exports.py` et `test_kubejs_exports.py` rejouent l’écrivain,
 l’export d’inventaire et le script client tick par tick sous Node.js, avec ou sans le mod.
