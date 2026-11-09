@@ -398,7 +398,8 @@ public final class OngletRecette {
             int my) {
         boolean survol = dans(mx, my, lx, ly, l, SIMPLE);
         Theme.carte(g, lx, ly, l, SIMPLE, survol);
-        icone(g, font, i.objet(), lx + 4, ly + 2, mx, my);
+        // Décision B : simple information, aucune action ni raccourci, même sur l'icône.
+        if (!i.objet().icone().isEmpty()) g.renderItem(i.objet().icone(), lx + 4, ly + 2);
         int tx = lx + 4 + ICONE + 4, place = lx + l - 4 - tx;
         String etat = "nulle part";
         int le = Math.min(font.width(etat), place / 2);
@@ -411,8 +412,7 @@ public final class OngletRecette {
                 ly + 6,
                 Math.max(0, place - le - Theme.ECART),
                 Theme.TEXTE);
-        if (survol && !dans(mx, my, lx + 4, ly + 2, ICONE, ICONE) && !i.detail().isEmpty())
-            Theme.infobulle(font, Component.literal(i.detail()));
+        if (survol && !i.detail().isEmpty()) Theme.infobulle(font, Component.literal(i.detail()));
     }
 
     private void machine(

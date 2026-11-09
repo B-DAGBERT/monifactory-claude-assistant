@@ -927,9 +927,13 @@ public final class AnalyseRecette {
                         + (vue.poste().isEmpty() ? vue.produit().nom() : vue.poste());
         String sortie = vue.produit().quantite() + " " + vue.produit().nom();
         String detail =
-                action && !vue.entrees().isEmpty()
-                        ? vue.entrees() + " → " + sortie
-                        : sortie + " · " + vue.etat();
+                switch (e.statut()) {
+                    case PRETE -> vue.entrees().isEmpty() ? sortie : vue.entrees() + " → " + sortie;
+                    case A_PREPARER -> vue.entrees().isEmpty()
+                            ? vue.etat() + " · " + sortie
+                            : vue.etat() + " · " + vue.entrees();
+                    default -> sortie + " · " + vue.etat();
+                };
         return new VueRecette.EtapeSuivante(
                 vue.iconePoste().isEmpty() ? vue.produit().icone() : vue.iconePoste(),
                 titre,

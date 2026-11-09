@@ -228,6 +228,9 @@ public class OngletRecetteTest {
    case "survol"->{VueRecette.publier(vue(3));var g=rendre(o,0,0);var etape=texte(g,"8 × Very Long");
     Minecraft.getInstance().screen=new net.minecraft.client.gui.screens.Screen();rendre(o,etape.x()+60,etape.y()+2);
     assert Minecraft.getInstance().screen.tooltip!=null:"row detail on hover";}
+   case "introuvable"->{VueRecette.publier(vue(1));rendre(o,0,0);assert o.defiler(X+20,Y+60,-10);var g=rendre(o,0,0);var nom=texte(g,"Redstone");
+    int avant=Emi.recettes;assert o.cliquer(nom.x()-12,nom.y()+2,0):"click consumed inside the tab";assert Emi.recettes==avant:"decision B: no shortcut on missing materials";
+    assert g.textes.stream().anyMatch(t->t.texte().equals("nulle part"));}
    case "masque"->{VueRecette.publier(vue(1));var g=rendre(o,0,0);var bouton=texte(g,"Appliquer");o.visible(false);
     assert !o.cliquer(bouton.x()+2,bouton.y()+2,0):"hidden tab ignores clicks";assert !o.defiler(X+20,Y+60,-1);}
    case "erreur"->{VueRecette.publier(VueRecette.vide(VueRecette.Etat.ERREUR,"Arbre EMI trop grand ou illisible : réduis la sélection dans Recipe Tree."));
@@ -287,6 +290,9 @@ class RecipeTabScreenTests(unittest.TestCase):
         for case in ("survol", "masque"):
             with self.subTest(case=case):
                 self.run_case(case)
+
+    def test_missing_materials_are_information_only(self):
+        self.run_case("introuvable")
 
 
 MEMORY_STUBS = {
