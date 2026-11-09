@@ -8,6 +8,8 @@ import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraftforge.fluids.FluidUtil;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
@@ -35,13 +37,17 @@ public final class InventaireArbreEmi {
         if (mc.player == null || !InventaireJoueur.disponible()) return natif;
         var resultat = composer(InventaireJoueur.piles(), grilles());
         var reservations = stocksVirtuels(resultat);
-        if (InventaireJoueur.sacs().isEmpty() && reservations.isEmpty()) return natif;
-        // Conserver les sources fluides qu'un handler natif sait déjà exposer à l'arbre.
+        if (InventaireJoueur.sacs().isEmpty()
+                && reservations.isEmpty()
+                && resultat.inventory.values().stream()
+                        .noneMatch(pile -> pile.getKey() instanceof Fluid)) return natif;
+        // Le handler natif peut déjà représenter les mêmes fluides portés, sans indiquer leur
+        // origine.
         for (var pile : natif.inventory.values())
-            if (pile.getItemStack().isEmpty()) {
-                var copie = pile.copy();
+            if (pile.getKey() instanceof Fluid) {
+                var copie = ComparaisonEmi.pourInventaire(pile);
                 resultat.inventory.merge(
-                        copie, copie, (a, c) -> a.copy().setAmount(a.getAmount() + c.getAmount()));
+                        copie, copie, (a, b) -> a.getAmount() >= b.getAmount() ? a : b);
             }
         for (var reserve : reservations) {
             var pile = ComparaisonEmi.pourInventaire(reserve.objet()).setAmount(reserve.quantite());
@@ -94,11 +100,26 @@ public final class InventaireArbreEmi {
         for (var source : List.of(personnels, grilles))
             for (var item : source) {
                 if (item.isEmpty()) continue;
-                var pile = ComparaisonEmi.pourInventaire(EmiStack.of(item.copy()));
-                resultat.inventory.merge(
-                        pile, pile, (a, b) -> a.copy().setAmount(a.getAmount() + b.getAmount()));
+                ajouter(resultat, EmiStack.of(item.copy()));
+                // Forge simule la vidange d'une copie d'un seul contenant.
+                FluidUtil.getFluidContained(item)
+                        .ifPresent(
+                                fluide ->
+                                        ajouter(
+                                                resultat,
+                                                EmiStack.of(
+                                                        fluide.getFluid(),
+                                                        fluide.getTag(),
+                                                        (long) fluide.getAmount()
+                                                                * item.getCount())));
             }
         return resultat;
+    }
+
+    private static void ajouter(EmiPlayerInventory stock, EmiStack pile) {
+        var cle = ComparaisonEmi.pourInventaire(pile);
+        stock.inventory.merge(
+                cle, cle, (a, b) -> a.copy().setAmount(a.getAmount() + b.getAmount()));
     }
 
     @SubscribeEvent
@@ -128,14 +149,8 @@ public final class InventaireArbreEmi {
                             .toList();
             boolean plisChanges = PLIS.actualiser(arbre, physiques, reservations);
             String cle =
-                    physiques.stream()
-                                    .map(
-                                            s ->
-                                                    s.objet().getId()
-                                                            + "|"
-                                                            + s.objet().getNbt()
-                                                            + "|"
-                                                            + s.quantite())
+                    personnels.inventory.values().stream()
+                                    .map(s -> s.getId() + "|" + s.getNbt() + "|" + s.getAmount())
                                     .sorted()
                                     .toList()
                                     .toString()

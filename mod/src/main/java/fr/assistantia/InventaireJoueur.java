@@ -55,7 +55,8 @@ public final class InventaireJoueur {
         return sacs;
     }
 
-    static long revision() {
+    /** Révision du stock personnel synchronisé, y compris des variantes et des contenants. */
+    public static long revision() {
         return revision;
     }
 

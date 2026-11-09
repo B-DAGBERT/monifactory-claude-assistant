@@ -45,6 +45,21 @@ public class InventaireJoueur {public static boolean sync=true;public static jav
     "fr.assistantia.compat.emi.CoffresArbreEmi": """
 public class CoffresArbreEmi {public static Object arbre=new Object();public static Object arbreActif(){return arbre;}}
 """,
+    "net.minecraft.world.level.material.Fluid": "public record Fluid(String id) {}",
+    "net.minecraftforge.fluids.FluidUtil": """
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
+public class FluidUtil {
+ public record Content(Fluid getFluid, net.minecraft.nbt.CompoundTag getTag, int getAmount){
+  public boolean isEmpty(){return getAmount<=0;}
+ }
+ public static java.util.Optional<Content> getFluidContained(ItemStack s){
+  var tag=s.getTag();
+  return tag==null||tag.getInt("volume")==0?java.util.Optional.empty()
+   :java.util.Optional.of(new Content(new Fluid("test:rubber"),null,tag.getInt("volume")));
+ }
+}
+""",
     "dev.emi.emi.api.stack.EmiIngredient": "public interface EmiIngredient {java.util.List<EmiStack> getEmiStacks();}",
     "fr.assistantia.compat.emi.ComparaisonEmi": """
 public class ComparaisonEmi {public static dev.emi.emi.api.stack.EmiStack pourInventaire(dev.emi.emi.api.stack.EmiStack s){return s.copy();}
@@ -66,16 +81,19 @@ public class Comparison {public static final Comparison DEFAULT_COMPARISON=new C
 """,
     "dev.emi.emi.api.stack.EmiStack": """
 import net.minecraft.world.item.ItemStack;
-public class EmiStack implements EmiIngredient {private final ItemStack item;private long n;
- public EmiStack(ItemStack s){item=s.copy();n=s.getCount();}public static EmiStack of(ItemStack s){return new EmiStack(s);}
- public EmiStack copy(){return new EmiStack(item).setAmount(n);}public long getAmount(){return n;}
+public class EmiStack implements EmiIngredient {private final ItemStack item;private final Object key;private long n;
+ public EmiStack(ItemStack s){item=s.copy();key=s.id;n=s.getCount();}public static EmiStack of(ItemStack s){return new EmiStack(s);}
+ private EmiStack(net.minecraft.world.level.material.Fluid fluid,long n){item=ItemStack.EMPTY;key=fluid;this.n=n;}
+ public static EmiStack of(net.minecraft.world.level.material.Fluid fluid,net.minecraft.nbt.CompoundTag tag,long n){return new EmiStack(fluid,n);}
+ public Object getKey(){return key;}
+ public EmiStack copy(){return key instanceof net.minecraft.world.level.material.Fluid f?new EmiStack(f,n):new EmiStack(item).setAmount(n);}public long getAmount(){return n;}
  public java.util.List<EmiStack> getEmiStacks(){return java.util.List.of(this);}public net.minecraft.nbt.CompoundTag getNbt(){return item.getTag();}
  public EmiStack setAmount(long value){n=value;return this;}
  public EmiStack comparison(java.util.function.Function<Comparison,Comparison> c){c.apply(Comparison.DEFAULT_COMPARISON);return this;}
- public net.minecraft.resources.ResourceLocation getId(){return new net.minecraft.resources.ResourceLocation(item.id);}
+ public net.minecraft.resources.ResourceLocation getId(){return new net.minecraft.resources.ResourceLocation(key instanceof net.minecraft.world.level.material.Fluid f?f.id():item.id);}
  public ItemStack getItemStack(){var s=item.copy();s.setCount((int)n);return s;}
- public boolean equals(Object o){return o instanceof EmiStack s&&item.id.equals(s.item.id)&&java.util.Objects.equals(item.getTag(),s.item.getTag());}
- public int hashCode(){return java.util.Objects.hash(item.id,item.getTag());}}
+ public boolean equals(Object o){return o instanceof EmiStack s&&key.equals(s.key)&&java.util.Objects.equals(item.getTag(),s.item.getTag());}
+ public int hashCode(){return java.util.Objects.hash(key,item.getTag());}}
 """,
     "dev.emi.emi.api.recipe.EmiPlayerInventory": """
 import dev.emi.emi.api.stack.EmiStack;

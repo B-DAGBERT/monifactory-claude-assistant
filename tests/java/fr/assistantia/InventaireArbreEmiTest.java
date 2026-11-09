@@ -105,6 +105,33 @@ public class InventaireArbreEmiTest {
         tick();
         assert EmiFavorites.updates == changements + 1;
         changements = EmiFavorites.updates;
+        // Le fluide porté existe même sans sac ni lot. Un seau vide ne crée aucun stock.
+        var drum = s("steel_drum", 1);
+        var volume = new net.minecraft.nbt.CompoundTag();
+        volume.putInt("volume", 12_340);
+        drum.setTag(volume);
+        var cell = s("cell", 2);
+        volume = new net.minecraft.nbt.CompoundTag();
+        volume.putInt("volume", 120);
+        cell.setTag(volume);
+        InventaireJoueur.piles = List.of(drum, cell, s("bucket", 3));
+        var fluide = new net.minecraft.world.level.material.Fluid("test:rubber");
+        var handler = new EmiPlayerInventory(List.of(EmiStack.of(fluide, null, 12_340)));
+        var stock = InventaireArbreEmi.completer(handler);
+        assert n(stock, "test:rubber") == 12_580 : "mB réels, sans doublon avec le handler natif";
+        assert n(stock, "steel_drum") == 1 && n(stock, "bucket") == 3;
+        assert n(handler, "test:rubber") == 12_340;
+        assert cell.getCount() == 2 && drum.getTag().getInt("volume") == 12_340;
+        assert n(InventaireArbreEmi.completer(stock), "test:rubber") == 12_580;
+        tick();
+        assert n(EmiFavorites.last, "test:rubber") == 12_580;
+        volume = new net.minecraft.nbt.CompoundTag();
+        volume.putInt("volume", 3_000);
+        drum.setTag(volume);
+        tick();
+        assert n(EmiFavorites.last, "test:rubber") == 3_240
+                : "le même contenant partiellement vidé rafraîchit EMI";
+        InventaireJoueur.piles = List.of(s("iron", 2));
         // La réservation doit être testée sur un vrai contrat d'arbre, avec ses champs natifs.
         CoffresArbreEmi.arbre =
                 new PlisFabricationEmiTest.Tree(new PlisFabricationEmiTest.Node("machine", 2));

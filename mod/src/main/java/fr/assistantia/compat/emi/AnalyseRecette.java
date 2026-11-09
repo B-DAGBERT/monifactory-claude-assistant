@@ -663,7 +663,9 @@ public final class AnalyseRecette {
                         + "|"
                         + PossessionsRecette.revision()
                         + "|"
-                        + (suivi ? System.identityHashCode(operationsSuivies) : stockSignature())
+                        + (suivi ? System.identityHashCode(operationsSuivies) : 0)
+                        + "|"
+                        + InventaireJoueur.revision()
                         + "|"
                         + MachinesEmi.revisionLotsProduction()
                         + "|"
@@ -752,13 +754,6 @@ public final class AnalyseRecette {
         planAttente = "";
         cleReperes = null;
         sale = true;
-    }
-
-    private static long stockSignature() {
-        long h = 17;
-        for (var pile : InventaireJoueur.piles())
-            h = h * 1_000_003L + 31L * System.identityHashCode(pile.getItem()) + pile.getCount();
-        return h;
     }
 
     /** Stock de calcul des besoins quand l'arbre n'est pas suivi : poches, sac et contenants. */
