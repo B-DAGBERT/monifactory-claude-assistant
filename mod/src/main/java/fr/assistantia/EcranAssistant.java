@@ -59,6 +59,10 @@ public class EcranAssistant extends Screen {
     private static final Onglet[] ONGLETS = Onglet.values();
     private static Onglet onglet = Onglet.RECETTE; // gardé d'une ouverture à l'autre
 
+    /** Le point que l'assistant met parfois devant son état, et des points de suspension. */
+    private static final java.util.regex.Pattern POINT = java.util.regex.Pattern.compile("^●\\s*"),
+            SUSPENSION = java.util.regex.Pattern.compile("(…|\\.+)\\s*$");
+
     /** Ce que dit la ligne d'état : un point coloré puis le texte. */
     private record Statut(String texte, int point, int couleur) {}
 
@@ -431,7 +435,7 @@ public class EcranAssistant extends Screen {
         if (!ecran.has("question_recue"))
             return new Statut(
                     "Relance l’assistant pour activer la discussion", Theme.JAUNE, Theme.JAUNE);
-        String statut = Pont.texte(ecran, "statut").replaceFirst("^●\\s*", "");
+        String statut = POINT.matcher(Pont.texte(ecran, "statut")).replaceFirst("");
         if (ETAT_DISCUSSION.enAttente())
             return new Statut(anime("Transmission de ta question"), Theme.JAUNE, Theme.JAUNE);
         if (Pont.vrai(ecran, "occupe"))
@@ -450,7 +454,7 @@ public class EcranAssistant extends Screen {
 
     /** Le texte suivi de points qui s'animent (sans doubler des points de suspension). */
     private static String anime(String texte) {
-        String debut = texte.replaceFirst("(…|\\.+)\\s*$", "");
+        String debut = SUSPENSION.matcher(texte).replaceFirst("");
         return debut + ".".repeat((int) (System.currentTimeMillis() / 450 % 4));
     }
 
