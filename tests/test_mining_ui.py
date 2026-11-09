@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import stubs_theme
 from tests.test_ai_settings_menu import STUBS as MENU_STUBS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,10 +50,13 @@ public class FMLPaths {public static final Entry CONFIGDIR=new Entry();public st
 """,
     }
 )
-STUBS["net.minecraft.client.gui.Font"] = STUBS["net.minecraft.client.gui.Font"].replace(
-    "public String plainSubstrByWidth",
-    "public int width(String s){return s.length()*6;}public String plainSubstrByWidth",
-)
+# EcranSac utilise le thème commun : police mesurée, bouton, infobulle et membres appelés.
+STUBS.update(stubs_theme.STUBS)
+for _nom, _ajouts in (
+    ("net.minecraft.client.gui.GuiGraphics", stubs_theme.GRAPHIQUES),
+    ("net.minecraft.client.Minecraft", stubs_theme.JEU),
+):
+    STUBS[_nom] = stubs_theme.membres(STUBS[_nom], _ajouts)
 STUBS["net.minecraft.client.gui.components.EditBox"] = (
     STUBS["net.minecraft.client.gui.components.EditBox"]
     .replace(
@@ -65,14 +69,18 @@ STUBS["net.minecraft.client.gui.components.EditBox"] = (
     )
     .replace("value=s;responder.accept(s);", "if(filter.test(s)){value=s;responder.accept(s);}")
 )
-STUBS["net.minecraft.client.gui.screens.Screen"] = STUBS[
-    "net.minecraft.client.gui.screens.Screen"
-].replace(
-    "public boolean isPauseScreen()",
-    "public boolean mouseClicked(double x,double y,int b){return false;}"
-    "public boolean mouseScrolled(double x,double y,double d){return false;}"
-    "public boolean mouseDragged(double x,double y,int b,double dx,double dy){return false;}"
-    "public boolean mouseReleased(double x,double y,int b){return false;}public boolean isPauseScreen()",
+STUBS["net.minecraft.client.gui.components.EditBox"] = stubs_theme.membres(
+    STUBS["net.minecraft.client.gui.components.EditBox"], stubs_theme.CHAMP
+)
+STUBS["net.minecraft.client.gui.screens.Screen"] = stubs_theme.membres(
+    STUBS["net.minecraft.client.gui.screens.Screen"].replace(
+        "public boolean isPauseScreen()",
+        "public boolean mouseClicked(double x,double y,int b){return false;}"
+        "public boolean mouseScrolled(double x,double y,double d){return false;}"
+        "public boolean mouseDragged(double x,double y,int b,double dx,double dy){return false;}"
+        "public boolean mouseReleased(double x,double y,int b){return false;}public boolean isPauseScreen()",
+    ),
+    stubs_theme.ECRAN,
 )
 
 HARNESS = r"""
@@ -97,6 +105,7 @@ public class MiningUiTest {
    assert !b.cliquer(100,20,1)&&!b.glisse();assert b.cliquer(100,b.curseur()+2,0);b.glisser(-100);assert b.position()==0;b.glisser(1000);assert b.position()==400;
    b.relacher();assert !b.glisser(40);b.regler(100,20,1000,500);assert b.position()==0&&!b.visible();
    b.regler(100,20,10,200);assert b.taille()==10;b.defiler(-1);assert b.position()==30;
+   b.aller(150);assert b.position()==150;b.aller(-5);assert b.position()==0;b.aller(9999);assert b.position()==190:"anchored position stays within the content";
   }else if(c.equals("style")){
    var d=StyleFilons.defaut();assert d.maximum()==192&&d.intensite()==0;
    assert new StyleFilons(-2,-4).maximum()==1&&new StyleFilons(99999,7).maximum()==4096;
@@ -117,7 +126,7 @@ public class MiningUiTest {
     assert zones.size()==(compact?1:3);
     assert (b.menu()!=null)==compact;
     if(!compact)assert b.scan().largeur()==widths[0]&&b.suivi().largeur()==widths[1]&&b.sac().largeur()==widths[2]:"never squeeze labels";
-    for(var z:zones){assert z.x()>=46&&z.y()==218&&z.hauteur()==20:"one row, never over other mod controls";assert z.x()+z.largeur()<=46+room;}
+    for(var z:zones){assert z.x()>=46&&z.y()==218&&z.hauteur()==BarreOutilsEmi.HAUTEUR&&BarreOutilsEmi.HAUTEUR==16:"one row of theme-height buttons, never over other mod controls";assert z.x()+z.largeur()<=46+room;}
     for(int i=0;i<zones.size();i++)for(int j=i+1;j<zones.size();j++){var a=zones.get(i);var z=zones.get(j);assert a.x()+a.largeur()<=z.x()||z.x()+z.largeur()<=a.x();}
    }
   }else if(c.equals("bag")){
@@ -141,6 +150,7 @@ public class MiningUiTest {
    assert AffichageFilons.style().equals(StyleFilons.defaut());
   }else if(c.equals("bag-screen")){
    var mc=new Minecraft();var parent=new Screen(Component.literal("EMI"));var s=new EcranSac(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
+   var retour=button(s,"Retour à EMI");assert retour instanceof BoutonTheme&&retour.h==16&&retour.x+retour.w<=s.width-10:"theme button inside the window";
    InventaireJoueur.contenu=List.of(new ItemStack("Étain",128,""));s.render(new GuiGraphics(),0,0,0);assert GuiGraphics.labels.contains("Étain");
    InventaireJoueur.disponible=false;GuiGraphics.labels.clear();s.render(new GuiGraphics(),0,0,0);assert !GuiGraphics.labels.contains("Étain"):"never display stale bag stock";
    InventaireJoueur.disponible=true;input(s).setValue("cuivre");GuiGraphics.labels.clear();s.render(new GuiGraphics(),0,0,0);assert !GuiGraphics.labels.contains("Étain");
@@ -189,6 +199,7 @@ class MiningUiTests(unittest.TestCase):
             "EcranSac",
         ]
         sources = [ROOT / f"mod/src/main/java/fr/assistantia/{name}.java" for name in names]
+        sources += [source for source in stubs_theme.SOURCES if source not in sources]
         result = subprocess.run(
             [
                 javac,

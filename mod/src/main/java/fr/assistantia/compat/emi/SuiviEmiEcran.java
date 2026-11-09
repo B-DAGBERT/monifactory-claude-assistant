@@ -1,20 +1,22 @@
 package fr.assistantia.compat.emi;
 
+import fr.assistantia.BarreDefilement;
+import fr.assistantia.BoutonTheme;
 import fr.assistantia.DispositionCoffre.Zone;
+import fr.assistantia.Theme;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 /** Vue ordonnée des fabrications ; les boutons restent liés aux lignes réellement affichées. */
 public final class SuiviEmiEcran extends Screen {
-    private static final int HAUT = 58, LIGNE = 36, ENTETE = 20;
+    private static final int LIGNE = 36, ENTETE = 20;
     private static final String[] GROUPES = {
         "À lancer maintenant", "À préparer", "En cours", "Étapes suivantes"
     };
+    private static final String DECLARER = "En cours de craft", ANNULER = "Annuler le lot";
     private final Screen parent;
     private final Object connexionOuverture, mondeOuverture;
     private static SuiviEmiEcran retourRecette;
@@ -27,8 +29,14 @@ public final class SuiviEmiEcran extends Screen {
     private boolean replisChoisis;
     private int debut, selection = -1, hauteur;
     private long actualise, dernierClic;
-    private Button recalculer, annuler, voir, deplier;
+    private BoutonTheme recalculer, annuler, voir, deplier;
     private String message = "", probleme = "";
+    private final BarreDefilement barre = new BarreDefilement();
+    private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
+
+    /** Liste des fabrications : sous la rangée du haut, au-dessus du message et des boutons. */
+    private int haut, bas;
+
     private MachinesEmi.Ligne selectionRendue;
     private Object arbreRendu, connexionRendue, mondeRendu;
     private String contexteRendu = "";
@@ -49,10 +57,15 @@ public final class SuiviEmiEcran extends Screen {
 
     @Override
     protected void init() {
+        fenetre = Theme.Fenetre.centree(width, height, 520);
+        int x = fenetre.contenuX(), y = fenetre.contenuY(), droite = fenetre.contenuDroite();
+        int basBoutons = fenetre.basBoutons();
+        haut = y + Theme.BOUTON + Theme.ECART;
+        bas = Math.max(haut + 1, basBoutons - Theme.ECART - Theme.LIGNE);
         recalculer =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal("Recalculer"),
+                        BoutonTheme.creer(
+                                        "Recalculer",
                                         b -> {
                                             if (!clicPossible()
                                                     || CoffresArbreEmi.arbreActif() == null
@@ -66,16 +79,14 @@ public final class SuiviEmiEcran extends Screen {
                                                             ? "Besoins recalculés · avancement conservé"
                                                             : "Scan non recalculé · réessaie depuis EMI";
                                         })
-                                .bounds(12, 30, 100, 20)
-                                .build());
-        recalculer.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Relire l’arbre et les stocks actuels. Les lots en machine restent réservés.")));
+                                .zone(x, y, largeur("Recalculer"))
+                                .infobulle(
+                                        "Relire l’arbre et les stocks actuels. Les lots en machine restent réservés."));
+        int replier = Math.max(largeur("Tout déplier"), largeur("Tout replier"));
         deplier =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal("Tout déplier"),
+                        BoutonTheme.creer(
+                                        "Tout déplier",
                                         b -> {
                                             replisChoisis = true;
                                             boolean ouvrir = replisPresents();
@@ -85,12 +96,12 @@ public final class SuiviEmiEcran extends Screen {
                                             selectionRendue = null;
                                             actualiserBoutons();
                                         })
-                                .bounds(118, 30, width - 130, 20)
-                                .build());
+                                .zone(droite - replier, y, replier));
+        int recette = largeur("Recette");
         voir =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal("Recette"),
+                        BoutonTheme.creer(
+                                        "Recette",
                                         b -> {
                                             var ligne = pourAction();
                                             if (ligne == null || !clicPossible()) return;
@@ -103,12 +114,16 @@ public final class SuiviEmiEcran extends Screen {
                                                 recetteAffichee = minecraft.screen;
                                             }
                                         })
-                                .bounds(12, height - 28, 70, 20)
-                                .build());
+                                .zone(x, basBoutons, recette));
+        int retour = largeur("Retour");
+        int action =
+                Math.min(
+                        Math.max(largeur(DECLARER), largeur(ANNULER)),
+                        droite - retour - x - recette - 2 * Theme.ECART);
         annuler =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal("En cours de craft"),
+                        BoutonTheme.creer(
+                                        DECLARER,
                                         b -> {
                                             var ligne = pourAction();
                                             if (ligne == null
@@ -131,17 +146,29 @@ public final class SuiviEmiEcran extends Screen {
                                             actualise = 0;
                                             selectionRendue = null;
                                         })
-                                .bounds(88, height - 28, Math.min(132, width - 176), 20)
-                                .build());
+                                .zone(x + recette + Theme.ECART, basBoutons, action));
         addRenderableWidget(
-                Button.builder(Component.literal("Retour"), b -> onClose())
-                        .bounds(width - 82, height - 28, 70, 20)
-                        .build());
+                BoutonTheme.creer("Retour", b -> onClose())
+                        .zone(droite - retour, basBoutons, retour));
         rendus = List.of();
         selectionRendue = null;
         actualise = 0;
         debut = Math.min(debut, maximumDefilement());
         actualiserBoutons();
+    }
+
+    private int largeur(String texte) {
+        return Theme.largeurBouton(font, texte, 200);
+    }
+
+    /** Couleur d'un groupe d'ordonnancement, commune au suivi et au panneau des machines. */
+    static int couleurGroupe(int groupe) {
+        return switch (groupe) {
+            case 0 -> Theme.VERT;
+            case 1 -> Theme.JAUNE;
+            case 2 -> Theme.BLEU;
+            default -> Theme.TEXTE_SECONDAIRE;
+        };
     }
 
     private boolean clicPossible() {
@@ -165,7 +192,7 @@ public final class SuiviEmiEcran extends Screen {
     }
 
     private int zoneHauteur() {
-        return Math.max(1, height - 46 - HAUT);
+        return Math.max(1, bas - haut);
     }
 
     private int maximumDefilement() {
@@ -286,13 +313,11 @@ public final class SuiviEmiEcran extends Screen {
         boolean visible = ligne != null && !replies[groupe(ligne)];
         voir.active = visible;
         boolean declaration = ligne == null || ligne.lot() < 0;
-        annuler.setMessage(Component.literal(declaration ? "En cours de craft" : "Annuler le lot"));
-        annuler.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                declaration
-                                        ? "Déclarer un résultat déjà en fabrication. Aucun objet transféré ni résultat validé."
-                                        : "Libérer ce lot dans le suivi. Les objets restent dans la machine.")));
+        annuler.texte(declaration ? DECLARER : ANNULER)
+                .infobulle(
+                        declaration
+                                ? "Déclarer un résultat déjà en fabrication. Aucun objet transféré ni résultat validé."
+                                : "Libérer ce lot dans le suivi. Les objets restent dans la machine.");
         annuler.active =
                 actif
                         && !EnvoiMachine.occupe()
@@ -301,7 +326,7 @@ public final class SuiviEmiEcran extends Screen {
                                 ? MachinesEmi.declarables(ligne.recette()) > 0
                                 : ligne.annulable());
         deplier.active = !lignes.isEmpty();
-        deplier.setMessage(Component.literal(replisPresents() ? "Tout déplier" : "Tout replier"));
+        deplier.texte(replisPresents() ? "Tout déplier" : "Tout replier");
     }
 
     @Override
@@ -324,23 +349,29 @@ public final class SuiviEmiEcran extends Screen {
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
         renderBackground(g);
-        g.drawCenteredString(font, title, width / 2, 12, 0xFFFFC94A);
+        fenetre.dessiner(g, font, title.getString(), null, mx, my);
         var zones = new ArrayList<Rendu>();
         List<Component> tooltip = null;
-        int bas = HAUT + zoneHauteur();
-        g.enableScissor(12, HAUT, width - 12, bas);
+        int gauche = fenetre.contenuX(), droite = fenetre.contenuDroite();
+        barre.regler(droite - Theme.DEFILEMENT, haut, zoneHauteur(), hauteur);
+        barre.aller(debut);
+        // La barre de défilement garde sa colonne ; les lignes s'arrêtent avant elle.
+        int fin = barre.visible() ? droite - Theme.DEFILEMENT - Theme.ECART : droite;
+        int largeurLigne = fin - gauche, texteX = gauche + 24;
+        g.enableScissor(gauche, haut, droite, bas);
         try {
             for (int i = premiereVisible(); i < entrees.size(); i++) {
                 var entree = entrees.get(i);
-                int y = HAUT + entree.y() - debut, fin = y + entree.hauteur();
+                int y = haut + entree.y() - debut, finY = y + entree.hauteur();
                 if (y >= bas) break;
                 var zone =
                         new Zone(
-                                12,
-                                Math.max(HAUT, y),
-                                width - 24,
-                                Math.min(bas, fin) - Math.max(HAUT, y));
+                                gauche,
+                                Math.max(haut, y),
+                                largeurLigne,
+                                Math.min(bas, finY) - Math.max(haut, y));
                 zones.add(new Rendu(entree, zone));
+                boolean survol = zone.contient(mx, my);
                 var ligne = entree.ligne();
                 if (ligne == null) {
                     String nom =
@@ -348,15 +379,10 @@ public final class SuiviEmiEcran extends Screen {
                                     + GROUPES[entree.groupe()]
                                     + " · "
                                     + comptes[entree.groupe()];
-                    g.fill(12, y, width - 12, fin - 2, 0xD0203038);
-                    g.drawString(
-                            font,
-                            font.plainSubstrByWidth(nom, width - 40),
-                            18,
-                            y + 5,
-                            0xFFFFC94A,
-                            false);
-                    if (zone.contient(mx, my))
+                    Theme.carte(g, gauche, y, largeurLigne, ENTETE - 2, survol);
+                    g.fill(gauche, y, gauche + 2, y + ENTETE - 2, couleurGroupe(entree.groupe()));
+                    Theme.texte(g, font, nom, gauche + 8, y + 5, largeurLigne - 12, Theme.ACCENT);
+                    if (survol)
                         tooltip =
                                 List.of(
                                         Component.literal(nom),
@@ -367,48 +393,42 @@ public final class SuiviEmiEcran extends Screen {
                                                                 : "replier")));
                     continue;
                 }
-                g.fill(
-                        12,
-                        y,
-                        width - 12,
-                        fin - 2,
-                        meme(ligne, choisie()) ? 0xA0355263 : 0xB014181C);
+                if (meme(ligne, choisie()))
+                    Theme.carteChoisie(g, gauche, y, largeurLigne, LIGNE - 2);
+                else Theme.carte(g, gauche, y, largeurLigne, LIGNE - 2, survol);
                 if (!ligne.recette().getOutputs().isEmpty())
                     ligne.recette()
                             .getOutputs()
                             .get(0)
                             .render(
                                     g,
-                                    18,
-                                    y + 8,
+                                    gauche + 4,
+                                    y + 9,
                                     0,
                                     dev.emi.emi.api.stack.EmiIngredient.RENDER_ICON);
                 String nom =
                         ligne.recette().getOutputs().isEmpty()
                                 ? "Recette"
                                 : ligne.recette().getOutputs().get(0).getName().getString();
-                String etat = font.plainSubstrByWidth(ligne.etat(), Math.max(20, (width - 72) / 2));
                 int couleur =
-                        entree.groupe() == 0 || ligne.etat().equals("Terminé")
-                                ? 0x77DD88
-                                : entree.groupe() == 2 ? 0x55DDFF : 0xFFCC55;
-                int etatX = width - 20 - font.width(etat);
-                g.drawString(
+                        ligne.etat().equals("Terminé")
+                                ? Theme.VERT
+                                : couleurGroupe(entree.groupe());
+                // L'état garde au plus la moitié de la ligne ; le détail complet reste au survol.
+                int place = fin - 6 - texteX;
+                int largeurEtat = Math.min(font.width(ligne.etat()), Math.max(20, place / 2));
+                int etatX = fin - 6 - largeurEtat;
+                Theme.texte(g, font, ligne.etat(), etatX, y + 7, largeurEtat, couleur);
+                Theme.texte(
+                        g,
                         font,
-                        font.plainSubstrByWidth(nom + " ×" + ligne.fois(), Math.max(1, etatX - 48)),
-                        40,
-                        y + 5,
-                        0xFFFFFF,
-                        false);
-                g.drawString(font, etat, etatX, y + 5, couleur, false);
-                g.drawString(
-                        font,
-                        font.plainSubstrByWidth(ligne.detail(), width - 65),
-                        40,
-                        y + 20,
-                        0xAAAAAA,
-                        false);
-                if (zone.contient(mx, my))
+                        nom + " ×" + ligne.fois(),
+                        texteX,
+                        y + 7,
+                        etatX - Theme.ECART - texteX,
+                        Theme.TEXTE);
+                Theme.texte(g, font, ligne.detail(), texteX, y + 20, place, Theme.TEXTE_SECONDAIRE);
+                if (survol)
                     tooltip =
                             List.of(
                                     Component.literal(nom + " ×" + ligne.fois()),
@@ -436,24 +456,27 @@ public final class SuiviEmiEcran extends Screen {
                                 : MachinesEmi.dernierTermine()
                                         ? "Terminé · résultats obtenus"
                                         : "Choisis un craft actif dans EMI";
-            g.drawCenteredString(
-                    font, font.plainSubstrByWidth(vide, width - 24), width / 2, 80, 0xAAAAAA);
-            if (new Zone(12, 72, width - 24, 24).contient(mx, my))
-                tooltip = List.of(Component.literal(vide));
+            int largeur = droite - gauche, y = haut + 2 * Theme.LIGNE;
+            if (font.width(vide) <= largeur)
+                Theme.texteCentre(g, font, vide, gauche, y, largeur, Theme.TEXTE_SECONDAIRE);
+            else {
+                Theme.paragraphe(g, font, vide, gauche, y, largeur, Theme.TEXTE_SECONDAIRE, 3);
+                if (Theme.lignes(font, vide, largeur) > 3
+                        && new Zone(gauche, y, largeur, 3 * Theme.LIGNE).contient(mx, my))
+                    tooltip = List.of(Component.literal(vide));
+            }
         }
-        if (maximumDefilement() > 0) {
-            int h = zoneHauteur(), curseur = Math.max(8, h * h / hauteur);
-            g.fill(width - 8, HAUT, width - 5, bas, 0x80444444);
-            int yy = HAUT + (h - curseur) * debut / maximumDefilement();
-            g.fill(width - 8, yy, width - 5, yy + curseur, 0xFFAAAAAA);
-        }
-        g.drawString(
+        Theme.barre(g, barre, mx, my);
+        Theme.texte(
+                g,
                 font,
-                font.plainSubstrByWidth(message, width - 24),
-                12,
-                height - 40,
-                0xAAAAAA,
-                false);
+                message,
+                gauche,
+                bas + Theme.ECART - 1,
+                droite - gauche,
+                Theme.TEXTE_SECONDAIRE,
+                mx,
+                my);
         super.render(g, mx, my, delta);
         if (tooltip != null) g.renderComponentTooltip(font, tooltip, mx, my);
     }
@@ -461,6 +484,10 @@ public final class SuiviEmiEcran extends Screen {
     @Override
     public boolean mouseClicked(double x, double y, int b) {
         if (super.mouseClicked(x, y, b)) return true;
+        if (barre.cliquer(x, y, b)) {
+            debut = barre.position();
+            return true;
+        }
         if (b != 0 || !contexteRenduCourant()) return false;
         for (var rendu : rendus)
             if (rendu.zone().contient(x, y)) {
@@ -483,10 +510,28 @@ public final class SuiviEmiEcran extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double delta) {
-        if (x < 12 || x >= width || y < HAUT || y >= HAUT + zoneHauteur() || delta == 0)
-            return false;
+        if (x < fenetre.contenuX()
+                || x >= fenetre.contenuDroite() + Theme.MARGE
+                || y < haut
+                || y >= bas
+                || delta == 0) return false;
         debut = Math.max(0, Math.min(maximumDefilement(), debut + (delta > 0 ? -LIGNE : LIGNE)));
         return true;
+    }
+
+    @Override
+    public boolean mouseDragged(double x, double y, int b, double dx, double dy) {
+        if (barre.glisser(y)) {
+            debut = barre.position();
+            return true;
+        }
+        return super.mouseDragged(x, y, b, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double x, double y, int b) {
+        barre.relacher();
+        return super.mouseReleased(x, y, b);
     }
 
     @Override

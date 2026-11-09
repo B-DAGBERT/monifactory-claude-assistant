@@ -2,13 +2,9 @@ package fr.assistantia;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.mojang.logging.LogUtils;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
@@ -41,13 +37,17 @@ public final class IdentiteMonde {
 
     private static final Path DOSSIER = FMLPaths.GAMEDIR.get().resolve("kubejs/assistant");
     private static final Path MARKER = DOSSIER.resolve("isolation_mondes.json");
+    private static final Path EXPORT = DOSSIER.resolve("identite_monde.json");
     private static final SessionMonde ETAT = new SessionMonde();
     private static Mode mode = Mode.HISTORIQUE;
     private static long prochaineLecture = Long.MIN_VALUE, prochaineEcriture = Long.MIN_VALUE;
-    private static String derniereVue = "";
+    // Dernière identité publiée : comparée chaque tick sans construire de texte.
+    private static String vueMonde, vueSession, vueDimension;
+    private static Mode vueMode;
+    private static Object dimensionLue, soloLu;
+    private static String dimensionTexte = "", soloSource = "";
     private static Connection adresseConnexion;
     private static String adresseTexte = "", adresseNormalisee = "";
-    private static boolean erreurEcriture;
 
     private IdentiteMonde() {}
 
@@ -85,11 +85,16 @@ public final class IdentiteMonde {
             var solo = mc.getSingleplayerServer();
             if (solo != null) {
                 type = "solo";
-                source =
-                        solo.getWorldPath(LevelResource.ROOT)
-                                .toAbsolutePath()
-                                .normalize()
-                                .toString();
+                // Le dossier d'un serveur intégré ne change pas pendant sa vie : calculé une fois.
+                if (solo != soloLu) {
+                    soloSource =
+                            solo.getWorldPath(LevelResource.ROOT)
+                                    .toAbsolutePath()
+                                    .normalize()
+                                    .toString();
+                    soloLu = solo;
+                }
+                source = soloSource;
             } else {
                 var serveur = mc.getCurrentServer();
                 if (serveur != null) {
@@ -215,50 +220,41 @@ public final class IdentiteMonde {
         exporterEtat(
                 valide ? ETAT.monde() : "",
                 valide ? ETAT.session() : "",
-                valide ? mc.level.dimension().location().toString() : "");
+                valide ? dimension(mc) : "");
     }
 
-    private static void exporterEtat(String monde, String session, String dimension) {
-        String signature = monde + "|" + session + "|" + dimension + "|" + mode;
-        long maintenant = System.nanoTime();
-        if (signature.equals(derniereVue) && maintenant < prochaineEcriture) return;
-        prochaineEcriture = maintenant + 1_000_000_000L;
-        derniereVue = signature;
-        Path temporaire = null;
-        try {
-            Files.createDirectories(DOSSIER);
-            temporaire = Files.createTempFile(DOSSIER, "identite_monde-", ".tmp");
-            JsonObject objet = new JsonObject();
-            objet.addProperty("v", 1);
-            objet.addProperty("monde", monde);
-            objet.addProperty("session", session);
-            objet.addProperty("dimension", dimension);
-            objet.addProperty("t", System.currentTimeMillis());
-            Files.writeString(temporaire, objet.toString(), StandardCharsets.UTF_8);
-            Path cible = DOSSIER.resolve("identite_monde.json");
-            try {
-                Files.move(
-                        temporaire,
-                        cible,
-                        StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException e) {
-                Files.move(temporaire, cible, StandardCopyOption.REPLACE_EXISTING);
-            }
-            temporaire = null;
-            derniereVue = signature;
-            erreurEcriture = false;
-        } catch (IOException | RuntimeException e) {
-            if (!erreurEcriture)
-                LogUtils.getLogger().warn("Export de l'identité du monde indisponible", e);
-            erreurEcriture = true;
-        } finally {
-            if (temporaire != null) {
-                try {
-                    Files.deleteIfExists(temporaire);
-                } catch (IOException ignored) {
-                }
-            }
+    /** La clé de dimension est unique par dimension : son texte n'est refait qu'au changement. */
+    private static String dimension(Minecraft mc) {
+        Object cle = mc.level.dimension();
+        if (cle != dimensionLue) {
+            dimensionTexte = mc.level.dimension().location().toString();
+            dimensionLue = cle;
         }
+        return dimensionTexte;
+    }
+
+    /**
+     * Écrit dès que l'identité change, sinon une fois par seconde : Python la juge périmée après 4
+     * s. Le fichier est remplacé sur le fil d'écriture, jamais sur le thread client.
+     */
+    private static void exporterEtat(String monde, String session, String dimension) {
+        long maintenant = System.nanoTime();
+        if (monde.equals(vueMonde)
+                && session.equals(vueSession)
+                && dimension.equals(vueDimension)
+                && mode == vueMode
+                && maintenant < prochaineEcriture) return;
+        prochaineEcriture = maintenant + 1_000_000_000L;
+        vueMonde = monde;
+        vueSession = session;
+        vueDimension = dimension;
+        vueMode = mode;
+        JsonObject objet = new JsonObject();
+        objet.addProperty("v", 1);
+        objet.addProperty("monde", monde);
+        objet.addProperty("session", session);
+        objet.addProperty("dimension", dimension);
+        objet.addProperty("t", System.currentTimeMillis());
+        Ecritures.publier(EXPORT, Ecritures.texte(objet.toString()));
     }
 }
