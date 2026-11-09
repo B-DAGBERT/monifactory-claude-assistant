@@ -234,11 +234,8 @@ public final class AideCoffre {
             }
     }
 
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public static void relache(ScreenEvent.MouseButtonReleased.Pre event) {
-        if (surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY()))
-            event.setCanceled(true);
-    }
+    // Pas d'annulation du relâchement selon sa position : RelachementSouris retient celui des clics
+    // pris par le panneau, et un glisser commencé dans le coffre doit s'y terminer.
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void molette(ScreenEvent.MouseScrolled.Pre event) {

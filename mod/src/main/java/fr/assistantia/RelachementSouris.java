@@ -18,7 +18,9 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  *       déclaration, recette EMI…) et qui a rendu la main au conteneur avant le relâchement.
  * </ul>
  *
- * Un appui dans le monde ou d'un conteneur à un autre garde le comportement du jeu.
+ * Un appui dans le monde ou d'un conteneur à un autre garde le comportement du jeu. Un relâchement
+ * n'est jamais retenu pour sa position : un glisser commencé dans le conteneur (répartition d'une
+ * pile, barre du créatif, widget GT) s'y termine, même au-dessus d'un panneau ou de la barre EMI.
  */
 public final class RelachementSouris {
     /** Écran et bouton du dernier appui ; pris : appui consommé par l'assistant. */
