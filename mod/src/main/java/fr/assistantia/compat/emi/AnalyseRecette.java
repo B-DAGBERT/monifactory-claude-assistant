@@ -806,6 +806,8 @@ public final class AnalyseRecette {
                         + "|"
                         + CoffresConnus.etat().revision()
                         + "|"
+                        + CoffresConnus.zone()
+                        + "|"
                         + InventaireJoueur.disponible();
         if (signature.equals(clePlan)) return false;
         clePlan = signature;
@@ -924,7 +926,10 @@ public final class AnalyseRecette {
         return stock;
     }
 
-    /** Mémoire des coffres : à récupérer, jamais une ressource directement utilisable. */
+    /**
+     * Mémoire des coffres à portée (même dimension, pas trop loin, jamais un coffre à butin) : à
+     * récupérer, jamais une ressource directement utilisable.
+     */
     private static List<OrdreMachines.StockSource<OrdonnancementEmi.Objet>> coffres(
             List<PlanMachines.Operation<EmiRecipe>> operations) {
         Set<String> utiles = new HashSet<>();
@@ -933,7 +938,7 @@ public final class AnalyseRecette {
                 for (var pile : entree.getEmiStacks())
                     if (!pile.getItemStack().isEmpty()) utiles.add(pile.getId().toString());
         List<OrdreMachines.StockSource<OrdonnancementEmi.Objet>> sources = new ArrayList<>();
-        for (var e : CoffresConnus.etat().objets().entrySet()) {
+        for (var e : CoffresConnus.proches().entrySet()) {
             if (!utiles.contains(e.getKey()) || sources.size() >= 2048) continue;
             var objet = Pont.objet(e.getKey());
             if (objet.isEmpty()) continue;

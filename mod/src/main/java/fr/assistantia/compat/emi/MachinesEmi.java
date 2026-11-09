@@ -133,8 +133,9 @@ public final class MachinesEmi {
      */
     static List<PlanRetrait.Stock<EmiStack>> stockCoffres(
             InstantaneArbreEmi vue, List<PlanRetrait.Stock<EmiStack>> dejaComptes) {
-        var coffres = fr.assistantia.CoffresConnus.etat();
-        if (!coffres.pret() || coffres.objets().isEmpty() || vue == null) return List.of();
+        // Coffres à portée seulement : même dimension, pas trop loin, jamais un coffre à butin.
+        var proches = fr.assistantia.CoffresConnus.proches();
+        if (proches.isEmpty() || vue == null) return List.of();
         var deja = new java.util.HashMap<String, Long>();
         for (var s : dejaComptes)
             if (!s.objet().getItemStack().isEmpty())
@@ -144,7 +145,7 @@ public final class MachinesEmi {
         for (var variante : vue.variantes()) {
             String id = variante.getId().toString();
             if (!vus.add(id)) continue;
-            long n = coffres.objets().getOrDefault(id, 0L) - deja.getOrDefault(id, 0L);
+            long n = proches.getOrDefault(id, 0L) - deja.getOrDefault(id, 0L);
             if (n <= 0) continue;
             stock.add(
                     new PlanRetrait.Stock<>(variante.copy(), (int) Math.min(1_000_000L, n), false));
@@ -736,7 +737,9 @@ public final class MachinesEmi {
                             + "|"
                             + lots.revision()
                             + "|"
-                            + fr.assistantia.CoffresConnus.etat().revision();
+                            + fr.assistantia.CoffresConnus.etat().revision()
+                            + "|"
+                            + fr.assistantia.CoffresConnus.zone();
             if (cle.equals(calculPrecedent)) return;
             calculPrecedent = cle;
             // Les réceptions sorties des poches gardent un crédit de travail accompli.
@@ -821,8 +824,9 @@ public final class MachinesEmi {
                         .12f,
                         .12f,
                         .95f);
+        // Rangs déjà calculés pendant le tick, tracés avec les mêmes lignes que les contours.
+        ReperesRecette.dessiner(event, lignes);
         buffers.endBatch(Lignes.TRAVERSANTES);
-        ReperesRecette.dessiner(event); // rangs déjà calculés pendant le tick
     }
 
     @SubscribeEvent

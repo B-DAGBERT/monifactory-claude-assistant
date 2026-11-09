@@ -60,7 +60,8 @@ class RecipeEngineTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         sources = [
-            MOD / f"{name}.java" for name in ("PlanRetrait", "PlanMachines", "OrdreMachines")
+            MOD / f"{name}.java"
+            for name in ("PlanRetrait", "PlanMachines", "OrdreMachines", "TraitsReperes")
         ]
         sources += [
             MOD / "compat/emi" / f"{name}.java"
@@ -153,6 +154,9 @@ class RecipeEngineTests(unittest.TestCase):
 
     def test_world_star_follows_the_current_step(self):
         self.run_case("etoile")
+
+    def test_machine_labels_are_drawn_as_line_segments(self):
+        self.run_case("traits")
 
 
 # Reproduction fidèle (javap d'emi-1.1.22) de MaterialTree/MaterialNode : addResolution sur la clé
@@ -477,7 +481,11 @@ class RecipeTabScreenTests(unittest.TestCase):
 
 MEMORY_STUBS = {
     "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft I=new Minecraft();public static Minecraft getInstance(){return I;}
- public Object level,player;public Object getConnection(){return null;}}""",
+ public Niveau level;public Joueur player;public Object getConnection(){return null;}
+ public static class Pos {public int x,z;public int getX(){return x;}public int getZ(){return z;}}
+ public static class Joueur {public final Pos pos=new Pos();public Pos blockPosition(){return pos;}}
+ public static class Cle {public String id="minecraft:overworld";public String location(){return id;}}
+ public static class Niveau {public final Cle cle=new Cle();public Cle dimension(){return cle;}}}""",
     "net.minecraftforge.fml.loading.FMLPaths": """public enum FMLPaths {GAMEDIR;public java.nio.file.Path get(){return java.nio.file.Path.of(".");}}""",
     "com.mojang.logging.LogUtils": """public class LogUtils {public static Log getLogger(){return new Log();}public static class Log {public void debug(String m,Throwable t){}}}""",
     "fr.assistantia.IdentiteMonde": """public class IdentiteMonde {public static boolean isolation(){return false;}public static String monde(){return "";}}""",

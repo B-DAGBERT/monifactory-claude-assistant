@@ -111,6 +111,10 @@ public final class RecetteMoteurTest {
         return NOMS.getOrDefault(cle, cle);
     }
 
+    private static boolean presque(double a, double b) {
+        return Math.abs(a - b) < 1e-5;
+    }
+
     private static boolean proche(double a, double b) {
         return Math.abs(a - b) < 1e-9;
     }
@@ -139,6 +143,7 @@ public final class RecetteMoteurTest {
             case "nouvelles" -> nouvelles();
             case "stabiliser" -> stabiliser();
             case "etoile" -> etoile();
+            case "traits" -> traits();
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.println("PASS " + args[0]);
@@ -374,6 +379,32 @@ public final class RecetteMoteurTest {
                         16);
         assert !ailleurs.get("m2").etoile() && ailleurs.get("m2").texte().equals("2")
                 : "no machine star while the current step is at the crafting table";
+    }
+
+    /** Étiquettes des machines en segments : symboles, nombre de traits, cadre du dessin. */
+    private static void traits() {
+        assert fr.assistantia.TraitsReperes.symboles("★ 3").equals("★3");
+        assert fr.assistantia.TraitsReperes.symboles("12").equals("12");
+        assert fr.assistantia.TraitsReperes.symboles("3 · prêt").equals("3✓");
+        assert fr.assistantia.TraitsReperes.symboles("★ 3 · prêt").equals("★3✓");
+        assert fr.assistantia.TraitsReperes.symboles("4 · en cours").equals("4…");
+        var huit = fr.assistantia.TraitsReperes.dessiner("8");
+        assert huit.traits().size() == 7 && presque(huit.largeur(), 0.6) : huit;
+        assert fr.assistantia.TraitsReperes.dessiner("1").traits().size() == 2;
+        var etoile = fr.assistantia.TraitsReperes.dessiner("★12");
+        assert etoile.traits().size() == 10 + 2 + 5 : etoile.traits().size();
+        assert presque(etoile.largeur(), 1 + 0.25 + 0.6 + 0.25 + 0.6) : etoile.largeur();
+        for (var t : etoile.traits())
+            for (float[] p : new float[][] {{t.x1(), t.y1()}, {t.x2(), t.y2()}})
+                assert p[0] >= -1e-4
+                                && p[0] <= etoile.largeur() + 1e-4
+                                && p[1] >= -1e-4
+                                && p[1] <= 1 + 1e-4
+                        : "segment inside the label frame";
+        // Le deuxième chiffre commence après le premier et l'écart.
+        var deux = fr.assistantia.TraitsReperes.dessiner("11");
+        assert deux.traits().stream().anyMatch(t -> presque(t.x1(), 0.6 + 0.25 + 0.6));
+        assert fr.assistantia.TraitsReperes.dessiner("").traits().isEmpty();
     }
 
     /** Une chaîne de 300 ingrédients est bornée et déclarée incomplète. */

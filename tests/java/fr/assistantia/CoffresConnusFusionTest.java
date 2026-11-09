@@ -75,7 +75,48 @@ public final class CoffresConnusFusionTest {
         machinesAreTheUnionOfBothFiles();
         missingSecondFileKeepsLegacyReading();
         filesAreReadMergedAndKeptWhenUnreadable(Files.createTempDirectory("coffres-connus"));
+        planCountsOnlyNearbyChestsOfTheSameDimension();
         System.out.println("PASS fusion coffres connus");
+    }
+
+    /**
+     * Player report: 9 Wrought Iron Ingot were "to fetch" from chests while the player had none.
+     * The 28 + 6 ingots were in a Lootr chest and two explored chests of the overworld, the base
+     * being in javd:void. Totals stay global (Introuvable), the plan counts only nearby chests.
+     */
+    static void planCountsOnlyNearbyChestsOfTheSameDimension() {
+        String vide = "javd:void", lingot = "gtceu:wrought_iron_ingot";
+        var lu =
+                CoffresConnus.analyser(
+                        json(
+                                fichier(
+                                        "",
+                                        c(
+                                                "lootr:lootr_chest",
+                                                "Chest",
+                                                549,
+                                                371,
+                                                10,
+                                                o(lingot, 28)),
+                                        c("minecraft:chest", "Chest", 270, 140, 10, o(lingot, 3))
+                                                .replace(OW, vide))),
+                        json(
+                                fichier(
+                                        "",
+                                        c("minecraft:chest", null, 533, 387, 20, o(lingot, 2)),
+                                        c("minecraft:barrel", null, 600, 900, 20, o(lingot, 50))
+                                                .replace(OW, vide),
+                                        c("minecraft:barrel", null, 258, 155, 20, o(lingot, 5))
+                                                .replace(OW, vide))));
+        verifier(lu.objets().get(lingot) == 88L, "global totals unchanged: " + lu.objets());
+        verifier(lu.conteneurs().size() == 5, "positions kept: " + lu.conteneurs());
+        var base = CoffresConnus.proches(lu.conteneurs(), vide, 265, 150, CoffresConnus.RAYON_PLAN);
+        verifier(base.equals(Map.of(lingot, 8L)), "base only (same dimension, in range): " + base);
+        var overworld = CoffresConnus.proches(lu.conteneurs(), OW, 540, 380, 256);
+        verifier(overworld.equals(Map.of(lingot, 2L)), "never a Lootr chest: " + overworld);
+        verifier(
+                CoffresConnus.proches(lu.conteneurs(), "minecraft:the_nether", 0, 0, 256).isEmpty(),
+                "other dimension");
     }
 
     static void newestObservationWinsPerPosition() {

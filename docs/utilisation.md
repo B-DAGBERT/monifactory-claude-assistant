@@ -43,7 +43,9 @@ sur une icône ouvre ses recettes dans EMI.
   cours porte une **★** et reste en tête jusqu’à ce qu’elle soit faite : fabriquée ou envoyée en
   machine (une seule action), ou, pour les sorties d’un lot, récupérées jusqu’à la dernière.
   Ramasser la matière d’une autre étape ne la fait plus passer devant. Ce qui est déjà dans un
-  coffre connu n’est plus à fabriquer, seulement à récupérer. Le survol détaille l’étape et
+  coffre connu à portée n’est plus à fabriquer, seulement à récupérer : un coffre de ta dimension,
+  à moins de 256 blocs de toi, jamais un coffre à butin (Lootr). Les coffres vus en exploration ou
+  dans une autre dimension restent connus pour **Introuvable**. Le survol détaille l’étape et
   explique sa place.
 - **Meilleures alternatives** : une autre recette pour un produit de l’arbre, objet final compris,
   avec le gain en clair, par exemple « 1 Iron Ingot au lieu de 2 par Iron Plate · 2 étapes au lieu
@@ -79,13 +81,13 @@ Si le plan ne peut pas encore être calculé (inventaire ou sac pas encore synch
 l’onglet affiche **Plan non calculé** avec la raison au lieu de « Rien à fabriquer ». Une lecture
 impossible de l’arbre EMI affiche « Arbre EMI illisible · détails dans le journal ».
 
-Dans le monde, les machines entourées en rouge affichent au-dessus d’elles le numéro de leur étape.
-La **★** dorée marque la plus proche machine de l’étape en cours (« ★ 3 · prêt » pour un lot à
-récupérer) et aucune quand l’étape en cours se fait à l’établi ; un numéro grisé signale une étape
-qui ne peut pas encore se faire et « 3 · en cours » ou « 3 · prêt » suit un lot déjà envoyé. Au
-plus 16 machines, les plus proches, sont numérotées. Seules les machines encore utiles brillent :
-quand le résultat, ou une partie de l’arbre, est déjà dans un coffre connu, les machines qui le
-fabriqueraient ne sont plus entourées. Ces repères n’apparaissent que si le mode fabrication de
+Dans le monde, les machines entourées en rouge portent le numéro de leur étape, tracé comme sur un
+afficheur au milieu de leur face tournée vers toi. La **★** dorée marque la plus proche machine de
+l’étape en cours (★ 3 ✓ pour un lot à récupérer) et aucune quand l’étape en cours se fait à
+l’établi ; un numéro grisé signale une étape qui ne peut pas encore se faire, ✓ un lot prêt et
+… un lot en cours. Au plus 16 machines, les plus proches, sont numérotées. Seules les machines
+encore utiles brillent : quand le résultat, ou une partie de l’arbre, est déjà dans un coffre
+connu à portée, les machines qui le fabriqueraient ne sont plus entourées. Ces repères n’apparaissent que si le mode fabrication de
 Recipe Tree ou **Coffres** est actif ; sinon, l’onglet le rappelle.
 
 La prochaine étape s’affiche aussi dans le panneau en haut à gauche, par exemple
