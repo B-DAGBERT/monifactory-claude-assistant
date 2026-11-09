@@ -44,11 +44,13 @@ public final class ComparaisonAlternatives {
     /**
      * Strictement meilleure : moins de matière sans ajouter plus d'une étape, même matière (ou
      * moins) avec moins d'étapes, ou au moins deux fois moins d'étapes sans plus de matière au
-     * total. Une chaîne incomplète ou vide n'est jamais comparable.
+     * total. Une chaîne incomplète ou vide n'est jamais comparable, et une alternative qui consomme
+     * son propre produit pour le refaire (casser une batterie pour en refaire une) jamais
+     * meilleure.
      */
     public static boolean meilleure(ChaineRecette.Chaine alt, ChaineRecette.Chaine cur) {
         if (alt == null || cur == null || !alt.complete() || !cur.complete()) return false;
-        if (alt.base().isEmpty()) return false;
+        if (alt.base().isEmpty() || alt.circulaire()) return false;
         if (domine(alt.base(), cur.base()) && alt.etapes() <= cur.etapes() + 1) return true;
         if (auPlus(alt.base(), cur.base()) && alt.etapes() < cur.etapes()) return true;
         return cur.etapes() >= 4

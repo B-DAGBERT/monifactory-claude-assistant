@@ -16,8 +16,24 @@ public final class RecetteMoteurTest {
 
     private static final class Monde implements ChaineRecette.Source<String, String> {
         final Map<String, String> choix = new HashMap<>();
+        final Map<String, String> producteurs = new HashMap<>();
+
+        /** Tag vers sa première variante, comme la clé EMI d'un ingrédient. */
+        final Map<String, String> alias = new HashMap<>();
         final Map<String, ChaineRecette.Recette<String>> recettes = new HashMap<>();
-        int lectures;
+        int lectures, demandesProducteur;
+
+        /** Recette qui fabriquerait une matière que l'arbre ne fabrique pas. */
+        Monde producteur(String ingredient, String recette) {
+            producteurs.put(ingredient, recette);
+            return this;
+        }
+
+        @Override
+        public String producteur(String ingredient) {
+            demandesProducteur++;
+            return producteurs.get(ingredient);
+        }
 
         Monde recette(String id, double production, Object poste, Object... entrees) {
             List<ChaineRecette.Entree<String>> liste = new ArrayList<>();
@@ -74,6 +90,7 @@ public final class RecetteMoteurTest {
 
         @Override
         public String cle(String ingredient) {
+            ingredient = alias.getOrDefault(ingredient, ingredient);
             return ingredient.startsWith("~")
                     ? ChaineRecette.FLUIDE + ingredient.substring(1)
                     : "objet:" + ingredient;
@@ -117,6 +134,10 @@ public final class RecetteMoteurTest {
             case "tension" -> tension();
             case "expansions" -> expansions();
             case "source" -> source();
+            case "circulaire" -> circulaire();
+            case "nouvelles" -> nouvelles();
+            case "stabiliser" -> stabiliser();
+            case "etoile" -> etoile();
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.println("PASS " + args[0]);
@@ -221,6 +242,135 @@ public final class RecetteMoteurTest {
         assert x.complete();
         var encore = chaine.evaluer("craft_x", "x");
         assert encore.base().equals(x.base()) && encore.etapes() == x.etapes();
+    }
+
+    /**
+     * Retour du joueur : pour des Sodium Battery, casser une Cadmium Battery (extracteur) pour sa
+     * coque était proposé. La batterie se fabrique avec la coque : la chaîne est circulaire.
+     */
+    private static void circulaire() {
+        var monde =
+                new Monde()
+                        .recette("assemble_hull", 1, "assembler", "plate", 1, "cable", 1)
+                        .recette("bend", 1, "bender", "ingot", 1)
+                        .recette("wire", 2, "wiremill", "ingot", 1)
+                        .recette("smelt", 1, "furnace", "dust", 1)
+                        .recette("extract_battery", 1, "extractor", "cadmium_battery", 1)
+                        .recette("can_battery", 1, "canner", "hull", 1, "cadmium", 2)
+                        .choisir("plate", "bend")
+                        .choisir("cable", "wire")
+                        .choisir("ingot", "smelt");
+        var actuelle = new ChaineRecette<>(monde).evaluer("assemble_hull", "hull");
+        assert actuelle.etapes() == 4 && !actuelle.circulaire() : actuelle;
+        // Sans fabrication des matières nouvelles (comportement d'avant) : faussement meilleure.
+        var avant = new ChaineRecette<>(monde).evaluer("extract_battery", "hull");
+        assert ComparaisonAlternatives.meilleure(avant, actuelle) : "reproduces the old bug";
+        monde.producteur("cadmium_battery", "can_battery");
+        var chaine = new ChaineRecette<>(monde);
+        var extraction = chaine.evaluer("extract_battery", "hull");
+        assert extraction.complete() && extraction.circulaire() : extraction;
+        assert extraction.etapes() == 2 : "the battery has to be made first";
+        assert !ComparaisonAlternatives.meilleure(extraction, actuelle);
+        // Le produit sous forme de tag (même clé : sa première variante) compte aussi.
+        monde.recette("can_tag", 1, "canner", "#hull", 1, "cadmium", 2)
+                .producteur("cadmium_battery", "can_tag");
+        monde.alias.put("#hull", "hull");
+        var tag = new ChaineRecette<>(monde).evaluer("extract_battery", "hull");
+        assert tag.circulaire() : tag;
+        // Une recette normale n'est jamais circulaire, et le résultat n'est pas mémorisé faux.
+        var encore = chaine.evaluer("assemble_hull", "hull");
+        assert !encore.circulaire() && encore.etapes() == 4 : encore;
+    }
+
+    /** Une matière nouvelle se fabrique : ses étapes et ses matières comptent, bornées. */
+    private static void nouvelles() {
+        var monde =
+                new Monde()
+                        .recette("craft_plate", 1, "etabli", "iron_ingot", 2, "!hammer", 1)
+                        .recette("press_rods", 1, "press", "rod", 1)
+                        .recette("lathe", 2, "lathe", "iron_ingot", 1);
+        var actuelle = new ChaineRecette<>(monde).evaluer("craft_plate", "plate");
+        // Sans recette pour la tige, l'alternative n'est pas comparable (matière inconnue).
+        var sans = new ChaineRecette<>(monde).evaluer("press_rods", "plate");
+        assert proche(sans.base().get("objet:rod"), 1) && sans.etapes() == 1 : sans;
+        assert !ComparaisonAlternatives.meilleure(sans, actuelle);
+        monde.producteur("rod", "lathe");
+        var chaine = new ChaineRecette<>(monde);
+        var tiges = chaine.evaluer("press_rods", "plate");
+        assert tiges.complete() && !tiges.circulaire();
+        assert tiges.etapes() == 2 : "lathe step counted";
+        assert proche(tiges.base().get("objet:iron_ingot"), 0.5) : tiges;
+        assert tiges.postes().equals(Set.of("press", "lathe"));
+        assert ComparaisonAlternatives.meilleure(tiges, actuelle);
+        String gain =
+                ComparaisonAlternatives.gain(tiges, actuelle, RecetteMoteurTest::nom, "Plate");
+        assert gain.equals("0,5 Iron Ingot au lieu de 2 par Plate") : ascii(gain);
+        int demandes = monde.demandesProducteur;
+        chaine.evaluer("press_rods", "plate");
+        assert monde.demandesProducteur == demandes : "producer asked once per material";
+        // Une chaîne de matières nouvelles trop longue est incomplète, jamais proposée.
+        var longue = new Monde().recette("final", 1, "etabli", "n0", 1);
+        for (int i = 0; i < ChaineRecette.MAX_ESTIMEES + 5; i++) {
+            longue.recette("r" + i, 1, "etabli", "n" + (i + 1), 1);
+            longue.producteur("n" + i, "r" + i);
+        }
+        var bornee = new ChaineRecette<>(longue).evaluer("final", "x");
+        assert !bornee.complete() : "estimated chain is bounded";
+    }
+
+    /** L'étape en cours reste en tête jusqu'à ce qu'elle soit faite (retour du joueur). */
+    private static void stabiliser() {
+        var a = new RangsRecette.Etape<>(1, "A", 2, 0, RangsRecette.Statut.PRETE, "", 0);
+        var b = new RangsRecette.Etape<>(2, "B", 4, 0, RangsRecette.Statut.A_PREPARER, "x", 0);
+        var l = new RangsRecette.Etape<>(3, "L", 1, 7, RangsRecette.Statut.A_RECUPERER, "", 0);
+        var c = new RangsRecette.Etape<>(4, "C", 1, 0, RangsRecette.Statut.ATTEND, "", 2);
+        var e = new RangsRecette.Etape<>(5, "E", 1, 9, RangsRecette.Statut.EN_MACHINE, "", 0);
+        var etapes = List.of(a, b, l, c, e);
+        // B se préparait ; ramasser la matière de A a rendu A prête : B reste en tête.
+        var gardee = RangsRecette.stabiliser(etapes, new RangsRecette.Cle<>("B", 0));
+        assert gardee.stream().map(RangsRecette.Etape::recette).toList()
+                        .equals(List.of("B", "A", "L", "C", "E"))
+                : gardee;
+        for (int i = 0; i < gardee.size(); i++) assert gardee.get(i).rang() == i + 1;
+        assert gardee.get(3).attend() == 1 : "awaited rank follows the moved step";
+        assert RangsRecette.suivante(gardee).recette().equals("B");
+        // Sorties d'un lot : en tête jusqu'à la dernière.
+        var lot = RangsRecette.stabiliser(etapes, new RangsRecette.Cle<>("L", 7));
+        assert lot.get(0).lot() == 7 && lot.get(0).rang() == 1;
+        // Envoyée en machine (lot en cours) ou faite (absente) : l'ordre normal reprend.
+        assert RangsRecette.stabiliser(etapes, new RangsRecette.Cle<>("E", 9)) == etapes;
+        assert RangsRecette.stabiliser(etapes, new RangsRecette.Cle<>("Z", 0)) == etapes;
+        assert RangsRecette.stabiliser(etapes, new RangsRecette.Cle<>("C", 0)) == etapes
+                : "a waiting step is never kept";
+        assert RangsRecette.stabiliser(etapes, new RangsRecette.Cle<>("A", 0)) == etapes;
+        assert RangsRecette.stabiliser(etapes, null) == etapes;
+        assert RangsRecette.cle(b).equals(new RangsRecette.Cle<>("B", 0));
+    }
+
+    /** L'étoile suit l'étape en cours : lot à récupérer compris, aucune pour un établi. */
+    private static void etoile() {
+        var lot = new RangsRecette.Etape<>(1, "L", 1, 7, RangsRecette.Statut.A_RECUPERER, "", 0);
+        var alliage = new RangsRecette.Etape<>(2, "alloy", 1, 0, RangsRecette.Statut.PRETE, "", 0);
+        var reperes =
+                RangsRecette.reperes(
+                        List.of(lot, alliage),
+                        List.of("m1", "m2"),
+                        (p, r) -> p.equals("m2") && r.equals("alloy"),
+                        Map.of("m1", 7),
+                        16);
+        assert reperes.get("m1").etoile() && reperes.get("m1").texte().equals("★ 1 · prêt")
+                : reperes;
+        assert !reperes.get("m2").etoile() && reperes.get("m2").texte().equals("2");
+        var etabli = new RangsRecette.Etape<>(1, "craft", 1, 0, RangsRecette.Statut.PRETE, "", 0);
+        var ailleurs =
+                RangsRecette.reperes(
+                        List.of(etabli, alliage),
+                        List.of("m2"),
+                        (p, r) -> r.equals("alloy"),
+                        Map.of(),
+                        16);
+        assert !ailleurs.get("m2").etoile() && ailleurs.get("m2").texte().equals("2")
+                : "no machine star while the current step is at the crafting table";
     }
 
     /** Une chaîne de 300 ingrédients est bornée et déclarée incomplète. */

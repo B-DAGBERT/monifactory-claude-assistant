@@ -172,10 +172,69 @@ public final class RangsRecette {
         return etapes.isEmpty() ? null : etapes.get(0);
     }
 
+    /** Identité d'une étape d'un calcul du plan à l'autre : sa recette, ou son lot. */
+    public record Cle<R>(R recette, int lot) {}
+
+    public static <R> Cle<R> cle(Etape<R> etape) {
+        return etape == null ? null : new Cle<>(etape.recette(), etape.lot());
+    }
+
+    /**
+     * L'étape en cours reste en tête jusqu'à ce qu'elle soit faite, au lieu de céder sa place dès
+     * qu'une autre devient possible (par exemple en ramassant la matière d'une étape suivante) :
+     *
+     * <ul>
+     *   <li>fabrication ou envoi en machine (prête, ou à préparer : sortir les matières, poser la
+     *       machine) : jusqu'à ce qu'elle soit fabriquée ou envoyée. Un envoi en machine est une
+     *       seule action : le lot lancé n'est plus l'étape en cours ;
+     *   <li>sorties d'un lot à récupérer : jusqu'à la dernière.
+     * </ul>
+     *
+     * Les autres étapes gardent leur ordre ; les rangs et les étapes attendues sont renumérotés.
+     */
+    public static <R> List<Etape<R>> stabiliser(List<Etape<R>> etapes, Cle<R> enCours) {
+        if (enCours == null || etapes.isEmpty()) return etapes;
+        Etape<R> gardee = null;
+        for (var etape : etapes) {
+            boolean meme =
+                    enCours.lot() != 0
+                            ? etape.lot() == enCours.lot() && etape.statut() == Statut.A_RECUPERER
+                            : etape.lot() == 0
+                                    && Objects.equals(etape.recette(), enCours.recette())
+                                    && (etape.statut() == Statut.PRETE
+                                            || etape.statut() == Statut.A_PREPARER);
+            if (meme) {
+                gardee = etape;
+                break;
+            }
+        }
+        if (gardee == null || gardee == etapes.get(0)) return etapes;
+        List<Etape<R>> ordre = new ArrayList<>(etapes.size());
+        ordre.add(gardee);
+        for (var etape : etapes) if (etape != gardee) ordre.add(etape);
+        Map<Integer, Integer> rangs = new HashMap<>();
+        for (int i = 0; i < ordre.size(); i++) rangs.put(ordre.get(i).rang(), i + 1);
+        List<Etape<R>> resultat = new ArrayList<>(ordre.size());
+        for (int i = 0; i < ordre.size(); i++) {
+            var e = ordre.get(i);
+            resultat.add(
+                    new Etape<>(
+                            i + 1,
+                            e.recette(),
+                            e.fois(),
+                            e.lot(),
+                            e.statut(),
+                            e.raison(),
+                            e.attend() == 0 ? 0 : rangs.getOrDefault(e.attend(), 0)));
+        }
+        return List.copyOf(resultat);
+    }
+
     /**
      * Repères des machines surlignées, au plus {@code max}, dans l'ordre fourni (les plus proches
      * d'abord). Une machine reçoit le rang de la première étape qu'elle sait faire ; l'étoile va à
-     * la plus proche machine de la première étape machine actionnable. Un lot envoyé dans une
+     * la plus proche machine de l'étape en cours ({@link #suivante}), lot à récupérer compris, et à
+     * aucune machine quand l'étape en cours se fait ailleurs (établi). Un lot envoyé dans une
      * machine y reste affiché tant que ses sorties sont attendues.
      */
     public static <R, P> Map<P, Repere> reperes(
@@ -204,26 +263,21 @@ public final class RangsRecette {
                     }
             if (retenue != null) choisies.put(position, retenue);
         }
-        Etape<R> etoile = null;
-        for (var etape : etapes)
-            if (etape.lot() == 0
-                    && etape.statut().actionnable()
-                    && choisies.values().stream().anyMatch(e -> e == etape)) {
-                etoile = etape;
-                break;
-            }
+        var active = suivante(etapes);
+        Etape<R> etoile = active != null && active.statut().actionnable() ? active : null;
         boolean placee = false;
         for (var entree : choisies.entrySet()) {
             var etape = entree.getValue();
             boolean star = !placee && etape == etoile;
             placee |= star;
             String texte =
-                    etape.lot() != 0
-                            ? etape.rang()
-                                    + (etape.statut() == Statut.A_RECUPERER
+                    (star ? "★ " : "")
+                            + etape.rang()
+                            + (etape.lot() == 0
+                                    ? ""
+                                    : etape.statut() == Statut.A_RECUPERER
                                             ? " · prêt"
-                                            : " · en cours")
-                            : (star ? "★ " : "") + etape.rang();
+                                            : " · en cours");
             resultat.put(
                     entree.getKey(),
                     new Repere(

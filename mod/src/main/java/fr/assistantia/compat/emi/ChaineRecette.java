@@ -10,13 +10,18 @@ import java.util.Set;
 /**
  * Coût d'une sous-chaîne de fabrication, sans construire d'arbre EMI. Chaque ingrédient suit le
  * choix que ferait l'arbre (résolution locale, puis défaut EMI) et une recette déjà présente sur le
- * chemin devient une feuille, comme dans {@code MaterialNode.recalculate}. Les quantités sont
- * rapportées à une unité du produit ; les fluides restent en mB. Calcul pur, borné et mémorisé pour
- * une même révision de l'arbre.
+ * chemin devient une feuille, comme dans {@code MaterialNode.recalculate}. Un ingrédient que
+ * l'arbre ne fabrique pas et qui n'en est pas une matière de base (nouvelle matière d'une
+ * alternative) est fabriqué par la recette que propose {@link Source#producteur} : ses étapes et
+ * ses matières comptent. Les quantités sont rapportées à une unité du produit ; les fluides restent
+ * en mB. Calcul pur, borné et mémorisé pour une même révision de l'arbre.
  */
 public final class ChaineRecette<K, R> {
     /** Ingrédients développés au plus par évaluation, au-delà la chaîne est déclarée incomplète. */
     public static final int MAX_NOEUDS = 256;
+
+    /** Nouvelles matières fabriquées au plus par évaluation, au-delà la chaîne est incomplète. */
+    public static final int MAX_ESTIMEES = 48;
 
     public static final int MAX_PROFONDEUR = 24;
     public static final int MAX_MEMOIRE = 4096;
@@ -33,6 +38,15 @@ public final class ChaineRecette<K, R> {
 
         /** Clé stable d'une matière ; {@link #FLUIDE} en tête pour une quantité en mB. */
         String cle(K ingredient);
+
+        /**
+         * Recette qui fabriquerait un ingrédient sans choix dans l'arbre, ou null s'il reste une
+         * matière de base (matière de base de l'arbre, matière brute, fluide…). Doit être stable
+         * pendant toute la vie du calcul : le résultat est mémorisé.
+         */
+        default R producteur(K ingredient) {
+            return null;
+        }
     }
 
     public record Entree<K>(K ingredient, double quantite, boolean reutilisable) {}
@@ -53,7 +67,10 @@ public final class ChaineRecette<K, R> {
         }
     }
 
-    /** Résultat par unité de produit. */
+    /**
+     * Résultat par unité de produit. {@code circulaire} : le produit réapparaît parmi ses propres
+     * ingrédients (par exemple casser une batterie pour récupérer la coque qui sert à la faire).
+     */
     public record Chaine(
             Map<String, Double> base,
             Set<String> outils,
@@ -61,11 +78,23 @@ public final class ChaineRecette<K, R> {
             int etapes,
             double eu,
             double ticks,
-            boolean complete) {
+            boolean complete,
+            boolean circulaire) {
         public Chaine {
             base = Map.copyOf(base);
             outils = Set.copyOf(outils);
             postes = Set.copyOf(postes);
+        }
+
+        public Chaine(
+                Map<String, Double> base,
+                Set<String> outils,
+                Set<Object> postes,
+                int etapes,
+                double eu,
+                double ticks,
+                boolean complete) {
+            this(base, outils, postes, etapes, eu, ticks, complete, false);
         }
 
         /** Matières de base totales : objets, plus les fluides comptés par 1 000 mB. */
@@ -86,7 +115,7 @@ public final class ChaineRecette<K, R> {
         final Set<Object> recettes = new HashSet<>();
         double eu, ticks;
         int coupure = SANS_COUPURE;
-        boolean tronque;
+        boolean tronque, circulaire;
 
         void ajouter(Cumul sous, double facteur) {
             for (var e : sous.base.entrySet())
@@ -98,18 +127,23 @@ public final class ChaineRecette<K, R> {
             ticks += sous.ticks * facteur;
             coupure = Math.min(coupure, sous.coupure);
             tronque |= sous.tronque;
+            circulaire |= sous.circulaire;
         }
     }
 
     private record Lecture<R, K>(R recette, K produit) {}
 
+    private static final Object SANS_PRODUCTEUR = new Object();
+
     private final Source<K, R> source;
     private final Map<K, Cumul> memoire = new HashMap<>();
     private final Map<Lecture<R, K>, Recette<K>> lectures = new HashMap<>();
+    private final Map<K, Object> producteurs = new HashMap<>();
     private final List<R> chemin = new ArrayList<>();
     private final Map<R, Integer> positions = new HashMap<>();
     private K racine;
-    private int noeuds;
+    private String cleRacine;
+    private int noeuds, estimees;
     private long expansions;
 
     public ChaineRecette(Source<K, R> source) {
@@ -125,8 +159,13 @@ public final class ChaineRecette<K, R> {
     public Chaine evaluer(R recette, K produit) {
         chemin.clear();
         positions.clear();
-        noeuds = 0;
+        noeuds = estimees = 0;
         racine = produit;
+        try {
+            cleRacine = source.cle(produit);
+        } catch (RuntimeException illisible) {
+            cleRacine = null;
+        }
         try {
             var cumul = recette(recette, produit, 0);
             if (cumul == null) return null;
@@ -137,12 +176,42 @@ public final class ChaineRecette<K, R> {
                     cumul.recettes.size(),
                     cumul.eu,
                     cumul.ticks,
-                    !cumul.tronque);
+                    !cumul.tronque,
+                    cumul.circulaire);
         } finally {
             racine = null;
+            cleRacine = null;
             chemin.clear();
             positions.clear();
         }
+    }
+
+    /** Le produit évalué, sous la même forme ou sous une autre (tag dont il est la variante). */
+    private boolean estRacine(K ingredient) {
+        if (racine == null) return false;
+        if (racine.equals(ingredient)) return true;
+        try {
+            return cleRacine != null && cleRacine.equals(source.cle(ingredient));
+        } catch (RuntimeException illisible) {
+            return false;
+        }
+    }
+
+    /** Recette d'une nouvelle matière, demandée une seule fois par matière. */
+    @SuppressWarnings("unchecked")
+    private R producteur(K ingredient) {
+        Object connu = producteurs.get(ingredient);
+        if (connu == null) {
+            R lu;
+            try {
+                lu = source.producteur(ingredient);
+            } catch (RuntimeException illisible) {
+                lu = null;
+            }
+            connu = lu == null ? SANS_PRODUCTEUR : lu;
+            if (producteurs.size() < MAX_MEMOIRE) producteurs.put(ingredient, connu);
+        }
+        return connu == SANS_PRODUCTEUR ? null : (R) connu;
     }
 
     public int memorises() {
@@ -205,10 +274,12 @@ public final class ChaineRecette<K, R> {
     }
 
     private Cumul ingredient(K ingredient, int profondeur) {
-        if (racine != null && racine.equals(ingredient)) {
-            // Après application, le produit reprend la recette évaluée : déjà sur le chemin.
+        if (estRacine(ingredient)) {
+            // Après application, le produit reprend la recette évaluée : déjà sur le chemin. Une
+            // chaîne qui consomme son propre produit pour le refaire est circulaire.
             var cycle = feuille(ingredient);
             cycle.coupure = 0;
+            cycle.circulaire = true;
             return cycle;
         }
         var connu = memoire.get(ingredient);
@@ -224,6 +295,14 @@ public final class ChaineRecette<K, R> {
             choix = source.choix(ingredient);
         } catch (RuntimeException illisible) {
             choix = null;
+        }
+        // Une matière que l'arbre ne fabrique pas encore se fabrique aussi : ses étapes comptent.
+        if (choix == null
+                && (choix = producteur(ingredient)) != null
+                && ++estimees > MAX_ESTIMEES) {
+            var limite = feuille(ingredient);
+            limite.tronque = true;
+            return limite;
         }
         if (choix == null) {
             var base = feuille(ingredient);

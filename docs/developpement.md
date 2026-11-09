@@ -507,18 +507,34 @@ de recettes). Le mixin de `MaterialNode.defineRecipe` passe par `ArbreReel` : se
 réel. Les arbres temporaires qu’EMI construit pour l’infobulle de coût (`RecipeCostTooltipComponent`,
 à chaque image) n’invalident plus ni la Recette, ni le Suivi, ni les captures Production.
 
-`ArbreRecette` lit l’arbre EMI par réflexion et n’écrit que ses résolutions locales
-(`addResolution`), jamais `BoM.addRecipe`, la sauvegarde EMI ni les favoris. **Appliquer** revérifie
-l’arbre, sa révision, le choix actuel et la recette avant d’écrire, et refuse pendant un transfert.
-**Annuler** garde huit choix et se vide quand l’arbre change d’objet. Le nœud racine est analysé
-comme les autres ; pour lui, `resoudreRacine` remet la quantité par lot et les lots d’avant, car le
-chemin natif remet `goal.amount` à 1, et `restaurerRacine` rétablit exactement l’état précédent.
+`ArbreRecette` lit l’arbre EMI par réflexion. **Appliquer** écrit d’abord la recette par défaut
+d’EMI de l’ingrédient (`BoM.addedRecipes` puis `EmiPersistentData.save`, comme le bouton doré
+« Définir par défaut », sans recalcul), puis la résolution locale (`addResolution`), qui recalcule
+l’arbre ; jamais les favoris. Si la recette par défaut ne peut pas être écrite, le choix reste local à
+l’arbre et le message le dit. **Appliquer** revérifie l’arbre, sa révision, le choix actuel et la
+recette avant d’écrire, et refuse pendant un transfert. **Annuler** rétablit la recette par défaut
+puis la résolution, garde huit choix et se vide quand l’arbre change d’objet. Le nœud racine est
+analysé comme les autres ; pour lui, `resoudreRacine` remet la quantité par lot et les lots d’avant,
+car le chemin natif remet `goal.amount` à 1, et `restaurerRacine` rétablit exactement l’état
+précédent. **Nouvelle recette** ouvre l’inventaire puis `EmiApi.displayRecipe`.
 
 `ChaineRecette` évalue le coût d’une sous-chaîne par unité produite en suivant les choix de l’arbre,
-puis les défauts EMI ; `ComparaisonAlternatives` applique les règles « strictement meilleure » et
-rédige le gain. Les candidats sont les producteurs à sortie garantie, 32 au plus et les moins coûteux
-au premier niveau d’abord, hors recyclage, recettes désactivées et recettes qui consomment leur
-produit. `PossessionsRecette` relève les postes posés (rayon de 48 blocs, une rangée de chunks par
+puis les défauts EMI. Un ingrédient sans choix qui n’est ni une matière de base de l’arbre, ni un
+fluide, ni déjà possédé se fabrique par `Source.producteur` (au plus 48 par évaluation, mémorisé par
+matière) : la recette sûre la moins coûteuse au premier niveau qui consomme quelque chose et ne défait
+pas un objet fait avec la matière. Une chaîne où le produit réapparaît parmi ses ingrédients est
+`circulaire` et n’est jamais meilleure. `ComparaisonAlternatives` applique les règles « strictement
+meilleure » et rédige le gain. Les candidats sont les producteurs à sortie garantie, 32 au plus et les
+moins coûteux au premier niveau d’abord, hors recyclage, recettes désactivées, recettes qui consomment
+leur produit et décompositions : une recette dont un objet consommé n’a que des recettes sûres qui
+utilisent le produit (extraire une batterie pour sa coque).
+
+`RangsRecette.stabiliser` garde l’étape en cours en tête d’un calcul du plan à l’autre (clé recette
+ou lot) : prête ou à préparer jusqu’à sa fabrication ou son envoi, lot à récupérer jusqu’à la
+dernière sortie. `MachinesEmi` calcule aussi les opérations encore utiles avec les coffres connus
+(`stockCoffres`) : la surbrillance, les repères et le plan de l’onglet Recette les suivent, le panneau
+d’une machine garde toutes les opérations. Les repères sont dessinés 1,3 bloc au-dessus de la
+machine par le tampon principal du jeu. `PossessionsRecette` relève les postes posés (rayon de 48 blocs, une rangée de chunks par
 tick, relevé serveur de la Base et blocs déjà ouverts), portés ou rangés (inventaire, sac, coffres
 connus lus hors du rendu par `CoffresConnus`) et les sorties attendues des lots. Les outils
 réutilisables nouveaux (moules, lentilles, formes) doivent aussi être possédés. `DecisionTension`

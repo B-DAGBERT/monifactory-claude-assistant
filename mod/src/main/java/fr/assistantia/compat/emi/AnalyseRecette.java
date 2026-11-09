@@ -161,7 +161,10 @@ public final class AnalyseRecette {
 
     private record Proposition(Analyse analyse, Candidat candidat, Cle arbre) {}
 
-    /** {@code racine} : état exact du but avant « Appliquer », null pour un autre nœud. */
+    /**
+     * {@code racine} : état exact du but avant « Appliquer », null pour un autre nœud. {@code
+     * defaut} : recette par défaut d'EMI d'avant, null si elle n'a pas pu être changée.
+     */
     private record Annulation(
             Object arbre,
             EmiIngredient cle,
@@ -169,7 +172,8 @@ public final class AnalyseRecette {
             EmiRecipe precedente,
             EmiRecipe appliquee,
             String libelle,
-            ArbreRecette.EtatRacine racine) {}
+            ArbreRecette.EtatRacine racine,
+            ArbreRecette.Defaut defaut) {}
 
     private record CleReperes(Object etapes, Object machines, long lots, Object arbre) {}
 
@@ -183,9 +187,24 @@ public final class AnalyseRecette {
     private static final Map<String, EmiStack> NOMS = new HashMap<>();
     private static final Map<String, FabricationFacile.Resultat> FACILES = new HashMap<>();
     private static final Map<String, List<FabricationFacile.Recette>> ETABLI = new HashMap<>();
+
+    /** Recette (ou FALSE) qui fabriquerait une matière nouvelle, par génération de recettes EMI. */
+    private static final Map<String, Object> PRODUCTEURS = new HashMap<>();
+
+    private static final Map<String, Boolean> DECOMPOSITIONS = new HashMap<>();
+
+    /**
+     * Matières de base de l'arbre analysé (nœuds sans recette) : jamais fabriquées en estimation.
+     */
+    private static Set<String> basesArbre = Set.of();
+
     private static long revisionFaciles = -1;
 
     private static List<RangsRecette.Etape<EmiRecipe>> etapes = List.of();
+
+    /** Étape en cours (étoile, HUD) : elle reste en tête jusqu'à ce qu'elle soit faite. */
+    private static RangsRecette.Cle<EmiRecipe> enCours;
+
     private static Set<EmiRecipe> recettesPlan = Set.of();
     private static String clePlan = "";
 
@@ -193,7 +212,7 @@ public final class AnalyseRecette {
     private static String planAttente = "";
 
     private static long generation;
-    private static boolean erreurLectureSignalee;
+    private static boolean erreurLectureSignalee, erreurDefautSignalee, diagnosticReperes;
     private static int attenteSuivi;
     private static Object gestionEtabli;
     private static final Map<EmiRecipe, ChaineRecette.Recette<EmiIngredient>> LECTURES =
@@ -345,7 +364,12 @@ public final class AnalyseRecette {
         vueSuivante = null;
         vuesIntrouvables = List.of();
         NOMS.clear();
-        if (reperes) ReperesRecette.publier(Map.of());
+        basesArbre = Set.of();
+        enCours = null;
+        if (reperes) {
+            ReperesRecette.publier(Map.of());
+            diagnosticReperes = false;
+        }
     }
 
     private static void nouvelArbre(Cle suivante) {
@@ -355,9 +379,11 @@ public final class AnalyseRecette {
         // plan, au lieu de disparaître pendant son calcul.
         var anciennes = RangsRecette.conservees(memeArbre, etapes);
         var anciennesRecettes = memeArbre ? recettesPlan : Set.<EmiRecipe>of();
+        var etapeEnCours = memeArbre ? enCours : null;
         oublier(!memeArbre);
         etapes = anciennes;
         recettesPlan = anciennesRecettes;
+        enCours = etapeEnCours;
         cle = suivante;
         generation++;
         erreur = "";
@@ -379,6 +405,11 @@ public final class AnalyseRecette {
             }
             return;
         }
+        Set<String> bases = new HashSet<>();
+        for (var noeud : lecture.noeuds())
+            if (noeud.recette() == null) bases.add(cle(noeud.ingredient()));
+        basesArbre = Set.copyOf(bases);
+        verifierGestion(); // estimations et décompositions de la génération EMI actuelle
         evaluateur = new ChaineRecette<>(new SourceEmi(suivante.arbre()));
         // La racine compte comme les autres : le but choisi peut lui-même avoir mieux.
         for (var choisi : SelectionAlternatives.choisir(descriptions(), MAX_NOEUDS_ANALYSES)) {
@@ -473,6 +504,90 @@ public final class AnalyseRecette {
         public String cle(EmiIngredient ingredient) {
             return AnalyseRecette.cle(ingredient);
         }
+
+        @Override
+        public EmiRecipe producteur(EmiIngredient ingredient) {
+            return AnalyseRecette.producteur(ingredient);
+        }
+    }
+
+    /**
+     * Recette qui fabriquerait une matière nouvelle d'une alternative, pour compter ses étapes et
+     * ses matières. Reste une matière de base (null) : un fluide, une matière de base de l'arbre,
+     * une matière déjà possédée, ou une matière sans recette sûre qui consomme quelque chose
+     * (minerai, butin, générateur). Jamais une recette qui défait un objet fabriqué à partir de la
+     * matière.
+     */
+    static EmiRecipe producteur(EmiIngredient ingredient) {
+        var pile = premiere(ingredient);
+        if (pile == null || pile.isEmpty() || pile.getKey() instanceof Fluid) return null;
+        String cle = cle(ingredient);
+        if (basesArbre.contains(cle)) return null;
+        if (PossessionsRecette.complet()
+                && PossessionsRecette.stock().getOrDefault(pile.getId().toString(), 0L) > 0)
+            return null;
+        verifierGestion();
+        Object connu = PRODUCTEURS.get(cle);
+        if (connu != null) return connu instanceof EmiRecipe r ? r : null;
+        EmiRecipe choisie = null;
+        for (var p : producteursSurs(pile, null)) {
+            if (p.cout() <= 0) continue; // générateur : ne consomme rien, matière brute
+            if (decomposition(p.recette(), pile)) continue;
+            choisie = p.recette();
+            break;
+        }
+        if (PRODUCTEURS.size() < 8192)
+            PRODUCTEURS.put(cle, choisie == null ? Boolean.FALSE : choisie);
+        return choisie;
+    }
+
+    /**
+     * Recette qui défait un objet fabriqué à partir de son produit, comme extraire une batterie
+     * pour récupérer sa coque : toutes les recettes sûres d'un des objets consommés utilisent le
+     * produit.
+     */
+    static boolean decomposition(EmiRecipe recette, EmiStack produit) {
+        String cleProduit = "objet:" + produit.getId();
+        for (var entree : recette.getInputs()) {
+            if (entree.isEmpty() || reutilisable(entree)) continue;
+            if (ComparaisonEmi.circuitVirtuel(recette, entree, false)) continue;
+            var pile = premiere(entree);
+            if (pile == null || pile.isEmpty() || pile.getKey() instanceof Fluid) continue;
+            String cle = cle(entree) + "|" + cleProduit;
+            Boolean connu = DECOMPOSITIONS.get(cle);
+            if (connu == null) {
+                connu = faitDe(pile, produit);
+                if (DECOMPOSITIONS.size() < 8192) DECOMPOSITIONS.put(cle, connu);
+            }
+            if (connu) return true;
+        }
+        return false;
+    }
+
+    /** Toutes les recettes sûres de {@code objet} (au moins une) consomment {@code produit}. */
+    private static boolean faitDe(EmiStack objet, EmiStack produit) {
+        List<EmiRecipe> recettes;
+        try {
+            recettes = EmiApi.getRecipeManager().getRecipesByOutput(objet);
+        } catch (RuntimeException e) {
+            return false;
+        }
+        int sures = 0, vues = 0;
+        for (EmiRecipe r : recettes) {
+            if (++vues > 256) return false; // matière très commune : jamais une décomposition
+            if (sure(r, objet) <= 0) continue;
+            sures++;
+            boolean utilise = false;
+            for (var entree : r.getInputs())
+                if (!entree.isEmpty()
+                        && !reutilisable(entree)
+                        && entree.getEmiStacks().stream().anyMatch(s -> s.equals(produit))) {
+                    utilise = true;
+                    break;
+                }
+            if (!utilise) return false;
+        }
+        return sures > 0;
     }
 
     static String cle(EmiIngredient ingredient) {
@@ -564,9 +679,42 @@ public final class AnalyseRecette {
 
     private record Prerang(EmiRecipe recette, double cout, String id) {}
 
+    /**
+     * Production certaine de {@code produit} par une vraie fabrication, ou 0 : butin, recyclage,
+     * diagramme, recette désactivée, résolution de tag ou sortie seulement probable.
+     */
+    private static double sure(EmiRecipe r, EmiStack produit) {
+        if (r == null || r instanceof EmiResolutionRecipe) return 0;
+        var id = r.getId();
+        if (id == null) return 0;
+        String espace = id.getNamespace();
+        if (espace.equals("emi_loot") || espace.equals("assistantia")) return 0;
+        if (!r.supportsRecipeTree() || r.getCategory() == null) return 0;
+        String categorie = r.getCategory().getId().toString();
+        if (categorie.contains("recycling")
+                || categorie.startsWith("emi:")
+                || categorie.contains("diagram")) return 0;
+        if (ArbreRecette.desactivee(r)) return 0;
+        double production = 0;
+        for (EmiStack sortie : r.getOutputs())
+            if (sortie.equals(produit) && sortie.getChance() >= 1) production += sortie.getAmount();
+        return production;
+    }
+
     /** Producteurs exacts et sûrs du produit, les moins coûteux au premier niveau d'abord. */
     private static List<EmiRecipe> candidats(Analyse analyse) {
-        var produit = analyse.produit;
+        List<EmiRecipe> liste = new ArrayList<>();
+        for (var p : producteursSurs(analyse.produit, analyse.noeud.recette())) {
+            if (liste.size() >= MAX_CANDIDATS) break;
+            // Défaire un objet fabriqué à partir du produit n'est jamais une meilleure façon.
+            if (decomposition(p.recette(), analyse.produit)) continue;
+            liste.add(p.recette());
+        }
+        return liste;
+    }
+
+    /** Recettes sûres du produit qui ne le consomment pas, triées par coût du premier niveau. */
+    private static List<Prerang> producteursSurs(EmiStack produit, EmiRecipe exclue) {
         List<EmiRecipe> tous;
         try {
             tous = EmiApi.getRecipeManager().getRecipesByOutput(produit);
@@ -577,22 +725,8 @@ public final class AnalyseRecette {
         int vus = 0;
         for (EmiRecipe r : tous) {
             if (++vus > MAX_PRODUCTEURS) break;
-            if (r == null || r == analyse.noeud.recette() || r instanceof EmiResolutionRecipe)
-                continue;
-            var id = r.getId();
-            if (id == null) continue;
-            String espace = id.getNamespace();
-            if (espace.equals("emi_loot") || espace.equals("assistantia")) continue;
-            if (!r.supportsRecipeTree() || r.getCategory() == null) continue;
-            String categorie = r.getCategory().getId().toString();
-            if (categorie.contains("recycling")
-                    || categorie.startsWith("emi:")
-                    || categorie.contains("diagram")) continue;
-            if (ArbreRecette.desactivee(r)) continue;
-            double production = 0;
-            for (EmiStack sortie : r.getOutputs())
-                if (sortie.equals(produit) && sortie.getChance() >= 1)
-                    production += sortie.getAmount();
+            if (r == exclue) continue;
+            double production = sure(r, produit);
             if (production <= 0) continue; // sortie seulement probable : jamais proposée
             boolean consomme = false;
             double cout = 0;
@@ -607,13 +741,10 @@ public final class AnalyseRecette {
                 cout += fluide ? entree.getAmount() / 1000.0 : entree.getAmount();
             }
             if (consomme) continue; // consomme son propre produit
-            retenus.add(new Prerang(r, cout / production, id.toString()));
+            retenus.add(new Prerang(r, cout / production, r.getId().toString()));
         }
         retenus.sort(Comparator.comparingDouble(Prerang::cout).thenComparing(Prerang::id));
-        List<EmiRecipe> liste = new ArrayList<>();
-        for (int i = 0; i < retenus.size() && i < MAX_CANDIDATS; i++)
-            liste.add(retenus.get(i).recette());
-        return liste;
+        return retenus;
     }
 
     // ---------- Plan ----------
@@ -699,10 +830,14 @@ public final class AnalyseRecette {
             boolean suivi) {
         List<PlanMachines.Operation<EmiRecipe>> operations;
         try {
-            operations =
-                    operationsSuivies != null
-                            ? operationsSuivies
-                            : PlanMachines.calculer(vue.machines(), vue.lots(), stockEmi());
+            if (operationsSuivies != null) operations = operationsSuivies;
+            else {
+                // Ce qui est déjà rangé dans un coffre connu n'est plus à fabriquer, seulement à
+                // récupérer : comme pour la surbrillance des machines d'un arbre suivi.
+                var stock = stockEmi();
+                stock.addAll(MachinesEmi.stockCoffres(vue));
+                operations = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
+            }
         } catch (RuntimeException e) {
             etapes = List.of();
             recettesPlan = Set.of();
@@ -747,7 +882,17 @@ public final class AnalyseRecette {
                             lot.fois(),
                             etat == LotFabrication.Etat.A_RECUPERER));
         }
-        etapes = RangsRecette.numeroter(ordre.lignes(), lots, r -> lotAttendu(r, actifs));
+        // L'étape en cours garde la tête du plan tant qu'elle n'est pas faite : ramasser la matière
+        // d'une autre étape ne la fait plus passer devant.
+        etapes =
+                RangsRecette.stabiliser(
+                        RangsRecette.numeroter(ordre.lignes(), lots, r -> lotAttendu(r, actifs)),
+                        enCours);
+        var suivante = RangsRecette.suivante(etapes);
+        enCours =
+                suivante != null && suivante.statut().actionnable()
+                        ? RangsRecette.cle(suivante)
+                        : null;
         Set<EmiRecipe> recettes = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         for (var o : visibles) recettes.add(o.recette());
         recettesPlan = recettes;
@@ -880,7 +1025,7 @@ public final class AnalyseRecette {
         }
         Map<BlockPos, Object> machinesNatives = new HashMap<>();
         Map<String, Boolean> compatibles = new HashMap<>();
-        ReperesRecette.publier(
+        var calcules =
                 RangsRecette.reperes(
                         etapes,
                         positions,
@@ -900,7 +1045,26 @@ public final class AnalyseRecette {
                                             k -> GregTechMachines.compatible(machine, recette));
                         },
                         lotsParPosition,
-                        MAX_REPERES));
+                        MAX_REPERES);
+        ReperesRecette.publier(calcules);
+        // Diagnostic pour le journal, une fois par arbre : des machines brillent sans numéro.
+        if (calcules.isEmpty() && !positions.isEmpty() && !etapes.isEmpty() && !diagnosticReperes) {
+            diagnosticReperes = true;
+            com.mojang.logging.LogUtils.getLogger()
+                    .info(
+                            "Assistant : {} machine(s) surlignée(s) sans numéro ; {} étape(s), dont"
+                                    + " {} machine(s) GregTech",
+                            positions.size(),
+                            etapes.size(),
+                            etapes.stream()
+                                    .filter(
+                                            e ->
+                                                    e.recette()
+                                                            .getClass()
+                                                            .getName()
+                                                            .endsWith(".GTEmiRecipe"))
+                                    .count());
+        }
     }
 
     // ---------- Vue ----------
@@ -1330,8 +1494,12 @@ public final class AnalyseRecette {
                             + (actuelle.getId() == null ? "?" : actuelle.getId())
                             + " · "
                             + ComparaisonAlternatives.etapes(analyse.actuelle.etapes())
-                            + "\nSous-ingrédients : choix actuels de l’arbre, sinon défauts EMI."
+                            + "\nSous-ingrédients : choix de l’arbre ou recettes par défaut d’EMI ;"
+                            + " une matière nouvelle se fabrique aussi (ses étapes comptent),"
+                            + " sauf si tu en as déjà."
+                            + "\nJamais une recette qui défait un objet fait avec ce produit."
                             + "\nPoste possédé (posé, porté ou rangé)."
+                            + "\n« Appliquer » en fait aussi la recette par défaut d’EMI."
                             + (analyse.racine
                                     ? "\nRecette du but : la quantité visée ("
                                             + Math.round(analyse.besoin)
@@ -1422,6 +1590,8 @@ public final class AnalyseRecette {
         if (gestion != gestionEtabli) {
             ETABLI.clear();
             FACILES.clear();
+            PRODUCTEURS.clear();
+            DECOMPOSITIONS.clear();
             gestionEtabli = gestion;
         }
     }
@@ -1576,6 +1746,17 @@ public final class AnalyseRecette {
                 return "Impossible de rétablir l’arbre EMI · détails dans le journal.";
             }
         }
+
+        @Override
+        public String voir(String id) {
+            try {
+                return AnalyseRecette.voir(id);
+            } catch (RuntimeException | LinkageError e) {
+                com.mojang.logging.LogUtils.getLogger()
+                        .warn("Assistant : recette EMI non affichée", e);
+                return "Impossible d’ouvrir EMI · détails dans le journal.";
+            }
+        }
     }
 
     private static String occupe() {
@@ -1613,16 +1794,58 @@ public final class AnalyseRecette {
         var resolutions = ArbreRecette.resolutions(arbre);
         boolean avait = resolutions.containsKey(ingredient);
         EmiRecipe precedente = resolutions.get(ingredient);
+        // D'abord la recette par défaut d'EMI (tous les arbres, enregistrée), puis la résolution de
+        // cet arbre, qui le recalcule : il ne garde jamais l'ancien choix.
+        ArbreRecette.Defaut defaut = null;
+        try {
+            defaut = ArbreRecette.definirDefaut(ingredient, recette);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            if (!erreurDefautSignalee) {
+                com.mojang.logging.LogUtils.getLogger()
+                        .warn("Assistant : recette par défaut EMI inchangée", e);
+                erreurDefautSignalee = true;
+            }
+        }
         ArbreRecette.EtatRacine etatRacine = null;
-        if (analyse.racine) etatRacine = ArbreRecette.resoudreRacine(arbre, recette);
-        else ArbreRecette.resoudre(arbre, ingredient, recette);
+        try {
+            if (analyse.racine) etatRacine = ArbreRecette.resoudreRacine(arbre, recette);
+            else ArbreRecette.resoudre(arbre, ingredient, recette);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            if (defaut != null) ArbreRecette.restaurerDefaut(defaut);
+            throw e;
+        }
         String libelle =
                 analyse.produit.getName().getString() + " → " + nomPoste(proposition.candidat());
         annulations.addFirst(
-                new Annulation(arbre, ingredient, avait, precedente, recette, libelle, etatRacine));
+                new Annulation(
+                        arbre,
+                        ingredient,
+                        avait,
+                        precedente,
+                        recette,
+                        libelle,
+                        etatRacine,
+                        defaut));
         while (annulations.size() > 8) annulations.pollLast();
         sale = true;
-        return "Appliqué : " + libelle;
+        return "Appliqué : "
+                + libelle
+                + (defaut != null ? " · recette par défaut d’EMI" : " · cet arbre seulement");
+    }
+
+    /** Ouvre EMI sur la recette proposée, depuis l'inventaire comme les autres liens vers EMI. */
+    private static String voir(String id) {
+        var mc = Minecraft.getInstance();
+        if (!mc.isSameThread() || mc.player == null) return "Action refusée hors du jeu.";
+        var proposition = propositions.get(id);
+        if (proposition == null) return "Alternative périmée · attends le nouvel affichage.";
+        var recette = proposition.candidat().recette();
+        if (recette.getId() == null
+                || EmiApi.getRecipeManager().getRecipe(recette.getId()) != recette)
+            return "Recette EMI rechargée · attends le nouvel affichage.";
+        mc.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(mc.player));
+        EmiApi.displayRecipe(recette);
+        return "";
     }
 
     private static String nomPoste(Candidat c) {
@@ -1638,6 +1861,8 @@ public final class AnalyseRecette {
         var a = annulations.pollFirst();
         if (a == null) return "Rien à annuler dans cet arbre.";
         if (ArbreEmi.consulte() != a.arbre()) return "Arbre EMI modifié · rien n’a été changé.";
+        // La recette par défaut d'abord : la résolution rétablie ensuite recalcule l'arbre avec.
+        if (a.defaut() != null) ArbreRecette.restaurerDefaut(a.defaut());
         if (a.racine() != null) ArbreRecette.restaurerRacine(a.arbre(), a.racine());
         else if (a.avait()) ArbreRecette.resoudre(a.arbre(), a.cle(), a.precedente());
         else ArbreRecette.retirer(a.arbre(), a.cle());

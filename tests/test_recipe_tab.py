@@ -142,6 +142,18 @@ class RecipeEngineTests(unittest.TestCase):
     def test_stale_follow_up_snapshot_is_never_adopted(self):
         self.run_case("source")
 
+    def test_breaking_a_battery_for_its_hull_is_never_better(self):
+        self.run_case("circulaire")
+
+    def test_new_materials_are_made_and_their_steps_counted(self):
+        self.run_case("nouvelles")
+
+    def test_current_step_stays_first_until_done(self):
+        self.run_case("stabiliser")
+
+    def test_world_star_follows_the_current_step(self):
+        self.run_case("etoile")
+
 
 # Reproduction fidèle (javap d'emi-1.1.22) de MaterialTree/MaterialNode : addResolution sur la clé
 # du but appelle goal.defineRecipe puis remet goal.amount à la quantité de la clé (1) ; la quantité
@@ -320,7 +332,7 @@ import java.util.*;
 import net.minecraft.client.Minecraft;import net.minecraft.client.gui.GuiGraphics;import net.minecraft.world.item.ItemStack;
 public class OngletRecetteTest {
  static final int X=10,Y=36,L=300,BAS=198;
- static List<String> appliquees=new ArrayList<>();static int annulations;
+ static List<String> appliquees=new ArrayList<>(),vues=new ArrayList<>();static int annulations;
  static VueRecette.Objet objet(String nom,String q){return new VueRecette.Objet(new ItemStack(nom),nom,q,nom+" detail");}
  static VueRecette vue(int etapes){
   List<VueRecette.Etape> liste=new ArrayList<>();
@@ -346,7 +358,8 @@ public class OngletRecetteTest {
  }
  public static void main(String[] args){
   VueRecette.brancher(new VueRecette.Actions(){public String appliquer(String id){appliquees.add(id);return "Appliqué : Iron Plate → Basic Bender";}
-   public String annuler(){annulations++;return "Annulé : Iron Plate → Basic Bender";}});
+   public String annuler(){annulations++;return "Annulé : Iron Plate → Basic Bender";}
+   public String voir(String id){vues.add(id);return "";}});
   var o=new OngletRecette();o.init(w->{});
   switch(args[0]){
    case "absent"->{VueRecette.publier(null);Emi.present=false;var g=rendre(o,0,0);assert g.textes.stream().anyMatch(t->t.texte().contains("EMI n"));dansLaZone(g);
@@ -365,6 +378,12 @@ public class OngletRecetteTest {
     assert !o.cliquer(X+L+20,Y+40,0):"outside the tab";}
    case "annuler"->{VueRecette.publier(vue(1));var g=rendre(o,0,0);var bouton=texte(g,"Annuler");
     assert o.cliquer(bouton.x()+2,bouton.y()+2,0);assert annulations==1;}
+   case "voir"->{VueRecette.publier(vue(1));var g=rendre(o,0,0);dansLaZone(g);
+    // 300 px avec la police de test (6 px par lettre) : le libellé court, jamais coupé.
+    var bouton=g.textes.stream().filter(t->t.texte().equals("Nouvelle recette")||t.texte().equals("Voir")).findFirst().orElseThrow(()->new AssertionError(ascii(g.textes)));
+    var appliquer=texte(g,"Appliquer");assert bouton.x()+Minecraft.getInstance().font.width(bouton.texte())<appliquer.x():"left of Apply";
+    assert o.cliquer(bouton.x()+2,bouton.y()+2,0);assert vues.equals(List.of("id-1")):vues;assert appliquees.isEmpty():"apply untouched";
+    var titre=texte(g,"Iron Plate → Basic");assert titre.x()+Minecraft.getInstance().font.width(titre.texte())<bouton.x():"title stops before the buttons";}
    case "icone"->{VueRecette.publier(vue(1));var g=rendre(o,0,0);int[] icone=g.items.get(1);
     Minecraft.getInstance().screen=new net.minecraft.client.gui.screens.Screen();
     assert o.cliquer(icone[0]+4,icone[1]+4,0);assert Emi.recettes==1;
@@ -433,8 +452,8 @@ class RecipeTabScreenTests(unittest.TestCase):
     def test_plan_fits_320x240_with_ellipsis_and_star(self):
         self.run_case("plan")
 
-    def test_apply_and_undo_buttons_once_per_click(self):
-        for case in ("appliquer", "annuler"):
+    def test_apply_undo_and_new_recipe_buttons_once_per_click(self):
+        for case in ("appliquer", "annuler", "voir"):
             with self.subTest(case=case):
                 self.run_case(case)
 
