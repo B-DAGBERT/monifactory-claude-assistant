@@ -29,11 +29,74 @@ public final class EchangesKubeJS {
 
     private EchangesKubeJS() {}
 
+    private static final Map<String, Releve> PUBLIES =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     /** Un relevé déjà mis en texte par le script, remplacé atomiquement en arrière-plan. */
     public static boolean publier(String nom, String texte) {
         if (nom == null || texte == null || !RELEVES.contains(nom)) return false;
-        Ecritures.publier(DOSSIER.resolve(nom), Ecritures.texte(texte));
+        var releve = new Releve(texte);
+        PUBLIES.put(nom, releve);
+        Ecritures.publier(DOSSIER.resolve(nom), releve);
         return true;
+    }
+
+    /**
+     * Le dernier relevé publié sous ce nom n'a jamais été écrit et n'est plus en file (abandonné
+     * après une erreur) : le script doit le republier, même sans changement.
+     */
+    public static boolean perdu(String nom) {
+        Releve releve = nom == null ? null : PUBLIES.get(nom);
+        // Dans cet ordre : un relevé est confirmé avant que sa tâche ne quitte la file.
+        if (releve == null || Ecritures.enAttente(DOSSIER.resolve(nom)) != null) return false;
+        return !releve.ecrit;
+    }
+
+    /** Texte du script, ses nombres entiers remis en entiers sur le fil d'écriture. */
+    static final class Releve extends Ecritures.Contenu {
+        private final String texte;
+        volatile boolean ecrit;
+
+        Releve(String texte) {
+            this.texte = texte;
+        }
+
+        protected byte[] produire() {
+            return entiers(texte).getBytes(StandardCharsets.UTF_8);
+        }
+
+        protected void ecrit() {
+            ecrit = true;
+        }
+    }
+
+    /**
+     * Le JSON.stringify de ce Rhino écrit tous les nombres en double (13.0, 1.794193700105E12) :
+     * les valeurs entières redeviennent des entiers, comme les écrivait JsonIO.write. Mise en page
+     * KubeJS (tabulations) ; texte inchangé s'il n'est pas du JSON.
+     */
+    static String entiers(String texte) {
+        try {
+            return Ecritures.serialiser(arrondir(JsonParser.parseString(texte)), true);
+        } catch (java.io.IOException | RuntimeException illisible) {
+            return texte;
+        }
+    }
+
+    private static JsonElement arrondir(JsonElement valeur) {
+        if (valeur.isJsonObject()) {
+            var objet = valeur.getAsJsonObject();
+            for (String cle : new java.util.ArrayList<>(objet.keySet()))
+                objet.add(cle, arrondir(objet.get(cle)));
+        } else if (valeur.isJsonArray()) {
+            var tableau = valeur.getAsJsonArray();
+            for (int i = 0; i < tableau.size(); i++) tableau.set(i, arrondir(tableau.get(i)));
+        } else if (valeur.isJsonPrimitive() && valeur.getAsJsonPrimitive().isNumber()) {
+            double nombre = valeur.getAsDouble();
+            if (nombre == Math.rint(nombre) && Math.abs(nombre) <= 9_007_199_254_740_992.0)
+                return new com.google.gson.JsonPrimitive((long) nombre);
+        }
+        return valeur;
     }
 
     /**

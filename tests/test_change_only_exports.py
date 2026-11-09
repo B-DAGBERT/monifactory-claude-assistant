@@ -4,6 +4,7 @@ Java contracts run the real writer and inventory export against small Minecraft 
 """
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -227,6 +228,20 @@ class JavaExportTests(JavaContract):
             extra=[("fr/assistantia/InventaireJoueurTest.java", INVENTORY_TEST)],
         )
         self.assertIn("InventaireJoueur OK", output)
+
+
+class TemporaryNameTests(unittest.TestCase):
+    def test_writer_temporaries_are_never_taken_for_memory_copies_by_the_migration(self):
+        from monifactory_assistant import world_migration
+
+        source = (JAVA / "Ecritures.java").read_text(encoding="utf-8")
+        prefix = re.search(r'PREFIXE_TEMPORAIRE = "([^"]+)"', source)[1]
+        for name in ("stockage.json", "filons.json"):
+            orphan = f"{prefix}{name}-123456789.tmp"
+            # A truncated orphan (crash while writing) stays aside instead of blocking migration.
+            self.assertFalse(world_migration._selected("kubejs-assistant", orphan), orphan)
+            # The previous naming would have been parsed as a copy of the memory file.
+            self.assertTrue(world_migration._selected("kubejs-assistant", f".{name}-123.tmp"))
 
 
 if __name__ == "__main__":

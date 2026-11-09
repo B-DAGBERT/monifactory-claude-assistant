@@ -186,6 +186,14 @@ public class IdentiteMondeTest {
   assert !before.contains("SERVER.test")&&!before.contains("server.test")&&!before.contains(GT);
   assert Ecritures.attendre(5000);
   try(var files=Files.list(DIR)){assert files.noneMatch(p->p.toString().endsWith(".tmp"));}
+  // A stopped integrated server (worlds, chunks) is never kept alive by the identity cache.
+  var c=new Connection();mc.listener=new ClientPacketListener(c);mc.level=new ClientLevel();mc.player=new Object();
+  var solo=new net.minecraft.client.server.IntegratedServer(Path.of(System.getProperty("test.game"),"saves","Monde"));
+  var faible=new java.lang.ref.WeakReference<Object>(solo);
+  mc.solo=solo;tick();assert IdentiteMonde.session().matches("[0-9a-f]{32}");
+  mc.solo=null;solo=null;mc.listener=null;mc.level=null;mc.player=null;tick();
+  for(int i=0;i<50&&faible.get()!=null;i++){System.gc();Thread.sleep(20);}
+  assert faible.get()==null:"stopped integrated server still referenced";
   System.out.println("IdentiteMonde OK");
  }
 }

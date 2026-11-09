@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -50,9 +51,10 @@ public final class MemoireMondeKubeJS {
             } catch (java.nio.file.FileAlreadyExistsException e) {
                 // Le lecteur Python peut avoir préparé la partition entre-temps.
             }
+        // Refus définitif (jamais retenté) : la partition ne sera pas écrite à travers un lien.
         if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)
                 && !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
-            throw new IOException("Dossier de mémoire invalide");
+            throw new Ecritures.Refus("Dossier de mémoire invalide");
         return path;
     }
 
@@ -64,7 +66,7 @@ public final class MemoireMondeKubeJS {
         verifierDossier(parent.resolve(monde), creer);
         if (Files.exists(fichier, LinkOption.NOFOLLOW_LINKS)
                 && !Files.isRegularFile(fichier, LinkOption.NOFOLLOW_LINKS))
-            throw new IOException("Fichier de mémoire invalide");
+            throw new Ecritures.Refus("Fichier de mémoire invalide");
         return fichier;
     }
 
@@ -82,10 +84,11 @@ public final class MemoireMondeKubeJS {
     /**
      * Sans attente : contrôle le nom et met le contenu en file. Le fil d'écriture prépare la
      * partition (sans suivre de lien), force le fichier sur le disque puis le remplace atomiquement
-     * ; il retente jusqu'à réussite. Le contenu ne doit plus être modifié.
+     * ; il retente jusqu'à réussite. Le contenu ne doit plus être modifié. Rend une erreur
+     * d'écriture à signaler, une seule fois, ou un texte vide : le script n'a jamais à republier.
      */
-    public static void ecrire(String monde, String nom, JsonObject contenu) throws IOException {
-        publier(chemin(monde, nom), new Memoire(contenu, false, monde, nom).durable());
+    public static String ecrire(String monde, String nom, JsonObject contenu) throws IOException {
+        return publier(chemin(monde, nom), new Memoire(contenu, false, monde, nom).durable());
     }
 
     /** Sans isolation : comme JsonIO.read de KubeJS (absent : null), dernière écriture comprise. */
@@ -100,20 +103,31 @@ public final class MemoireMondeKubeJS {
         return contenu.isJsonObject() ? JSON.fromJson(contenu, Map.class) : null;
     }
 
-    /** Sans isolation : à la racine, indenté comme JsonIO.write de KubeJS, sans attente. */
-    public static void ecrireHistorique(String nom, JsonObject contenu) throws IOException {
+    /**
+     * Sans isolation : à la racine, indenté comme JsonIO.write de KubeJS, sans attente ni fsync,
+     * mais retenté jusqu'à réussite comme dans une partition.
+     */
+    public static String ecrireHistorique(String nom, JsonObject contenu) throws IOException {
         verifierNom(nom);
-        publier(racine().resolve(nom), new Memoire(contenu, true, null, nom));
+        return publier(racine().resolve(nom), new Memoire(contenu, true, null, nom).persistant());
     }
 
+    private static final Map<Path, String> SIGNALEES = new HashMap<>();
+
     /**
-     * Une erreur de l'écriture précédente reste signalée au script jusqu'à la réussite suivante :
-     * il garde alors ses données comme modifiées et les republie.
+     * Ne lève jamais pour un échec passé : le fil d'écriture garde le contenu le plus récent et le
+     * retente lui-même ; chaque nouvelle erreur est rendue une fois pour le journal du script, sans
+     * bloquer un changement de monde ni faire republier les mêmes données.
      */
-    private static void publier(Path fichier, Ecritures.Contenu memoire) throws IOException {
-        String erreur = Ecritures.erreur(fichier);
+    private static synchronized String publier(Path fichier, Ecritures.Contenu memoire) {
         Ecritures.publier(fichier, memoire);
-        if (erreur != null) throw new IOException(erreur);
+        String erreur = Ecritures.erreur(fichier);
+        if (erreur == null) {
+            SIGNALEES.remove(fichier);
+            return "";
+        }
+        if (erreur.equals(SIGNALEES.put(fichier, erreur))) return "";
+        return erreur;
     }
 
     /** La dernière écriture encore en file ou en cours, servie depuis la mémoire. */

@@ -87,7 +87,22 @@ public class EchangesKubeJSTest {
   check(!EchangesKubeJS.transmettreMonde(paquet("{}"),0,W,S,DIM)&&!EchangesKubeJS.transmettreMonde(paquet("{}"),31,W,S,DIM)&&!EchangesKubeJS.transmettreMonde(null,1,W,S,DIM),"part count bounds");
   check(EchangesKubeJS.publier("etat.json","{\"t\":1}")&&EchangesKubeJS.publier("quetes.json","{}"),"script frames accepted");
   check(!EchangesKubeJS.publier("../etat.json","{}")&&!EchangesKubeJS.publier("stockage.json","{}")&&!EchangesKubeJS.publier("etat.json",null),"only the two script frames");
-  check(Ecritures.attendre(5000)&&Files.readString(dossier.resolve("etat.json")).equals("{\"t\":1}"),"frame text written as given");
+  check(Ecritures.attendre(5000)&&JsonParser.parseString(Files.readString(dossier.resolve("etat.json"))).equals(JsonParser.parseString("{\"t\":1}")),"frame content written");
+  check(!EchangesKubeJS.perdu("etat.json")&&!EchangesKubeJS.perdu("quetes.json")&&!EchangesKubeJS.perdu("autre.json"),"written frames are not lost");
+  // This Rhino's JSON.stringify writes every number as a double: integers are written back as integers.
+  check(EchangesKubeJS.publier("etat.json","{\"version_script\":13.0,\"t\":1.794193700105E12,\"yaw\":90.5,\"inventaire\":{\"a\":12.0},\"liste\":[1.0,2.5,-0.0]}"),"queued");
+  check(Ecritures.attendre(5000),"written");
+  String etat=Files.readString(dossier.resolve("etat.json"));
+  check(etat.contains("\"version_script\": 13,")&&etat.contains("\"t\": 1794193700105,")&&etat.contains("\"yaw\": 90.5")
+   &&etat.contains("\"a\": 12\n")&&etat.contains("2.5")&&!etat.contains(".0")&&etat.startsWith("{\n\t\""),etat);
+  // A frame the writer could not write (folder impossible to create) is reported lost, then rewritten.
+  try(var f=Files.walk(dossier)){f.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.delete(p);}catch(java.io.IOException e){throw new RuntimeException(e);}});}
+  Files.writeString(dossier,"not a folder");
+  check(EchangesKubeJS.publier("quetes.json","{\"n\":1}"),"queued");
+  check(Ecritures.attendre(5000)&&EchangesKubeJS.perdu("quetes.json"),"dropped frame reported lost");
+  Files.delete(dossier);
+  check(EchangesKubeJS.publier("quetes.json","{\"n\":2}")&&Ecritures.attendre(5000),"republished");
+  check(!EchangesKubeJS.perdu("quetes.json")&&Files.readString(dossier.resolve("quetes.json")).contains("\"n\": 2"),"written again");
   try(var fichiers=Files.list(dossier)){check(fichiers.noneMatch(f->f.toString().endsWith(".tmp")),"no temporary file left");}
   System.out.println("EchangesKubeJS OK");
  }
@@ -125,7 +140,7 @@ public class MemoireMondeKubeJSTest {
   check((System.nanoTime()-debut)/1_000_000<1000,"the script never waits for the busy writer");
   check(!Files.exists(stockage),"the call returned before any disk work");
   check(n(MemoireMondeKubeJS.lire(W,"stockage.json"))==2,"a read in the same tick sees the queued content");
-  check(Ecritures.enAttente(stockage).estDurable(),"isolated memory is forced to disk");
+  check(Ecritures.enAttente(stockage).estForce()&&Ecritures.enAttente(stockage).estPersistant(),"isolated memory is forced to disk and never dropped");
   latch.countDown();
   check(Ecritures.attendre(5000),"flushed");
   check(Files.isDirectory(partition),"partition prepared by the writer thread");
@@ -134,7 +149,8 @@ public class MemoireMondeKubeJSTest {
   check(n(MemoireMondeKubeJS.lire(W,"stockage.json"))==2,"read back from disk");
   latch=bloquer(racine.resolve("bloquant.json"));
   MemoireMondeKubeJS.ecrireHistorique("stockage.json",coffres(3));
-  check(!Ecritures.enAttente(racine.resolve("stockage.json")).estDurable(),"legacy memory not forced, like JsonIO.write");
+  var enFile=Ecritures.enAttente(racine.resolve("stockage.json"));
+  check(enFile.estPersistant()&&!enFile.estForce(),"legacy memory never dropped, not forced (like JsonIO.write)");
   check(n(MemoireMondeKubeJS.lireHistorique("stockage.json"))==3,"legacy same-tick read");
   latch.countDown();
   check(Ecritures.attendre(5000),"flushed");
@@ -148,17 +164,29 @@ public class MemoireMondeKubeJSTest {
   erreur(()->MemoireMondeKubeJS.ecrire("m1_bad","stockage.json",coffres(1)),"world id refused at once");
   erreur(()->MemoireMondeKubeJS.ecrireHistorique("quetes.json",coffres(1)),"legacy name refused at once");
   check(Ecritures.attendre(1000),"nothing queued for refused names");
+  // A refused partition: never written through, never retried in a loop, reported once without
+  // throwing (a world switch is never blocked and the script does not republish the same data).
   Path faux=racine.resolve("mondes").resolve(W2);Files.writeString(faux,"not a folder");
-  MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(7));
-  Thread.sleep(300);
-  try{MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(8));throw new AssertionError("previous failure not reported");}
-  catch(java.io.IOException attendu){check(attendu.getMessage().contains("stockage.json"),attendu.getMessage());}
-  check(Files.readString(faux).equals("not a folder"),"never written through an invalid partition");
+  check(MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(7)).isEmpty(),"nothing to report yet");
+  check(Ecritures.attendre(5000),"a refused partition is dropped at once");
+  String erreur=MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(8));
+  check(erreur.contains("stockage.json"),"refusal reported to the script: "+erreur);
+  check(Ecritures.attendre(5000),"dropped again, no endless retries");
+  check(MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(8)).isEmpty(),"the same error is reported only once");
+  check(Ecritures.attendre(5000)&&Files.readString(faux).equals("not a folder"),"never written through an invalid partition");
   Files.delete(faux);
-  check(Ecritures.attendre(5000),"retried until the partition is valid");
-  check(n(MemoireMondeKubeJS.lire(W2,"stockage.json"))==8,"newest data written after recovery");
-  MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(9));
-  check(Ecritures.attendre(5000)&&n(MemoireMondeKubeJS.lire(W2,"stockage.json"))==9,"no error once recovered");
+  check(MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(9)).isEmpty(),"no repeated report");
+  check(Ecritures.attendre(5000)&&n(MemoireMondeKubeJS.lire(W2,"stockage.json"))==9,"written once the partition is valid");
+  check(MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(10)).isEmpty()&&Ecritures.attendre(5000),"no error once recovered");
+  // Legacy memory blocked by something in the way: kept and retried, never dropped, read back meanwhile.
+  Path historique=racine.resolve("stockage.json");Files.delete(historique);
+  Files.createDirectories(historique.resolve("dans_le_chemin"));
+  check(MemoireMondeKubeJS.ecrireHistorique("stockage.json",coffres(11)).isEmpty(),"queued");
+  Thread.sleep(400);
+  check(!Ecritures.attendre(100),"still retried, not dropped");
+  check(n(MemoireMondeKubeJS.lireHistorique("stockage.json"))==11,"read back from memory while blocked");
+  Files.delete(historique.resolve("dans_le_chemin"));Files.delete(historique);
+  check(Ecritures.attendre(5000)&&n(MemoireMondeKubeJS.lireHistorique("stockage.json"))==11,"written once unblocked");
   try(var f=Files.walk(racine)){check(f.noneMatch(p->p.toString().endsWith(".tmp")),"no temporary file left");}
   System.out.println("MemoireMondeKubeJS OK");
  }
@@ -193,6 +221,7 @@ var horloge = 1000000;
 Date.now = () => horloge;
 var sansMod = SANS_MOD, publies = [], ecritures = [], transmis = [], erreursConsole = [];
 var empreinte = 'Q1', progresEmpreinte = 'P1', recuMs = 0, erreurServeur = '';
+var perduQuetes = false, erreurMemoire = '';
 var appels = {chapitres: 0}, termine = {A: true}, progres = 3;
 var runTick = null, recevoir = null, memoires = [];
 var memoireStub = {lire: () => null, ecrire: () => {}};
@@ -200,6 +229,7 @@ if (MEMOIRE_DIFFEREE) {
   memoireStub.lireHistorique = nom => { memoires.push(['lire', nom]); return null; };
   memoireStub.ecrireHistorique = (nom, json) => {
     memoires.push(['ecrire', nom, JSON.parse(JSON.stringify(json))]);
+    const e = erreurMemoire; erreurMemoire = ''; return e;
   };
 }
 var EchangesStub = {
@@ -207,7 +237,8 @@ var EchangesStub = {
   empreinteQuetes: (f, e) => empreinte, progresQuetes: e => progresEmpreinte,
   recu: () => recuMs,
   erreurMonde: () => { const e = erreurServeur; erreurServeur = ''; return e; },
-  transmettreMonde: (d, n, m, s, dim) => { transmis.push([n, m, s, dim]); return true; }
+  transmettreMonde: (d, n, m, s, dim) => { transmis.push([n, m, s, dim]); return true; },
+  perdu: nom => nom === 'quetes.json' && perduQuetes
 };
 function composant(s) { return {getString: () => s}; }
 var tache = {getTitle: () => composant('Collect'), getMaxProgress: () => 64, getItemStack: () => null};
@@ -414,6 +445,91 @@ class KubeJSChangeOnlyTests(unittest.TestCase):
         self.assertEqual(r["ecrits"], ["stockage.json"])
         self.assertEqual(r["objets"], [{"item": "minecraft:coal", "n": 4}])
         self.assertEqual(r["directes"], 0, "the game thread never writes the chest memory")
+
+    def test_first_chest_change_is_written_while_the_chest_is_still_open(self):
+        r = run_script(
+            self,
+            r"""
+        tick(20);
+        Client.screen = {getTitle: () => composant('Chest')};
+        visee = {block: {id: 'minecraft:chest', x: 1, y: 64, z: 2}};
+        coffre[0] = pile('minecraft:coal', 3);
+        tick(5);   // the first read of this chest is written at once
+        r.ouvert = ecritures.filter(e => e[0] === 'kubejs/assistant/stockage.json').length;
+        tick(15);  // and etat.json still names the open chest
+        r.coffre = dernier(publies, 'etat.json').coffre_ouvert;
+        """,
+        )
+        self.assertEqual(r["ouvert"], 1, "a chest opened for less than 2 s is still announced")
+        self.assertEqual(r["coffre"], "minecraft:overworld|1|64|2")
+
+    def test_pending_chest_memory_is_written_on_abrupt_disconnect(self):
+        r = run_script(
+            self,
+            r"""
+        tick(20);
+        Client.screen = {getTitle: () => composant('Chest')};
+        visee = {block: {id: 'minecraft:chest', x: 1, y: 64, z: 2}};
+        coffre[0] = pile('minecraft:coal', 3); tick(5);
+        coffre[0] = pile('minecraft:coal', 9); tick(5);   // later change: debounced
+        r.avant = ecritures.filter(e => e[0] === 'kubejs/assistant/stockage.json').length;
+        Client.player = null; Client.screen = null;   // kick or 07:30 restart: no close event
+        tick(1);
+        var memoire = ecritures.filter(e => e[0] === 'kubejs/assistant/stockage.json');
+        r.apres = memoire.length;
+        r.objets = memoire[memoire.length - 1][1].conteneurs[0].objets;
+        tick(20);
+        r.ensuite = ecritures.filter(e => e[0] === 'kubejs/assistant/stockage.json').length;
+        """,
+        )
+        self.assertEqual(r["avant"], 1)
+        self.assertEqual(r["apres"], 2, "pending chest memory flushed when the player disappears")
+        self.assertEqual(r["objets"], [{"item": "minecraft:coal", "n": 9}])
+        self.assertEqual(r["ensuite"], 2, "flushed once, not on every disconnected tick")
+
+    def test_lost_quest_frame_is_republished_without_any_change(self):
+        r = run_script(
+            self,
+            r"""
+        tick(40);
+        r.premier = compte(publies, 'quetes.json');
+        perduQuetes = true;   // the mod could not write it (error, lock held too long)
+        tick(200);
+        r.republie = compte(publies, 'quetes.json');
+        perduQuetes = false;
+        tick(200);
+        r.stable = compte(publies, 'quetes.json');
+        """,
+        )
+        self.assertEqual([r["premier"], r["republie"], r["stable"]], [1, 2, 2])
+
+    def test_memory_write_error_is_reported_once_and_never_republished(self):
+        r = run_script(
+            self,
+            r"""
+        erreurMemoire = 'stockage.json non écrit (IOException : disque plein)';
+        tick(20);
+        Client.screen = {getTitle: () => composant('Chest')};
+        visee = {block: {id: 'minecraft:chest', x: 1, y: 64, z: 2}};
+        coffre[0] = pile('minecraft:coal', 3); tick(5);
+        tick(40);   // no new change: the mod keeps retrying, the script does not republish
+        r.ecrits = memoires.filter(m => m[0] === 'ecrire').length;
+        r.erreurs = dernier(publies, 'etat.json').erreurs;
+        Client.screen = null; tick(5);
+        coffre[0] = pile('minecraft:coal', 4);
+        Client.screen = {getTitle: () => composant('Chest')}; tick(5);
+        r.suivants = memoires.filter(m => m[0] === 'ecrire').length;
+        """,
+            deferred_memory=True,
+            console_errors=[
+                "Assistant IA, mémoire : stockage.json non écrit (IOException : disque plein)"
+            ],
+        )
+        self.assertEqual(r["ecrits"], 1, "the same data is not serialised again every 5 ticks")
+        self.assertEqual(
+            r["erreurs"], ["mémoire : stockage.json non écrit (IOException : disque plein)"]
+        )
+        self.assertEqual(r["suivants"], 2, "later changes are still written")
 
     def test_server_frame_is_handed_to_the_mod_and_errors_still_reported(self):
         r = run_script(
