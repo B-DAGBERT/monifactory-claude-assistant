@@ -236,7 +236,7 @@ final class PanneauMachineEmi {
                     List.of(
                             Component.literal(
                                     selected.fois() <= 0
-                                            ? "Déjà déclaré. Le suivi global d'EMI permet d'annuler cette réservation."
+                                            ? "Déjà déclaré. « Suivi », à côté de « Coffres » dans EMI, permet d'annuler ce lot."
                                             : occupe
                                                     ? "Attends la fin de l'envoi."
                                                     : !synchronise
