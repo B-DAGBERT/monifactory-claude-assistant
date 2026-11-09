@@ -241,7 +241,7 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         )
         self.action.assert_called_once()
         self.assertEqual(app.request_queue.rows["old-project"]["etat"], "refusee")
-        self.assertIn("retirés", app.request_queue.rows["old-project"]["message"])
+        self.assertIn("Fonction retirée", app.request_queue.rows["old-project"]["message"])
         self.assertFalse(list(inbox.glob("*.json")))
 
     def test_extreme_durable_number_does_not_block_a_valid_request(self):

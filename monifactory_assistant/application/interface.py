@@ -20,6 +20,37 @@ from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import BG, FG, FG_DIM, SETTINGS, SETTINGS_FILE
 from monifactory_assistant.ui.views import build_mod_view
 
+# Ce que le mod peut demander à cette version. Un ancien mod (onglets Objectif et Projet) ou une
+# version différente reçoit un refus explicite plutôt qu'un accusé « pris en compte » sans effet.
+MOD_REQUESTS = frozenset({"question", "info", "reglage", "action", "production_v2"})
+MOD_ACTIONS = frozenset({"affichage", "voix"})
+RETIRED_ACTIONS = frozenset(
+    {
+        "objectif_suivant",
+        "refaire_objectif",
+        "pause_objectif",
+        "reprendre_objectif",
+        "nouveau_plan",
+        "plan",
+        "valider_etape",
+        "etape",
+    }
+)
+RETIRED_MESSAGE = "Fonction retirée : relance Minecraft pour charger la nouvelle version du mod."
+UNKNOWN_MESSAGE = (
+    "Demande inconnue de cet assistant : relance l’assistant et Minecraft après la mise à jour."
+)
+
+
+def unsupported_request(request):
+    """Le motif de refus d'une demande que cette version ne traite pas, sinon une chaîne vide."""
+    kind, action = request.get("type"), request.get("action")
+    if kind == "projet" or kind == "action" and action in RETIRED_ACTIONS:
+        return RETIRED_MESSAGE
+    if kind not in MOD_REQUESTS or kind == "action" and action not in MOD_ACTIONS:
+        return UNKNOWN_MESSAGE
+    return ""
+
 
 def comparable_view(view):
     """La vue sans la durée de son propre calcul, qui varie à chaque image : cette durée seule ne
@@ -180,12 +211,10 @@ class InterfaceController:
         ) is True and not self.bridge.accepts(request):
             return {"etat": "refusee", "message": "Demande d’une autre connexion ou dimension."}
         self.mod_request_n = request.get("n")
-        reason = ""
-        if request.get("type") == "projet":
-            # Ancien menu Projets encore ouvert pendant une mise à jour : rien à modifier.
-            reason = "Les projets et objectifs ont été retirés de l’assistant."
+        # Un bouton d'un ancien mod (projets, objectifs, étapes) n'a plus d'effet : le dire.
+        reason = unsupported_request(request)
         dimension = request.get("dimension_envoi")
-        if dimension and dimension != (self.game or {}).get("dimension"):
+        if not reason and dimension and dimension != (self.game or {}).get("dimension"):
             reason = "Le monde ou la dimension a changé ; renouvelle ton action."
         if reason:
             result = {"etat": "refusee", "message": reason}

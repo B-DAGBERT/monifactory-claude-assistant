@@ -60,7 +60,7 @@ assert "monifactory_assistant.providers.claude" not in sys.modules
             self.assertTrue(app.session_open)
             self.assertEqual(old.read_bytes(), before)
 
-    def test_old_mod_project_and_objective_requests_are_ignored_without_effect(self):
+    def test_old_mod_project_and_objective_requests_are_refused_without_effect(self):
         from monifactory_assistant.app import App
 
         app = App.__new__(App)
@@ -82,13 +82,27 @@ assert "monifactory_assistant.providers.claude" not in sys.modules
             {"type": "action", "action": "etape", "index": 0, "n": 5},
         ):
             with self.subTest(request=request):
+                # Explicit refusal: the old button must not look « pris en compte ».
                 result = App.dispatch_queued_request(app, dict(request))
-                if request["type"] == "projet":
-                    self.assertEqual(result["etat"], "refusee")
-                    self.assertIn("retirés", result["message"])
+                self.assertEqual(result["etat"], "refusee")
+                self.assertIn("Fonction retirée", result["message"])
+                self.assertIn("relance Minecraft", result["message"])
                 App.handle_mod_request(app, dict(request))
+        for request in (
+            {"type": "inconnu", "n": 7},
+            {"type": "action", "action": "teleporter", "n": 8},
+            {"n": 9},
+        ):
+            with self.subTest(request=request):
+                result = App.dispatch_queued_request(app, dict(request))
+                self.assertEqual(result["etat"], "refusee")
+                self.assertIn("Demande inconnue", result["message"])
         for mock in (app.notify, app.set_setting, app.start_question, app.on_hide, app.on_voice):
             mock.assert_not_called()
+        # Supported requests keep their normal receipt.
+        result = App.dispatch_queued_request(app, {"type": "action", "action": "voix", "n": 10})
+        self.assertEqual(result["etat"], "traitee")
+        app.on_voice.assert_called_once()
         # The question protocol of the same requests keeps working.
         App.handle_mod_request(app, {"type": "question", "texte": "Recette ?", "n": 6})
         app.start_question.assert_called_once_with("Recette ?", None)
