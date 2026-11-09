@@ -18,6 +18,8 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.loading.FMLPaths;
@@ -52,7 +54,8 @@ public final class CoffresConnus {
                         fil.setPriority(Thread.MIN_PRIORITY);
                         return fil;
                     });
-    private static volatile Etat etat = VIDE;
+    private static final AtomicReference<Etat> ETAT = new AtomicReference<>(VIDE);
+    private static final AtomicLong REVISIONS = new AtomicLong();
     private static Future<?> lecture;
     private static long prochaine;
     private static Object connexion;
@@ -61,20 +64,20 @@ public final class CoffresConnus {
     private CoffresConnus() {}
 
     public static Etat etat() {
-        return etat;
+        return ETAT.get();
     }
 
     /** Appelé à chaque tick client : programme au plus une lecture toutes les trois secondes. */
     public static void tick() {
         var mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) {
-            if (connexion != null || etat.pret()) etat = VIDE;
+            if (connexion != null || ETAT.get().pret()) ETAT.set(VIDE);
             connexion = null;
             return;
         }
         if (connexion != mc.getConnection()) {
             connexion = mc.getConnection();
-            etat = VIDE;
+            ETAT.set(VIDE);
             prochaine = 0;
         }
         long maintenant = System.currentTimeMillis();
@@ -82,7 +85,7 @@ public final class CoffresConnus {
         prochaine = maintenant + INTERVALLE_MS;
         Path fichier = fichier();
         if (fichier == null) return;
-        var precedent = etat;
+        var precedent = ETAT.get();
         try {
             lecture = LECTEUR.submit(() -> lire(fichier, precedent));
         } catch (RuntimeException refus) {
@@ -101,6 +104,11 @@ public final class CoffresConnus {
     private static void lire(Path fichier, Etat precedent) {
         try {
             if (!Files.isRegularFile(fichier, LinkOption.NOFOLLOW_LINKS)) {
+                // Aucune mémoire encore écrite : un seul état vide, sans nouvelle révision à chaque
+                // essai.
+                if (precedent.pret()
+                        && precedent.date() == -1
+                        && fichier.equals(precedent.fichier())) return;
                 publier(
                         new Etat(
                                 fichier,
@@ -108,7 +116,7 @@ public final class CoffresConnus {
                                 -1,
                                 Map.of(),
                                 Set.of(),
-                                precedent.revision() + 1,
+                                REVISIONS.incrementAndGet(),
                                 true),
                         precedent);
                 return;
@@ -130,7 +138,7 @@ public final class CoffresConnus {
                             taille,
                             lu.objets(),
                             lu.machines(),
-                            precedent.revision() + 1,
+                            REVISIONS.incrementAndGet(),
                             true),
                     precedent);
         } catch (IOException | RuntimeException illisible) {
@@ -144,7 +152,7 @@ public final class CoffresConnus {
 
     private static void publier(Etat suivant, Etat precedent) {
         // Une connexion changée pendant la lecture a remis l'état à zéro : ne pas le recouvrir.
-        if (etat == precedent) etat = suivant;
+        ETAT.compareAndSet(precedent, suivant);
     }
 
     record Lecture(Map<String, Long> objets, Set<String> machines) {}
