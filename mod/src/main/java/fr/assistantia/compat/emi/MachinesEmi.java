@@ -98,6 +98,28 @@ public final class MachinesEmi {
         return problemeOrdre;
     }
 
+    // Onglet Recette : lectures seules du suivi, sans recalcul ni effet sur les lots.
+
+    static Object arbreSuivi() {
+        return arbre;
+    }
+
+    static InstantaneArbreEmi instantaneSuivi() {
+        return instantane;
+    }
+
+    static List<PlanMachines.Operation<EmiRecipe>> operationsSuivies() {
+        return toutes;
+    }
+
+    static List<LotMachine> lotsSuivis() {
+        return lots.actifs();
+    }
+
+    static List<BlockPos> machinesSurlignees() {
+        return machines;
+    }
+
     /** Identité de navigation, y compris lorsque le service Production n'est pas disponible. */
     public static String contexteSelection() {
         var vue = fr.assistantia.Pont.partie("ecran");
@@ -689,6 +711,7 @@ public final class MachinesEmi {
         if (event.phase != TickEvent.Phase.END) return;
         if (actif() != arbre || ++ticks % 10 == 0) actualiserArbre();
         lots.actualiser();
+        AnalyseRecette.tick(); // onglet Recette : calcul incrémental borné, jamais pendant le rendu
         if (ticks % 100 == 0) compatibilites.clear();
         if (ticks % 40 != 0) return;
         var mc = Minecraft.getInstance();
@@ -734,6 +757,7 @@ public final class MachinesEmi {
                         .12f,
                         .95f);
         buffers.endBatch(Lignes.TRAVERSANTES);
+        ReperesRecette.dessiner(event); // rangs déjà calculés pendant le tick
     }
 
     @SubscribeEvent

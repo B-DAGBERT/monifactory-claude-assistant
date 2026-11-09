@@ -81,37 +81,57 @@ public final class Reperage {
             if (!visible(r, dimension) || r.texte().isEmpty()) {
                 continue;
             }
-            double dx = r.x() + 0.5 - camera.x,
-                    dy = r.y() + 1.4 - camera.y,
-                    dz = r.z() + 0.5 - camera.z;
-            float echelle =
-                    0.025F
-                            * (float)
-                                    Math.max(
-                                            1,
-                                            Math.sqrt(dx * dx + dy * dy + dz * dz)
-                                                    / 8); // lisible de loin
-            pose.pushPose();
-            try {
-                pose.translate(dx, dy, dz);
-                pose.mulPose(mc.getEntityRenderDispatcher().cameraOrientation());
-                pose.scale(-echelle, -echelle, echelle);
-                font.drawInBatch(
-                        r.texte(),
-                        -font.width(r.texte()) / 2F,
-                        0,
-                        0xFF9FEFFF,
-                        false,
-                        pose.last().pose(),
-                        tampons,
-                        Font.DisplayMode.SEE_THROUGH,
-                        0x70000000,
-                        LightTexture.FULL_BRIGHT);
-            } finally {
-                pose.popPose();
-            }
+            texte(
+                    pose,
+                    tampons,
+                    font,
+                    camera,
+                    r.x() + 0.5,
+                    r.y() + 1.4,
+                    r.z() + 0.5,
+                    r.texte(),
+                    0xFF9FEFFF,
+                    0x70000000);
         }
         tampons.endBatch();
+    }
+
+    /**
+     * Texte face à la caméra, visible à travers les murs et grossi avec la distance pour rester
+     * lisible de loin. Partagé par les coffres repérés et les rangs des machines.
+     */
+    public static void texte(
+            PoseStack pose,
+            MultiBufferSource tampons,
+            Font font,
+            Vec3 camera,
+            double x,
+            double y,
+            double z,
+            String texte,
+            int couleur,
+            int fond) {
+        double dx = x - camera.x, dy = y - camera.y, dz = z - camera.z;
+        float echelle = 0.025F * (float) Math.max(1, Math.sqrt(dx * dx + dy * dy + dz * dz) / 8);
+        pose.pushPose();
+        try {
+            pose.translate(dx, dy, dz);
+            pose.mulPose(Minecraft.getInstance().getEntityRenderDispatcher().cameraOrientation());
+            pose.scale(-echelle, -echelle, echelle);
+            font.drawInBatch(
+                    texte,
+                    -font.width(texte) / 2F,
+                    0,
+                    couleur,
+                    false,
+                    pose.last().pose(),
+                    tampons,
+                    Font.DisplayMode.SEE_THROUGH,
+                    fond,
+                    LightTexture.FULL_BRIGHT);
+        } finally {
+            pose.popPose();
+        }
     }
 
     private static boolean visible(Pont.Repere r, String dimension) {

@@ -21,7 +21,8 @@ import net.minecraftforge.fluids.FluidUtil;
  * Vue de recommandation : stocks physiques et préconditions natives, sans action ni réservation.
  */
 final class OrdonnancementEmi {
-    private record Objet(EmiStack pile, boolean machine) {}
+    /** Accessible à l'onglet Recette, qui ajoute la mémoire des coffres comme source à préparer. */
+    record Objet(EmiStack pile, boolean machine) {}
 
     private record Cache(
             InstantaneArbreEmi vue,
@@ -166,7 +167,7 @@ final class OrdonnancementEmi {
                 probleme.isEmpty() ? "Entrées de la machine à vérifier" : probleme);
     }
 
-    private static List<OrdreMachines.Regle<Objet>> regles(
+    static List<OrdreMachines.Regle<Objet>> regles(
             EmiRecipe recette, GregTechMachines.Interface machine) {
         var ingredients = new ArrayList<>(recette.getInputs());
         ingredients.addAll(recette.getCatalysts());
@@ -232,7 +233,7 @@ final class OrdonnancementEmi {
                                         });
     }
 
-    private static List<OrdreMachines.StockSource<Objet>> stocks(
+    static List<OrdreMachines.StockSource<Objet>> stocks(
             List<PlanMachines.Operation<EmiRecipe>> operations,
             GregTechMachines.Interface machine) {
         var resultat = new ArrayList<OrdreMachines.StockSource<Objet>>();
