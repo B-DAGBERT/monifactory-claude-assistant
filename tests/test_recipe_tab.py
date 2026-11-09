@@ -61,7 +61,15 @@ class RecipeEngineTests(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         sources = [
             MOD / f"{name}.java"
-            for name in ("PlanRetrait", "PlanMachines", "OrdreMachines", "TraitsReperes")
+            for name in (
+                "PlanRetrait",
+                "PlanMachines",
+                "OrdreMachines",
+                "TraitsReperes",
+                "ArbreCollecte",
+                "PlanArbre",
+                "MemoireCollecte",
+            )
         ]
         sources += [
             MOD / "compat/emi" / f"{name}.java"
@@ -532,7 +540,7 @@ class KnownChestMemoryTests(unittest.TestCase):
                 javac,
                 tmp,
                 MEMORY_STUBS,
-                [MOD / "CoffresConnus.java", harness],
+                [MOD / "CoffresConnus.java", MOD / "TraitsReperes.java", harness],
                 classpath=str(gson),
             )
             result = subprocess.run(

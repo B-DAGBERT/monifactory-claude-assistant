@@ -75,7 +75,7 @@ public final class CoffresConnus {
     private record CleProches(long revision, String zone) {}
 
     private static CleProches cleProches;
-    private static Map<String, Long> proches = Map.of();
+    private static Map<String, Long> proches = Map.of(), enMachines = Map.of();
     private static final ExecutorService LECTEUR =
             Executors.newSingleThreadExecutor(
                     tache -> {
@@ -115,30 +115,59 @@ public final class CoffresConnus {
      * ne remplacent jamais une fabrication. Calculé au plus une fois par zone et par relevé.
      */
     public static Map<String, Long> proches() {
-        var etat = ETAT.get();
-        var mc = Minecraft.getInstance();
-        if (!etat.pret() || mc.player == null || mc.level == null) return Map.of();
-        var cle = new CleProches(etat.revision(), zone());
-        if (cle.equals(cleProches)) return proches;
-        var pos = mc.player.blockPosition();
-        proches =
-                proches(
-                        etat.conteneurs(),
-                        mc.level.dimension().location().toString(),
-                        pos.getX(),
-                        pos.getZ(),
-                        RAYON_PLAN);
-        cleProches = cle;
+        actualiserProches();
         return proches;
     }
 
-    /** Calcul pur de {@link #proches()}. */
+    /**
+     * Ce qui est installé dans les machines à outils à portée (inscribers d'AE2 : presses), relevé
+     * par le serveur : déjà en place, jamais à aller chercher ni à fabriquer.
+     */
+    public static Map<String, Long> enMachines() {
+        actualiserProches();
+        return enMachines;
+    }
+
+    private static void actualiserProches() {
+        var etat = ETAT.get();
+        var mc = Minecraft.getInstance();
+        if (!etat.pret() || mc.player == null || mc.level == null) {
+            proches = enMachines = Map.of();
+            cleProches = null;
+            return;
+        }
+        var cle = new CleProches(etat.revision(), zone());
+        if (cle.equals(cleProches)) return;
+        var pos = mc.player.blockPosition();
+        String dimension = mc.level.dimension().location().toString();
+        proches = proches(etat.conteneurs(), dimension, pos.getX(), pos.getZ(), RAYON_PLAN, false);
+        enMachines =
+                proches(etat.conteneurs(), dimension, pos.getX(), pos.getZ(), RAYON_PLAN, true);
+        cleProches = cle;
+    }
+
+    /** Calcul pur de {@link #proches()} (coffres). */
     static Map<String, Long> proches(
             List<Conteneur> conteneurs, String dimension, long x, long z, int rayon) {
+        return proches(conteneurs, dimension, x, z, rayon, false);
+    }
+
+    /**
+     * Calcul pur : coffres à portée, ou, avec {@code machines}, contenu des machines à outils à
+     * portée ({@link TraitsReperes#machineOutils}), qui ne comptent jamais comme des coffres.
+     */
+    static Map<String, Long> proches(
+            List<Conteneur> conteneurs,
+            String dimension,
+            long x,
+            long z,
+            int rayon,
+            boolean machines) {
         Map<String, Long> totaux = new HashMap<>();
         long r2 = (long) rayon * rayon;
         for (var c : conteneurs) {
             if (!c.dimension().equals(dimension) || c.bloc().startsWith("lootr:")) continue;
+            if (TraitsReperes.machineOutils(c.bloc()) != machines) continue;
             long dx = c.x() - x, dz = c.z() - z;
             if (dx * dx + dz * dz > r2) continue;
             c.objets()

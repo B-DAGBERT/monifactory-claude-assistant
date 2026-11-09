@@ -867,7 +867,19 @@ public final class AnalyseRecette {
                         InventaireJoueur.disponible()
                                 ? OrdonnancementEmi.stocks(visibles, null)
                                 : List.of());
-        if (InventaireJoueur.disponible()) sources.addAll(coffres(visibles));
+        if (InventaireJoueur.disponible()) {
+            sources.addAll(coffres(visibles));
+            // Moules, presses, lentilles déjà installés dans une machine : présents, rien à
+            // chercher (machine GregTech déjà ouverte, inscriber d'AE2 relevé par le serveur).
+            for (var outil : MachinesEmi.outilsInstalles())
+                sources.add(
+                        new OrdreMachines.StockSource<>(
+                                new PlanRetrait.Stock<>(
+                                        new OrdonnancementEmi.Objet(outil.objet(), false),
+                                        outil.quantite(),
+                                        true),
+                                OrdreMachines.Origine.MACHINE));
+        }
         var ordre =
                 OrdreMachines.calculer(
                         vue.machines(),

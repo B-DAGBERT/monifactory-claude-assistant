@@ -137,6 +137,32 @@ public final class MemoireCollecte {
         return tous;
     }
 
+    private Set<String> outils;
+
+    /**
+     * Variantes des ingrédients qui ne se consomment pas (moules, presses, outils) : une fois
+     * repérés, ils sont surlignés dans les coffres ouverts comme les autres ingrédients.
+     */
+    public Set<String> outils() {
+        if (outils == null) {
+            Set<String> ids = new LinkedHashSet<>();
+            if (arbre != null)
+                collecterOutils(
+                        arbre,
+                        ids,
+                        java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>()));
+            outils = Set.copyOf(ids);
+        }
+        return outils;
+    }
+
+    private static void collecterOutils(
+            ArbreCollecte.Noeud noeud, Set<String> ids, Set<ArbreCollecte.Noeud> vus) {
+        if (!vus.add(noeud) || vus.size() > 4096) return;
+        if (noeud.reutilisable()) ids.addAll(noeud.variantes());
+        for (var enfant : noeud.enfants()) collecterOutils(enfant, ids, vus);
+    }
+
     /** Réserves connues : composants d'abord, sans créditer un objet simplement repéré. */
     public List<PlanRetrait.Prise> dansCoffres(List<PlanRetrait.Stock<String>> coffres) {
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>(stocksPlanifies());

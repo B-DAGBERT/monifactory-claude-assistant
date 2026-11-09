@@ -551,44 +551,60 @@ public final class MachinesEmi {
                                         && GregTechMachines.machine(
                                                         mc.level.getBlockEntity(e.getKey()))
                                                 != e.getValue().machine())) entreesVersion++;
-        if (outilsVersion == entreesVersion && operationsOutils == toutes) return outilsConnus;
+        String cleInstalles =
+                fr.assistantia.CoffresConnus.etat().revision()
+                        + "|"
+                        + fr.assistantia.CoffresConnus.zone();
+        if (outilsVersion == entreesVersion
+                && operationsOutils == toutes
+                && cleInstalles.equals(cleOutilsInstalles)) return outilsConnus;
         var resultat = new ArrayList<PlanRetrait.Stock<EmiStack>>();
         for (var entree : entreesConnues.values())
-            for (var objet : entree.objets()) {
-                boolean utile =
-                        toutes.stream()
-                                .anyMatch(
-                                        op -> {
-                                            if (!compatible(entree.machine(), op.recette()))
-                                                return false;
-                                            var ingredients =
-                                                    new ArrayList<>(op.recette().getInputs());
-                                            ingredients.addAll(op.recette().getCatalysts());
-                                            for (int i = 0; i < ingredients.size(); i++) {
-                                                var ingredient = ingredients.get(i);
-                                                boolean reutilisable =
-                                                        i >= op.recette().getInputs().size()
-                                                                || ingredient.getChance() == 0;
-                                                if (reutilisable
-                                                        && !ComparaisonEmi.circuitVirtuel(
-                                                                op.recette(), ingredient, true)
-                                                        && ingredient.getEmiStacks().stream()
-                                                                .anyMatch(
-                                                                        v ->
-                                                                                ComparaisonEmi.meme(
-                                                                                        objet
-                                                                                                .objet(),
-                                                                                        v)))
-                                                    return true;
-                                            }
-                                            return false;
-                                        });
-                if (utile) resultat.add(objet);
-            }
+            for (var objet : entree.objets())
+                if (toutes.stream()
+                        .anyMatch(
+                                op ->
+                                        compatible(entree.machine(), op.recette())
+                                                && outilDe(op.recette(), objet.objet())))
+                    resultat.add(objet);
+        // Presses déjà dans un inscriber d'AE2 (relevé du serveur) : en place, comme un moule vu
+        // dans une machine GregTech, jamais à aller chercher ni à fabriquer.
+        for (var e : fr.assistantia.CoffresConnus.enMachines().entrySet()) {
+            var item = fr.assistantia.Pont.objet(e.getKey());
+            if (item.isEmpty()) continue;
+            var pile = EmiStack.of(item);
+            if (toutes.stream().anyMatch(op -> outilDe(op.recette(), pile)))
+                resultat.add(
+                        new PlanRetrait.Stock<>(
+                                pile, (int) Math.min(1_000_000L, e.getValue()), true));
+        }
         outilsConnus = List.copyOf(resultat);
         outilsVersion = entreesVersion;
         operationsOutils = toutes;
+        cleOutilsInstalles = cleInstalles;
         return outilsConnus;
+    }
+
+    private static String cleOutilsInstalles = "";
+
+    /** L'objet est un ingrédient non consommé de la recette (moule, presse, lentille…). */
+    private static boolean outilDe(EmiRecipe recette, EmiStack objet) {
+        var ingredients = new ArrayList<>(recette.getInputs());
+        ingredients.addAll(recette.getCatalysts());
+        for (int i = 0; i < ingredients.size(); i++) {
+            var ingredient = ingredients.get(i);
+            boolean reutilisable = i >= recette.getInputs().size() || ingredient.getChance() == 0;
+            if (reutilisable
+                    && !ComparaisonEmi.circuitVirtuel(recette, ingredient, true)
+                    && ingredient.getEmiStacks().stream()
+                            .anyMatch(v -> ComparaisonEmi.meme(objet, v))) return true;
+        }
+        return false;
+    }
+
+    /** Outils installés en machine (GregTech vues, inscribers relevés), pour l'ordre du plan. */
+    static List<PlanRetrait.Stock<EmiStack>> outilsInstalles() {
+        return outilsMachines();
     }
 
     public static List<PlanRetrait.Stock<EmiStack>> completerOutils(

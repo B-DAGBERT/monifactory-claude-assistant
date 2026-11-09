@@ -46,6 +46,16 @@ public final class TraitsReperes {
         return espace.equals("functionalstorage") && nom.matches(".*_[124]");
     }
 
+    /**
+     * Une machine qui garde ses outils installés (inscriber d'AE2 et ses presses), d'après
+     * l'identifiant de son bloc : son contenu est déjà en place, jamais un coffre où aller
+     * chercher.
+     */
+    public static boolean machineOutils(String idBloc) {
+        if (idBloc == null) return false;
+        return idBloc.substring(idBloc.indexOf(':') + 1).contains("inscriber");
+    }
+
     /** « ★ 3 · prêt » devient « ★3✓ », « 3 · en cours » devient « 3… ». */
     public static String symboles(String texte) {
         StringBuilder sortie = new StringBuilder();

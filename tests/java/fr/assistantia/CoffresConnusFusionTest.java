@@ -117,6 +117,28 @@ public final class CoffresConnusFusionTest {
         verifier(
                 CoffresConnus.proches(lu.conteneurs(), "minecraft:the_nether", 0, 0, 256).isEmpty(),
                 "other dimension");
+        // Player report: a press already in an AE2 inscriber must not be fetched like from a chest.
+        String presse = "ae2:silicon_press";
+        var avecInscriber =
+                CoffresConnus.analyser(
+                        json(
+                                fichier(
+                                        "",
+                                        c("minecraft:chest", "Chest", 260, 150, 10, o(lingot, 4))
+                                                .replace(OW, vide))),
+                        json(
+                                fichier(
+                                        "",
+                                        c("ae2:inscriber", null, 262, 150, 20, o(presse, 1))
+                                                .replace(OW, vide))));
+        var coffres = CoffresConnus.proches(avecInscriber.conteneurs(), vide, 265, 150, 256, false);
+        verifier(coffres.equals(Map.of(lingot, 4L)), "an inscriber is never a chest: " + coffres);
+        var installes =
+                CoffresConnus.proches(avecInscriber.conteneurs(), vide, 265, 150, 256, true);
+        verifier(installes.equals(Map.of(presse, 1L)), "press installed: " + installes);
+        verifier(
+                avecInscriber.objets().get(presse) == 1L,
+                "still known for possessions: " + avecInscriber.objets());
     }
 
     static void newestObservationWinsPerPosition() {

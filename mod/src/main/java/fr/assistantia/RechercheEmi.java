@@ -62,8 +62,16 @@ public final class RechercheEmi {
         return actif() && recette.equals(id);
     }
 
+    /**
+     * Objet à surligner dans un conteneur ouvert : un ingrédient retenu dans les coffres, ou un
+     * ingrédient qui ne se consomme pas (moule, presse, outil) encore demandé. Avant, un moule dans
+     * le coffre surligné n'était pas toujours surligné lui-même.
+     */
     public static boolean cherche(String id) {
-        return actif() && InventaireJoueur.synchronise() && objets.contains(id);
+        if (!actif() || !InventaireJoueur.synchronise()) return false;
+        if (objets.contains(id)) return true;
+        var suivi = collecte;
+        return suivi != null && demandes.contains(id) && suivi.outils().contains(id);
     }
 
     public static List<Pont.Repere> reperes() {
