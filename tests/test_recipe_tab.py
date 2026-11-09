@@ -70,6 +70,7 @@ class RecipeEngineTests(unittest.TestCase):
                 "RangsRecette",
                 "FabricationFacile",
                 "SelectionAlternatives",
+                "DecisionTension",
             )
         ]
         sources.append(ROOT / "tests/java/fr/assistantia/compat/emi/RecetteMoteurTest.java")
@@ -128,6 +129,15 @@ class RecipeEngineTests(unittest.TestCase):
 
     def test_root_goal_is_analysed_and_bender_found(self):
         self.run_case("racine")
+
+    def test_new_reusable_tools_must_already_be_owned(self):
+        self.run_case("outils")
+
+    def test_decision_c_never_names_or_proposes_a_higher_tier(self):
+        self.run_case("tension")
+
+    def test_expansion_counter_bounds_work_per_tick(self):
+        self.run_case("expansions")
 
 
 # Reproduction fidèle (javap d'emi-1.1.22) de MaterialTree/MaterialNode : addResolution sur la clé
@@ -318,7 +328,7 @@ public class OngletRecetteTest {
   var introuvables=List.of(new VueRecette.Introuvable(objet("Redstone",""),"Redstone : introuvable"));
   var machines=List.of(new VueRecette.MachineAFabriquer(objet("Basic Compressor",""),"tu as tout","Iron Plate : 1 Iron Ingot au lieu de 2","detail machine"));
   return new VueRecette(VueRecette.Etat.PRET,"",objet("Basic Electronic Circuit","16"),liste,alternatives,introuvables,machines,
-   "Annuler : Iron Plate → Basic Bender","","Numéros sur les machines : active le mode fabrication de Recipe Tree ou Coffres.",1,
+   "Annuler : Iron Plate → Basic Bender","","Numéros sur les machines : active le mode fabrication de Recipe Tree ou Coffres.","",1,
    new VueRecette.EtapeSuivante(new ItemStack("bender"),"★ Basic Bender","8 Iron Ingot → 8 Iron Plate"));
  }
  static GuiGraphics rendre(OngletRecette o,int mx,int my){var g=new GuiGraphics();o.render(g,X,Y,L,BAS,mx,my);return g;}
@@ -368,6 +378,14 @@ public class OngletRecetteTest {
    case "introuvable"->{VueRecette.publier(vue(1));rendre(o,0,0);assert o.defiler(X+20,Y+60,-10);var g=rendre(o,0,0);var nom=texte(g,"Redstone");
     int avant=Emi.recettes;assert o.cliquer(nom.x()-12,nom.y()+2,0):"click consumed inside the tab";assert Emi.recettes==avant:"decision B: no shortcut on missing materials";
     assert g.textes.stream().anyMatch(t->t.texte().equals("nulle part"));}
+   case "plan-attente"->{var base=vue(0);
+    VueRecette.publier(new VueRecette(VueRecette.Etat.PRET,"",base.cible(),List.of(),List.of(),List.of(),List.of(),"","","","Lecture du sac en cours…",2,null));
+    var g=rendre(o,0,0);dansLaZone(g);
+    assert g.textes.stream().anyMatch(t->t.texte().startsWith("Plan non calcul")):"distinct state with its reason";
+    assert g.textes.stream().noneMatch(t->t.texte().startsWith("Rien")):"never 'everything in stock' before the plan exists";
+    assert g.textes.stream().anyMatch(t->t.texte().equals("plan en attente"));assert VueRecette.etapeSuivante()==null:"HUD shows nothing";
+    VueRecette.publier(new VueRecette(VueRecette.Etat.PRET,"",base.cible(),List.of(),List.of(),List.of(),List.of(),"","","","",3,null));
+    g=rendre(o,0,0);assert g.textes.stream().anyMatch(t->t.texte().startsWith("Rien")):"computed empty plan";}
    case "masque"->{VueRecette.publier(vue(1));var g=rendre(o,0,0);var bouton=texte(g,"Appliquer");o.visible(false);
     assert !o.cliquer(bouton.x()+2,bouton.y()+2,0):"hidden tab ignores clicks";assert !o.defiler(X+20,Y+60,-1);}
    case "erreur"->{VueRecette.publier(VueRecette.vide(VueRecette.Etat.ERREUR,"Arbre EMI trop grand ou illisible : réduis la sélection dans Recipe Tree."));
@@ -431,6 +449,9 @@ class RecipeTabScreenTests(unittest.TestCase):
     def test_missing_materials_are_information_only(self):
         self.run_case("introuvable")
 
+    def test_uncomputed_plan_is_never_shown_as_nothing_to_craft(self):
+        self.run_case("plan-attente")
+
 
 MEMORY_STUBS = {
     "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft I=new Minecraft();public static Minecraft getInstance(){return I;}
@@ -493,6 +514,91 @@ class KnownChestMemoryTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS memoire", result.stdout)
+
+
+# Le crochet natif (fin de MaterialNode.defineRecipe) appelle ArbreReel.defini : les stubs le
+# reproduisent pour vérifier qu'un arbre temporaire d'EMI (infobulle de coût, une construction par
+# image) ne notifie plus rien, alors qu'un recalcul réel notifie une seule fois.
+REAL_TREE_STUBS = dict(ROOT_STUBS)
+REAL_TREE_STUBS["dev.emi.emi.bom.MaterialNode"] = ROOT_STUBS[
+    "dev.emi.emi.bom.MaterialNode"
+].replace(
+    "for(EmiIngredient in:r.getInputs())children.add(new MaterialNode(in));}",
+    "for(EmiIngredient in:r.getInputs())children.add(new MaterialNode(in));"
+    "fr.assistantia.compat.emi.ArbreReel.defini(this);}",
+)
+REAL_TREE_STUBS["dev.emi.emi.bom.BoM"] = ROOT_STUBS["dev.emi.emi.bom.BoM"].replace(
+    "public class BoM {", "public class BoM {public static MaterialTree tree;"
+)
+REAL_TREE_STUBS["fr.assistantia.compat.emi.InstantaneArbreEmi"] = (
+    "public final class InstantaneArbreEmi {public static int modifications,disponibles;"
+    "public static void arbreModifie(){modifications++;}"
+    "public static void notificationDisponible(){disponibles++;}}"
+)
+REAL_TREE_STUBS["fr.assistantia.CatalogueProduction"] = (
+    "public final class CatalogueProduction {public static int rechargements;"
+    "public static void rechargement(){rechargements++;}}"
+)
+
+REAL_TREE_HARNESS = """package fr.assistantia.compat.emi;
+import dev.emi.emi.api.recipe.EmiRecipe;import dev.emi.emi.api.stack.*;import dev.emi.emi.bom.*;import java.util.List;
+import fr.assistantia.CatalogueProduction;
+public class ArbreReelTest {
+ record R(String id,List<EmiStack> getOutputs,List<EmiIngredient> getInputs) implements EmiRecipe {}
+ static EmiStack s(String id,long n){return new EmiStack(id,n);}
+ public static void main(String[] a)throws Exception{
+  var plaque=new R("bend_plate",List.of(s("plate",1)),List.of(s("ingot",1)));
+  var lingot=new R("smelt_dust",List.of(s("ingot",1)),List.of(s("dust",1)));
+  var poudre=new R("macerate_ore",List.of(s("dust",2)),List.of(s("ore",1)));
+  BoM.defaultRecipes.put(s("ingot",1),lingot);
+  var reel=new MaterialTree(plaque);BoM.tree=reel;
+  assert InstantaneArbreEmi.modifications==0&&CatalogueProduction.rechargements==0:"tree built before publication notifies nothing";
+  assert InstantaneArbreEmi.disponibles>0:"native hook still known to work";
+  Object enfants=ArbreRecette.enfantsRacine(reel);
+  for(int i=0;i<200;i++)new MaterialTree(i%2==0?lingot:poudre).calculateCost();
+  assert InstantaneArbreEmi.modifications==0:"temporary EMI trees never invalidate the real tree";
+  assert CatalogueProduction.rechargements==0:"Production captures survive cost tooltips";
+  assert ArbreRecette.enfantsRacine(reel)==enfants:"real tree structure untouched";
+  reel.addResolution(s("dust",1),poudre);
+  assert InstantaneArbreEmi.modifications==1:"one notification per real rebuild: "+InstantaneArbreEmi.modifications;
+  assert CatalogueProduction.rechargements==1;
+  assert ArbreRecette.enfantsRacine(reel)!=enfants:"a real rebuild recreates the goal children";
+  var autre=new MaterialTree(lingot);BoM.tree=autre;
+  assert InstantaneArbreEmi.modifications==1:"a new goal is recognised by tree identity";
+  reel.recalculate();
+  assert InstantaneArbreEmi.modifications==1:"an abandoned tree no longer notifies";
+  autre.recalculate();
+  assert InstantaneArbreEmi.modifications==2;
+  System.out.println("PASS arbre-reel");
+ }
+}
+"""
+
+
+class RealTreeNotificationTests(unittest.TestCase):
+    """Seul l'arbre réel d'EMI invalide le suivi, les captures Production et l'onglet Recette."""
+
+    def test_temporary_trees_are_ignored_and_real_rebuilds_notify_once(self):
+        java, javac = jdk()
+        if not java or not javac:
+            self.skipTest("JDK 17 requis")
+        with tempfile.TemporaryDirectory() as tmp:
+            harness = Path(tmp) / "ArbreReelTest.java"
+            harness.write_text(REAL_TREE_HARNESS, encoding="utf-8")
+            compile_sources(
+                javac,
+                tmp,
+                REAL_TREE_STUBS,
+                [MOD / "compat/emi/ArbreReel.java", MOD / "compat/emi/ArbreRecette.java", harness],
+            )
+            result = subprocess.run(
+                [java, "-ea", "-cp", tmp, "fr.assistantia.compat.emi.ArbreReelTest"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("PASS arbre-reel", result.stdout)
 
 
 if __name__ == "__main__":

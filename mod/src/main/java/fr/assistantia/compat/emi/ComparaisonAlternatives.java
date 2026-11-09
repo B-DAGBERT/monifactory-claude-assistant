@@ -56,6 +56,23 @@ public final class ComparaisonAlternatives {
                 && alt.total() <= cur.total() + EPS;
     }
 
+    /**
+     * Les outils (moules, lentilles, formes d'extrudeuse) que l'alternative ajoute à la recette
+     * actuelle doivent déjà être possédés. Sans relevé complet des possessions, une alternative à
+     * outil nouveau n'est jamais retenue.
+     */
+    public static boolean outilsPossedes(
+            ChaineRecette.Chaine alt,
+            ChaineRecette.Chaine cur,
+            java.util.function.Predicate<String> possede,
+            boolean complet) {
+        for (String outil : alt.outils()) {
+            if (cur.outils().contains(outil)) continue;
+            if (!complet || !possede.test(outil)) return false;
+        }
+        return true;
+    }
+
     /** Économie de matière pour toute la quantité nécessaire, puis étapes économisées. */
     public static double economie(
             ChaineRecette.Chaine alt, ChaineRecette.Chaine cur, double quantite) {

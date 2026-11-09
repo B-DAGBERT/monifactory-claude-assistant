@@ -198,7 +198,7 @@ public final class OngletRecette {
         int pretes = 0;
         for (var e : vue.etapes()) if (e.ton() == VueRecette.Ton.PRET) pretes++;
         int n = vue.etapes().size();
-        if (n == 0) return "rien à fabriquer";
+        if (n == 0) return vue.plan().isEmpty() ? "rien à fabriquer" : "plan en attente";
         return n
                 + (n > 1 ? " étapes" : " étape")
                 + (pretes > 0 ? " · " + pretes + (pretes > 1 ? " prêtes" : " prête") : "");
@@ -234,9 +234,13 @@ public final class OngletRecette {
                 new Titre(
                         "Plan", vue.etapes().isEmpty() ? "" : String.valueOf(vue.etapes().size())));
         if (vue.etapes().isEmpty())
+            // Un plan non calculé n'est jamais présenté comme « tout est en stock ».
             liste.add(
-                    new LigneTexte(
-                            "Rien à fabriquer : tout est déjà en stock.", Theme.TEXTE_SECONDAIRE));
+                    vue.plan().isEmpty()
+                            ? new LigneTexte(
+                                    "Rien à fabriquer : tout est déjà en stock.",
+                                    Theme.TEXTE_SECONDAIRE)
+                            : new LigneTexte("Plan non calculé : " + vue.plan(), Theme.JAUNE));
         for (var etape : vue.etapes()) liste.add(new LigneEtape(etape));
         if (!vue.remarque().isEmpty())
             liste.add(new LigneTexte(vue.remarque(), Theme.TEXTE_INACTIF));

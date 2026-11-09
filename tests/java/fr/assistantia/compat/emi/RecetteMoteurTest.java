@@ -113,6 +113,9 @@ public final class RecetteMoteurTest {
             case "ordre" -> ordre();
             case "facile" -> facile();
             case "racine" -> racine();
+            case "outils" -> outils();
+            case "tension" -> tension();
+            case "expansions" -> expansions();
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.println("PASS " + args[0]);
@@ -562,6 +565,86 @@ public final class RecetteMoteurTest {
                 ComparaisonAlternatives.gain(
                         bender, actuelle, RecetteMoteurTest::nom, "Iron Plate");
         assert gain.equals("1 Iron Ingot au lieu de 2 par Iron Plate") : ascii(gain);
+    }
+
+    // ---------- Relecture : outils, tension, budget ----------
+
+    /** Une alternative à moule n'est retenue que si le moule est déjà possédé. */
+    private static void outils() {
+        var monde =
+                new Monde()
+                        .recette("craft_plate", 1, "etabli", "iron_ingot", 2, "!hammer", 1)
+                        .recette("press_plate", 1, "presse", "iron_ingot", 1, "!plate_mold", 1)
+                        .recette("craft_plate_bis", 1, "etabli", "iron_ingot", 1, "!hammer", 1);
+        var chaine = new ChaineRecette<>(monde);
+        var etabli = chaine.evaluer("craft_plate", "iron_plate");
+        var presse = chaine.evaluer("press_plate", "iron_plate");
+        assert ComparaisonAlternatives.meilleure(presse, etabli) : "cheaper on materials";
+        assert !ComparaisonAlternatives.outilsPossedes(presse, etabli, cle -> false, true)
+                : "mold not owned: never feasible";
+        assert ComparaisonAlternatives.outilsPossedes(
+                presse, etabli, cle -> cle.equals("objet:plate_mold"), true);
+        assert !ComparaisonAlternatives.outilsPossedes(presse, etabli, cle -> true, false)
+                : "incomplete possessions: new tool not trusted";
+        var bis = chaine.evaluer("craft_plate_bis", "iron_plate");
+        assert ComparaisonAlternatives.outilsPossedes(bis, etabli, cle -> false, false)
+                : "same hammer as the current recipe: nothing new to own";
+    }
+
+    /** Décision C : jamais de tier supérieur nommé ni proposé. */
+    private static void tension() {
+        assert DecisionTension.raison("Basic Bender", "Basic Bender")
+                .equals("Tension insuffisante (Basic Bender possédé)");
+        assert DecisionTension.raison(null, null)
+                .equals("Tension insuffisante (au-dessus de tes machines)");
+        assert DecisionTension.raison(null, "Basic Bender")
+                .equals("Machine manquante : Basic Bender");
+        long lv = 32, mv = 128;
+        assert DecisionTension.proposable(lv, false, lv) : "same tier as owned";
+        assert !DecisionTension.proposable(mv, false, lv) : "no MV machine for an LV player";
+        assert DecisionTension.proposable(32, true, 0) : "steam machines stay proposable";
+        assert DecisionTension.proposable(0, false, 0) : "non-GT workstation";
+        assert !DecisionTension.proposable(lv, false, 0) : "steam-only player: no electric machine";
+        assert DecisionTension.tensionMax(
+                        new long[] {32, 128, 32, Long.MAX_VALUE / 4},
+                        new boolean[] {false, false, true, false},
+                        new boolean[] {false, false, false, true})
+                == 128;
+        assert DecisionTension.tensionMax(
+                                new long[] {32}, new boolean[] {true}, new boolean[] {false})
+                        == 0
+                : "steam opens no electric tier";
+        var ligne =
+                new OrdreMachines.Ligne<>(
+                        new PlanMachines.Operation<>("bend_mv", 4),
+                        OrdreMachines.Groupe.ETAPES,
+                        OrdreMachines.Mode.BLOQUE,
+                        0,
+                        DecisionTension.raison("Basic Bender", "Basic Bender"),
+                        List.<String>of(),
+                        false,
+                        false);
+        var etape = RangsRecette.numeroter(List.of(ligne), List.of(), r -> 0).get(0);
+        assert etape.statut() == RangsRecette.Statut.BLOQUEE : "not a missing machine";
+        assert !etape.statut().actionnable();
+        assert RangsRecette.texte(etape, s -> s)
+                .equals("Tension insuffisante (Basic Bender possédé)");
+    }
+
+    /** Le compteur borne le travail par tick : un ingrédient mémorisé ne compte plus. */
+    private static void expansions() {
+        var monde =
+                new Monde()
+                        .recette("alloy", 4, "alloy", "copper", 3, "tin", 1)
+                        .recette("bend_bronze", 1, "bender", "bronze_ingot", 1)
+                        .choisir("bronze_ingot", "alloy");
+        var chaine = new ChaineRecette<>(monde);
+        assert chaine.expansions() == 0;
+        chaine.evaluer("bend_bronze", "bronze_plate");
+        long premier = chaine.expansions();
+        assert premier == 3 : "bronze ingot, copper, tin: " + premier;
+        chaine.evaluer("bend_bronze", "bronze_plate");
+        assert chaine.expansions() == premier : "memoised ingredient costs no expansion";
     }
 
     // ---------- Facile à fabriquer ----------

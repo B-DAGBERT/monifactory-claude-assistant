@@ -110,6 +110,7 @@ public final class ChaineRecette<K, R> {
     private final Map<R, Integer> positions = new HashMap<>();
     private K racine;
     private int noeuds;
+    private long expansions;
 
     public ChaineRecette(Source<K, R> source) {
         this.source = source;
@@ -146,6 +147,11 @@ public final class ChaineRecette<K, R> {
 
     public int memorises() {
         return memoire.size();
+    }
+
+    /** Ingrédients développés depuis la création : permet de borner le travail par tick. */
+    public long expansions() {
+        return expansions;
     }
 
     private Recette<K> lire(R recette, K produit) {
@@ -207,6 +213,7 @@ public final class ChaineRecette<K, R> {
         }
         var connu = memoire.get(ingredient);
         if (connu != null) return connu;
+        expansions++;
         if (++noeuds > MAX_NOEUDS || profondeur > MAX_PROFONDEUR) {
             var limite = feuille(ingredient);
             limite.tronque = true;

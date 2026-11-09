@@ -62,6 +62,8 @@ final class PossessionsRecette {
     private static final Map<String, List<Atelier>> ATELIERS = new HashMap<>();
     private static final Map<Object, Possession> POSSESSIONS = new HashMap<>();
     private static final Map<EmiRecipe, Object> POSTES = new IdentityHashMap<>();
+    private static final Map<net.minecraft.world.level.block.Block, String> IDS_BLOCS =
+            new IdentityHashMap<>();
     private static Object gestionAteliers, gestionPostes;
     private static Set<String> proches = Set.of(), base = Set.of(), posees = Set.of();
     private static final Set<String> releve = new HashSet<>();
@@ -71,6 +73,7 @@ final class PossessionsRecette {
     private static long revision, revisionCoffres = -1, signatureInventaire, revisionCalculee = -1;
     private static Map<String, Integer> lotsConnus = Map.of(), outilsConnus = Map.of();
     private static List<String> gtPosees = List.of(), gtRangees = List.of();
+    private static long tensionMax;
     private static int ticks;
 
     private PossessionsRecette() {}
@@ -133,8 +136,11 @@ final class PossessionsRecette {
             if (chunk == null) continue;
             for (var be : chunk.getBlockEntities().values()) {
                 if (be.getBlockPos().distSqr(joueur) > RAYON * RAYON) continue;
-                var id = ForgeRegistries.BLOCKS.getKey(be.getBlockState().getBlock());
-                if (id != null) releve.add(id.toString());
+                // Un identifiant par sorte de bloc (câbles et tuyaux GT sont nombreux).
+                String id =
+                        IDS_BLOCS.computeIfAbsent(
+                                be.getBlockState().getBlock(), PossessionsRecette::idBloc);
+                if (!id.isEmpty()) releve.add(id);
             }
         }
         if (++ligne > 2 * RAYON_CHUNKS) {
@@ -145,6 +151,11 @@ final class PossessionsRecette {
                 recomposerPosees();
             }
         }
+    }
+
+    private static String idBloc(net.minecraft.world.level.block.Block bloc) {
+        var id = ForgeRegistries.BLOCKS.getKey(bloc);
+        return id == null ? "" : id.toString();
     }
 
     private static void recomposerPosees() {
@@ -253,6 +264,17 @@ final class PossessionsRecette {
         for (String id : stock.keySet()) if (!definition(id).types().isEmpty()) b.add(id);
         gtPosees = List.copyOf(a);
         gtRangees = List.copyOf(b);
+        int n = gtPosees.size() + gtRangees.size(), i = 0;
+        long[] capacites = new long[n];
+        boolean[] vapeurs = new boolean[n], multiblocs = new boolean[n];
+        for (var source : List.of(gtPosees, gtRangees))
+            for (String id : source) {
+                var d = definition(id);
+                capacites[i] = d.capacite();
+                vapeurs[i] = vapeur(id);
+                multiblocs[i++] = d.multibloc();
+            }
+        tensionMax = DecisionTension.tensionMax(capacites, vapeurs, multiblocs);
     }
 
     /** Poste d'une recette pour l'analyse et l'ordre, lu une fois par génération de recettes. */
@@ -268,15 +290,10 @@ final class PossessionsRecette {
     private static Object lirePoste(EmiRecipe recette) {
         String categorie = recette.getCategory().getId().toString();
         try {
-            Object gt = GregTechMachines.recette(recette);
-            if (gt != null) {
-                Object type = gt.getClass().getField("recipeType").get(gt);
-                Object energie = gt.getClass().getMethod("getInputEUt").invoke(gt);
-                long tension =
-                        ((Number) energie.getClass().getMethod("voltage").invoke(energie))
-                                .longValue();
-                return new PosteGT(type, tension, categorie);
-            }
+            Object gt = GregTechRecette.recette(recette);
+            if (gt != null)
+                return new PosteGT(
+                        GregTechRecette.type(gt), GregTechRecette.tension(gt), categorie);
         } catch (ReflectiveOperationException | RuntimeException e) {
             return new PosteCategorie(categorie);
         }
@@ -326,13 +343,42 @@ final class PossessionsRecette {
      * Une machine de ce type existe chez le joueur, mais trop faible : jamais de montée de tier.
      */
     static boolean sousTier(PosteGT poste) {
+        return atelierSousTier(poste) != null;
+    }
+
+    /**
+     * La plus puissante machine possédée de ce type quand aucune n'a la tension demandée : c'est
+     * elle qu'on nomme (« Tension insuffisante (Basic Bender possédé) »), jamais le tier au-dessus.
+     */
+    static Atelier atelierSousTier(PosteGT poste) {
         calculer();
+        String meilleur = null;
+        long capacite = -1;
         for (var source : List.of(gtPosees, gtRangees))
             for (String id : source) {
                 var d = definition(id);
-                if (d.types().contains(poste.type()) && !d.accepte(poste)) return true;
+                if (d.accepte(poste)) return null;
+                if (d.types().contains(poste.type()) && d.capacite() > capacite) {
+                    meilleur = id;
+                    capacite = d.capacite();
+                }
             }
-        return false;
+        return meilleur == null ? null : depuis(meilleur);
+    }
+
+    /**
+     * Plus forte tension des machines électriques possédées (posées, portées ou rangées), 0 sans
+     * machine électrique : aucune machine proposée ne la dépasse. La vapeur n'ouvre pas
+     * l'électrique.
+     */
+    static long tensionMaxPossedee() {
+        calculer();
+        return tensionMax;
+    }
+
+    /** Machine à vapeur (même plafond que GregTechMachines, sans énergie électrique). */
+    static boolean vapeur(String id) {
+        return id.toLowerCase(Locale.ROOT).contains("steam");
     }
 
     /**
@@ -343,11 +389,24 @@ final class PossessionsRecette {
         if (poste instanceof PosteGT gt) {
             for (String id : gtPosees) if (definition(id).accepte(gt)) return depuis(id);
             for (String id : gtRangees) if (definition(id).accepte(gt)) return depuis(id);
+            // Décision C : nommer la machine possédée trop faible, jamais le tier au-dessus.
+            var possedee = atelierSousTier(gt);
+            if (possedee != null) return possedee;
         }
         var ateliers = ateliers(poste);
         for (var a : ateliers) if (posees.contains(a.id())) return a;
         for (var a : ateliers) if (stock.getOrDefault(a.id(), 0L) > 0) return a;
-        return ateliers.isEmpty() ? null : ateliers.get(0);
+        for (var a : ateliers) if (proposable(a)) return a;
+        return null;
+    }
+
+    /**
+     * Un atelier qu'on peut nommer ou proposer sans pousser à monter de tier : poste hors GregTech,
+     * machine à vapeur, ou machine électrique dans les tensions déjà possédées.
+     */
+    static boolean proposable(Atelier atelier) {
+        return DecisionTension.proposable(
+                atelier.capacite(), vapeur(atelier.id()), tensionMaxPossedee());
     }
 
     private static Atelier depuis(String id) {
