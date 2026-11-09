@@ -24,10 +24,14 @@ public class EcranAssistant extends Screen {
     /** Largeur au plus du tableau de bord, centré au-delà : les lignes restent lisibles. */
     private static final int LARGEUR_MAX = 720;
 
-    private static final String INDICE = "Une question pour l’assistant ? Écris-la puis Entrée",
-            INDICE_ARRETE = "L’assistant est arrêté : relance-le pour poser une question",
-            ACTIVE = "✔ Activé",
-            DESACTIVE = "✘ Désactivé";
+    /** Indice du champ de question, selon que l'assistant tourne ou non. */
+    private static final Component
+            INDICE = Component.literal("Une question pour l’assistant ? Écris-la puis Entrée"),
+            INDICE_ARRETE =
+                    Component.literal(
+                            "L’assistant est arrêté : relance-le pour poser une question");
+
+    private static final String ACTIVE = "✔ Activé", DESACTIVE = "✘ Désactivé";
 
     /**
      * Les onglets, dans l'ordre d'affichage : un onglet ajouté ici (même en premier) ne décale
@@ -169,7 +173,7 @@ public class EcranAssistant extends Screen {
         saisie.setMaxLength(2000);
         saisie.setValue(ETAT_DISCUSSION.brouillon());
         saisie.setResponder(ETAT_DISCUSSION::brouillon);
-        saisie.setHint(Component.literal(INDICE));
+        saisie.setHint(INDICE);
         addRenderableWidget(saisie);
         envoyer =
                 addRenderableWidget(
@@ -353,7 +357,7 @@ public class EcranAssistant extends Screen {
         if (!saisie.getValue().equals(ETAT_DISCUSSION.brouillon()))
             saisie.setValue(ETAT_DISCUSSION.brouillon());
         saisie.setEditable(!ETAT_DISCUSSION.enAttente());
-        saisie.setHint(Component.literal(actif ? INDICE : INDICE_ARRETE));
+        saisie.setHint(actif ? INDICE : INDICE_ARRETE);
         envoyer.active =
                 ecran.has("question_recue")
                         && ETAT_DISCUSSION.peutEnvoyer(actif, Pont.vrai(ecran, "occupe"));

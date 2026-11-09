@@ -31,13 +31,13 @@ SETTINGS = {
     ),
     "panneau": (
         "Panneau en jeu",
-        "Le panneau compact en haut à gauche (prochaine étape du plan). "
+        "En haut à gauche, la prochaine étape du plan de l'onglet Recette. "
         "Les réponses de l'assistant restent affichées dans leur bulle.",
         True,
     ),
     "progression": (
         "Annonces de progression",
-        "Quêtes terminées, nouveaux filons, machines retenues.",
+        "Un message quand une quête est terminée, un filon repéré ou une machine retenue.",
         True,
     ),
     "faisceaux": (

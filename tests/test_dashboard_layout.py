@@ -166,7 +166,7 @@ public class DashboardLayoutTest {
   var reglages=new JsonArray();
   reglages.add(reglage("voix","Lecture à voix haute","Les réponses et les messages de l'assistant sont lus à voix haute.",false));
   reglages.add(reglage("panneau","Panneau en jeu","En haut à gauche, la prochaine étape du plan de l'onglet Recette. Les réponses restent dans leur bulle.",true));
-  reglages.add(reglage("progression","Annonces de progression","Quêtes terminées, nouveaux filons, machines retenues.",true));
+  reglages.add(reglage("progression","Annonces de progression","Un message quand une quête est terminée, un filon repéré ou une machine retenue.",true));
   reglages.add(reglage("faisceaux","Faisceau de guidage","Le faisceau bleu vers la destination (coffre, filon, lieu demandé).",true));
   reglages.add(reglage("remplir","Remplissage de l'établi","À l'établi, les boutons Remplir et Tout pour la fabrication attendue.",true));
   reglages.add(reglage("coffres","Retrait depuis les coffres","Dans un coffre, le panneau qui prend les ingrédients de l'arbre EMI en cours.",true));

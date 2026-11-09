@@ -29,7 +29,7 @@ public final class EcranDiagnostic extends Screen {
 
     @Override
     protected void init() {
-        fenetre = Theme.Fenetre.centree(width, height, 540);
+        fenetre = Theme.Fenetre.centree(width, height, 500);
         hautListe = fenetre.contenuY();
         basListe = Math.max(hautListe + Theme.LIGNE + 6, fenetre.basBoutons() - Theme.ECART);
         int lRetour = Theme.largeurBouton(font, "Retour", 120);
