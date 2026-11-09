@@ -1,6 +1,7 @@
 package fr.assistantia;
 
 import com.google.gson.*;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
@@ -21,6 +22,7 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.registries.ForgeRegistries;
+import org.lwjgl.opengl.GL11;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -930,7 +932,19 @@ public final class Filons {
                             (couleur & 255) / 255F,
                             alpha);
                 }
-                buffers.endBatch(type);
+                if (visible) {
+                    buffers.endBatch(type);
+                } else {
+                    // NO_DEPTH_TEST leaves inherited depth state alone in Minecraft 1.20.1.
+                    boolean profondeurActive = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+                    RenderSystem.disableDepthTest();
+                    try {
+                        buffers.endBatch(type);
+                    } finally {
+                        if (profondeurActive) RenderSystem.enableDepthTest();
+                        else RenderSystem.disableDepthTest();
+                    }
+                }
             }
         }
     }
