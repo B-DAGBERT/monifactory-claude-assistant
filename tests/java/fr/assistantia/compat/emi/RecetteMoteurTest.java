@@ -20,6 +20,7 @@ public final class RecetteMoteurTest {
 
         /** Tag vers sa première variante, comme la clé EMI d'un ingrédient. */
         final Map<String, String> alias = new HashMap<>();
+
         final Map<String, ChaineRecette.Recette<String>> recettes = new HashMap<>();
         int lectures, demandesProducteur;
 
@@ -328,7 +329,9 @@ public final class RecetteMoteurTest {
         var etapes = List.of(a, b, l, c, e);
         // B se préparait ; ramasser la matière de A a rendu A prête : B reste en tête.
         var gardee = RangsRecette.stabiliser(etapes, new RangsRecette.Cle<>("B", 0));
-        assert gardee.stream().map(RangsRecette.Etape::recette).toList()
+        assert gardee.stream()
+                        .map(RangsRecette.Etape::recette)
+                        .toList()
                         .equals(List.of("B", "A", "L", "C", "E"))
                 : gardee;
         for (int i = 0; i < gardee.size(); i++) assert gardee.get(i).rang() == i + 1;

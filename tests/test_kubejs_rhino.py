@@ -39,9 +39,7 @@ def _neutraliser(code):
             sortie.append(re.sub(r"[^\n]", " ", code[i:fin]))
             i = fin
             continue
-        if c in "'\"`" or (
-            c == "/" and (precedent in AVANT_REGEX or mot in MOTS_AVANT_REGEX)
-        ):
+        if c in "'\"`" or (c == "/" and (precedent in AVANT_REGEX or mot in MOTS_AVANT_REGEX)):
             fermeture = c
             j = i + 1
             classe = False
