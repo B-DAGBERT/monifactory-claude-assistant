@@ -142,6 +142,56 @@ def latest_remembered_containers(containers, twins):
     return kept
 
 
+def _published_place(entry):
+    """Version, bloc, position et date entières d'une observation, ou None si elle est mal formée."""
+    here = position(entry)
+    block, date = entry.get("bloc"), entry.get("t")
+    if (
+        here is None
+        or not isinstance(block, str)
+        or not block
+        or isinstance(date, bool)
+        or not isinstance(date, (int, float))
+        or not math.isfinite(date)
+        or not 0 <= date < 1e16
+    ):
+        return None
+    dimension, x, y, z = here
+    return {"v": 2, "bloc": block, "dimension": dimension, "x": x, "y": y, "z": z, "t": int(date)}
+
+
+def known_chests(storage):
+    """Coffres fusionnés (mémoire du client et relevé du serveur) publiés pour l'onglet Recette du mod.
+
+    Les observations vides retenues par la fusion sont publiées aussi : plus récentes qu'un ancien
+    contenu mémorisé par le client au même endroit, elles le masquent dans le mod comme ici.
+    """
+    containers, seen = [], set()
+    empty = (c for c in storage.raw if isinstance(c, dict) and c.get("objets") == [])
+    for chest in [*storage.containers, *empty]:
+        place = _published_place(chest) if isinstance(chest, dict) else None
+        counts = inventory_key(chest) if place is not None else None
+        if counts is None:
+            continue
+        here = (place["dimension"], place["x"], place["y"], place["z"])
+        if here in seen:
+            continue
+        seen.add(here)
+        name = chest.get("nom")
+        entry = {"v": 2, "bloc": place["bloc"]}
+        if isinstance(name, str) and name:
+            entry["nom"] = name
+        entry.update(place)
+        entry["objets"] = [{"item": item, "n": n} for item, n in counts]
+        containers.append(entry)
+    machines = [
+        place
+        for place in (_published_place(m) for m in storage.machines if isinstance(m, dict))
+        if place is not None
+    ]
+    return {"v": 2, "conteneurs": containers, "machines": machines}
+
+
 class Storage:
     """Coffres mémorisés par le jeu (stockage.json) : ce qu'il y a dedans et où ils sont."""
 

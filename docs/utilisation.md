@@ -52,7 +52,10 @@ sur une icône ouvre ses recettes dans EMI.
   **Nouvelle recette** (**Voir** quand la place manque) ouvre EMI sur la recette proposée. Pour
   l’objet final, la quantité visée est conservée. Les favoris d’EMI ne sont jamais modifiés.
 - **Introuvable** : une matière de base de l’arbre absente de l’inventaire, du sac, des coffres
-  connus et des lots en cours. C’est une simple information, sans bouton.
+  connus et des lots en cours. C’est une simple information, sans bouton. Les coffres connus
+  comprennent aussi, quand l’assistant tourne, les conteneurs relevés par le serveur autour de toi
+  sans que tu les aies ouverts (tiroirs, barils…) ; pour un même bloc, le relevé le plus récent
+  compte.
 - **Machine à fabriquer** : une machine que tu n’as pas encore, faisable à l’établi avec ce que
   tu as (« tu as tout » ou « 2 sous-crafts avec ce que tu as »), et qui permettrait une meilleure
   recette.

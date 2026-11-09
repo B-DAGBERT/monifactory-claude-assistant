@@ -11,7 +11,7 @@ from datetime import datetime
 from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
 from monifactory_assistant.game.snapshots import file_stamp, frame_value
-from monifactory_assistant.game.storage import Storage, StorageMonitor
+from monifactory_assistant.game.storage import Storage, StorageMonitor, known_chests
 from monifactory_assistant.game.veins import find_veins, vein_files_stamp
 from monifactory_assistant.game.world import World, machine_status, observation_date
 from monifactory_assistant.game.world_scope import scope_file, scope_folder
@@ -66,6 +66,7 @@ class GameController:
         self.veins, self.veins_stamp = [], None
         self.coach_queue = []
         self.storage_text = self.storage_export_key = None
+        self.known_chests_published = None
         self.removed_chests = []
         self.forgotten_keys = set()
         self.storage, self.storage_monitor = Storage([]), StorageMonitor()
@@ -144,6 +145,7 @@ class GameController:
                     self.logged_errors.add(error)
                     log("Erreur sur le serveur : " + error)
         storage = self.storage_monitor.refresh(self.bridge, self.world)
+        self.publish_known_chests(storage)
         if storage is not self.storage:
             self.check_new_machines(storage)
         export_key = storage.export_key()
@@ -174,6 +176,21 @@ class GameController:
         ):
             self.notify(f"Tu es arrivé : {self.guide['label']}.", 8, speak=True)
             self.guide = None
+
+    def publish_known_chests(self, storage):
+        """Coffres fusionnés pour l'onglet Recette du mod (coffres_connus.json), écrits s'ils changent."""
+        published = getattr(self, "known_chests_published", None)
+        if published is not None and published[0] is storage:
+            return
+        if self.bridge.data_path("coffres_connus.json") is None:
+            return
+        text = json.dumps(known_chests(storage), ensure_ascii=False, separators=(",", ":"))
+        if published is None or published[1] != text:
+            try:
+                self.bridge.write_text("coffres_connus.json", text)
+            except (OSError, RuntimeError):
+                return  # Le mod garde sa dernière lecture ; nouvel essai au prochain cycle.
+        self.known_chests_published = (storage, text)
 
     def journal(self, kind, text):
         path = getattr(self, "journal_file", JOURNAL_FILE)

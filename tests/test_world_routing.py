@@ -13,7 +13,7 @@ from monifactory_assistant.application.game import GameController
 from monifactory_assistant.application.interface import InterfaceController
 from monifactory_assistant.game.bridge import Bridge
 from monifactory_assistant.game.emi_search import RecipeChestSearch
-from monifactory_assistant.game.storage import StorageMonitor
+from monifactory_assistant.game.storage import Storage, StorageMonitor
 from monifactory_assistant.game.world import World
 from monifactory_assistant.game.world_scope import installation_id
 
@@ -265,6 +265,168 @@ class WorldRoutingTests(unittest.TestCase):
         )
         self.assertEqual((first / "plan_ia.json").read_bytes(), saved_plan)
         self.assertFalse((self.root / "mondes" / WORLD_B / "plan_ia.json").exists())
+
+    def test_merged_chests_are_published_for_the_mod_in_the_world_partition(self):
+        """coffres_connus.json : coffres du client et du serveur, par monde, écrit s'il change."""
+        client = stored(7)
+        client["conteneurs"][0]["nom"] = "Tonneau étiqueté"
+        client["conteneurs"].append(
+            {
+                **client["conteneurs"][0],
+                "cle": f"{OVERWORLD}|9|64|9",
+                "bloc": "minecraft:chest",
+                "nom": "Chest",
+                "x": 9,
+                "z": 9,
+                "objets": [{"item": "minecraft:sand", "n": 4}],
+            }
+        )
+        client["machines"] = [
+            {
+                "v": 2,
+                "cle": f"{OVERWORLD}|3|64|3",
+                "bloc": "gtceu:lv_macerator",
+                "nom": "LV Macerator",
+                "dimension": OVERWORLD,
+                "x": 3,
+                "y": 64,
+                "z": 3,
+                "t": 1500,
+            }
+        ]
+        world = World(enabled=False)
+        self.assertTrue(
+            world.update(
+                {
+                    "t": 500,
+                    "dimension": OVERWORLD,
+                    "zone": [0, 0, 0, 0],
+                    "blocs": [
+                        # Tiroir jamais ouvert : seul le serveur le connaît.
+                        {
+                            "p": [2, 64, 2],
+                            "b": "functionalstorage:oak_1",
+                            "o": [["minecraft:sand", 379]],
+                        },
+                        # Coffre vidé depuis la dernière visite : le relevé vide plus récent gagne.
+                        {"p": [9, 64, 9], "b": "minecraft:chest", "o": []},
+                        {
+                            "p": [4, 64, 4],
+                            "b": "gtceu:steam_solid_boiler",
+                            "o": [],
+                            "m": {"s": "IDLE"},
+                        },
+                    ],
+                },
+                received_ms=5000,
+            )
+        )
+        app = GameController()
+        app.bridge = self.bridge
+        app.world = World(enabled=False)
+        with patch("monifactory_assistant.application.game.ROOT", self.root):
+            self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
+            app.apply_world_scope(self.bridge.scope)
+            app.world = world
+            dump(self.bridge.dir / "mondes" / WORLD_A / "stockage.json", client)
+            write = Mock(wraps=self.bridge.write_text)
+            with patch.object(self.bridge, "write_text", write):
+                storage = app.storage_monitor.refresh(self.bridge, app.world)
+                app.publish_known_chests(storage)
+                published = self.bridge.dir / "mondes" / WORLD_A / "coffres_connus.json"
+                expected = {
+                    "v": 2,
+                    "conteneurs": [
+                        {
+                            "v": 2,
+                            "bloc": "functionalstorage:oak_1",
+                            "nom": "Oak 1",
+                            "dimension": OVERWORLD,
+                            "x": 2,
+                            "y": 64,
+                            "z": 2,
+                            "t": 5000,
+                            "objets": [{"item": "minecraft:sand", "n": 379}],
+                        },
+                        {
+                            "v": 2,
+                            "bloc": "minecraft:barrel",
+                            "nom": "Tonneau étiqueté",
+                            "dimension": OVERWORLD,
+                            "x": 0,
+                            "y": 64,
+                            "z": 0,
+                            "t": 1000,
+                            "objets": [{"item": "test:plate", "n": 7}],
+                        },
+                        {
+                            "v": 2,
+                            "bloc": "minecraft:chest",
+                            "nom": "Chest",
+                            "dimension": OVERWORLD,
+                            "x": 9,
+                            "y": 64,
+                            "z": 9,
+                            "t": 5000,
+                            "objets": [],
+                        },
+                    ],
+                    # Les machines du client restent dans stockage.json, que le mod lit aussi.
+                    "machines": [
+                        {
+                            "v": 2,
+                            "bloc": "gtceu:steam_solid_boiler",
+                            "dimension": OVERWORLD,
+                            "x": 4,
+                            "y": 64,
+                            "z": 4,
+                            "t": 5000,
+                        }
+                    ],
+                }
+                self.assertEqual(
+                    published.read_text(encoding="utf-8"),
+                    json.dumps(expected, ensure_ascii=False, separators=(",", ":")),
+                )
+                self.assertFalse((self.bridge.dir / "coffres_connus.json").exists())
+                self.assertEqual(write.call_count, 1)
+
+                # Même relevé, ou relevé recalculé à l'identique : aucune réécriture.
+                app.publish_known_chests(storage)
+                app.publish_known_chests(StorageMonitor().refresh(self.bridge, app.world))
+                self.assertEqual(write.call_count, 1)
+
+                # Contenu changé : réécrit.
+                client["conteneurs"][0]["objets"][0]["n"] = 8
+                client["conteneurs"][0]["t"] = 6000
+                dump(self.bridge.dir / "mondes" / WORLD_A / "stockage.json", client)
+                app.publish_known_chests(StorageMonitor().refresh(self.bridge, app.world))
+                self.assertEqual(write.call_count, 2)
+                self.assertIn('"n":8', published.read_text(encoding="utf-8"))
+                saved = published.read_bytes()
+
+                # Monde changé mais pas encore confirmé : aucune partition, rien d'écrit.
+                receipt(self.bridge, WORLD_B, SESSION_B)
+                self.assertIsNone(self.bridge.data_path("coffres_connus.json"))
+                app.publish_known_chests(Storage([]))
+                self.assertEqual(write.call_count, 2)
+
+                # Autre monde : cache remis à zéro, fichier propre au monde, l'ancien intact.
+                self.assertTrue(enter(self.bridge, WORLD_B, SESSION_B))
+                app.apply_world_scope(self.bridge.scope)
+                self.assertIsNone(app.known_chests_published)
+                dump(self.bridge.dir / "mondes" / WORLD_B / "stockage.json", stored(12))
+                app.publish_known_chests(app.storage_monitor.refresh(self.bridge, app.world))
+                self.assertEqual(write.call_count, 3)
+        other = json.loads(
+            (self.bridge.dir / "mondes" / WORLD_B / "coffres_connus.json").read_text("utf-8")
+        )
+        self.assertEqual(
+            [(c["nom"], c["objets"]) for c in other["conteneurs"]],
+            [("Barrel", [{"item": "test:plate", "n": 12}])],
+        )
+        self.assertEqual(other["machines"], [])
+        self.assertEqual(published.read_bytes(), saved)
 
     def test_expired_native_receipt_cannot_reactivate_cached_state(self):
         self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))

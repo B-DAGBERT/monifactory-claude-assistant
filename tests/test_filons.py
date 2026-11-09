@@ -271,7 +271,7 @@ class FilonsTests(unittest.TestCase):
                 write_text=lambda *args: None,
             )
             storage = SimpleNamespace(
-                containers=[], machines=[], export_key=lambda: 1, as_text=lambda: ""
+                containers=[], raw=[], machines=[], export_key=lambda: 1, as_text=lambda: ""
             )
 
             class World:
