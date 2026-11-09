@@ -90,9 +90,11 @@ encore utiles brillent : quand le résultat, ou une partie de l’arbre, est dé
 connu à portée, les machines qui le fabriqueraient ne sont plus entourées. Ces repères n’apparaissent que si le mode fabrication de
 Recipe Tree ou **Coffres** est actif ; sinon, l’onglet le rappelle.
 
-La prochaine étape s’affiche aussi dans le panneau en haut à gauche, par exemple
-**★ Basic Bender** puis « 4 Iron Ingot → 4 Iron Plate ». **F9** ou **Y → Réglages → Panneau en
-jeu** masque ce panneau ; les réponses de l’assistant restent dans leur bulle.
+L’étape en cours s’affiche aussi dans le panneau en haut à gauche, par exemple
+**★ Basic Bender** puis « 4 Iron Ingot → 4 Iron Plate ». Dessous, **Aussi prêtes** liste en vert
+les autres étapes prêtes (« 2. 8 × Iron Plate · Basic Bender »), six au plus puis « +N autres ».
+**F9** ou **Y → Réglages → Panneau en jeu** masque ce panneau ; les réponses de l’assistant restent
+dans leur bulle.
 
 Limites : les coûts sont comparés par unité produite et peuvent être fractionnaires ; un tag compte
 pour sa première variante ; un multibloc est supposé assez puissant ; « facile » ignore le NBT.

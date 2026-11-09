@@ -46,9 +46,27 @@ public final class Hud {
 
     /**
      * L'étape affichée en haut à gauche : une icône, un titre doré et un détail gris, chacun
-     * facultatif (une icône vide et des textes vides ne dessinent rien).
+     * facultatif (une icône vide et des textes vides ne dessinent rien), puis {@code suite} : les
+     * autres étapes prêtes, une ligne chacune, sous « Aussi prêtes ».
      */
-    public record Etape(ItemStack icone, String titre, String detail) {}
+    public record Etape(ItemStack icone, String titre, String detail, List<String> suite) {
+        public Etape {
+            suite =
+                    suite == null
+                            ? List.of()
+                            : suite.stream()
+                                    .filter(s -> s != null && !s.isBlank())
+                                    .map(String::strip)
+                                    .toList();
+        }
+
+        public Etape(ItemStack icone, String titre, String detail) {
+            this(icone, titre, detail, List.of());
+        }
+    }
+
+    /** Étapes prêtes listées au plus sous l'étape en cours ; au-delà, « +N autres ». */
+    static final int SUITE_MAX = 6;
 
     private static final Supplier<Etape> AUCUNE = () -> null;
     private static volatile Supplier<Etape> source = AUCUNE;
@@ -148,7 +166,8 @@ public final class Hud {
 
     /**
      * Le panneau compact : icône, titre doré sur une ligne et détail gris sur deux lignes au plus,
-     * à la largeur de son texte dans la limite de l'écran ; « … » au bout de ce qui dépasse.
+     * à la largeur de son texte dans la limite de l'écran ; « … » au bout de ce qui dépasse. Sous
+     * un séparateur, les autres étapes prêtes en vert, {@link #SUITE_MAX} au plus.
      */
     private static void panneau(GuiGraphics g, Minecraft mc, int largeurEcran, float echelle) {
         Etape etape = etape();
@@ -157,7 +176,8 @@ public final class Hud {
         }
         String titre = nettoyer(etape.titre()), detail = nettoyer(etape.detail());
         ItemStack icone = etape.icone() == null ? ItemStack.EMPTY : etape.icone();
-        if (titre.isEmpty() && detail.isEmpty() && icone.isEmpty()) {
+        List<String> suite = etape.suite();
+        if (titre.isEmpty() && detail.isEmpty() && icone.isEmpty() && suite.isEmpty()) {
             return;
         }
         Font font = mc.font;
@@ -172,18 +192,40 @@ public final class Hud {
         List<String> lignesDetail = detail(font, detail, place);
         int texteLargeur = font.width(visible);
         for (String ligne : lignesDetail) texteLargeur = Math.max(texteLargeur, font.width(ligne));
-        int largeur = Math.min(maximum, texteX + texteLargeur + Theme.ECART + 2);
+        // Autres étapes prêtes : à partir du bord gauche, sans la colonne de l'icône.
+        int placeSuite = maximum - gauche - Theme.ECART - 2;
+        List<String> lignesSuite = new ArrayList<>();
+        if (!suite.isEmpty()) {
+            lignesSuite.add(Theme.couper(font, "Aussi prêtes", placeSuite));
+            for (int i = 0; i < Math.min(SUITE_MAX, suite.size()); i++)
+                lignesSuite.add(Theme.couper(font, suite.get(i), placeSuite));
+            if (suite.size() > SUITE_MAX)
+                lignesSuite.add(
+                        Theme.couper(
+                                font, "+" + (suite.size() - SUITE_MAX) + " autres", placeSuite));
+        }
+        int largeurSuite = 0;
+        for (String ligne : lignesSuite) largeurSuite = Math.max(largeurSuite, font.width(ligne));
+        int largeur =
+                Math.min(
+                        maximum,
+                        Math.max(
+                                texteX + texteLargeur + Theme.ECART + 2,
+                                lignesSuite.isEmpty()
+                                        ? 0
+                                        : gauche + largeurSuite + Theme.ECART + 2));
         int lignes = (visible.isEmpty() ? 0 : 1) + lignesDetail.size();
-        int hauteur =
+        int bloc =
                 Math.max(icone.isEmpty() ? 0 : ICONE + 2 * Theme.ECART, lignes * Theme.LIGNE + 6);
+        int hauteur = bloc + (lignesSuite.isEmpty() ? 0 : lignesSuite.size() * Theme.LIGNE + 6);
         g.pose().pushPose();
         g.pose().translate(4, 15, 0); // sous le compteur de FPS
         g.pose().scale(echelle, echelle, 1);
         Theme.panneau(g, 0, 0, largeur, hauteur);
         if (!icone.isEmpty()) {
-            g.renderItem(icone, gauche, (hauteur - ICONE) / 2);
+            g.renderItem(icone, gauche, (bloc - ICONE) / 2);
         }
-        int y = (hauteur - lignes * Theme.LIGNE) / 2 + 2;
+        int y = (bloc - lignes * Theme.LIGNE) / 2 + 2;
         if (!visible.isEmpty()) {
             g.drawString(font, visible, texteX, y, Theme.ACCENT, false);
             y += Theme.LIGNE;
@@ -191,6 +233,22 @@ public final class Hud {
         for (String ligne : lignesDetail) {
             g.drawString(font, ligne, texteX, y, Theme.TEXTE_SECONDAIRE, false);
             y += Theme.LIGNE;
+        }
+        if (!lignesSuite.isEmpty()) {
+            Theme.separateur(g, gauche, bloc, largeur - gauche - Theme.ECART);
+            y = bloc + 4;
+            for (int i = 0; i < lignesSuite.size(); i++) {
+                // En-tête et « +N autres » en gris, les étapes prêtes en vert.
+                boolean etapePrete = i > 0 && (i <= SUITE_MAX && i <= suite.size());
+                g.drawString(
+                        font,
+                        lignesSuite.get(i),
+                        gauche,
+                        y,
+                        etapePrete ? Theme.VERT : Theme.TEXTE_SECONDAIRE,
+                        false);
+                y += Theme.LIGNE;
+            }
         }
         g.pose().popPose();
     }
