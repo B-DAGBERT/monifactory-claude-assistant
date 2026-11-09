@@ -69,7 +69,6 @@ class ParityTests(unittest.TestCase):
             "find_claude",
             "tool_status",
             "parse_info",
-            "parse_plan",
             "App.start_question",
             "App.check_mod_requests",  # question acknowledgements and dedicated AI settings; test_discussion_menu.py/test_ai_settings.py
             "App.open_popup",
@@ -102,9 +101,6 @@ class ParityTests(unittest.TestCase):
             "World.merged",  # keep physical chest positions for recipe search, including matching neighbors
             "describe_veins",  # distinguish GT deposits from partial local block observations
             "find_veins",  # local scanner export, tested by test_filons.py
-            "nearest_vein",  # skip exhausted veins, like the mod does
-            "App.set_step",  # unchecking a step only reopens an objective that is no longer done
-            "App.update_objective_progress",  # remember which objective was marked done
             "Bridge.state",  # backpack inventory snapshot and optional world scope
             "Bridge.__init__",
             "Bridge.read",
@@ -113,24 +109,17 @@ class ParityTests(unittest.TestCase):
             "App.journal",
             "App.journal_tail",
             "App.on_live_text",  # Reject an in-flight reply from an earlier world/session.
-            "App.track_targets",  # EMI production proofs replace duplicate return gains; test_objective_pause.py
         }
-        # User-requested gameplay extension, covered by test_objective_pause.py.
-        pause_changes = {
-            "App.load_plan",
-            "App.save_plan",
+        # User-requested gameplay extensions: scoped rendering, dimension checks, old requests ignored.
+        gameplay_changes = {
             "App.refresh",
             "App.check_game",
             "App.machine_at",  # restrict live machine lookup to the requested dimension
             "App.coach",
             "App.flush_coach",
-            "App.handle_mod_request",
-            "App.on_next_objective",
-            "App.start_objective",
-            "App.on_plan_ready",
-            "App.action_effacer_objectif",
+            "App.handle_mod_request",  # old project/objective requests are ignored; test_bridge_resilience.py
         }
-        compatibility_changes |= pause_changes
+        compatibility_changes |= gameplay_changes
         # Retirés à la demande : briefing de reprise, conseils automatiques, alertes de machines.
         compatibility_changes |= {
             "World.alerts",
@@ -140,19 +129,55 @@ class ParityTests(unittest.TestCase):
             "App.start_briefing",
             "App.work_coach",
             "App.on_coach_message",
-            "App.set_objective_paused",
-            "App.handle_project_request",
             "App.watch_game",
             "App.work_info",  # réflexion réglable à chaud (effort_question)
-            "App.work_plan",  # per-request model/effort from in-game settings; test_ai_settings.py
         }
         compatibility_changes |= {
-            "App.on_game_connected",
+            "App.on_game_connected",  # no objective is prepared automatically on connection
+        }
+        # Onglets Objectif et Projet retirés à la demande du joueur : plan, objectifs, projets,
+        # pause d'objectif, touche F7 et panneau plan.json n'existent plus.
+        compatibility_changes |= {
+            "build_view",
+            "objective_entry",
+            "item_names",
+            "has_tool",
+            "evaluate",
+            "needed_machines",
+            "step_count",
+            "step_text",
+            "step_recipe",
+            "craft_suggestions",
+            "describe_quests",
+            "where_hint",
+            "cardinal",
+            "nearest_vein",
+            "parse_plan",
+            "App.load_plan",
+            "App.save_plan",
+            "App.progress",
+            "App.target_totals",
+            "App.track_targets",
+            "App.current_objective",
+            "App.set_step",
+            "App.on_plan",
+            "App.on_next_objective",
+            "App.on_redo_objective",
+            "App.on_new_plan",
+            "App.start_objective",
+            "App.work_plan",
+            "App.on_plan_ready",
             "App.action_nouveau_plan",
             "App.action_nouvel_objectif",
+            "App.action_effacer_objectif",
+            "App.action_effacer_plan",
             "App.action_modifier_plan",
+            "App.action_ajouter_objectif",
+            "App.action_retirer_objectif",
             "App.action_objectif_suivant",
             "App.action_refaire_objectif",
+            "App.action_valider_etape",
+            "App.action_decocher_etape",
             "App.action_planifier_usine",
         }
         compatibility_changes |= {
@@ -171,7 +196,6 @@ class ParityTests(unittest.TestCase):
             "App.set_setting",
             "App.on_info_ready",
             "App.have",
-            "App.progress",
             "Storage.totals",
             "Storage.placed",
         }  # Atomic backup/recovery and render-scoped caching: test_reliability.py.
@@ -180,7 +204,6 @@ class ParityTests(unittest.TestCase):
             "App.check_craftable",  # publish only a complete current catalog; test_recipe_loading.py
             "App.load_recipes",
             "App.describe_journal",  # retain usable records beside a damaged record; test_journal_tail.py
-            "App.action_effacer_plan",  # keep the full pre-action backup; test_project_clear.py
         }
         tested_action_guard_changes = {
             "App.run_actions",  # Closed model-action boundary; test_ai_action_guard.py.
@@ -196,7 +219,8 @@ class ParityTests(unittest.TestCase):
             self.assertIn(name, after, name)
             self.assertEqual(code, after[name], name)
             checked += 1
-        self.assertGreater(checked + len(tested_changes & before.keys()), 100)
+        # About 40 upstream functions belonged to the removed Objectif/Projet features.
+        self.assertGreater(checked + len(tested_changes & before.keys()), 70)
 
     def test_kubejs_gameplay_functions_preserved(self):
         path = "jeu/assistant_ia.js"
@@ -212,6 +236,19 @@ class ParityTests(unittest.TestCase):
             "lirePlan",
             "lireCommande",
             "recevoirMonde",
+        }
+        # Panneau de secours sans le mod (lignes de plan.json) retiré avec les onglets Objectif
+        # et Projet ; ses fonctions d'affichage n'existent plus.
+        allowed |= {
+            "lireLigne",
+            "decouper",
+            "decoupe",
+            "num",
+            "direction",
+            "icone",
+            "construireLignes",
+            "dessinerIcone",
+            "dessiner",
         }
         old = {m[1]: m[0] for m in pattern.finditer(upstream(path))}
         new = {m[1]: m[0] for m in pattern.finditer((ROOT / path).read_text())}

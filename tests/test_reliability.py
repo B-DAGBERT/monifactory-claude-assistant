@@ -166,15 +166,15 @@ class RequestQueueTests(unittest.TestCase):
 
     def test_context_change_disconnect_and_busy_refuse_without_starting_ai(self):
         app = InterfaceController()
-        app.projects = SimpleNamespace(active="new-project")
         app.game = {"dimension": "minecraft:overworld"}
         app.question_ack = {}
         app.mod_request_n = None
         app.start_question, app.notify = Mock(), Mock()
-        for update in ({"projet": "old"}, {"dimension_envoi": "minecraft:the_nether"}):
-            result = app.dispatch_queued_request(
-                {"n": 1, "type": "question", "texte": "Q", **update}
-            )
+        for request in (
+            {"n": 1, "type": "question", "texte": "Q", "dimension_envoi": "minecraft:the_nether"},
+            {"n": 1, "type": "projet", "action": "choisir", "id": "principal"},
+        ):
+            result = app.dispatch_queued_request(request)
             self.assertEqual(result["etat"], "refusee")
         app.game = None
         result = app.dispatch_queued_request(
@@ -205,7 +205,7 @@ class RenderingTests(unittest.TestCase):
         compute.return_value = {"iron": 3}
         self.assertEqual(frame_value(app, "stock", compute), {"iron": 3})
 
-    def test_unchanged_plan_still_throttles_and_failed_render_can_retry(self):
+    def test_unchanged_view_still_throttles_and_failed_render_can_retry(self):
         app = InterfaceController()
         app.root = SimpleNamespace(after=Mock())
         app.refresh_pending = False
@@ -304,32 +304,6 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
         self.assertEqual(app.question_ack, {"n": 200, "etat": "acceptee"})
         self.assertEqual(app.mod_request_n, 200)
 
-    def test_failed_pause_write_keeps_previous_memory_and_disk_state(self):
-        from monifactory_assistant.app import App
-        from monifactory_assistant.game.projects import ProjectStore
-
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "plan.json"
-            store = ProjectStore(path)
-            state = {
-                "objectif_en_pause": True,
-                "version": 4,
-                "plan": {"objectif": "LV", "etapes": [], "recettes": [], "cibles": []},
-            }
-            store.save(state)
-            app = App.__new__(App)
-            app.projects = store
-            app.restore_project(state)
-            app.busy = False
-            with patch(
-                "monifactory_assistant.game.projects.atomic_json", side_effect=OSError("disk full")
-            ):
-                with self.assertRaises(OSError):
-                    app.set_objective_paused(False)
-            self.assertTrue(app.objective_paused)
-            self.assertTrue(app.projects.snapshot()["objectif_en_pause"])
-            self.assertTrue(ProjectStore(path).snapshot()["objectif_en_pause"])
-
     def test_new_inbox_does_not_revive_an_old_legacy_action_on_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -341,7 +315,6 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
             app = InterfaceController()
             app.bridge = SimpleNamespace(dir=root)
             app.request_queue = CommandQueue(root, clock=lambda: 1000)
-            app.projects = SimpleNamespace(active="current")
             app.game = {"dimension": "minecraft:overworld"}
             app.root = SimpleNamespace(after=Mock())
             app.mod_request_n = app.mod_request_time = None

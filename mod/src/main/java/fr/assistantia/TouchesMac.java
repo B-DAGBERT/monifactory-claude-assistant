@@ -20,13 +20,14 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 
-/** On Mac, forward the original F7–F10 shortcuts without a global keyboard hook. */
+/** On Mac, forward the original F8–F10 shortcuts without a global keyboard hook. */
 public final class TouchesMac {
     private static final boolean MAC = System.getProperty("os.name", "").startsWith("Mac");
-    private static final String[] NAMES = {"f7", "f8", "f9", "f10"};
+    private static final String[] NAMES = {"f8", "f9", "f10"};
     private static final KeyMapping[] KEYS = {
-        key("objectif", GLFW.GLFW_KEY_F7), key("parler", GLFW.GLFW_KEY_F8),
-        key("panneau", GLFW.GLFW_KEY_F9), key("voix", GLFW.GLFW_KEY_F10)
+        key("parler", GLFW.GLFW_KEY_F8),
+        key("panneau", GLFW.GLFW_KEY_F9),
+        key("voix", GLFW.GLFW_KEY_F10)
     };
     private static final Path PATH =
             FMLPaths.GAMEDIR.get().resolve("kubejs/assistant/codex_touches.json");

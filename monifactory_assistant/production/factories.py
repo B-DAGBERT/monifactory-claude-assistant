@@ -51,7 +51,6 @@ class FactoryDefinition:
     function: str
     members: tuple[MachineRef, ...]
     evidence: tuple[Evidence, ...]
-    project_ids: tuple[str, ...] = ()
     version: int = 1
 
     def __post_init__(self):
@@ -82,12 +81,6 @@ class FactoryDefinition:
             for e in self.evidence
         ):
             raise ValueError("Le groupe exige une déclaration du joueur liée au même monde.")
-        if not isinstance(self.project_ids, tuple) or len(self.project_ids) > 128:
-            raise ValueError("Liens de projets invalides.")
-        for project in self.project_ids:
-            _text(project, "Projet", 80)
-        if len(set(self.project_ids)) != len(self.project_ids):
-            raise ValueError("Projet déclaré plusieurs fois.")
 
 
 def scoped_observations(snapshot: KnowledgeSnapshot, kinds=("machine", "absence")):

@@ -3,22 +3,18 @@ package fr.assistantia;
 import java.util.List;
 import java.util.Objects;
 
-/** Lecture seule : une réponse appartient à un clic, un monde et une version de projet. */
+/** Lecture seule : une réponse appartient à un clic, un monde, une connexion et une dimension. */
 public final class EtatProduction {
     public static final long DELAI = 45_000;
 
-    public record Contexte(
-            String monde, String session, String dimension, String projet, String revision) {
+    public record Contexte(String monde, String session, String dimension) {
         public boolean valide() {
             return monde != null
                     && monde.matches("m1_[0-9a-f]{64}")
                     && session != null
                     && session.matches("[0-9a-f]{32}")
                     && dimension != null
-                    && dimension.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")
-                    && projet != null
-                    && revision != null
-                    && !revision.isBlank();
+                    && dimension.matches("[a-z0-9_.-]+:[a-z0-9_./-]+");
         }
     }
 
@@ -62,7 +58,7 @@ public final class EtatProduction {
             contexte = actuel;
             invalider(
                     ancien
-                            ? "Monde ou projet changé · relance la lecture."
+                            ? "Monde ou connexion changé · relance la lecture."
                             : "Choisis une vue, puis lance sa lecture.");
         }
         disponible = pret && contexte != null && contexte.valide();

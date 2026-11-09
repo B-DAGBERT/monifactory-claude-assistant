@@ -113,7 +113,8 @@ public class ConfigurationScreenTest {
   Pont.ecran.add("configuration_ia",json);
   Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Réglages"));
   var s=new EcranConfigurationIA(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
-  assert button(s,"Readable Q ▾")!=null;assert button(s,"model-p ▾")!=null;
+  assert button(s,"Readable Q ▾")!=null;
+  assert s.widgets.stream().noneMatch(w->w instanceof Button b&&b.title.getString().equals("model-p ▾")):"no projects row";
   assert s.widgets.stream().noneMatch(w->w instanceof EditBox):"no model name typing required";
   choose(mc,s,"Readable Q ▾","New readable");
   assert state(s).brouillon().modelQuestion().equals("new-q");
@@ -140,53 +141,12 @@ public class ConfigurationScreenTest {
   button(s,"En cours…").press();assert Pont.sends==1;
   assert Pont.last.get("revision").getAsString().equals("a");
   assert Pont.last.getAsJsonObject("valeurs").get("model_question").getAsString().equals("new-q");
+  assert Pont.last.getAsJsonObject("valeurs").get("model_plan").getAsString().equals("model-p"):"plan value kept as is";
   var ack=new JsonObject();ack.addProperty("n",1000);ack.addProperty("etat","appliquee");ack.addProperty("message","ok");json.add("reponse",ack);
   s.tick();assert state(s).attente():"foreign acknowledgement";
   ack.addProperty("n",1001);ack.addProperty("etat","refusee");json.addProperty("revision","b");
   s.tick();assert !state(s).attente()&&state(s).perimee()&&button(s,"New readable ▾")!=null;
   assert button(s,"Actualiser").visible&&state(s).message(true).contains("Refusé");
- }
-}
-"""
-
-PROJECT_HARNESS = r"""
-package fr.assistantia;
-import com.google.gson.*;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.*;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.Component;
-public class ProjectScreenTest {
- static Button button(Screen s,String name){return (Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals(name)).findFirst().orElseThrow();}
- static void ready(EcranProjets s)throws Exception {
-  for(String name:new String[]{"ouvert","dernierClic"}){var f=EcranProjets.class.getDeclaredField(name);f.setAccessible(true);f.setLong(s,0);}
-  s.tick();
- }
- static void bounds(Screen s){for(var w:s.widgets)if(w instanceof Button b)assert b.x>=0&&b.y>=0&&b.w>0&&b.x+b.w<=s.width&&b.y+b.h<=s.height;}
- public static void main(String[] args)throws Exception {
-  Pont.ecran=JsonParser.parseString("{\"projets\":{\"actif\":\"a\",\"liste\":[{\"id\":\"a\",\"nom\":\"Projet A\",\"actif\":true,\"pause\":true,\"objectif\":\"LV\",\"faits\":1,\"total\":4},{\"id\":\"b\",\"nom\":\"Projet B\",\"actif\":false,\"pause\":false,\"objectif\":\"Ferme\",\"faits\":0,\"total\":3}]}}").getAsJsonObject();
-  Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Objectif"));
-  var s=new EcranProjets(parent);mc.screen=s;s.init(mc,320,240);ready(s);bounds(s);
-  assert !button(s,"Ouvert").active;
-  button(s,"Projet B").press();assert button(s,"Ouvrir").active;
-  button(s,"Supprimer…").press();assert Pont.sends==0;bounds(s);
-  s.keyPressed(256,0,0);assert mc.screen==s:"escape returns to project list";ready(s);
-  button(s,"Supprimer…").press();ready(s);button(s,"Supprimer").press();button(s,"Supprimer").press();
-  assert Pont.sends==1;
-  assert Pont.last.get("id").getAsString().equals("b");
-  assert Pont.last.get("confirmation").getAsString().equals("Projet B");
-  s.onClose();s.onClose();assert mc.screen==parent;
-  s=new EcranProjets(parent);mc.screen=s;s.init(mc,320,240);ready(s);
-  assert !button(s,"Supprimer…").active:"reopening cannot duplicate deletion";
-  var p=Pont.ecran.getAsJsonObject("projets");var ack=new JsonObject();ack.addProperty("ok",true);ack.addProperty("token","foreign");p.add("retour",ack);
-  s.tick();assert !button(s,"Supprimer…").active;
-  ack.addProperty("token",Pont.last.get("token").getAsString());p.getAsJsonArray("liste").remove(1);
-  s.tick();ready(s);assert button(s,"Supprimer…").active&&mc.screen==s;
-  button(s,"Renommer").press();ready(s);
-  var field=(EditBox)s.widgets.stream().filter(w->w instanceof EditBox).findFirst().orElseThrow();field.setValue("Nouveau nom");
-  s.init(mc,640,480);ready(s);bounds(s);
-  assert s.widgets.stream().anyMatch(w->w instanceof EditBox e&&e.getValue().equals("Nouveau nom"));
-  button(s,"Enregistrer").press();assert Pont.sends==2&&Pont.last.get("action").getAsString().equals("renommer");
  }
 }
 """
@@ -273,7 +233,6 @@ class AiSettingsMenuTests(unittest.TestCase):
                 ROOT / "mod/src/main/java/fr/assistantia/EcranConfigurationIA.java",
                 ROOT / "mod/src/main/java/fr/assistantia/EcranChoixModele.java",
                 ROOT / "mod/src/main/java/fr/assistantia/CatalogueModeles.java",
-                ROOT / "mod/src/main/java/fr/assistantia/EcranProjets.java",
                 ROOT / "mod/src/main/java/fr/assistantia/EcranDiagnostic.java",
                 ROOT / "mod/src/main/java/fr/assistantia/FileDemandes.java",
                 ROOT / "tests/java/fr/assistantia/FileDemandesTest.java",
@@ -283,11 +242,6 @@ class AiSettingsMenuTests(unittest.TestCase):
         )
         self.run_java("fr.assistantia.ConfigurationScreenTest", classpath, "draft")
         self.run_java("fr.assistantia.ConfigurationScreenTest", classpath, "submit")
-
-        project_harness = self.directory / "ProjectScreenTest.java"
-        project_harness.write_text(PROJECT_HARNESS)
-        self.compile([project_harness], classpath)
-        self.run_java("fr.assistantia.ProjectScreenTest", classpath)
 
         diagnostic_harness = self.directory / "DiagnosticScreenTest.java"
         diagnostic_harness.write_text(DIAGNOSTIC_HARNESS)

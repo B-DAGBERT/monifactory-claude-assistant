@@ -38,7 +38,7 @@ def main():
             raise ValueError("Choix invalide : configuration conservée.")
     select(name)
     print(
-        f"Assistant choisi : {name}. Relance l'assistant pour l'appliquer. Projets et coffres conservés."
+        f"Assistant choisi : {name}. Relance l'assistant pour l'appliquer. Réglages et coffres conservés."
     )
 
 

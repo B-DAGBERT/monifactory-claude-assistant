@@ -1,6 +1,7 @@
 package fr.assistantia;
 
 import com.google.gson.JsonObject;
+import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -9,12 +10,18 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 
 import java.util.List;
+import java.util.function.Supplier;
 
-/** Panneau compact : plan, objectif et progression. Les réponses restent dans la bulle séparée. */
+/**
+ * Affichage en jeu, indépendant en deux parties : la bulle des réponses, à droite, et en haut à
+ * gauche un panneau compact de l'étape à faire, fourni par {@link #source(Supplier)}. Le réglage «
+ * Panneau en jeu » ne masque que le panneau : les réponses restent visibles dans leur bulle.
+ */
 public final class Hud {
     static final int OR = 0xFFC94A,
             BLANC = 0xF2F2F2,
@@ -24,10 +31,31 @@ public final class Hud {
             ROUGE = 0xFF7A6B,
             BLEU = 0x8FC7FF,
             CYAN = 0x6FE3FF;
-    private static final int LARGEUR = 176, BULLE = 210;
+    private static final int LARGEUR = 176, BULLE = 210, ICONE = 16;
     private static final String[] FLECHES = {"↑", "↗", "→", "↘", "↓", "↙", "←", "↖"};
 
+    /**
+     * L'étape affichée en haut à gauche : une icône, un titre doré et un détail gris, chacun
+     * facultatif (une icône vide et des textes vides ne dessinent rien).
+     */
+    public record Etape(ItemStack icone, String titre, String detail) {}
+
+    private static final Supplier<Etape> AUCUNE = () -> null;
+    private static volatile Supplier<Etape> source = AUCUNE;
+    private static boolean erreurSignalee;
+
     private Hud() {}
+
+    /**
+     * Branche la source du panneau en haut à gauche ; {@code null} la débranche. Elle est lue à
+     * chaque image sur le thread de rendu : elle doit rendre une valeur déjà calculée, sans calcul
+     * lourd ni lecture de fichier. Une source qui renvoie {@code null} ou lève une exception ne
+     * dessine rien.
+     */
+    public static void source(Supplier<Etape> source) {
+        Hud.source = source == null ? AUCUNE : source;
+        erreurSignalee = false;
+    }
 
     public static void enregistrer(RegisterGuiOverlaysEvent event) {
         event.registerAboveAll("assistant", Hud::dessiner);
@@ -44,76 +72,64 @@ public final class Hud {
                 || mc.screen != null && !(mc.screen instanceof ChatScreen)) {
             return;
         }
-        JsonObject hud = Pont.partie("hud");
-        if (hud.has("visible") && !Pont.vrai(hud, "visible")) {
-            return;
-        }
         float echelle = Math.min(1F, largeurEcran * 0.24F / LARGEUR);
-        g.pose().pushPose();
-        g.pose().translate(4, 15, 0); // sous le compteur de FPS
-        g.pose().scale(echelle, echelle, 1);
-        panneau(g, mc, hud);
-        g.pose().popPose();
+        JsonObject hud = Pont.partie("hud");
+        if (!hud.has("visible") || Pont.vrai(hud, "visible")) {
+            panneau(g, mc, echelle);
+        }
         bulle(g, mc, largeurEcran, hauteurEcran, echelle);
     }
 
-    private static void panneau(GuiGraphics g, Minecraft mc, JsonObject hud) {
-        Font font = mc.font;
-        String objectif = Pont.texte(hud, "objectif");
-        int y = 0;
-        int hauteur = hauteurPanneau(font, hud); // le fond se dessine avant le contenu
-        if (hauteur == 0) {
-            return;
+    private static Etape etape() {
+        try {
+            return source.get();
+        } catch (RuntimeException | LinkageError e) {
+            if (!erreurSignalee) {
+                erreurSignalee = true; // une seule trace, pas une par image
+                LogUtils.getLogger().warn("Assistant : étape du panneau indisponible", e);
+            }
+            return null;
         }
-        g.fill(-3, -3, LARGEUR + 3, hauteur + 1, 0xC80D1013);
-        g.fill(-3, -3, -1, hauteur + 1, 0xFFFFC94A);
-        if (!arret().isEmpty()) {
-            y =
-                    ecrire(
-                                    g,
-                                    font,
-                                    arret(),
-                                    2,
-                                    y,
-                                    LARGEUR - 4,
-                                    Pont.relanceEnCours() ? GRIS : ROUGE,
-                                    2)
-                            + 1;
-        }
-        if (objectif.isEmpty()) {
-            g.drawString(font, "Je prépare ton prochain objectif…", 2, y, GRIS, false);
-            return;
-        }
-        String plan = Pont.texte(hud, "plan"); // « Plan : Passer en LV · 2/6 »
-        if (!plan.isEmpty()) {
-            g.drawString(font, font.plainSubstrByWidth(plan, LARGEUR - 4), 2, y, GRIS, false);
-            y += 10;
-        }
-        double progres = Mth.clamp(Pont.nombre(hud, "progres", 0), 0, 1);
-        String pourcent = Math.round(progres * 100) + " %";
-        g.drawString(
-                font,
-                font.plainSubstrByWidth("✦ " + objectif, LARGEUR - font.width(pourcent) - 8),
-                2,
-                y,
-                OR,
-                true);
-        g.drawString(font, pourcent, LARGEUR - font.width(pourcent) - 2, y, GRIS, false);
-        y += 11;
-        g.fill(2, y, LARGEUR - 2, y + 3, 0x30FFFFFF);
-        g.fill(2, y, 2 + (int) ((LARGEUR - 4) * progres), y + 3, 0xFF6BE36B);
     }
 
-    /** Le panneau ne contient que le plan, l'objectif et sa barre d'avancement. */
-    private static int hauteurPanneau(Font font, JsonObject hud) {
-        int h =
-                arret().isEmpty()
-                        ? 0
-                        : Math.min(2, font.split(Component.literal(arret()), LARGEUR - 4).size())
-                                        * 10
-                                + 1;
-        if (Pont.texte(hud, "objectif").isEmpty()) return h + 10;
-        return h + 17 + (Pont.texte(hud, "plan").isEmpty() ? 0 : 10);
+    private static String nettoyer(String texte) {
+        return texte == null ? "" : texte.strip();
+    }
+
+    /** Le panneau compact : icône, titre doré et détail gris, coupés par « … » si besoin. */
+    private static void panneau(GuiGraphics g, Minecraft mc, float echelle) {
+        Etape etape = etape();
+        if (etape == null) {
+            return;
+        }
+        String titre = nettoyer(etape.titre()), detail = nettoyer(etape.detail());
+        ItemStack icone = etape.icone() == null ? ItemStack.EMPTY : etape.icone();
+        int lignes = (titre.isEmpty() ? 0 : 1) + (detail.isEmpty() ? 0 : 1);
+        if (lignes == 0 && icone.isEmpty()) {
+            return;
+        }
+        Font font = mc.font;
+        int hauteur =
+                Math.max(icone.isEmpty() ? 0 : ICONE + 2 * Theme.ECART, lignes * Theme.LIGNE + 6);
+        int gauche = Theme.BARRE + Theme.ECART;
+        int texteX = icone.isEmpty() ? gauche : gauche + ICONE + Theme.ECART;
+        int place = LARGEUR - texteX - Theme.ECART;
+        g.pose().pushPose();
+        g.pose().translate(4, 15, 0); // sous le compteur de FPS
+        g.pose().scale(echelle, echelle, 1);
+        Theme.panneau(g, 0, 0, LARGEUR, hauteur);
+        if (!icone.isEmpty()) {
+            g.renderItem(icone, gauche, (hauteur - ICONE) / 2);
+        }
+        int y = (hauteur - lignes * Theme.LIGNE) / 2 + 2;
+        if (!titre.isEmpty()) {
+            Theme.texte(g, font, titre, texteX, y, place, Theme.ACCENT);
+            y += Theme.LIGNE;
+        }
+        if (!detail.isEmpty()) {
+            Theme.texte(g, font, detail, texteX, y, place, Theme.TEXTE_SECONDAIRE);
+        }
+        g.pose().popPose();
     }
 
     /**
@@ -172,16 +188,6 @@ public final class Hud {
         g.pose().popPose();
     }
 
-    /** Ce qu'il faut savoir quand l'assistant ne tourne pas (rien s'il tourne). */
-    static String arret() {
-        if (Pont.assistantActif()) {
-            return "";
-        }
-        return Pont.relanceEnCours()
-                ? "L'assistant démarre…"
-                : "⚠ Assistant arrêté : touche Y pour le relancer";
-    }
-
     /**
      * Distance et flèche vers la destination, recalculées à chaque image avec l'orientation du
      * joueur.
@@ -209,22 +215,5 @@ public final class Hud {
             case "gris" -> GRIS;
             default -> BLANC;
         };
-    }
-
-    static int ecrire(
-            GuiGraphics g,
-            Font font,
-            String texte,
-            int x,
-            int y,
-            int largeur,
-            int couleur,
-            int maxLignes) {
-        List<FormattedCharSequence> lignes = font.split(Component.literal(texte), largeur);
-        for (int i = 0; i < Math.min(maxLignes, lignes.size()); i++) {
-            g.drawString(font, lignes.get(i), x, y, couleur, false);
-            y += 10;
-        }
-        return y;
     }
 }

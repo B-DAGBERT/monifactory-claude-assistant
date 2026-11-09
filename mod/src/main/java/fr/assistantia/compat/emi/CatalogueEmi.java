@@ -99,10 +99,6 @@ public final class CatalogueEmi {
                 throw new IllegalArgumentException("Alternatives EMI trop nombreuses.");
             TreeMap<String, JsonObject> options = new TreeMap<>();
             for (EmiStack stack : ingredient.getEmiStacks()) {
-                if (stack.getItemStack().hasTag()
-                        && stack.getItemStack().getTag().contains("assistantia_objectif"))
-                    throw new IllegalArgumentException(
-                            "Sélectionne un craft concret dans EMI, pas le résumé d'objectif.");
                 JsonObject resource = RecetteProduction.resource(stack);
                 options.put(resource.toString(), resource);
             }

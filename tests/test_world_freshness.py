@@ -166,14 +166,8 @@ class WorldFreshnessTests(unittest.TestCase):
         controller = ConversationController()
         controller.game = {"x": 0, "y": 64, "z": 0, "dimension": OVERWORLD}
         controller.world, controller.storage = self.world, Storage([])
-        controller.objective_paused = True
-        controller.objectives, controller.veins, controller.places, controller.removed_chests = (
-            [],
-            [],
-            {},
-            [],
-        )
-        controller.plan, controller.guide, controller.speak = None, None, False
+        controller.veins, controller.places, controller.removed_chests = [], {}, []
+        controller.guide, controller.speak = None, False
         controller.describe_journal = lambda _: ""
         controller.recipe_index = RecipeIndex()
         controller.events, controller.speaker = Queue(), Mock()
@@ -197,5 +191,5 @@ class WorldFreshnessTests(unittest.TestCase):
                 self.assertIn("Machines du serveur (historique", prompt)
                 self.assertIn("Dernières positions connues", prompt)
                 self.assertIn("quantités observées", prompt)
-                self.assertIn("EN PAUSE à la demande du joueur", prompt)
+                self.assertNotIn("objectif", prompt.casefold())
                 self.assertNotIn("état en direct", prompt)

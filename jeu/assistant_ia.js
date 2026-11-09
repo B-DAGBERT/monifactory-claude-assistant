@@ -1,22 +1,16 @@
-// Assistant IA (Claude) : exporte l'état du jeu, mémorise le contenu des coffres ouverts, et affiche
-// à l'écran les lignes préparées par l'assistant (plan.json). Les calculs se font dans assistant_mc.py.
+// Assistant IA (Claude) : exporte l'état du jeu et mémorise le contenu des coffres ouverts. L'affichage
+// en jeu est celui du mod de l'assistant ; les calculs se font dans assistant_mc.py.
 // Installé et mis à jour automatiquement par assistant_mc.py : ne pas modifier cette copie.
 //
 // Pièges de ce Rhino (KubeJS 6) :
-// - les textes passent souvent par les méthodes Java (substring, split, length) : voir longueur, couper, decoupe ;
+// - les textes passent souvent par les méthodes Java (substring, split, length) : voir longueur, couper ;
 // - les listes internes de Java (List.of, keySet...) refusent les appels : liste() les copie dans une ArrayList ;
 // - pas de let/const dans un bloc (try, if, boucle) à l'intérieur d'une fonction fléchée : Rhino y voit une
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 12  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_SCRIPT = 13  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
 const VERSION_RECETTES = 2 // export des recettes plus ancien : refait au chargement (2 : durée et EU/t des recettes GregTech)
-const COULEURS = { or: 0xFFC94A, blanc: 0xFFFFFF, gris: 0xA8A8A8, vert: 0x6BE36B, bleu: 0x8FC7FF, rouge: 0xFF8A7A, jaune: 0xFFE45C }
-const FOND = 0xB4101418 | 0
-const LARGEUR_MAX = 230
-const HUD_X = 6, HUD_Y = 16      // sous le compteur de FPS
-const HUD_LARGEUR_ECRAN = 0.3    // le panneau prend au plus 30 % de la largeur de l'écran
-const HUD_HAUTEUR_ECRAN = 0.7    // et 70 % de sa hauteur
 const RECETTES_PAR_TICK = 400
 const RECETTES_PAR_FICHIER = 15000
 const STOCKAGE = /chest|barrel|crate|drawer|shulker|storage|cabinet|drum|safe|backpack/
@@ -43,12 +37,7 @@ try {
 let contexte = null
 let memoireMonde = null
 let ticks = 0
-let plan = null          // plan.json : { version, visible, lignes }
-let icones = {}          // id -> ItemStack pour dessiner les icônes
 let inventaire = {}      // id -> nombre
-let lignes = []          // ce qu'on dessine : { s, c, icone }
-let hauteur = 0, largeur = 0
-let iconesActives = true
 let derniereCommande = null
 let exportRecettes = null
 let etatRecettes = { etat: 'attente' }
@@ -154,10 +143,9 @@ function synchroniserContexte(suivant) {
     }
   }
   conteneur = ecranPrecedent = mineraiVise = null
-  dimensionPrecedente = plan = null
+  dimensionPrecedente = null
   amorcerCommande()
   inventaire = {}
-  lignes = []
   manquants = {}
   mondeRecu = 0
   contexte = suivant
@@ -186,10 +174,8 @@ function liste(x) {
 }
 
 function str(x) { return x == null ? '' : String(x) }
-function num(x) { return x == null ? null : Number(x) }
 function longueur(s) { return typeof s.length == 'function' ? s.length() : s.length }
 function couper(s, n) { s = str(s); return longueur(s) > n ? s.substring(0, n) : s }
-function decoupe(s, separateur) { return liste(str(s).split(separateur)).map(str) }
 function texte(composant) { return composant == null ? '' : str(composant.getString()) }
 function sansCodes(s) { return str(s).replace(/&[0-9a-fk-or]/g, '') }
 
@@ -308,7 +294,6 @@ function ecrireEtat() {
     inventaire: inventaire,
     quetes_terminees: quetes == null ? -1 : quetes.terminees,
     quetes_total: quetes == null ? -1 : quetes.total,
-    plan_version: plan == null ? 0 : plan.version,
     recettes: etatRecettes,
     erreurs: erreurs
   }))
@@ -602,27 +587,7 @@ function verifierRecettes() {
   else etatRecettes = { etat: 'pret' }
 }
 
-// ---------- Ce que l'assistant demande d'afficher ----------
-
-function lireLigne(l) {
-  const d = l.get('dir')
-  return {
-    t: str(l.get('t')), c: str(l.get('c')), item: str(l.get('item')), indent: Number(l.get('indent')) || 0,
-    dir: d == null ? null : { x: num(d.get('x')), y: num(d.get('y')), z: num(d.get('z')) },
-    // rangée d'icônes avec quantités (recette de l'étape en cours)
-    icones: liste(l.get('icones')).map(o => ({ item: str(o.get('item')), n: Number(o.get('n')) || 1 }))
-  }
-}
-
-function lirePlan() {
-  const p = JsonIO.read(DOSSIER + 'plan.json')
-  if (p == null || !contexteTrame(p)) { plan = null; return }
-  plan = {
-    version: Number(p.get('version')) || 0,
-    visible: str(p.get('visible')) != 'false',
-    lignes: liste(p.get('lignes')).map(lireLigne)
-  }
-}
+// ---------- Ce que l'assistant demande ----------
 
 function lireCommande() {
   const c = JsonIO.read(DOSSIER + 'commande.json')
@@ -637,139 +602,6 @@ function lireCommande() {
     liste(c.get('cles')).forEach(cle => { delete stockage[str(cle)] })
     stockageModifie = true
   }
-}
-
-// ---------- Affichage ----------
-
-function decouper(s, largeurMax) {
-  const font = Client.font
-  const mots = decoupe(s, ' ')
-  const res = []
-  let ligne = ''
-  mots.forEach(m => {
-    const essai = ligne == '' ? m : ligne + ' ' + m
-    if (font.width(essai) > largeurMax && ligne != '') { res.push(ligne); ligne = m } else ligne = essai
-  })
-  if (ligne != '') res.push(ligne)
-  return res
-}
-
-// Distance et flèche vers un point, recalculées en direct
-function direction(c) {
-  const p = Client.player
-  let s = ''
-  if (c.x != null && c.z != null) {
-    let dx = c.x + 0.5 - p.getX(), dz = c.z + 0.5 - p.getZ()
-    let distance = Math.round(Math.sqrt(dx * dx + dz * dz))
-    let angle = Math.atan2(-dx, dz) * 180 / Math.PI   // orientation (yaw) qui regarde la cible
-    let yaw = lireYaw(p)
-    if (distance < 3) {
-      s += ' : tu y es'
-    } else if (yaw != null) {
-      let relatif = (((angle - yaw) % 360) + 360) % 360
-      s += ' : ' + distance + ' blocs ' + ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'][Math.round(relatif / 45) % 8]
-    } else {
-      let points = ['sud', 'sud-ouest', 'ouest', 'nord-ouest', 'nord', 'nord-est', 'est', 'sud-est']
-      s += ' : ' + distance + ' blocs au ' + points[Math.round(((angle % 360) + 360) % 360 / 45) % 8]
-    }
-  }
-  if (c.y != null) {
-    let dy = c.y - Math.floor(p.getY())
-    s += dy == 0 ? ' (bonne hauteur)' : dy > 0 ? ' (monte de ' + dy + ')' : ' (descends de ' + (-dy) + ')'
-  }
-  return s
-}
-
-function icone(id) {
-  if (!icones[id]) icones[id] = Item.of(id)
-  return icones[id]
-}
-
-function construireLignes() {
-  const res = []
-  if (plan != null && plan.visible) {
-    for (let i = 0; i < plan.lignes.length; i++) {
-      let l = plan.lignes[i]
-      let s = l.dir == null ? l.t : l.t + direction(l.dir)
-      let c = COULEURS[l.c] != null ? COULEURS[l.c] : COULEURS.blanc
-      if (l.icones.length > 0) {
-        res.push({ s: s, c: c, rangee: l.icones.map(o => icone(o.item)), quantites: l.icones.map(o => o.n) })
-      } else if (l.item != '') {
-        res.push({ s: s, c: c, icone: icone(l.item) })
-      } else {
-        let morceaux = decouper(s, LARGEUR_MAX - l.indent)
-        for (let j = 0; j < morceaux.length; j++) res.push({ s: (j > 0 ? '   ' : '') + morceaux[j], c: c })
-      }
-    }
-  }
-  lignes = res
-  hauteur = 0
-  largeur = 0
-  for (let i = 0; i < res.length; i++) {
-    let r = res[i]
-    hauteur += r.icone || r.rangee ? 18 : 10
-    largeur = Math.max(largeur, Client.font.width(r.s) + (r.icone ? 18 : 0) + (r.rangee ? 4 + 18 * r.rangee.length : 0))
-  }
-}
-
-function dessinerIcone(event, stack, x, y) {
-  if (!iconesActives) return
-  try { event.graphics.renderItem(stack, x, y) } catch (e) { iconesActives = false; noterErreur('icônes', e) }
-}
-
-// Fonction normale, pas fléchée (voir les pièges en haut du fichier)
-// Avec le mod de l'assistant, c'est lui qui dessine le panneau : ce script ne sert plus que de secours
-const MOD_PRESENT = premiereValeur([() => Platform.isLoaded('assistantia') == true]) == true
-
-function dessiner(event) {
-  if (MOD_PRESENT || lignes.length == 0 || Client.options.hideGui) return
-  // L'écran de l'assistant (mod, touche Y) montre déjà tout : le panneau le recouvrirait
-  if (Client.screen != null && texte(Client.screen.getTitle()) == 'Assistant IA') return
-  // Réduit le panneau quand l'échelle d'interface est grande, pour ne pas cacher le jeu
-  let echelle = Math.min(1, event.width * HUD_LARGEUR_ECRAN / (largeur + 8),
-    event.height * HUD_HAUTEUR_ECRAN / (hauteur + 6))
-  let y = 0
-  event.push()
-  try {
-    event.translate(HUD_X, HUD_Y)
-    event.scale(echelle)
-    // Fond : même séquence que les rectangles du Painter de KubeJS
-    event.setPositionColorShader()
-    event.blend(true)
-    event.beginQuads(false)
-    event.rectangle(-4, -4, 0, largeur + 8, hauteur + 6, FOND)
-    event.end()
-    for (let i = 0; i < lignes.length; i++) {
-      let l = lignes[i]
-      if (l.rangee) {
-        event.text(Text.of(l.s), 0, y + 4, l.c, true)
-        let x0 = Client.font.width(l.s) + 4
-        for (let k = 0; k < l.rangee.length; k++) {
-          dessinerIcone(event, l.rangee[k], x0 + 18 * k, y)
-          if (l.quantites[k] > 1) {
-            // la quantité par-dessus l'icône, comme dans un inventaire
-            let n = '' + l.quantites[k]
-            event.push()
-            event.translate(0, 0, 200)
-            event.text(Text.of(n), x0 + 18 * k + 17 - Client.font.width(n), y + 9, COULEURS.blanc, true)
-            event.pop()
-          }
-        }
-        y += 18
-      } else if (l.icone) {
-        dessinerIcone(event, l.icone, 0, y)
-        event.text(Text.of(l.s), 18, y + 4, l.c, true)
-        y += 18
-      } else {
-        event.text(Text.of(l.s), 0, y, l.c, true)
-        y += 10
-      }
-    }
-  } catch (e) {
-    noterErreur('affichage', e)
-    lignes = []
-  }
-  event.pop()
 }
 
 // ---------- Données du serveur (script assistant_ia_serveur.js sur le serveur) ----------
@@ -830,8 +662,6 @@ ClientEvents.tick(function (event) {
   if (exportRecettes != null) essayer('export des recettes', avancerExportRecettes)
   if (ticks % 10 == 0) {
     essayer('inventaire', () => { inventaire = lireInventaire() })
-    essayer('lecture du plan', lirePlan)
-    essayer('affichage du plan', construireLignes)
   }
   if (ticks % 5 == 0) essayer('coffres', suivreConteneur)
   if (ticks % 4 == 2) essayer('minerais', suivreMinerais)
@@ -844,8 +674,4 @@ ClientEvents.tick(function (event) {
   if (ticks % 200 == 10) essayer('présence', signalerPresence)
   if (ticks % 200 == 40) essayer('quêtes', ecrireQuetes)
   if (ticks % 100 == 60) essayer('recettes', verifierRecettes)
-})
-
-ClientEvents.paintScreen(function (event) {
-  if (!isolationDemandee() || contexte != null && memeContexte(contexte, contexteCourant())) dessiner(event)
 })

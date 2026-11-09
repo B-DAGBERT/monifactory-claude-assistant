@@ -17,7 +17,6 @@ import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.application.conversation import ConversationController
 from monifactory_assistant.application.game import GameController
 from monifactory_assistant.application.interface import InterfaceController
-from monifactory_assistant.application.projects import ProjectsController
 from monifactory_assistant.audio import Recorder, Speaker, Transcriber
 from monifactory_assistant.commands.auto_update import notice as update_notice
 from monifactory_assistant.commands.auto_update import notice_key as update_notice_key
@@ -39,7 +38,6 @@ from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import (
     HOTKEY_HIDE,
     HOTKEY_NEW,
-    HOTKEY_PLAN,
     HOTKEY_TALK,
     HOTKEY_TYPE,
     HOTKEY_VOICE,
@@ -52,7 +50,7 @@ from monifactory_assistant.settings import (
 from monifactory_assistant.ui.discussion import DiscussionViewer, recent_history
 
 
-class App(ProjectsController, GameController, ConversationController, InterfaceController):
+class App(GameController, ConversationController, InterfaceController):
     """Compose les contrôleurs autour du même état et de la même boucle Tk."""
 
     def __init__(self):
@@ -86,8 +84,6 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.status = ""
         self.connection_problem = ""
         self.message, self.message_until = "", 0
-        self.last_view = None
-        self.last_write = 0
         self.refresh_pending = False
         self.guide = None  # flèche demandée à la voix vers un lieu
         self.veins = []  # filons de minerai repérés
@@ -125,18 +121,13 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
         self.forgotten_keys = set()  # coffres que l'on vient de demander au jeu d'oublier
         if self.bridge.isolated:
             self.journal_file = None
-            self.load_plan(None)
             self.load_places(None)
         else:
-            self.load_plan()
             self.load_places()
         # A committed acknowledgement remains visible even if the UI missed the last frame.
         for row in sorted(self.request_queue.rows.values(), key=lambda item: item["n"]):
             if "question" in row:
                 self.question_ack = row["question"]
-            if "projet" in row:
-                self.project_feedback = row["projet"]
-                self.project_reply_n = row["n"]
 
         self.discussion_viewer = None
         try:
@@ -153,7 +144,6 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
             self.show_overlay(f"Lien avec le jeu impossible : {e}", hide_after=15000)
 
         for key, event in (
-            (HOTKEY_PLAN, "plan"),
             (HOTKEY_TYPE, "type"),
             (HOTKEY_NEW, "new"),
             (HOTKEY_HIDE, "hide"),
@@ -175,7 +165,7 @@ class App(ProjectsController, GameController, ConversationController, InterfaceC
             else ""
         )
         self.show_overlay(
-            f"Assistant Minecraft prêt.\n{HOTKEY_PLAN.upper()} : objectif suivant\n"
+            "Assistant Minecraft prêt.\n"
             f"{HOTKEY_TALK.upper()} (tenir) : parler   Maj+{HOTKEY_TALK.upper()} : écrire\n"
             f"{HOTKEY_HIDE.upper()} : cacher   {HOTKEY_VOICE.upper()} : voix on/off\n"
             f"{HOTKEY_NEW.title()} : nouvelle conversation{hint}",

@@ -36,7 +36,6 @@ class DiscussionMenuTests(unittest.TestCase):
         self.path = Path(self.directory.name) / "demande_mod.json"
         self.app.bridge = SimpleNamespace(dir=self.path.parent)
         self.app.root = SimpleNamespace(after=Mock())
-        self.app.projects = SimpleNamespace(active="current")
         self.app.mod_request_n = self.app.mod_request_time = None
         self.app.question_ack = {}
         self.app.busy = False

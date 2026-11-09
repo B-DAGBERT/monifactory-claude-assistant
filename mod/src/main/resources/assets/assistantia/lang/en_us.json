@@ -2,9 +2,7 @@
   "key.categories.assistantia": "AI Assistant",
   "key.assistantia.ouvrir": "Open the assistant",
   "key.assistantia.info": "What is this for? (hovered item, block or held item)",
-  "key.assistantia.objectif": "Next objective",
   "key.assistantia.parler": "Talk (hold; Shift: type; Ctrl: new conversation)",
   "key.assistantia.panneau": "Show / hide panel",
-  "key.assistantia.voix": "Enable / disable voice",
-  "emi.category.assistantia.objectif": "Assistant objective"
+  "key.assistantia.voix": "Enable / disable voice"
 }

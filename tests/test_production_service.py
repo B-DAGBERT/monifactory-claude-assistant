@@ -72,13 +72,7 @@ class ProductionServiceTests(unittest.TestCase):
         self.scope = WorldScope("m1_" + "a" * 64, "b" * 32, "minecraft:overworld")
         self.bridge = SimpleNamespace(dir=self.data, routing=SimpleNamespace(mode="legacy"))
         self.executor = DeferredExecutor()
-        self.app = SimpleNamespace(
-            projects=SimpleNamespace(active="principal"),
-            plan_version=1,
-            objective_epoch=2,
-            objective_paused=True,
-            plan={"cibles": [{"item": PLATE.id, "quantite": 8}]},
-        )
+        self.app = SimpleNamespace()
         self.service = ProductionService(
             self.bridge, self.root, clock=lambda: self.now / 1000, executor=self.executor
         )
@@ -112,6 +106,11 @@ class ProductionServiceTests(unittest.TestCase):
         path.write_text(json.dumps(data), encoding="utf-8")
         os.utime(path, (self.now / 1000, self.now / 1000))
 
+    def reconnect(self):
+        """Same world, new connection: everything bound to the previous session is stale."""
+        self.scope = WorldScope(self.scope.world, "c" * 32, self.scope.dimension)
+        self.identity()
+
     def identity(self):
         self.write(
             "identite_monde.json",
@@ -134,8 +133,6 @@ class ProductionServiceTests(unittest.TestCase):
             "synchronise": True,
             "inventaire": {IRON.id: quantity},
             "capture": "capture-1",
-            "projet": self.app.projects.active,
-            "revision_projet": self.service.view()["contexte"]["revision_projet"],
             "catalogue_source": self.metadata["source"],
             "catalogue_generation": self.metadata["generation"],
             "catalogue_sha256": self.metadata["sha256"],
@@ -284,8 +281,7 @@ class ProductionServiceTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("Postes compatibles · ") for line in result["lignes"]))
         self.assertFalse(any(line.startswith("Machine requise") for line in result["lignes"]))
         self.assertEqual({p.name: p.read_bytes() for p in self.data.iterdir()}, before)
-        self.assertTrue(self.app.objective_paused)
-        self.assertEqual(self.app.plan_version, 1)
+        self.assertEqual(set(self.service.view()["contexte"]), set(self.scope.fields()))
 
     def test_duplicate_and_busy_clicks_never_enqueue_second_job(self):
         first = self.service.submit(self.request())
@@ -306,7 +302,8 @@ class ProductionServiceTests(unittest.TestCase):
     def test_foreign_stale_wrong_revision_and_invalid_quantity_rejected(self):
         for changes in (
             {"session_monde": "c" * 32},
-            {"revision_projet": "obsolete"},
+            {"dimension_monde": "minecraft:the_nether"},
+            {"operation": "memoire"},
             {"n": self.now - 50_000},
             {"quantite": True},
             {"quantite": 1_000_001},
@@ -316,9 +313,9 @@ class ProductionServiceTests(unittest.TestCase):
                 self.assertEqual(self.service.submit(self.request(**changes))["etat"], "refusee")
         self.assertEqual(self.executor.calls, [])
 
-    def test_late_result_after_project_or_connection_change_is_dropped(self):
+    def test_late_result_after_connection_change_is_dropped(self):
         self.service.submit(self.request())
-        self.app.objective_epoch += 1
+        self.reconnect()
         self.service.poll(self.app)
         self.executor.run()
         self.service.poll(self.app)
@@ -408,7 +405,7 @@ class ProductionServiceTests(unittest.TestCase):
         self.assertIn("Diagnostic ", text)
         self.assertTrue(self.service.context_valid(proof))
         self.assertIsNone(self.service.context("Bonjour"))
-        self.app.objective_paused = False
+        self.reconnect()
         self.assertFalse(self.service.context_valid(proof))
         self.assertEqual(len(self.executor.calls), 1)
 
@@ -544,7 +541,7 @@ class ProductionServiceTests(unittest.TestCase):
         self.assertEqual(len(self.executor.calls), 1)
         self.assertEqual(self.finish()["etat"], "pret")
 
-    def test_project_memory_read_keeps_paused_state(self):
+    def test_old_project_memory_read_is_refused_and_leaves_the_save_untouched(self):
         path = self.root / "plan_ia.json"
         path.write_text(
             json.dumps(
@@ -556,11 +553,18 @@ class ProductionServiceTests(unittest.TestCase):
             )
         )
         before = path.read_bytes()
-        self.service.submit(self.request(operation="memoire", item=None, quantite=None))
-        result = self.finish()
-        self.assertEqual(result["etat"], "pret")
-        self.assertIn("Projet en pause", result["lignes"])
+        receipt = self.service.submit(self.request(operation="memoire", item=None, quantite=None))
+        self.assertEqual(receipt["etat"], "refusee")
+        self.assertIn("retirés", receipt["message"])
+        self.assertEqual(self.executor.calls, [])
         self.assertEqual(path.read_bytes(), before)
+
+    def test_obsolete_project_fields_of_an_old_mod_are_ignored(self):
+        # An older mod still copies the former project binding into its click and capture.
+        self.inventory(8, projet="principal", revision_projet="1:2:1")
+        receipt = self.service.submit(self.request(projet="principal", revision_projet="1:2:1"))
+        self.assertEqual(receipt["etat"], "traitee")
+        self.assertEqual(self.finish()["etat"], "pret")
 
     def test_read_capture_refuses_links_fifo_and_oversized_files(self):
         original = self.data / "original.json"

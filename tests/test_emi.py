@@ -1,6 +1,5 @@
-"""Objective-to-EMI snapshot and virtual recipe contract, without Minecraft or an AI call."""
+"""Java contracts of the EMI craft, machine lots and chest panels, without Minecraft or an AI call."""
 
-import copy
 import os
 import shutil
 import subprocess
@@ -8,81 +7,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from monifactory_assistant.game.emi import objective_tree
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class EmiTests(unittest.TestCase):
-    def test_all_targets_quantities_and_intermediate_recipes_without_mutating_plan(self):
-        plan = {
-            "objectif": "Une machine et ses câbles",
-            "cibles": [
-                {"item": "gtceu:lv_wiremill", "quantite": 2, "deja": 1},
-                {"item": "gtceu:copper_single_wire", "quantite": 130},
-            ],
-            "recettes": [
-                {"item": "gtceu:lv_wiremill", "id": "gtceu:shaped/lv_wiremill"},
-                {"item": "gtceu:lv_motor", "id": "gtceu:shaped/motor_lv"},
-                {"item": "gtceu:copper_single_wire", "id": None},
-            ],
-        }
-        before = copy.deepcopy(plan)
-        result = objective_tree(plan, "usine", 42)
-        self.assertEqual([x["quantite"] for x in result["cibles"]], [3, 130])
-        self.assertEqual(result["recettes"][1]["id"], "gtceu:shaped/motor_lv")
-        self.assertEqual(result["recettes"][2]["id"], "")
-        self.assertEqual((result["projet"], result["version"]), ("usine", "42"))
-        self.assertEqual(plan, before)
-        self.assertNotEqual(result, objective_tree(plan, "autre", 42))
-
-    def test_empty_objective_has_no_emi_action(self):
-        self.assertIsNone(objective_tree(None))
-        self.assertIsNone(objective_tree({"cibles": []}))
-
-    def test_target_without_ai_recipe_is_still_available_to_emi(self):
-        result = objective_tree({"cibles": [{"item": "minecraft:torch", "quantite": 64}]})
-        self.assertEqual(result["cibles"], [{"item": "minecraft:torch", "quantite": 64}])
-        self.assertEqual(result["recettes"], [])
-
-    def test_duplicate_targets_are_combined(self):
-        result = objective_tree(
-            {
-                "cibles": [
-                    {"item": "minecraft:torch", "quantite": 4},
-                    {"item": "minecraft:torch", "quantite": 8},
-                ]
-            }
-        )
-        self.assertEqual(result["cibles"], [{"item": "minecraft:torch", "quantite": 12}])
-
-    def test_placed_machines_are_not_added_to_the_emi_target(self):
-        # Deux chaudières posées, aucune sur lui : EMI n'en demande qu'une, pas trois
-        target = {"item": "gtceu:solid_boiler", "quantite": 1, "deja": 2, "deja_inventaire": 0}
-        result = objective_tree({"cibles": [target]})
-        self.assertEqual(result["cibles"], [{"item": "gtceu:solid_boiler", "quantite": 1}])
-        # Ancien plan sauvegardé sans deja_inventaire : calcul inchangé
-        legacy = objective_tree(
-            {"cibles": [{"item": "gtceu:solid_boiler", "quantite": 1, "deja": 2}]}
-        )
-        self.assertEqual(legacy["cibles"], [{"item": "gtceu:solid_boiler", "quantite": 3}])
-
-    def test_reopening_exports_only_unfinished_targets_and_preserves_inventory_credit(self):
-        plan = {"cibles": [{"item": "machine", "quantite": 4}, {"item": "cable", "quantite": 16}]}
-        progress = {
-            "buts": {"machine": 4, "cable": 16},
-            "comptes": {"machine": 2, "cable": 16},
-            "atteints": {"cable"},
-        }
-        result = objective_tree(plan, progress=progress, inventory={"machine": 1})
-        self.assertEqual(result["cibles"], [{"item": "machine", "quantite": 3}])
-        self.assertEqual(result["credits"], {"machine": 1})
-        result = objective_tree(plan, progress=progress, inventory={})
-        self.assertEqual(result["cibles"], [{"item": "machine", "quantite": 2}])
-        self.assertEqual(result["credits"], {"machine": 2})
-        progress["comptes"]["machine"] = 4
-        self.assertIsNone(objective_tree(plan, progress=progress, inventory={}))
-
     def test_machine_lot_states_partial_receipts_and_cancel(self):
         self._run_java_contract("LotFabrication")
 
@@ -107,9 +35,6 @@ class EmiTests(unittest.TestCase):
     def test_collected_components_prune_raw_materials(self):
         self._run_java_contract("PlanArbre")
 
-    def test_objective_pause_stops_emi_once_without_implicit_resume(self):
-        self._run_java_contract("EtatPauseEmi")
-
     def test_final_craft_quantities_and_multiple_targets(self):
         self._run_java_contract("SuiviFabrication")
 
@@ -127,9 +52,6 @@ class EmiTests(unittest.TestCase):
 
     def test_machine_banner_avoids_native_title_and_ignores_hidden_widgets(self):
         self._run_java_contract("EmpriseModulaire")
-
-    def test_virtual_recipe_contract(self):
-        self._run_java_contract("RecetteObjectifEmi")
 
     def test_chest_panel_never_covers_the_chest(self):
         self._run_java_contract("DispositionCoffre")

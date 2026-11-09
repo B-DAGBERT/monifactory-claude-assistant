@@ -14,10 +14,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import org.lwjgl.glfw.GLFW;
 
-/** Une vue de lecture, partagée par Objectif, Projet et Base ; aucune action de jeu. */
+/** Lecture du plan ou du diagnostic de l'arbre EMI, ouverte depuis Base ; aucune action de jeu. */
 public final class EcranProduction extends Screen {
-    private static final String[] NOMS = {"Plan", "Diagnostic", "Projet"};
-    private static final String[] OPERATIONS = {"plan", "diagnostic", "memoire"};
+    private static final String[] NOMS = {"Plan", "Diagnostic"};
+    private static final String[] OPERATIONS = {"plan", "diagnostic"};
     private final Screen parent;
     private final boolean depuisCoffre;
     private final EtatProduction etat = new EtatProduction();
@@ -54,8 +54,8 @@ public final class EcranProduction extends Screen {
         onglets.clear();
         for (int i = 0; i < NOMS.length; i++) {
             final int index = i;
-            int debut = gauche + i * (largeur + 6) / 3;
-            int fin = gauche + (i + 1) * (largeur + 6) / 3 - 6;
+            int debut = gauche + i * (largeur + 6) / NOMS.length;
+            int fin = gauche + (i + 1) * (largeur + 6) / NOMS.length - 6;
             onglets.add(
                     addRenderableWidget(
                             Button.builder(
@@ -67,7 +67,7 @@ public final class EcranProduction extends Screen {
                                                 captureActive = empreinteCapture = "";
                                                 alternatives = List.of();
                                                 etat.invalider(
-                                                        "Choisis une lecture ; aucun objectif ne sera modifié.");
+                                                        "Choisis une lecture ; rien ne sera modifié dans le jeu.");
                                                 page = 0;
                                                 actualiser();
                                             })
@@ -159,9 +159,7 @@ public final class EcranProduction extends Screen {
         return new EtatProduction.Contexte(
                 texte(objet, "monde_actif"),
                 texte(objet, "session_monde"),
-                texte(objet, "dimension_monde"),
-                texte(objet, "projet"),
-                texte(objet, "revision_projet"));
+                texte(objet, "dimension_monde"));
     }
 
     private static List<String> textes(JsonObject objet, String cle) {
@@ -214,13 +212,12 @@ public final class EcranProduction extends Screen {
 
     private void demander() {
         actualiser();
-        if (onglet != 2 && !quantiteValide()) return;
+        if (!quantiteValide()) return;
         long maintenant = System.currentTimeMillis();
         if (!etat.commencer(maintenant)) return;
         signatureCatalogue = "";
         captureActive = empreinteCapture = "";
-        if (onglet == 2) transmettre(new JsonObject());
-        else if (!CatalogueProduction.demander())
+        if (!CatalogueProduction.demander())
             etat.invalider(texte(CatalogueProduction.etat(), "message"));
         actualiserBoutons();
         preparerLignes();
@@ -244,71 +241,64 @@ public final class EcranProduction extends Screen {
             demande.addProperty("type", "production_v2");
             demande.addProperty("preuves_natives", 2);
             demande.addProperty("operation", OPERATIONS[onglet]);
-            demande.addProperty("projet", etat.contexte().projet());
-            demande.addProperty("revision_projet", etat.contexte().revision());
             InventaireProduction.annoter(demande, etat.contexte());
-            if (onglet != 2) {
-                var contexte = etat.contexte();
-                if (!texte(catalogue, "monde_actif").equals(contexte.monde())
-                        || !texte(catalogue, "session_monde").equals(contexte.session())
-                        || !texte(catalogue, "dimension_monde").equals(contexte.dimension())) {
-                    etat.invalider(
-                            "Catalogue d’une autre connexion. Relance la lecture de l’arbre EMI.");
-                    return;
-                }
-                var cible = objet(catalogue, "cible");
-                var ressource = objet(cible, "resource");
-                long nombre = saisie.isBlank() ? entier(cible, "quantity") : Long.parseLong(saisie);
-                if (nombre <= 0 || nombre > 1_000_000L || texte(ressource, "id").isEmpty()) {
-                    etat.invalider(
-                            "Cible EMI indisponible. Ouvre Recipe Tree et choisis une recette.");
-                    return;
-                }
-                demande.addProperty("item", texte(ressource, "id"));
-                demande.addProperty("quantite", nombre);
-                for (String cle : List.of("kind", "unit", "variant"))
-                    demande.addProperty(cle, texte(ressource, cle));
-                demande.addProperty("catalogue_source", texte(catalogue, "source"));
-                demande.addProperty("catalogue_generation", entier(catalogue, "generation"));
-                demande.addProperty("catalogue_sha256", texte(catalogue, "sha256"));
-                if (!recette.isEmpty()) demande.addProperty("recette", recette);
-                String capture = UUID.randomUUID().toString();
-                demande.addProperty("capture", capture);
-                signatureCatalogue = signature(catalogue);
-                captureActive = capture;
-                var pile = Pont.objet(texte(ressource, "id"));
-                produit =
-                        nombre
-                                + " × "
-                                + (pile.isEmpty()
-                                        ? texte(ressource, "id")
-                                        : pile.getHoverName().getString());
-                var publicationStock =
-                        InventaireProduction.exporter(
-                                demande, etat.contexte(), catalogue, depuisCoffre);
-                publication = true;
-                publicationStock.whenComplete(
-                        (empreinte, erreur) ->
-                                minecraft.execute(
-                                        () -> {
-                                            transmission = false;
-                                            if (minecraft.screen != this
-                                                    || !etat.preparation()
-                                                    || !capture.equals(captureActive)) return;
-                                            if (erreur != null
-                                                    || !InventaireProduction.confirmerCapture(
-                                                            capture, empreinte)) {
-                                                etat.invalider(
-                                                        "Relevé de production modifié ou indisponible. Relance le calcul.");
-                                            } else {
-                                                empreinteCapture = empreinte;
-                                                demande.addProperty("capture_sha256", empreinte);
-                                                envoyer(demande);
-                                            }
-                                        }));
+            var contexte = etat.contexte();
+            if (!texte(catalogue, "monde_actif").equals(contexte.monde())
+                    || !texte(catalogue, "session_monde").equals(contexte.session())
+                    || !texte(catalogue, "dimension_monde").equals(contexte.dimension())) {
+                etat.invalider(
+                        "Catalogue d’une autre connexion. Relance la lecture de l’arbre EMI.");
                 return;
             }
-            envoyer(demande);
+            var cible = objet(catalogue, "cible");
+            var ressource = objet(cible, "resource");
+            long nombre = saisie.isBlank() ? entier(cible, "quantity") : Long.parseLong(saisie);
+            if (nombre <= 0 || nombre > 1_000_000L || texte(ressource, "id").isEmpty()) {
+                etat.invalider("Cible EMI indisponible. Ouvre Recipe Tree et choisis une recette.");
+                return;
+            }
+            demande.addProperty("item", texte(ressource, "id"));
+            demande.addProperty("quantite", nombre);
+            for (String cle : List.of("kind", "unit", "variant"))
+                demande.addProperty(cle, texte(ressource, cle));
+            demande.addProperty("catalogue_source", texte(catalogue, "source"));
+            demande.addProperty("catalogue_generation", entier(catalogue, "generation"));
+            demande.addProperty("catalogue_sha256", texte(catalogue, "sha256"));
+            if (!recette.isEmpty()) demande.addProperty("recette", recette);
+            String capture = UUID.randomUUID().toString();
+            demande.addProperty("capture", capture);
+            signatureCatalogue = signature(catalogue);
+            captureActive = capture;
+            var pile = Pont.objet(texte(ressource, "id"));
+            produit =
+                    nombre
+                            + " × "
+                            + (pile.isEmpty()
+                                    ? texte(ressource, "id")
+                                    : pile.getHoverName().getString());
+            var publicationStock =
+                    InventaireProduction.exporter(
+                            demande, etat.contexte(), catalogue, depuisCoffre);
+            publication = true;
+            publicationStock.whenComplete(
+                    (empreinte, erreur) ->
+                            minecraft.execute(
+                                    () -> {
+                                        transmission = false;
+                                        if (minecraft.screen != this
+                                                || !etat.preparation()
+                                                || !capture.equals(captureActive)) return;
+                                        if (erreur != null
+                                                || !InventaireProduction.confirmerCapture(
+                                                        capture, empreinte)) {
+                                            etat.invalider(
+                                                    "Relevé de production modifié ou indisponible. Relance le calcul.");
+                                        } else {
+                                            empreinteCapture = empreinte;
+                                            demande.addProperty("capture_sha256", empreinte);
+                                            envoyer(demande);
+                                        }
+                                    }));
         } finally {
             if (!publication) transmission = false;
         }
@@ -361,7 +351,7 @@ public final class EcranProduction extends Screen {
             produit = "Arbre EMI actuel";
             quantite.setValue("");
         }
-        if (onglet != 2 && (etat.preparation() || !signatureCatalogue.isEmpty())) {
+        if (etat.preparation() || !signatureCatalogue.isEmpty()) {
             JsonObject catalogue = CatalogueProduction.etat();
             String statut = texte(catalogue, "etat");
             if (etat.preparation()) {
@@ -384,27 +374,20 @@ public final class EcranProduction extends Screen {
 
     private void actualiserBoutons() {
         for (int i = 0; i < onglets.size(); i++) onglets.get(i).active = i != onglet;
-        boolean projet = onglet == 2;
-        quantite.visible = valeurEmi.visible = choix.visible = !projet;
         quantite.setEditable(!etat.attente());
         valeurEmi.active = !etat.attente();
-        calculer.setY(projet ? 55 : 79);
-        calculer.setWidth(projet ? largeur : largeur - 108);
         calculer.setMessage(
                 Component.literal(
                         etat.attente()
                                 ? "Chargement…"
-                                : projet
-                                        ? "Lire le projet"
-                                        : onglet == 1 ? "Analyser l’arbre" : "Calculer l’arbre"));
-        calculer.active =
-                etat.peutDemander(System.currentTimeMillis()) && (projet || quantiteValide());
+                                : onglet == 1 ? "Analyser l’arbre" : "Calculer l’arbre"));
+        calculer.active = etat.peutDemander(System.currentTimeMillis()) && quantiteValide();
         choix.active = !etat.attente() && !alternatives.isEmpty();
         String nom = recette.isEmpty() ? "Recette : choix EMI" : "Recette : " + recette;
         choix.setMessage(Component.literal(font.plainSubstrByWidth(nom, largeur - 12)));
         choix.setTooltip(
                 Tooltip.create(Component.literal(nom + " · choix local, recalcul explicite")));
-        contenuY = projet ? 83 : 129;
+        contenuY = 129;
         parPage = Math.max(1, (height - 56 - contenuY) / 11);
     }
 
@@ -418,11 +401,8 @@ public final class EcranProduction extends Screen {
         var resultat = etat.resultat();
         if (resultat == null) {
             ajouter(etat.message());
-            if (!etat.attente() && onglet != 2)
+            if (!etat.attente())
                 ajouter("Ouvre Recipe Tree dans EMI, choisis la recette, puis reviens ici.");
-            if (onglet == 2)
-                ajouter(
-                        "Les informations du projet seront lues sans modifier sa progression ni sa pause.");
         } else {
             ajouter(resultat.titre());
             for (String ligne : resultat.lignes()) ajouter(ligne);
@@ -479,16 +459,9 @@ public final class EcranProduction extends Screen {
     public void render(GuiGraphics g, int x, int y, float delta) {
         renderBackground(g);
         g.drawCenteredString(font, title, width / 2, 10, Hud.OR);
-        if (onglet != 2) {
-            g.drawString(
-                    font,
-                    font.plainSubstrByWidth(produit, largeur - 96),
-                    gauche,
-                    57,
-                    Hud.BLANC,
-                    false);
-            g.drawString(font, "Qté", gauche + largeur - 84, 57, Hud.GRIS, false);
-        }
+        g.drawString(
+                font, font.plainSubstrByWidth(produit, largeur - 96), gauche, 57, Hud.BLANC, false);
+        g.drawString(font, "Qté", gauche + largeur - 84, 57, Hud.GRIS, false);
         g.fill(gauche - 4, contenuY - 4, gauche + largeur + 4, height - 52, 0xB00D1013);
         for (int i = 0; i < parPage && page * parPage + i < lignes.size(); i++)
             g.drawString(
@@ -515,7 +488,7 @@ public final class EcranProduction extends Screen {
         if (y >= height - 47 && y < height - 30)
             g.renderTooltip(
                     font, font.split(Component.literal(statut), Math.max(100, largeur)), x, y);
-        else if (onglet != 2 && y >= 52 && y <= 73 && x < gauche + largeur - 90)
+        else if (y >= 52 && y <= 73 && x < gauche + largeur - 90)
             g.renderTooltip(font, Component.literal(produit), x, y);
     }
 

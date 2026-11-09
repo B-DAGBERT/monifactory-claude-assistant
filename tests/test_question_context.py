@@ -49,8 +49,7 @@ class QuestionContextTests(TestCase):
         self.assertIn("LV Bender en 5 64 7", context)
         self.assertNotIn("test:unrelated_0", context)
         self.assertNotIn("événement ancien", context)
-        self.assertIn("EN PAUSE", context)
-        self.assertIn("Passer en LV", context)
+        self.assertNotIn("objectif", context.casefold())
         self.assertIn("Base (1 64 9", context)
         self.assertIn(RECIPE, app.recipe_index.hint("Comment faire Bronze Plate ?"))
 
@@ -70,7 +69,7 @@ class QuestionContextTests(TestCase):
         self.assertIn("aucun des objets ciblés dans les observations mémorisées", missing)
         self.assertNotIn("aucun mémorisé pour l'instant", missing)
 
-    def test_players_and_pause_are_kept_for_settings_and_when_no_blocks_exist(self):
+    def test_players_are_kept_for_settings_and_when_no_blocks_exist(self):
         self.app.world.blocks = {}
         for live in (True, False):
             self.app.world.live_dimension = "minecraft:overworld" if live else None
@@ -80,13 +79,12 @@ class QuestionContextTests(TestCase):
             for text in (
                 "Camille en 14 68 15 (minecraft:overworld)",
                 "Alex en 20 70 -20 (minecraft:the_nether)",
-                "EN PAUSE",
-                "Progression préservée",
                 "x=1 y=64 z=9",
                 "/tmp/screenshot.png",
             ):
                 self.assertIn(text, context)
             self.assertNotIn("test:unrelated", context)
+            self.assertNotIn("objectif", context.casefold())
             self.assertIn("connectés" if live else "Dernières positions connues", context)
 
     def test_ambiguous_diagnostics_projects_and_explicit_expansion_keep_full_context(self):
@@ -147,7 +145,6 @@ class QuestionContextTests(TestCase):
                 app.world.blocks,
                 app.world.players,
                 app.recipe_index.__dict__,
-                app.objectives,
                 app.places,
             )
         )
@@ -160,7 +157,6 @@ class QuestionContextTests(TestCase):
             app.world.blocks,
             app.world.players,
             app.recipe_index.__dict__,
-            app.objectives,
             app.places,
         )
         self.assertEqual(before, after)
