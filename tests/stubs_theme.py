@@ -84,6 +84,10 @@ CHAMP = (
     ("getY(", "public int getY(){return 0;}"),
     ("getWidth(", "public int getWidth(){return 0;}"),
     ("getHeight(", "public int getHeight(){return 0;}"),
+    # ChampTheme.zone replace le champ ; un harnais qui vérifie ces positions a ses propres setters.
+    ("void setX(", "public void setX(int v){}"),
+    ("void setY(", "public void setY(int v){}"),
+    ("void setWidth(", "public void setWidth(int v){}"),
 )
 
 

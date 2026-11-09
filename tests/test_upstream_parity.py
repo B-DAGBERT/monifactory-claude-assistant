@@ -52,6 +52,28 @@ def java_tokens(source):
     ]
 
 
+def java_method(source, name):
+    """Tokens of the method `name` declared in `source`, from its name to its closing brace."""
+    tokens = java_tokens(source)
+    for start in range(len(tokens) - 1):
+        if tokens[start] != name or tokens[start + 1] != "(":
+            continue
+        depth, end = 0, start + 1
+        while end < len(tokens):
+            depth += {"(": 1, ")": -1}.get(tokens[end], 0)
+            end += 1
+            if depth == 0:
+                break
+        if end >= len(tokens) or tokens[end] != "{":
+            continue  # a call, not the declaration
+        depth = 0
+        for close in range(end, len(tokens)):
+            depth += {"{": 1, "}": -1}.get(tokens[close], 0)
+            if depth == 0:
+                return tokens[start : close + 1]
+    raise AssertionError(f"method {name} not found")
+
+
 class ParityTests(unittest.TestCase):
     def test_java_comparison_ignores_formatting_but_preserves_literals_and_operators(self):
         self.assertEqual(java_tokens("x++; // comment"), java_tokens("x ++ ;"))
@@ -264,14 +286,25 @@ class ParityTests(unittest.TestCase):
     def test_original_info_screen_only_changes_branding(self):
         # AideEcran now intentionally withdraws chest ingredients at the user's request.
         # Its allocation and click engine are covered by test_emi / test_chest_transfers.
-        for name in ("EcranInfo",):
-            path = f"mod/src/main/java/fr/assistantia/{name}.java"
-            before = normalize(upstream(path)).replace(
-                "Lance « Lancer assistant.bat »",
-                "Lance le lanceur de l’assistant (Mac.command ou .bat)",
-            )
-            before = before.replace('"Codex prépare la fiche"', '"L’assistant prépare la fiche"')
-            self.assertEqual(java_tokens(before), java_tokens((ROOT / path).read_text()), name)
+        # EcranInfo (touche I) est redessiné avec le thème commun à la demande du joueur, qui veut
+        # des interfaces uniformes : panneau, textes coupés par « … », barre de défilement et
+        # boutons du thème remplacent le dessin d'origine. Seul le rendu change : la demande de
+        # fiche à l'assistant, l'ouverture d'EMI, la touche I et le retour à l'écran d'avant
+        # restent ceux d'origine, comparés ici méthode par méthode.
+        path = "mod/src/main/java/fr/assistantia/EcranInfo.java"
+        before = normalize(upstream(path))
+        after = (ROOT / path).read_text(encoding="utf-8")
+        for method in (
+            "ouvrir",
+            "demander",
+            "largeur",
+            "emi",
+            "parentOuvert",
+            "onClose",
+            "isPauseScreen",
+            "keyPressed",
+        ):
+            self.assertEqual(java_method(before, method), java_method(after, method), method)
 
 
 if __name__ == "__main__":

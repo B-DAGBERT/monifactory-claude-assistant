@@ -14,6 +14,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -21,6 +22,9 @@ import java.util.function.Supplier;
  * Affichage en jeu, indépendant en deux parties : la bulle des réponses, à droite, et en haut à
  * gauche un panneau compact de l'étape à faire, fourni par {@link #source(Supplier)}. Le réglage «
  * Panneau en jeu » ne masque que le panneau : les réponses restent visibles dans leur bulle.
+ *
+ * <p>Sur un petit écran, les deux gardent un texte lisible (jamais sous les trois quarts de la
+ * taille normale) : leur largeur se borne à une part de l'écran et le texte passe à la ligne.
  */
 public final class Hud {
     static final int OR = 0xFFC94A,
@@ -31,7 +35,13 @@ public final class Hud {
             ROUGE = 0xFF7A6B,
             BLEU = 0x8FC7FF,
             CYAN = 0x6FE3FF;
-    private static final int LARGEUR = 176, BULLE = 210, ICONE = 16;
+
+    /**
+     * Largeurs au plus à l'échelle normale, et part de la largeur d'écran qu'elles peuvent prendre.
+     */
+    private static final int PANNEAU = 220, BULLE = 210, ICONE = 16, LIGNES_BULLE = 9;
+
+    private static final float PART_PANNEAU = 0.42F, PART_BULLE = 0.40F, ECHELLE_MIN = 0.75F;
     private static final String[] FLECHES = {"↑", "↗", "→", "↘", "↓", "↙", "←", "↖"};
 
     /**
@@ -43,6 +53,12 @@ public final class Hud {
     private static final Supplier<Etape> AUCUNE = () -> null;
     private static volatile Supplier<Etape> source = AUCUNE;
     private static boolean erreurSignalee;
+
+    /** Le détail découpé pour la dernière largeur : recoupé seulement quand il change. */
+    private static String detailLu = "";
+
+    private static int placeLue = -1;
+    private static List<String> detailLignes = List.of();
 
     private Hud() {}
 
@@ -61,6 +77,14 @@ public final class Hud {
         event.registerAboveAll("assistant", Hud::dessiner);
     }
 
+    /**
+     * Taille normale dès 427 pixels de large (1280 × 720 à l'échelle 3), jamais moins des trois
+     * quarts : la place manquante se gagne par les largeurs bornées et les retours à la ligne.
+     */
+    static float echelle(int largeurEcran) {
+        return Mth.clamp(largeurEcran / 427F, ECHELLE_MIN, 1F);
+    }
+
     private static void dessiner(
             ForgeGui gui, GuiGraphics g, float partialTick, int largeurEcran, int hauteurEcran) {
         Minecraft mc = Minecraft.getInstance();
@@ -72,10 +96,10 @@ public final class Hud {
                 || mc.screen != null && !(mc.screen instanceof ChatScreen)) {
             return;
         }
-        float echelle = Math.min(1F, largeurEcran * 0.24F / LARGEUR);
+        float echelle = echelle(largeurEcran);
         JsonObject hud = Pont.partie("hud");
         if (!hud.has("visible") || Pont.vrai(hud, "visible")) {
-            panneau(g, mc, echelle);
+            panneau(g, mc, largeurEcran, echelle);
         }
         bulle(g, mc, largeurEcran, hauteurEcran, echelle);
     }
@@ -96,38 +120,77 @@ public final class Hud {
         return texte == null ? "" : texte.strip();
     }
 
-    /** Le panneau compact : icône, titre doré et détail gris, coupés par « … » si besoin. */
-    private static void panneau(GuiGraphics g, Minecraft mc, float echelle) {
+    /** Le détail sur deux lignes au plus, la seconde finie par « … » s'il en reste. */
+    private static List<String> detail(Font font, String detail, int place) {
+        if (detail.equals(detailLu) && place == placeLue) return detailLignes;
+        detailLu = detail;
+        placeLue = place;
+        List<String> lignes = new ArrayList<>();
+        if (!detail.isEmpty()) {
+            List<FormattedCharSequence> decoupe = font.split(Component.literal(detail), place);
+            for (int i = 0; i < Math.min(2, decoupe.size()); i++) {
+                StringBuilder ligne = new StringBuilder();
+                decoupe.get(i)
+                        .accept(
+                                (index, style, point) -> {
+                                    ligne.appendCodePoint(point);
+                                    return true;
+                                });
+                String texte = ligne.toString().strip();
+                if (i == 1 && decoupe.size() > 2)
+                    texte = Theme.couper(font, texte + Theme.POINTS, place);
+                lignes.add(texte);
+            }
+        }
+        detailLignes = List.copyOf(lignes);
+        return detailLignes;
+    }
+
+    /**
+     * Le panneau compact : icône, titre doré sur une ligne et détail gris sur deux lignes au plus,
+     * à la largeur de son texte dans la limite de l'écran ; « … » au bout de ce qui dépasse.
+     */
+    private static void panneau(GuiGraphics g, Minecraft mc, int largeurEcran, float echelle) {
         Etape etape = etape();
         if (etape == null) {
             return;
         }
         String titre = nettoyer(etape.titre()), detail = nettoyer(etape.detail());
         ItemStack icone = etape.icone() == null ? ItemStack.EMPTY : etape.icone();
-        int lignes = (titre.isEmpty() ? 0 : 1) + (detail.isEmpty() ? 0 : 1);
-        if (lignes == 0 && icone.isEmpty()) {
+        if (titre.isEmpty() && detail.isEmpty() && icone.isEmpty()) {
             return;
         }
         Font font = mc.font;
-        int hauteur =
-                Math.max(icone.isEmpty() ? 0 : ICONE + 2 * Theme.ECART, lignes * Theme.LIGNE + 6);
         int gauche = Theme.BARRE + Theme.ECART;
         int texteX = icone.isEmpty() ? gauche : gauche + ICONE + Theme.ECART;
-        int place = LARGEUR - texteX - Theme.ECART;
+        int maximum =
+                Math.max(
+                        texteX + 60,
+                        Math.min(PANNEAU, (int) (largeurEcran * PART_PANNEAU / echelle)));
+        int place = maximum - texteX - Theme.ECART - 2;
+        String visible = Theme.couper(font, titre, place);
+        List<String> lignesDetail = detail(font, detail, place);
+        int texteLargeur = font.width(visible);
+        for (String ligne : lignesDetail) texteLargeur = Math.max(texteLargeur, font.width(ligne));
+        int largeur = Math.min(maximum, texteX + texteLargeur + Theme.ECART + 2);
+        int lignes = (visible.isEmpty() ? 0 : 1) + lignesDetail.size();
+        int hauteur =
+                Math.max(icone.isEmpty() ? 0 : ICONE + 2 * Theme.ECART, lignes * Theme.LIGNE + 6);
         g.pose().pushPose();
         g.pose().translate(4, 15, 0); // sous le compteur de FPS
         g.pose().scale(echelle, echelle, 1);
-        Theme.panneau(g, 0, 0, LARGEUR, hauteur);
+        Theme.panneau(g, 0, 0, largeur, hauteur);
         if (!icone.isEmpty()) {
             g.renderItem(icone, gauche, (hauteur - ICONE) / 2);
         }
         int y = (hauteur - lignes * Theme.LIGNE) / 2 + 2;
-        if (!titre.isEmpty()) {
-            Theme.texte(g, font, titre, texteX, y, place, Theme.ACCENT);
+        if (!visible.isEmpty()) {
+            g.drawString(font, visible, texteX, y, Theme.ACCENT, false);
             y += Theme.LIGNE;
         }
-        if (!detail.isEmpty()) {
-            Theme.texte(g, font, detail, texteX, y, place, Theme.TEXTE_SECONDAIRE);
+        for (String ligne : lignesDetail) {
+            g.drawString(font, ligne, texteX, y, Theme.TEXTE_SECONDAIRE, false);
+            y += Theme.LIGNE;
         }
         g.pose().popPose();
     }
@@ -149,11 +212,13 @@ public final class Hud {
             return;
         }
         float opacite = enCours ? 1F : Mth.clamp(reste / 1500F, 0F, 1F);
-        int alpha = (int) (opacite * 255) << 24;
-        if (alpha == 0) {
+        // Sous 4 d'alpha, Minecraft dessinerait le texte opaque : la bulle a fini de s'effacer.
+        if (opacite < 0.04F) {
             return;
         }
+        int alpha = (int) (opacite * 255) << 24;
         Font font = mc.font;
+        int largeur = Math.max(90, Math.min(BULLE, (int) (largeurEcran * PART_BULLE / echelle)));
         List<FormattedCharSequence> lignes =
                 font.split(
                         Component.literal(
@@ -161,29 +226,42 @@ public final class Hud {
                                         + (enCours && (System.currentTimeMillis() / 400) % 2 == 0
                                                 ? " ▌"
                                                 : "")),
-                        BULLE - 10);
-        int visibles = Math.min(lignes.size(), 9);
-        int h = 14 + visibles * 10;
+                        largeur - 12);
+        // Au plus 9 lignes, et jamais plus haute que la moitié de l'écran : les dernières si c'est
+        // long.
+        int place = (int) (hauteurEcran * 0.55F / echelle) - 16;
+        int visibles =
+                Math.max(1, Math.min(lignes.size(), Math.min(LIGNES_BULLE, place / Theme.LIGNE)));
+        int h = 16 + visibles * Theme.LIGNE;
+        String moteur = Pont.texte(Pont.vue(), "moteur");
         g.pose().pushPose();
-        g.pose().translate(largeurEcran - BULLE * echelle - 6, hauteurEcran * 0.30F, 0);
+        g.pose().translate(largeurEcran - largeur * echelle - 6, hauteurEcran * 0.30F, 0);
         g.pose().scale(echelle, echelle, 1);
-        g.fill(0, 0, BULLE, h, (int) (0xC8 * opacite) << 24 | 0x0D1013);
-        g.fill(0, 0, 2, h, alpha | 0xFFC94A);
+        g.fill(
+                0,
+                0,
+                largeur,
+                h,
+                (int) ((Theme.FOND >>> 24) * opacite) << 24 | Theme.FOND & 0xFFFFFF);
+        g.renderOutline(0, 0, largeur, h, alpha | Theme.BORDURE & 0xFFFFFF);
+        g.fill(0, 0, Theme.BARRE, h, alpha | Theme.ACCENT & 0xFFFFFF);
         g.drawString(
                 font,
-                Pont.texte(Pont.vue(), "moteur").isEmpty()
-                        ? "Assistant"
-                        : Pont.texte(Pont.vue(), "moteur"),
-                6,
-                3,
-                alpha | OR,
+                Theme.couper(font, moteur.isEmpty() ? "Assistant" : moteur, largeur - 12),
+                Theme.BARRE + Theme.ECART,
+                4,
+                alpha | Theme.ACCENT & 0xFFFFFF,
                 false);
-        int y = 14;
-        for (int i = lignes.size() - visibles;
-                i < lignes.size();
-                i++) { // les dernières lignes si c'est long
-            g.drawString(font, lignes.get(i), 6, y, alpha | BLANC, false);
-            y += 10;
+        int y = 15;
+        for (int i = lignes.size() - visibles; i < lignes.size(); i++) {
+            g.drawString(
+                    font,
+                    lignes.get(i),
+                    Theme.BARRE + Theme.ECART,
+                    y,
+                    alpha | Theme.TEXTE & 0xFFFFFF,
+                    false);
+            y += Theme.LIGNE;
         }
         g.pose().popPose();
     }

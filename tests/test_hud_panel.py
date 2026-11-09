@@ -29,7 +29,7 @@ public class Font {public int width(String s){return 6*s.length();}
 public class GuiGraphics {public final java.util.List<String> calls=new java.util.ArrayList<>();
  private final com.mojang.blaze3d.vertex.PoseStack pose=new com.mojang.blaze3d.vertex.PoseStack();
  public com.mojang.blaze3d.vertex.PoseStack pose(){return pose;}
- public void fill(int a,int b,int c,int d,int color){calls.add("fill");}
+ public void fill(int a,int b,int c,int d,int color){calls.add("fill "+a+" "+b+" "+c+" "+d+" "+Integer.toHexString(color));}
  public void renderOutline(int x,int y,int w,int h,int color){calls.add("outline");}
  public void renderItem(net.minecraft.world.item.ItemStack s,int x,int y){calls.add("item "+s.id);}
  public int drawString(Font f,String s,int x,int y,int color,boolean shadow){calls.add("text "+Integer.toHexString(color)+" "+x+" "+s);return 0;}
@@ -37,8 +37,10 @@ public class GuiGraphics {public final java.util.List<String> calls=new java.uti
   StringBuilder b=new StringBuilder();s.accept((i,st,c)->{b.appendCodePoint(c);return true;});calls.add("line "+b);return 0;}}
 """,
     "com.mojang.blaze3d.vertex.PoseStack": """
-public class PoseStack {public int depth;public void pushPose(){depth++;}public void popPose(){depth--;}
- public void translate(float x,float y,float z){}public void scale(float x,float y,float z){}}
+public class PoseStack {public int depth;public static final java.util.List<float[]> POSES=new java.util.ArrayList<>();
+ private float tx,ty;public void pushPose(){depth++;}public void popPose(){depth--;}
+ public void translate(float x,float y,float z){tx=x;ty=y;}
+ public void scale(float x,float y,float z){POSES.add(new float[]{tx,ty,x});}}
 """,
     "net.minecraft.client.gui.screens.Screen": """
 public class Screen {public int width=320;public void setTooltipForNextRenderPass(java.util.List<net.minecraft.util.FormattedCharSequence> l){}}
@@ -101,7 +103,12 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.item.ItemStack;
 public class HudPanelTest {
  static net.minecraftforge.client.gui.overlay.IGuiOverlay overlay;
- static List<String> render(){var g=new GuiGraphics();overlay.render(null,g,0,640,360);assert g.pose().depth==0:"unbalanced pose";return g.calls;}
+ static List<String> render(int w,int h){var g=new GuiGraphics();com.mojang.blaze3d.vertex.PoseStack.POSES.clear();overlay.render(null,g,0,w,h);assert g.pose().depth==0:"unbalanced pose";return g.calls;}
+ static List<String> render(){return render(640,360);}
+ static List<String> starting(List<String> calls,String prefix){return calls.stream().filter(c->c.startsWith(prefix)).toList();}
+ /** Width of the first panel background (Theme.FOND fill at the origin of the scaled panel). */
+ static int panel(List<String> calls){var f=calls.stream().filter(c->c.startsWith("fill 0 0 ")&&c.endsWith(" "+Integer.toHexString(Theme.FOND))).findFirst().orElseThrow();return Integer.parseInt(f.split(" ")[3]);}
+ static void inside(List<String> lines,int width){for(String line:lines){String[] parts=line.split(" ",4);int x=Integer.parseInt(parts[2]);assert x+6*parts[3].length()<=width-2:"text inside the panel "+line+" / "+width;}}
  static boolean text(List<String> calls,String fragment){return calls.stream().anyMatch(c->c.contains(fragment));}
  public static void main(String[] args){
   var event=new net.minecraftforge.client.event.RegisterGuiOverlaysEvent();Hud.enregistrer(event);overlay=event.overlay;
@@ -112,22 +119,41 @@ public class HudPanelTest {
   Hud.source(()->new Hud.Etape(ItemStack.EMPTY,"","   "));assert render().isEmpty():"empty step";
   Hud.source(()->new Hud.Etape(null,null,null));assert render().isEmpty():"null fields";
   Hud.source(()->null);assert render().isEmpty():"no step";
-  String titre="* Basic Bender : 4 Iron Ingot";
-  Hud.source(()->new Hud.Etape(new ItemStack("gtceu:lv_bender"),titre,"Puis 2 Iron Plate dans le Compressor pour la suite"));
+  String titre="* Basic Bender : 4 Iron Ingot",detail="Puis 2 Iron Plate dans le Compressor pour la suite";
+  Hud.source(()->new Hud.Etape(new ItemStack("gtceu:lv_bender"),titre,detail));
   var calls=render();
   assert text(calls,"item gtceu:lv_bender"):calls;
   String gold=Integer.toHexString(Theme.ACCENT),grey=Integer.toHexString(Theme.TEXTE_SECONDAIRE);
-  var title=calls.stream().filter(c->c.startsWith("text "+gold+" ")).findFirst().orElseThrow();
-  var detail=calls.stream().filter(c->c.startsWith("text "+grey+" ")).findFirst().orElseThrow();
-  assert title.contains("* Basic Bender")&&title.endsWith(Theme.POINTS):title;
-  assert detail.contains("Puis 2 Iron")&&detail.endsWith(Theme.POINTS):detail;
-  for(String line:List.of(title,detail)){String[] parts=line.split(" ",4);int x=Integer.parseInt(parts[2]);assert x+6*parts[3].length()<=176:"text inside the panel "+line;}
+  // A usual step is shown in full at normal size: one gold line, the detail wrapped on two.
+  var title=starting(calls,"text "+gold+" ");var details=starting(calls,"text "+grey+" ");
+  assert title.size()==1&&title.get(0).endsWith(" "+titre):title;
+  assert details.size()==2&&String.join("",details.stream().map(l->l.split(" ",4)[3]).toList()).equals(detail):details;
+  assert com.mojang.blaze3d.vertex.PoseStack.POSES.get(0)[2]==1F:"normal size at 640 px";
+  int largeur=panel(calls);inside(title,largeur);inside(details,largeur);
+  // Longer texts: the title ends with an ellipsis, the detail stops after two lines.
+  Hud.source(()->new Hud.Etape(new ItemStack("gtceu:lv_bender"),titre+" pour la suite du plan de la recette",detail+", puis 4 Iron Rod dans le Lathe et enfin le Basic Motor"));
+  calls=render();title=starting(calls,"text "+gold+" ");details=starting(calls,"text "+grey+" ");
+  assert title.size()==1&&title.get(0).contains("* Basic Bender")&&title.get(0).endsWith(Theme.POINTS):title;
+  assert details.size()==2&&details.get(0).contains("Puis 2 Iron")&&details.get(1).endsWith(Theme.POINTS):details;
+  largeur=panel(calls);inside(title,largeur);inside(details,largeur);
+  // 320 x 240: still readable (three quarters at least), within 42 % of the width, texts inside.
+  calls=render(320,240);var pose=com.mojang.blaze3d.vertex.PoseStack.POSES.get(0);
+  assert pose[2]>=0.75F&&pose[2]<=1F:"panel scale "+pose[2];
+  largeur=panel(calls);assert largeur*pose[2]<=320*0.42F+1:"panel width "+largeur;
+  inside(starting(calls,"text "+gold+" "),largeur);inside(starting(calls,"text "+grey+" "),largeur);
   Hud.source(()->new Hud.Etape(ItemStack.EMPTY,"Prochaine etape",""));calls=render();
   assert !text(calls,"item ")&&text(calls,"Prochaine etape"):calls;
   // The panel setting hides only the panel: the reply bubble stays.
   var bulle=new JsonObject();bulle.addProperty("texte","Voici la recette");bulle.addProperty("en_cours",true);Pont.vue.add("bulle",bulle);
   var hud=new JsonObject();hud.addProperty("visible",false);Pont.vue.add("hud",hud);
   calls=render();assert !text(calls,"Prochaine etape")&&text(calls,"Voici la recette"):calls;
+  // The bubble keeps readable text at 320 x 240 and stays on screen, within 40 % of the width.
+  bulle.addProperty("texte","Voici la recette du Basic Bender : 4 Iron Plate, 2 Iron Rod, 1 Basic Motor et un circuit, a faire dans l'ordre du plan.");
+  calls=render(320,240);var poseBulle=com.mojang.blaze3d.vertex.PoseStack.POSES.get(0);
+  var fond=calls.stream().filter(c->c.startsWith("fill 0 0 ")).findFirst().orElseThrow();int lb=Integer.parseInt(fond.split(" ")[3]);
+  assert poseBulle[2]>=0.75F&&poseBulle[0]>=0&&poseBulle[0]+lb*poseBulle[2]<=320&&lb*poseBulle[2]<=320*0.40F+1:"bubble "+poseBulle[0]+" "+lb+" "+poseBulle[2];
+  assert calls.stream().filter(c->c.startsWith("line ")).count()>=3:"long reply wrapped on several lines";
+  bulle.addProperty("texte","Voici la recette");
   hud.addProperty("visible",true);calls=render();assert text(calls,"Prochaine etape")&&text(calls,"Voici la recette"):calls;
   Minecraft.getInstance().screen=new net.minecraft.client.gui.screens.Screen();assert render().isEmpty():"nothing over a menu";
   Minecraft.getInstance().screen=new net.minecraft.client.gui.screens.ChatScreen();assert !render().isEmpty():"kept over the chat";

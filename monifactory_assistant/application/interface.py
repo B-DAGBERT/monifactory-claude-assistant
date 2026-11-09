@@ -21,6 +21,19 @@ from monifactory_assistant.settings import BG, FG, FG_DIM, SETTINGS, SETTINGS_FI
 from monifactory_assistant.ui.views import build_mod_view
 
 
+def comparable_view(view):
+    """La vue sans la durée de son propre calcul, qui varie à chaque image : cette durée seule ne
+    fait pas réécrire vue_mod.json (le mod relirait et réanalyserait tout le fichier). Elle suit le
+    prochain vrai changement, au plus tard le battement « vie » des 5 secondes."""
+    diagnostic = ((view or {}).get("ecran") or {}).get("diagnostic")
+    if not isinstance(diagnostic, dict) or "rendu_ms" not in diagnostic:
+        return view
+    return {
+        **view,
+        "ecran": {**view["ecran"], "diagnostic": {**diagnostic, "rendu_ms": None}},
+    }
+
+
 class InterfaceController:
     """Interface locale, réglages et protocole du menu Minecraft."""
 
@@ -62,7 +75,7 @@ class InterfaceController:
         try:
             mod_view = build_mod_view(self)
             mod_view["ecran"]["diagnostic"] = diagnostic_view(self)
-            if mod_view != self.last_mod_view:
+            if comparable_view(mod_view) != comparable_view(self.last_mod_view):
                 self.bridge.write("vue_mod.json", mod_view)
                 self.last_mod_view = mod_view
         except Exception:

@@ -7,19 +7,29 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import stubs_theme
 from tests.test_ai_settings_menu import STUBS as MENU_STUBS
 
 ROOT = Path(__file__).resolve().parents[1]
+# L'écran Production utilise le thème commun : bouton, police mesurée et infobulles du thème.
 STUBS = dict(MENU_STUBS)
+STUBS.update(stubs_theme.STUBS)
 STUBS.update(
     {
-        "net.minecraft.util.FormattedCharSequence": "public record FormattedCharSequence(String text) {}",
         "net.minecraft.client.gui.Font": """
-public class Font {
+public class Font {public int width(String s){return s.length()*6;}
  public String plainSubstrByWidth(String text,int width){return text.substring(0,Math.min(text.length(),Math.max(0,width/6)));}
  public java.util.List<net.minecraft.util.FormattedCharSequence> split(net.minecraft.network.chat.Component c,int w){
   var result=new java.util.ArrayList<net.minecraft.util.FormattedCharSequence>();String s=c.getString();int n=Math.max(1,w/6);
-  for(int i=0;i<s.length();i+=n)result.add(new net.minecraft.util.FormattedCharSequence(s.substring(i,Math.min(s.length(),i+n))));return result;}}
+  for(int i=0;i<s.length();i+=n)result.add(net.minecraft.util.FormattedCharSequence.of(s.substring(i,Math.min(s.length(),i+n))));return result;}}
+""",
+        "net.minecraft.client.gui.GuiGraphics": """
+public class GuiGraphics {public static final java.util.List<String> TEXTES=new java.util.ArrayList<>();
+ public void drawCenteredString(Font f,Object text,int x,int y,int color){TEXTES.add(String.valueOf(text));}
+ public void fill(int a,int b,int c,int d,int color){}public void renderOutline(int x,int y,int w,int h,int c){}
+ public void drawString(Font f,Object s,int x,int y,int c,boolean shadow){TEXTES.add(String.valueOf(s));}
+ public void renderTooltip(Font f,Object s,int x,int y){}
+ public void enableScissor(int a,int b,int c,int d){}public void disableScissor(){}}
 """,
         "net.minecraft.resources.ResourceLocation": "public record ResourceLocation(String text){public String toString(){return text;}}",
         "net.minecraft.nbt.CompoundTag": "public record CompoundTag(boolean empty){public boolean isEmpty(){return empty;}}",
@@ -54,6 +64,9 @@ public class Screen {protected Minecraft minecraft;protected Font font=new Font(
  public void tick(){}public void render(GuiGraphics g,int x,int y,float d){}public void renderBackground(GuiGraphics g){}
  public boolean keyPressed(int key,int scan,int mods){if(key==256){onClose();return true;}return false;}
  public boolean mouseScrolled(double x,double y,double delta){return false;}public void removed(){}
+ public boolean mouseClicked(double x,double y,int b){return false;}
+ public boolean mouseDragged(double x,double y,int b,double dx,double dy){return false;}
+ public boolean mouseReleased(double x,double y,int b){return false;}
  public boolean isPauseScreen(){return false;}public void onClose(){minecraft.setScreen(null);}}
 """,
         "net.minecraft.client.gui.components.EditBox": """
@@ -99,12 +112,12 @@ public class Pont {public static JsonObject ecran=new JsonObject(),last,inventor
 """,
     }
 )
-STUBS["net.minecraft.client.gui.components.Button"] = STUBS[
-    "net.minecraft.client.gui.components.Button"
-].replace(
-    "public void setMessage(Component c)",
-    "public void setY(int value){y=value;}public void setWidth(int value){w=value;}public void setMessage(Component c)",
-)
+for _nom, _ajouts in (
+    ("net.minecraft.client.gui.screens.Screen", stubs_theme.ECRAN),
+    ("net.minecraft.client.Minecraft", stubs_theme.JEU),
+    ("net.minecraft.client.gui.components.EditBox", stubs_theme.CHAMP),
+):
+    STUBS[_nom] = stubs_theme.membres(STUBS[_nom], _ajouts)
 
 HARNESS = r"""
 package fr.assistantia;
@@ -123,7 +136,9 @@ public class ProductionMenuTest {
  static EditBox input(EcranProduction s){return (EditBox)s.widgets.stream().filter(w->w instanceof EditBox).findFirst().orElseThrow();}
  static void tick(EcranProduction s)throws Exception{var field=EcranProduction.class.getDeclaredField("derniereLecture");field.setAccessible(true);field.setLong(s,0);s.tick();}
  static JsonObject context(){var c=new JsonObject();c.addProperty("monde_actif",IdentiteMonde.world);c.addProperty("session_monde",IdentiteMonde.session);c.addProperty("dimension_monde","minecraft:overworld");return c;}
- static void bounds(EcranProduction s){for(Object w:s.widgets){int x,y,l,h;if(w instanceof Button b){if(!b.visible)continue;x=b.x;y=b.y;l=b.w;h=b.h;}else if(w instanceof EditBox e){if(!e.visible)continue;x=e.x;y=e.y;l=e.w;h=e.h;}else continue;assert x>=0&&y>=0&&l>0&&h>0&&x+l<=s.width&&y+h<=s.height:"Invalid bounds";}}
+ static void bounds(EcranProduction s){for(Object w:s.widgets){int x,y,l,h;if(w instanceof Button b){if(!b.visible)continue;x=b.x;y=b.y;l=b.w;h=b.h;assert b instanceof BoutonTheme&&h==Theme.BOUTON:"theme button "+b.title.getString();}else if(w instanceof EditBox e){if(!e.visible)continue;assert e instanceof ChampTheme;x=e.x-1;y=e.y-1;l=e.w+2;h=e.h+2;assert h==Theme.BOUTON:"field outline as high as the buttons";}else continue;assert x>=0&&y>=0&&l>0&&h>0&&x+l<=s.width&&y+h<=s.height:"Invalid bounds";}}
+ /** Renders once and tells whether a line containing this text is drawn. */
+ static boolean shows(EcranProduction s,String text){GuiGraphics.TEXTES.clear();s.render(new GuiGraphics(),0,0,0);return GuiGraphics.TEXTES.stream().anyMatch(t->t.contains(text));}
  static void ready(){var c=context();c.addProperty("etat","pret");c.addProperty("source","native");c.addProperty("generation",1);c.addProperty("sha256","f".repeat(64));
  c.add("cible",JsonParser.parseString("{\"resource\":{\"kind\":\"item\",\"id\":\"gtceu:iron_plate\",\"unit\":\"item\",\"variant\":\"\"},\"quantity\":4}"));CatalogueProduction.state=c;}
  static JsonObject response(long n){var r=context();r.addProperty("n",n);r.addProperty("etat","pret");r.addProperty("titre","Résultat");var lines=new JsonArray();for(int i=0;i<40;i++)lines.add("Fait observé "+i);r.add("lignes",lines);return r;}
@@ -132,6 +147,8 @@ public class ProductionMenuTest {
   CatalogueProduction.state.addProperty("etat","chargement");
   Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Base"));var s=new EcranProduction(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
   assert s.widgets.stream().noneMatch(w->w instanceof Button b&&(b.title.getString().equals("Projet")||b.title.getString().equals("Lire le projet"))):"No project tab";
+  assert ((BoutonTheme)button(s,"Plan")).choisi()&&button(s,"Plan").active&&!((BoutonTheme)button(s,"Diagnostic")).choisi():"open sub-tab is underlined, never greyed out";
+  assert s.widgets.stream().noneMatch(w->w instanceof Button b&&(b.title.getString().equals("Suivant")||b.title.getString().equals("Précédent"))):"the report scrolls instead of paging";
   if(args[0].equals("idle")){
    int reads=Pont.reads;for(int i=0;i<20;i++)s.render(new GuiGraphics(),0,0,0);
    assert Pont.sends==0&&CatalogueProduction.calls==0&&Pont.exports==0&&Pont.reads==reads:"Render must not acquire or calculate";
@@ -149,7 +166,8 @@ public class ProductionMenuTest {
    ready();mc.screen=s;s.init(mc,320,240);tick(s);assert Pont.sends==0:"Closure must not start a delayed request";return;
   }
   if(args[0].equals("tab")){
-   button(s,"Diagnostic").press();bounds(s);ready();tick(s);assert Pont.sends==0;return;
+   button(s,"Diagnostic").press();bounds(s);assert ((BoutonTheme)button(s,"Diagnostic")).choisi()&&!((BoutonTheme)button(s,"Plan")).choisi();
+   ready();tick(s);assert Pont.sends==0;return;
   }
   if(args[0].equals("foreign")){
    IdentiteMonde.session="b".repeat(32);ready();tick(s);assert Pont.sends==0&&Pont.exports==0;return;
@@ -171,18 +189,20 @@ public class ProductionMenuTest {
   assert Pont.inventory.getAsJsonObject("inventaire").get("minecraft:iron_ingot").getAsInt()==7:"NBT variants must not become interchangeable";
   assert Pont.last.get("capture").equals(Pont.inventory.get("capture"));
   view.add("resultat",response(1000));tick(s);assert !button(s,"Chargement…").active:"Wrong receipt accepted";
-  view.add("resultat",response(1001));tick(s);assert button(s,"Suivant").active;button(s,"Suivant").press();s.render(new GuiGraphics(),0,0,0);bounds(s);
+  view.add("resultat",response(1001));tick(s);
+  assert shows(s,"Fait observé 0")&&!shows(s,"Fait observé 39"):"report starts at its first line";
+  s.mouseScrolled(s.width/2,150,-100);assert shows(s,"Fait observé 39")&&!shows(s,"Fait observé 0"):"scrolling reaches the last line";bounds(s);
   if(args[0].equals("unpublished")){
    view.add("contexte",new JsonObject());tick(s);
-   assert !button(s,"Suivant").active:"Report kept although the service no longer publishes its context";return;
+   assert !shows(s,"Fait observé"):"Report kept although the service no longer publishes its context";return;
   }
   if(args[0].equals("revocation")){
    var error=response(1001);error.addProperty("etat","erreur");error.add("lignes",new JsonArray());view.add("resultat",error);tick(s);
-   assert !button(s,"Suivant").active:"Server revocation did not remove displayed success";
-   view.add("resultat",response(1001));tick(s);assert !button(s,"Suivant").active:"Old success revived after revocation";return;
+   assert !shows(s,"Fait observé"):"Server revocation did not remove displayed success";
+   view.add("resultat",response(1001));tick(s);assert !shows(s,"Fait observé"):"Old success revived after revocation";return;
   }
   view.getAsJsonObject("contexte").addProperty("session_monde","b".repeat(32));tick(s);
-  assert !button(s,"Suivant").active:"Stale connection report remains visible";
+  assert !shows(s,"Fait observé"):"Stale connection report remains visible";
   assert Pont.sends==1;
  }
 }
@@ -219,10 +239,10 @@ class ProductionMenuTests(unittest.TestCase):
             package, _ = name.rsplit(".", 1)
             source = cls.directory / (name.replace(".", "/") + ".java")
             source.parent.mkdir(parents=True, exist_ok=True)
-            source.write_text(f"package {package};\n{body}")
+            source.write_text(f"package {package};\n{body}", encoding="utf-8")
             fixtures.append(source)
         harness = cls.directory / "ProductionMenuTest.java"
-        harness.write_text(HARNESS)
+        harness.write_text(HARNESS, encoding="utf-8")
         result = subprocess.run(
             [
                 cls.javac,
@@ -243,6 +263,7 @@ class ProductionMenuTests(unittest.TestCase):
                     )
                 ],
                 str(ROOT / "tests/java/fr/assistantia/EtatProductionTest.java"),
+                *map(str, stubs_theme.SOURCES),
             ],
             capture_output=True,
             text=True,
