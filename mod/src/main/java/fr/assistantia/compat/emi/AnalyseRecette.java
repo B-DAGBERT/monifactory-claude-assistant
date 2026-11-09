@@ -55,6 +55,7 @@ public final class AnalyseRecette {
     private static final class Analyse {
         final ArbreRecette.Noeud noeud;
         final EmiStack produit;
+        final boolean racine;
         double besoin;
         ChaineRecette.Chaine actuelle;
         final List<Candidat> candidats = new ArrayList<>();
@@ -65,9 +66,10 @@ public final class AnalyseRecette {
         Candidat meilleure, avecMachine;
         Object posteManquant;
 
-        Analyse(ArbreRecette.Noeud noeud, EmiStack produit) {
+        Analyse(ArbreRecette.Noeud noeud, EmiStack produit, boolean racine) {
             this.noeud = noeud;
             this.produit = produit;
+            this.racine = racine;
             this.besoin = noeud.besoin();
         }
 
@@ -85,13 +87,15 @@ public final class AnalyseRecette {
 
     private record Proposition(Analyse analyse, Candidat candidat, long structure) {}
 
+    /** {@code racine} : état exact du but avant « Appliquer », null pour un autre nœud. */
     private record Annulation(
             Object arbre,
             EmiIngredient cle,
             boolean avait,
             EmiRecipe precedente,
             EmiRecipe appliquee,
-            String libelle) {}
+            String libelle,
+            ArbreRecette.EtatRacine racine) {}
 
     private record CleReperes(Object etapes, Object machines, long lots, Object arbre) {}
 
@@ -267,23 +271,26 @@ public final class AnalyseRecette {
             return;
         }
         evaluateur = new ChaineRecette<>(new SourceEmi(suivante.arbre()));
-        Map<EmiIngredient, Analyse> parIngredient = new LinkedHashMap<>();
-        for (var noeud : lecture.noeuds()) {
-            if (noeud.profondeur() == 0 || noeud.recette() == null || noeud.reutilisable())
-                continue;
-            if (ArbreRecette.transparente(noeud.recette()) || assistant(noeud.recette())) continue;
-            if (noeud.ingredient().getEmiStacks().size() != 1) continue;
-            var connue = parIngredient.get(noeud.ingredient());
-            if (connue != null) {
-                connue.besoin += noeud.besoin();
-                continue;
-            }
-            if (parIngredient.size() >= MAX_NOEUDS_ANALYSES) break;
-            parIngredient.put(
-                    noeud.ingredient(),
-                    new Analyse(noeud, noeud.ingredient().getEmiStacks().get(0)));
+        // La racine compte comme les autres : le but choisi peut lui-même avoir mieux.
+        List<SelectionAlternatives.Noeud<EmiIngredient>> descriptions = new ArrayList<>();
+        for (var noeud : lecture.noeuds())
+            descriptions.add(
+                    new SelectionAlternatives.Noeud<>(
+                            noeud.ingredient(),
+                            noeud.profondeur(),
+                            noeud.recette() != null,
+                            noeud.reutilisable(),
+                            noeud.recette() != null && ArbreRecette.transparente(noeud.recette()),
+                            noeud.recette() != null && assistant(noeud.recette()),
+                            noeud.ingredient().getEmiStacks().size(),
+                            noeud.besoin()));
+        for (var choisi : SelectionAlternatives.choisir(descriptions, MAX_NOEUDS_ANALYSES)) {
+            var noeud = lecture.noeuds().get(choisi.index());
+            var analyse =
+                    new Analyse(noeud, noeud.ingredient().getEmiStacks().get(0), choisi.racine());
+            analyse.besoin = choisi.besoin();
+            analyses.add(analyse);
         }
-        analyses.addAll(parIngredient.values());
         for (var analyse : analyses) taches.add(new Producteurs(analyse));
         tachesTotales = taches.size();
         actualiserPlan(true);
@@ -1087,7 +1094,12 @@ public final class AnalyseRecette {
                             + " · "
                             + ComparaisonAlternatives.etapes(analyse.actuelle.etapes())
                             + "\nSous-ingrédients : choix actuels de l’arbre, sinon défauts EMI."
-                            + "\nPoste possédé (posé, porté ou rangé).";
+                            + "\nPoste possédé (posé, porté ou rangé)."
+                            + (analyse.racine
+                                    ? "\nRecette du but : la quantité visée ("
+                                            + Math.round(analyse.besoin)
+                                            + ") est conservée."
+                                    : "");
             alternatives.add(
                     new VueRecette.Alternative(
                             id,
@@ -1271,9 +1283,11 @@ public final class AnalyseRecette {
 
     private static boolean valide(Annulation a) {
         try {
-            return cle != null
-                    && a.arbre() == cle.arbre()
-                    && ArbreRecette.resolutions(a.arbre()).get(a.cle()) == a.appliquee();
+            if (cle == null || a.arbre() != cle.arbre()) return false;
+            // Le but garde son objet nœud : seule sa recette dit s'il a changé depuis.
+            if (a.racine() != null && ArbreRecette.recetteRacine(a.arbre()) != a.appliquee())
+                return false;
+            return ArbreRecette.resolutions(a.arbre()).get(a.cle()) == a.appliquee();
         } catch (ReflectiveOperationException | RuntimeException e) {
             return false;
         }
@@ -1329,7 +1343,12 @@ public final class AnalyseRecette {
             return "Arbre EMI modifié · attends le nouvel affichage.";
         var analyse = proposition.analyse();
         var ingredient = analyse.noeud.ingredient();
-        if (ArbreRecette.choix(arbre, ingredient) != analyse.noeud.recette())
+        // Le but garde sa propre recette : getRecipe ne la décrit pas.
+        var actuelle =
+                analyse.racine
+                        ? ArbreRecette.recetteRacine(arbre)
+                        : ArbreRecette.choix(arbre, ingredient);
+        if (actuelle != analyse.noeud.recette())
             return "Choix modifié dans EMI · attends le nouvel affichage.";
         var recette = proposition.candidat().recette();
         if (recette.getId() == null
@@ -1338,11 +1357,13 @@ public final class AnalyseRecette {
         var resolutions = ArbreRecette.resolutions(arbre);
         boolean avait = resolutions.containsKey(ingredient);
         EmiRecipe precedente = resolutions.get(ingredient);
-        ArbreRecette.resoudre(arbre, ingredient, recette);
+        ArbreRecette.EtatRacine etatRacine = null;
+        if (analyse.racine) etatRacine = ArbreRecette.resoudreRacine(arbre, recette);
+        else ArbreRecette.resoudre(arbre, ingredient, recette);
         String libelle =
                 analyse.produit.getName().getString() + " → " + nomPoste(proposition.candidat());
         annulations.addFirst(
-                new Annulation(arbre, ingredient, avait, precedente, recette, libelle));
+                new Annulation(arbre, ingredient, avait, precedente, recette, libelle, etatRacine));
         while (annulations.size() > 8) annulations.pollLast();
         sale = true;
         return "Appliqué : " + libelle;
@@ -1361,7 +1382,8 @@ public final class AnalyseRecette {
         var a = annulations.pollFirst();
         if (a == null) return "Rien à annuler dans cet arbre.";
         if (ArbreEmi.consulte() != a.arbre()) return "Arbre EMI modifié · rien n’a été changé.";
-        if (a.avait()) ArbreRecette.resoudre(a.arbre(), a.cle(), a.precedente());
+        if (a.racine() != null) ArbreRecette.restaurerRacine(a.arbre(), a.racine());
+        else if (a.avait()) ArbreRecette.resoudre(a.arbre(), a.cle(), a.precedente());
         else ArbreRecette.retirer(a.arbre(), a.cle());
         sale = true;
         return "Annulé : " + a.libelle();

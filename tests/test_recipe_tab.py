@@ -69,6 +69,7 @@ class RecipeEngineTests(unittest.TestCase):
                 "ComparaisonAlternatives",
                 "RangsRecette",
                 "FabricationFacile",
+                "SelectionAlternatives",
             )
         ]
         sources.append(ROOT / "tests/java/fr/assistantia/compat/emi/RecetteMoteurTest.java")
@@ -124,6 +125,142 @@ class RecipeEngineTests(unittest.TestCase):
 
     def test_easy_machine_definition_is_conservative(self):
         self.run_case("facile")
+
+    def test_root_goal_is_analysed_and_bender_found(self):
+        self.run_case("racine")
+
+
+# Reproduction fidèle (javap d'emi-1.1.22) de MaterialTree/MaterialNode : addResolution sur la clé
+# du but appelle goal.defineRecipe puis remet goal.amount à la quantité de la clé (1) ; la quantité
+# visée vaut batches × goal.amount (TreeCost.calculate).
+ROOT_STUBS = {
+    "dev.emi.emi.api.stack.EmiIngredient": """public interface EmiIngredient {long getAmount();java.util.List<EmiStack> getEmiStacks();}""",
+    "dev.emi.emi.api.stack.EmiStack": """public final class EmiStack implements EmiIngredient {public final String id;public final long amount;
+ public EmiStack(String id,long amount){this.id=id;this.amount=amount;}public long getAmount(){return amount;}
+ public java.util.List<EmiStack> getEmiStacks(){return java.util.List.of(this);}public EmiStack withAmount(long n){return new EmiStack(id,n);}
+ public boolean equals(Object o){return o instanceof EmiStack s&&s.id.equals(id);}public int hashCode(){return id.hashCode();}public String toString(){return id;}}""",
+    "dev.emi.emi.api.recipe.EmiRecipe": """public interface EmiRecipe {java.util.List<dev.emi.emi.api.stack.EmiStack> getOutputs();java.util.List<dev.emi.emi.api.stack.EmiIngredient> getInputs();}""",
+    "dev.emi.emi.api.recipe.EmiResolutionRecipe": """public class EmiResolutionRecipe implements EmiRecipe {
+ public java.util.List<dev.emi.emi.api.stack.EmiStack> getOutputs(){return java.util.List.of();}public java.util.List<dev.emi.emi.api.stack.EmiIngredient> getInputs(){return java.util.List.of();}}""",
+    "dev.emi.emi.bom.BoM": """import dev.emi.emi.api.recipe.EmiRecipe;import dev.emi.emi.api.stack.EmiIngredient;
+public class BoM {public static java.util.Set<EmiRecipe> disabledRecipes=new java.util.HashSet<>();public static java.util.Map<EmiIngredient,EmiRecipe> defaultRecipes=new java.util.HashMap<>();
+ public static EmiRecipe getRecipe(EmiIngredient i){return defaultRecipes.get(i);}}""",
+    "dev.emi.emi.bom.MaterialNode": """import dev.emi.emi.api.recipe.EmiRecipe;import dev.emi.emi.api.stack.*;import java.util.*;
+public class MaterialNode {public final EmiIngredient ingredient;public EmiRecipe recipe;public List<MaterialNode> children=new ArrayList<>();
+ public long amount;public long divisor=1;public boolean catalyst;public float consumeChance=1;
+ public MaterialNode(EmiIngredient i){amount=i.getAmount();ingredient=((EmiStack)i).withAmount(1);}
+ public void defineRecipe(EmiRecipe r){if(r==null)return;recipe=r;divisor=0;for(EmiStack o:r.getOutputs())if(o.equals(ingredient))divisor+=o.getAmount();
+  if(divisor<=0)divisor=1;children=new ArrayList<>();for(EmiIngredient in:r.getInputs())children.add(new MaterialNode(in));}
+ void recalculate(MaterialTree tree,List<EmiRecipe> used){EmiRecipe r=recipe;if(!used.isEmpty())r=tree.getRecipe(ingredient);if(r==null||used.contains(r))return;
+  used.add(r);defineRecipe(r);for(MaterialNode c:children)c.recalculate(tree,used);used.remove(used.size()-1);}}""",
+    "dev.emi.emi.bom.MaterialTree": """import dev.emi.emi.api.recipe.EmiRecipe;import dev.emi.emi.api.stack.*;import java.util.*;
+public class MaterialTree {public MaterialNode goal;public long batches=1;public Map<EmiIngredient,EmiRecipe> resolutions=new HashMap<>();public int couts;
+ public MaterialTree(EmiRecipe r){goal=new MaterialNode(r.getOutputs().get(0));goal.defineRecipe(r);recalculate();}
+ public EmiRecipe getRecipe(EmiIngredient i){EmiRecipe r=resolutions.get(i);if(r==null&&!resolutions.containsKey(i))r=BoM.getRecipe(i);return r;}
+ public void addResolution(EmiIngredient i,EmiRecipe r){resolutions.put(i,r);if(i.equals(goal.ingredient)){goal.defineRecipe(r);goal.amount=i.getAmount();}recalculate();}
+ public void recalculate(){goal.recalculate(this,new ArrayList<>());}public void calculateCost(){couts++;}}""",
+    "dev.emi.emi.screen.BoMScreen": "public class BoMScreen {public int recalculs;public void recalculateTree(){recalculs++;}}",
+    "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft I=new Minecraft();public static Minecraft getInstance(){return I;}public Object screen;}""",
+    "fr.assistantia.compat.emi.ComparaisonEmi": """public final class ComparaisonEmi {public static boolean circuitVirtuel(dev.emi.emi.api.recipe.EmiRecipe p,dev.emi.emi.api.stack.EmiIngredient i,boolean c){return false;}}""",
+    "fr.assistantia.compat.emi.InventaireArbreEmi": "public final class InventaireArbreEmi {public static int invalidations;public static void invalider(){invalidations++;}}",
+}
+
+ROOT_HARNESS = """package fr.assistantia.compat.emi;
+import dev.emi.emi.api.recipe.EmiRecipe;import dev.emi.emi.api.stack.*;import dev.emi.emi.bom.*;import dev.emi.emi.screen.BoMScreen;
+import java.util.List;import net.minecraft.client.Minecraft;
+public class ArbreRecetteRacineTest {
+ record R(String id,List<EmiStack> getOutputs,List<EmiIngredient> getInputs) implements EmiRecipe {}
+ static EmiStack s(String id,long n){return new EmiStack(id,n);}
+ public static void main(String[] a)throws Exception{
+  var marteau=new R("forge_hammer_plate",List.of(s("plate",2)),List.of(s("ingot",3)));
+  var bender=new R("bend_plate",List.of(s("plate",1)),List.of(s("ingot",1)));
+  var etabli=new R("craft_plate",List.of(s("plate",1)),List.of(s("ingot",2),s("hammer_tool",1)));
+  switch(a[0]){
+   case "quantite"->{
+    var arbre=new MaterialTree(marteau);arbre.batches=4;var ecran=new BoMScreen();Minecraft.getInstance().screen=ecran;
+    assert ArbreRecette.recetteRacine(arbre)==marteau;
+    var avant=ArbreRecette.resoudreRacine(arbre,bender);
+    assert arbre.goal.recipe==bender&&arbre.goal.divisor==1&&arbre.goal.children.size()==1;
+    assert arbre.goal.amount==2&&arbre.batches==4:"target quantity kept: 4 batches x 2 = 8 plates";
+    assert arbre.resolutions.get(arbre.goal.ingredient)==bender:"tree-local resolution";
+    assert BoM.defaultRecipes.isEmpty()&&BoM.disabledRecipes.isEmpty():"EMI defaults untouched";
+    assert arbre.couts==1&&ecran.recalculs==1&&InventaireArbreEmi.invalidations==1:"costs and open Recipe Tree refreshed";
+    assert avant.recette()==marteau&&avant.quantite()==2&&avant.lots()==4&&!avant.avait()&&avant.resolution()==null;
+    var natif=new MaterialTree(marteau);natif.batches=4;natif.addResolution(natif.goal.ingredient,bender);
+    assert natif.goal.amount*natif.batches==4:"witness: the bare native path would halve the target";
+   }
+   case "etabli"->{
+    var arbre=new MaterialTree(etabli);arbre.batches=8;
+    var avant=ArbreRecette.resoudreRacine(arbre,bender);
+    assert arbre.goal.amount*arbre.batches==8&&arbre.goal.recipe==bender;
+    ArbreRecette.restaurerRacine(arbre,avant);
+    assert arbre.goal.recipe==etabli&&arbre.goal.amount==1&&arbre.batches==8:"exact previous root";
+    assert !arbre.resolutions.containsKey(arbre.goal.ingredient):"no leftover resolution";
+    assert arbre.goal.children.size()==2:"old recipe inputs rebuilt";
+   }
+   case "lots-joueur"->{
+    var arbre=new MaterialTree(marteau);arbre.batches=4;var avant=ArbreRecette.resoudreRacine(arbre,bender);
+    arbre.batches=10;ArbreRecette.restaurerRacine(arbre,avant);
+    assert arbre.goal.recipe==marteau&&arbre.goal.amount==2&&arbre.batches==10:"undo keeps a later batch choice";
+   }
+   case "resolution"->{
+    var arbre=new MaterialTree(etabli);arbre.resolutions.put(arbre.goal.ingredient,etabli);
+    var avant=ArbreRecette.resoudreRacine(arbre,bender);
+    assert avant.avait()&&avant.resolution()==etabli;
+    ArbreRecette.restaurerRacine(arbre,avant);
+    assert arbre.resolutions.get(arbre.goal.ingredient)==etabli&&arbre.goal.recipe==etabli:"previous local resolution restored";
+   }
+   case "lecture"->{
+    var arbre=new MaterialTree(marteau);arbre.batches=4;var lecture=ArbreRecette.lire(arbre);var racine=lecture.noeuds().get(0);
+    assert racine.profondeur()==0&&racine.recette()==marteau&&racine.besoin()==8&&racine.production()==2:"root read with batches x amount";
+    assert lecture.noeuds().get(1).besoin()==12:"3 ingots x 4 crafts";
+   }
+   default->throw new AssertionError(a[0]);
+  }
+  System.out.println("PASS "+a[0]);
+ }
+}
+"""
+
+
+class RootResolutionTests(unittest.TestCase):
+    """Le vrai ArbreRecette sur un MaterialTree reproduit : la racine change sans perdre sa quantité."""
+
+    @classmethod
+    def setUpClass(cls):
+        java, javac = jdk()
+        if not java or not javac:
+            raise unittest.SkipTest("JDK 17 requis")
+        cls.temp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temp.cleanup)
+        harness = Path(cls.temp.name) / "ArbreRecetteRacineTest.java"
+        harness.write_text(ROOT_HARNESS, encoding="utf-8")
+        compile_sources(
+            javac, cls.temp.name, ROOT_STUBS, [MOD / "compat/emi/ArbreRecette.java", harness]
+        )
+        cls.command = [
+            java,
+            "-ea",
+            "-cp",
+            cls.temp.name,
+            "fr.assistantia.compat.emi.ArbreRecetteRacineTest",
+        ]
+
+    def run_case(self, case):
+        result = subprocess.run([*self.command, case], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS " + case, result.stdout)
+
+    def test_apply_keeps_target_quantity_and_stays_tree_local(self):
+        self.run_case("quantite")
+
+    def test_undo_restores_previous_root_exactly(self):
+        for case in ("etabli", "resolution", "lots-joueur"):
+            with self.subTest(case=case):
+                self.run_case(case)
+
+    def test_root_is_read_with_batches_times_amount(self):
+        self.run_case("lecture")
 
 
 UI_STUBS = {

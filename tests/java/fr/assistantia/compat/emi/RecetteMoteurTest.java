@@ -112,6 +112,7 @@ public final class RecetteMoteurTest {
             case "reperes" -> reperes();
             case "ordre" -> ordre();
             case "facile" -> facile();
+            case "racine" -> racine();
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.println("PASS " + args[0]);
@@ -501,6 +502,66 @@ public final class RecetteMoteurTest {
                 RangsRecette.reperes(
                         etapes, List.of("bender"), (p, r) -> r.equals("bend"), Map.of(), 16);
         assert reperes.get("bender").attenue() && !reperes.get("bender").etoile();
+    }
+
+    // ---------- Racine ----------
+
+    private static SelectionAlternatives.Noeud<String> noeud(
+            String cle,
+            int profondeur,
+            boolean resolu,
+            boolean outil,
+            boolean variante,
+            boolean objectif,
+            int variantes,
+            double besoin) {
+        return new SelectionAlternatives.Noeud<>(
+                cle, profondeur, resolu, outil, variante, objectif, variantes, besoin);
+    }
+
+    /** Exemple du joueur : Iron Plate choisie comme but avec la recette d'établi. */
+    private static void racine() {
+        var noeuds =
+                List.of(
+                        noeud("iron_plate", 0, true, false, false, false, 1, 8),
+                        noeud("iron_ingot", 1, false, false, false, false, 1, 16),
+                        noeud("hammer", 1, true, true, false, false, 1, 1),
+                        noeud("#plates", 1, true, false, true, false, 3, 2),
+                        noeud("iron_rod", 2, true, false, false, false, 1, 4),
+                        noeud("iron_rod", 3, true, false, false, false, 1, 2),
+                        noeud("#rods", 2, true, false, false, false, 2, 1));
+        var choisis = SelectionAlternatives.choisir(noeuds, 256);
+        assert choisis.size() == 2 : choisis;
+        assert choisis.get(0).index() == 0 && choisis.get(0).racine()
+                : "root analysed like any node";
+        assert proche(choisis.get(0).besoin(), 8);
+        assert choisis.get(1).index() == 4 && !choisis.get(1).racine();
+        assert proche(choisis.get(1).besoin(), 6) : "one analysis per resolution key, needs summed";
+        var objectif =
+                SelectionAlternatives.choisir(
+                        List.of(
+                                noeud("book", 0, true, false, false, true, 1, 1),
+                                noeud("iron_plate", 1, true, false, false, false, 1, 8)),
+                        256);
+        assert objectif.size() == 1 && objectif.get(0).index() == 1 && !objectif.get(0).racine()
+                : "synthetic objective root skipped, its targets kept";
+        assert SelectionAlternatives.choisir(noeuds, 1).size() == 1 : "cap respected";
+        var monde =
+                new Monde()
+                        .recette("craft_plate", 1, "etabli", "iron_ingot", 2, "!hammer", 1)
+                        .recette("bend_plate", 1, "bender", "iron_ingot", 1);
+        var chaine = new ChaineRecette<>(monde);
+        var actuelle = chaine.evaluer("craft_plate", "iron_plate");
+        var bender = chaine.evaluer("bend_plate", "iron_plate");
+        assert ComparaisonAlternatives.meilleure(bender, actuelle) : "Basic Bender proposed";
+        assert proche(
+                        ComparaisonAlternatives.economie(bender, actuelle, choisis.get(0).besoin()),
+                        8)
+                : "8 plates: 8 ingots saved";
+        String gain =
+                ComparaisonAlternatives.gain(
+                        bender, actuelle, RecetteMoteurTest::nom, "Iron Plate");
+        assert gain.equals("1 Iron Ingot au lieu de 2 par Iron Plate") : ascii(gain);
     }
 
     // ---------- Facile à fabriquer ----------
