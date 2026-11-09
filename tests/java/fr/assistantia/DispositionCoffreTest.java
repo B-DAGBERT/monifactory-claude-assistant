@@ -1,13 +1,20 @@
 package fr.assistantia;
 
 import fr.assistantia.DispositionCoffre.Disposition;
+import fr.assistantia.DispositionCoffre.Libelles;
 import fr.assistantia.DispositionCoffre.Zone;
 import java.util.ArrayList;
 import java.util.List;
 
 public final class DispositionCoffreTest {
     /**
+     * Libellés du panneau machine mesurés avec la police vanilla (Machine à vérifier, Envoyer…).
+     */
+    private static final Libelles MACHINE = new Libelles(92, 50, 101, true);
+
+    /**
      * Dans l'écran, hors du coffre, et aucun élément ne déborde du cadre ni n'en recouvre un autre.
+     * Les boutons et flèches ont la hauteur commune du thème.
      */
     private static void verifier(String cas, Disposition d, int l, int h, Zone coffre, int objets) {
         Zone c = d.cadre();
@@ -27,6 +34,46 @@ public final class DispositionCoffreTest {
                 assert !e.croise(elements.get(j)) : cas + " éléments superposés " + d;
         }
         assert d.pages() == (objets > d.parPage()) : cas + " pages " + d;
+        assert d.parPage() >= 1 : cas + " aucune icône " + d;
+        for (Zone bouton :
+                d.pages()
+                        ? List.of(d.prendre(), d.tout(), d.precedent(), d.suivant())
+                        : List.of(d.prendre(), d.tout()))
+            assert bouton.hauteur() == DispositionCoffre.BOUTON : cas + " hauteur bouton " + d;
+        assert d.lignesTitre() >= 2 : cas + " titre sur une ligne " + d;
+    }
+
+    /** Dès 320 × 240 : titre et boutons gardent toute la largeur demandée, partout. */
+    private static void entiers(String cas, Disposition d, Libelles libelles) {
+        assert d.titre().largeur() >= libelles.titre() : cas + " titre rogné " + d;
+        assert d.prendre().largeur() >= libelles.prendre() && d.tout().largeur() >= libelles.tout()
+                : cas + " bouton rogné " + d;
+    }
+
+    /**
+     * Mot le plus large du titre des coffres sur une ligne à lui : « Collecte », « prendre », «
+     * Retrait… » (police vanilla).
+     */
+    private static final int MOT_COFFRE = 44;
+
+    /**
+     * Titre lisible : toute la largeur demandée, ou trois lignes dans un bloc de coffre plus
+     * étroit, où « 64 à prendre » passe à la ligne. Autour d'une interface de 176 pixels, ce bloc
+     * garde au moins trois colonnes et chaque mot du titre tient.
+     */
+    private static void titreLisible(
+            String cas, Disposition d, Libelles libelles, boolean standard) {
+        if (libelles.entiers() || !d.cote() || d.lignesTitre() == 2) {
+            entiers(cas, d, libelles);
+            return;
+        }
+        assert d.lignesTitre() == 3 : cas + " " + d;
+        if (standard) {
+            assert d.titre().largeur() >= MOT_COFFRE : cas + " mot du titre rogné " + d;
+            assert d.prendre().largeur() >= libelles.prendre()
+                            && d.tout().largeur() >= libelles.tout()
+                    : cas + " bouton rogné " + d;
+        }
     }
 
     public static void main(String[] args) {
@@ -52,6 +99,8 @@ public final class DispositionCoffreTest {
         verifier("petit coffre", d, 480, 360, petit, 5);
         assert !d.cote() && d.cadre().bas() <= petit.y() : d;
         assert d.cadre().hauteur() <= 24 : "bandeau d'une seule ligne " + d;
+        assert d.lignesTitre() == 2 && d.titre().largeur() >= Libelles.COFFRE.titre()
+                : "« 64 à prendre » entier sous « Collecte » " + d;
 
         // Grand coffre qui touche presque le haut de l'écran : bloc large et bas sur le côté.
         Zone grand = new Zone(130, 4, 220, 262);
@@ -61,8 +110,16 @@ public final class DispositionCoffreTest {
             assert d.cote() && !d.chevauche() && d.colonnes() >= 4 && d.lignes() <= 2 : d;
             assert d.cadre().hauteur() <= 80 : "laisse la hauteur à EMI " + d;
             assert d.cadre().droite() <= grand.x() : "à gauche par défaut " + d;
+            entiers("grand coffre " + objets, d, Libelles.COFFRE);
+            assert d.lignesTitre() == 2 : "titre sur deux lignes dans un bloc large " + d;
         }
-        assert DispositionCoffre.calculer(480, 270, grand, 30).pages();
+        d = DispositionCoffre.calculer(480, 270, grand, 30);
+        assert d.pages();
+        // Les flèches prennent les deux dernières cases de la grille, sous les icônes.
+        assert d.parPage() == d.colonnes() * d.lignes() - 2 : d;
+        assert d.grille().contient(d.precedent().x(), d.precedent().y())
+                        && d.grille().contient(d.suivant().droite() - 1, d.suivant().bas() - 1)
+                : d;
 
         // Côté gauche pris par les upgrades : le bloc passe à droite.
         Zone decale = new Zone(30, 4, 300, 262);
@@ -75,6 +132,13 @@ public final class DispositionCoffreTest {
         d = DispositionCoffre.calculer(480, 270, large, 12);
         verifier("côté étroit", d, 480, 270, large, 12);
         assert d.cote() && d.colonnes() == 2 && d.lignes() <= 4 : d;
+        assert d.lignesTitre() == 3 : "titre trop large pour le bloc : une ligne de plus " + d;
+        assert d.tout().y() > d.prendre().y() : "boutons l'un sous l'autre " + d;
+        // Libellés entiers exigés : jamais de bloc plus étroit que ses boutons.
+        d = DispositionCoffre.calculer(480, 270, large, 12, MACHINE);
+        verifier("côté étroit machine", d, 480, 270, large, 12);
+        assert d.chevauche() : d;
+        entiers("côté étroit machine", d, MACHINE);
 
         // Beaucoup d'objets dans un bandeau : flèches et page de 9 au plus.
         d = DispositionCoffre.calculer(480, 360, petit, 40);
@@ -87,7 +151,7 @@ public final class DispositionCoffreTest {
         verifier("écran plein", d, 320, 240, plein, 10);
         assert d.chevauche() : d;
 
-        // Libellé machine long : entier, sur toutes les positions et jusqu'à 320x240.
+        // Libellés machine longs : entiers, sur toutes les positions et jusqu'à 320x240.
         for (int l = 320; l <= 640; l += 80)
             for (int h = 240; h <= 400; h += 40)
                 for (int objets : new int[] {1, 5, 25})
@@ -96,15 +160,44 @@ public final class DispositionCoffreTest {
                                     new Zone((l - 176) / 2, 60, 176, 166),
                                     new Zone((l - 176) / 2, 4, 176, h - 8),
                                     new Zone(2, 2, l - 4, h - 4))) {
-                        d = DispositionCoffre.calculer(l, h, coffre, objets, 46, 104);
+                        d = DispositionCoffre.calculer(l, h, coffre, objets, MACHINE);
                         verifier("machine avec libellé complet", d, l, h, coffre, objets);
-                        assert d.prendre().largeur() >= 46 && d.tout().largeur() >= 104
-                                : "En cours de craft doit rester lisible " + d;
-                        assert DispositionCoffre.calculer(l, h, coffre, objets)
-                                        .equals(
+                        entiers("En cours de craft et Machine à vérifier lisibles", d, MACHINE);
+                        Disposition coffreSeul = DispositionCoffre.calculer(l, h, coffre, objets);
+                        assert coffreSeul.equals(
                                                 DispositionCoffre.calculer(
-                                                        l, h, coffre, objets, 46, 34))
-                                : "disposition historique des coffres conservée";
+                                                        l,
+                                                        h,
+                                                        coffre,
+                                                        objets,
+                                                        new Libelles(0, 0, 0, false)))
+                                        && coffreSeul.equals(
+                                                DispositionCoffre.calculer(
+                                                        l, h, coffre, objets, Libelles.COFFRE))
+                                : "le panneau des coffres ne rétrécit jamais";
+                        verifier("coffre", coffreSeul, l, h, coffre, objets);
+                        titreLisible(
+                                "« 1,2k à prendre » lisible",
+                                coffreSeul,
+                                Libelles.COFFRE,
+                                coffre.largeur() == 176);
+                    }
+
+        // Tailles d'interface courantes : coffre simple, double, grand coffre moddé et machine.
+        int[][] ecrans = {{320, 240}, {426, 240}, {480, 270}, {640, 360}};
+        for (int[] e : ecrans)
+            for (int[] taille : new int[][] {{176, 166}, {176, 222}, {230, 250}, {196, 186}})
+                for (int objets : new int[] {1, 6, 9, 40})
+                    for (Libelles libelles : List.of(Libelles.COFFRE, MACHINE)) {
+                        int l = e[0], h = e[1], lc = Math.min(taille[0], l - 4);
+                        int hc = Math.min(taille[1], h - 4);
+                        Zone coffre = new Zone((l - lc) / 2, (h - hc) / 2, lc, hc);
+                        String cas = l + "x" + h + " " + coffre + " " + objets + " " + libelles;
+                        d = DispositionCoffre.calculer(l, h, coffre, objets, libelles);
+                        verifier(cas, d, l, h, coffre, objets);
+                        // Plus étroit, un bloc de coffre coupe ses boutons par « … » plutôt que
+                        // de couvrir le coffre ; son titre passe alors sur trois lignes.
+                        titreLisible(cas, d, libelles, lc == 176);
                     }
 
         // Balayage : jamais sur le coffre tant qu'une place existe.

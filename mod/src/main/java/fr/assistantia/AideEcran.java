@@ -3,11 +3,16 @@ package fr.assistantia;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
+import fr.assistantia.DispositionCoffre.Disposition;
+import fr.assistantia.DispositionCoffre.Libelles;
+import fr.assistantia.DispositionCoffre.Zone;
 import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
@@ -17,16 +22,17 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.event.ScreenEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-/** Fabrications possibles dans un établi. Les coffres utilisent exclusivement AideCoffre. */
+/**
+ * Fabrications de l'arbre EMI possibles dans un établi : même panneau que les coffres et les
+ * machines (voir DispositionCoffre), placé hors de l'interface et réservé auprès d'EMI. Les coffres
+ * utilisent exclusivement AideCoffre.
+ */
 public final class AideEcran {
-    private static final int MAX = 8, ICONE = 20;
+    private static final int MAX = 8, TITRE_MAX = 130;
+    private static final String REMPLIR = "Remplir";
 
     /**
      * Une fabrication possible ici : la recette EMI, ce qu'elle fait, combien il en faut, combien
@@ -39,13 +45,13 @@ public final class AideEcran {
         }
     }
 
-    private static Button remplir, tout;
     private static AbstractContainerScreen<?> ecranActuel;
     private static List<Proposition> propositions = List.of();
     private static Item choisi; // gardé quand la liste change (après une fabrication)
-    private static String cle =
-            ""; // propositions de l'assistant + inventaire sur lesquels la liste est calculée
-    private static int x, y; // coin de la zone : nom, icônes, puis boutons
+    private static String cle = ""; // inventaire sur lequel la liste est calculée
+    private static Zone occupee;
+    private static Disposition disposition;
+    private static int page;
     private static long prochainCalcul, dernierAvis;
     private static Method propositionsArbre;
     private static boolean erreurArbreSignalee;
@@ -55,6 +61,11 @@ public final class AideEcran {
     @SubscribeEvent
     public static void initialisation(ScreenEvent.Init.Post event) {
         Screen ecran = event.getScreen();
+        cle = "";
+        prochainCalcul = 0;
+        propositions = List.of();
+        disposition = null;
+        page = 0;
         if (!(ecran instanceof AbstractContainerScreen<?> conteneur)
                 || ecran instanceof CreativeModeInventoryScreen
                 || !Emi.present()
@@ -68,22 +79,14 @@ public final class AideEcran {
             return;
         }
         ecranActuel = conteneur;
-        cle = "";
-        prochainCalcul = 0;
-        propositions = List.of();
-        x = conteneur.getGuiLeft();
-        y = Math.max(2, conteneur.getGuiTop() - 52);
-        remplir =
-                Button.builder(Component.literal("Remplir"), b -> agir(false))
-                        .bounds(x, y + 32, 60, 18)
-                        .build();
-        tout =
-                Button.builder(Component.literal("Tout"), b -> agir(true))
-                        .bounds(x + 64, y + 32, 90, 18)
-                        .build();
-        remplir.visible = tout.visible = false;
-        event.addListener(remplir);
-        event.addListener(tout);
+        occupee = PanneauAssistant.occupee(conteneur);
+    }
+
+    /** La place du panneau affiché, pour qu'EMI n'y pose pas ses listes d'objets. */
+    public static Zone zoneEmi(Screen screen) {
+        return screen == ecranActuel && disposition != null && !propositions.isEmpty()
+                ? disposition.cadre()
+                : null;
     }
 
     private static Proposition choisie() {
@@ -162,139 +165,203 @@ public final class AideEcran {
                 LogUtils.getLogger().warn("Assistant : propositions d’établi EMI indisponibles", e);
                 erreurArbreSignalee = true;
             }
-            // Ne pas substituer les crafts d'un ancien objectif à un arbre illisible.
             return List.of();
         }
     }
 
-    /** Arbre EMI actif en priorité ; propositions historiques seulement sans arbre actif. */
+    /** Recettes d'établi de l'arbre EMI actif seulement : sans arbre, aucune proposition. */
     private static List<Proposition> calculer(
             AbstractContainerScreen<?> ecran, Map<Item, Integer> stock) {
         if (!autorise()) return List.of();
         List<Proposition> arbre = propositionsArbre(ecran, stock);
         if (arbre != null) return arbre;
-        List<Proposition> liste = new ArrayList<>();
-        for (JsonElement e : Pont.liste(Pont.vue(), "fabrications")) {
-            JsonObject f = e.getAsJsonObject();
-            ItemStack produit = Pont.objet(Pont.texte(f, "item"));
-            if (produit.isEmpty()) {
-                continue;
-            }
-            for (Object recette : Emi.recettes(Pont.texte(f, "id"), produit, ecran)) {
-                int possibles = Emi.possibles(recette, stock);
-                if (possibles > 0) {
-                    liste.add(
-                            new Proposition(
-                                    recette,
-                                    produit,
-                                    Pont.texte(f, "nom"),
-                                    (int) Pont.nombre(f, "fois", 1),
-                                    possibles));
-                    break;
-                }
-            }
-            if (liste.size() >= MAX) {
-                break;
-            }
-        }
-        return liste;
+        return List.of();
     }
 
+    /** Liste, place et page tenues à jour avant le rendu ; rien n'est calculé au clic. */
     @SubscribeEvent
-    public static void rendu(ScreenEvent.Render.Post event) {
-        if (event.getScreen() != ecranActuel || remplir == null) {
-            return;
-        }
+    public static void avantRendu(ScreenEvent.Render.Pre event) {
+        if (event.getScreen() != ecranActuel) return;
         Map<Item, Integer> stock = stock(ecranActuel);
-        String nouvelleCle = Pont.liste(Pont.vue(), "fabrications") + "|" + stock;
+        String nouvelleCle = stock.toString();
         long maintenant = System.nanoTime();
         if (!nouvelleCle.equals(cle) || maintenant >= prochainCalcul) {
             propositions = calculer(ecranActuel, stock);
             cle = nouvelleCle;
             // L'arbre, ses réservations et le chargement EMI évoluent sans changer le stock.
             prochainCalcul = maintenant + 250_000_000L;
-        }
-        Proposition p = choisie();
-        remplir.visible = tout.visible = p != null;
-        if (p == null) {
-            return;
-        }
-        remplir.setMessage(Component.literal("Remplir"));
-        tout.setMessage(Component.literal("Tout (×" + p.aFaire() + ")"));
-        remplir.active = tout.active = true;
-        remplir.setTooltip(
-                net.minecraft.client.gui.components.Tooltip.create(
-                        Component.literal("Remplir la grille pour 1 fabrication")));
-        tout.setTooltip(
-                net.minecraft.client.gui.components.Tooltip.create(
-                        Component.literal(
-                                "Remplir pour la recette avec les ingrédients disponibles")));
-        GuiGraphics g = event.getGuiGraphics();
-        Font font = Minecraft.getInstance().font;
-        int largeur = Math.max(ecranActuel.getXSize(), propositions.size() * ICONE);
-        g.fill(
-                x - 3,
-                y - 3,
-                x + largeur + 3,
-                y + 30,
-                0xC80D1013); // fond du nom et des icônes : les boutons restent visibles
-        String encore = p.fois() > p.aFaire() ? " (il en faudra " + p.fois() + ")" : "";
-        g.drawString(
-                font,
-                font.plainSubstrByWidth(
-                        p.nom() + " · ×" + p.aFaire() + " possible" + encore, largeur),
-                x,
-                y,
-                Hud.OR,
-                false);
-        Proposition survolee = null;
-        for (int i = 0; i < propositions.size(); i++) {
-            Proposition q = propositions.get(i);
-            int ix = x + i * ICONE, iy = y + 11;
-            g.fill(ix - 1, iy - 1, ix + 17, iy + 17, q == p ? 0x90FFC94A : 0x30FFFFFF);
-            g.renderItem(q.produit(), ix, iy);
-            if (event.getMouseX() >= ix - 1
-                    && event.getMouseX() < ix + 17
-                    && event.getMouseY() >= iy - 1
-                    && event.getMouseY() < iy + 17) {
-                survolee = q;
-            }
-        }
-        if (survolee != null) {
-            g.renderComponentTooltip(
-                    font,
-                    List.of(
-                            Component.literal(survolee.nom()),
-                            Component.literal(
-                                            "×"
-                                                    + survolee.aFaire()
-                                                    + " possible maintenant, "
-                                                    + survolee.fois()
-                                                    + " à faire pour la recette")
-                                    .withStyle(s -> s.withColor(Hud.GRIS)),
-                            Component.literal("Clic : la choisir")
-                                    .withStyle(s -> s.withColor(Hud.BLEU))),
-                    event.getMouseX(),
-                    event.getMouseY());
+            occupee = PanneauAssistant.occupee(ecranActuel);
+            disposition =
+                    propositions.isEmpty()
+                            ? null
+                            : DispositionCoffre.calculer(
+                                    ecranActuel.width,
+                                    ecranActuel.height,
+                                    occupee,
+                                    propositions.size(),
+                                    libelles(Minecraft.getInstance().font));
+            page = disposition == null ? 0 : Math.min(page, derniere());
         }
     }
 
-    /** Clic sur une icône : cette fabrication devient celle des boutons Remplir et Tout. */
+    /**
+     * Titre et boutons gardent la même largeur quand la recette choisie change : le titre prend le
+     * nom le plus long de la liste, borné ; au-delà, « … » et le nom complet au survol.
+     */
+    private static Libelles libelles(Font font) {
+        var libelles =
+                PanneauAssistant.libelles(
+                        font,
+                        List.of(possible(99, 999)),
+                        List.of(REMPLIR),
+                        List.of(tout(999)),
+                        false);
+        int nom = 0;
+        for (Proposition p : propositions) nom = Math.max(nom, font.width(p.nom()));
+        return new Libelles(
+                Math.max(libelles.titre(), Math.min(TITRE_MAX, nom)),
+                libelles.prendre(),
+                libelles.tout(),
+                false);
+    }
+
+    private static String possible(int maintenant, int total) {
+        return "×" + maintenant + " possible" + (total > maintenant ? " sur " + total : "");
+    }
+
+    private static String tout(int fois) {
+        return "Tout (×" + fois + ")";
+    }
+
+    private static int derniere() {
+        return (propositions.size() - 1) / disposition.parPage();
+    }
+
     @SubscribeEvent
+    public static void rendu(ScreenEvent.Render.Post event) {
+        if (event.getScreen() != ecranActuel || disposition == null) return;
+        Proposition p = choisie();
+        if (p == null) return;
+        Disposition d = disposition;
+        page = Math.min(page, derniere()); // la liste peut raccourcir après un remplissage
+        GuiGraphics g = event.getGuiGraphics();
+        Font font = Minecraft.getInstance().font;
+        int mx = event.getMouseX(), my = event.getMouseY();
+        PanneauAssistant.fond(g, d.cadre());
+        PanneauAssistant.titre(g, font, d.titre(), p.nom(), possible(p.aFaire(), p.fois()));
+        List<Component> infobulle = null;
+        if (d.titre().contient(mx, my))
+            infobulle =
+                    List.of(
+                            Component.literal(p.nom()),
+                            Component.literal(
+                                            "×"
+                                                    + p.aFaire()
+                                                    + " possible maintenant, "
+                                                    + p.fois()
+                                                    + " à faire pour la recette")
+                                    .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
+        for (int rang = 0; rang < d.parPage(); rang++) {
+            int n = page * d.parPage() + rang;
+            if (n >= propositions.size()) break;
+            Proposition q = propositions.get(n);
+            Zone z = d.icone(rang);
+            PanneauAssistant.caseIcone(g, z, q == p);
+            g.renderItem(q.produit(), z.x() + 1, z.y() + 1);
+            PanneauAssistant.nombre(g, font, z, q.aFaire());
+            if (z.contient(mx, my))
+                infobulle =
+                        List.of(
+                                Component.literal(q.nom()),
+                                Component.literal(
+                                                "×"
+                                                        + q.aFaire()
+                                                        + " possible maintenant, "
+                                                        + q.fois()
+                                                        + " à faire pour la recette")
+                                        .withStyle(s -> s.withColor(PanneauAssistant.GRIS)),
+                                Component.literal("Clic : la choisir")
+                                        .withStyle(s -> s.withColor(PanneauAssistant.BLEU)));
+        }
+        if (d.pages()) {
+            boolean avant =
+                    PanneauAssistant.bouton(
+                            g, font, d.precedent(), "‹", Theme.Genre.NORMAL, page > 0, mx, my);
+            boolean apres =
+                    PanneauAssistant.bouton(
+                            g,
+                            font,
+                            d.suivant(),
+                            "›",
+                            Theme.Genre.NORMAL,
+                            page < derniere(),
+                            mx,
+                            my);
+            if (avant || apres)
+                infobulle =
+                        List.of(Component.literal("Page " + (page + 1) + "/" + (derniere() + 1)));
+        }
+        if (PanneauAssistant.bouton(
+                g, font, d.prendre(), REMPLIR, Theme.Genre.NORMAL, true, mx, my))
+            infobulle = List.of(Component.literal("Remplir la grille pour 1 fabrication"));
+        if (PanneauAssistant.bouton(
+                g, font, d.tout(), tout(p.aFaire()), Theme.Genre.PRINCIPAL, true, mx, my))
+            infobulle =
+                    List.of(
+                            Component.literal(
+                                    "Remplir pour "
+                                            + p.aFaire()
+                                            + " fabrications avec les ingrédients disponibles"));
+        if (infobulle != null) g.renderComponentTooltip(font, infobulle, mx, my);
+    }
+
+    private static boolean surPanneau(Screen screen, double mx, double my) {
+        return screen == ecranActuel
+                && disposition != null
+                && !propositions.isEmpty()
+                && disposition.cadre().contient(mx, my);
+    }
+
+    /** Clic sur une icône : cette fabrication devient celle des boutons Remplir et Tout. */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
-        if (event.getScreen() != ecranActuel) {
-            return;
-        }
-        for (int i = 0; i < propositions.size(); i++) {
-            int ix = x + i * ICONE, iy = y + 11;
-            if (event.getMouseX() >= ix - 1
-                    && event.getMouseX() < ix + 17
-                    && event.getMouseY() >= iy - 1
-                    && event.getMouseY() < iy + 17) {
-                choisi = propositions.get(i).produit().getItem();
-                event.setCanceled(true);
-                return;
+        double mx = event.getMouseX(), my = event.getMouseY();
+        if (!surPanneau(event.getScreen(), mx, my)) return;
+        event.setCanceled(true); // jamais de clic qui traverse vers l'établi ou EMI
+        if (event.getButton() != 0) return;
+        Disposition d = disposition;
+        if (d.prendre().contient(mx, my)) {
+            PanneauAssistant.son();
+            agir(false);
+        } else if (d.tout().contient(mx, my)) {
+            PanneauAssistant.son();
+            agir(true);
+        } else if (d.pages() && d.precedent().contient(mx, my)) tourner(-1);
+        else if (d.pages() && d.suivant().contient(mx, my)) tourner(1);
+        else
+            for (int rang = 0; rang < d.parPage(); rang++) {
+                int n = page * d.parPage() + rang;
+                if (n < propositions.size() && d.icone(rang).contient(mx, my)) {
+                    choisi = propositions.get(n).produit().getItem();
+                    return;
+                }
             }
-        }
+    }
+
+    private static void tourner(int sens) {
+        page = Math.max(0, Math.min(derniere(), page + sens));
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void relache(ScreenEvent.MouseButtonReleased.Pre event) {
+        if (surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY()))
+            event.setCanceled(true);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void molette(ScreenEvent.MouseScrolled.Pre event) {
+        if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
+        event.setCanceled(true);
+        if (disposition.pages()) tourner(event.getScrollDelta() > 0 ? -1 : 1);
     }
 }

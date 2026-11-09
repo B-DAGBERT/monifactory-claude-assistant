@@ -1,7 +1,9 @@
 package fr.assistantia;
 
 import fr.assistantia.DispositionCoffre.Disposition;
+import fr.assistantia.DispositionCoffre.Libelles;
 import fr.assistantia.DispositionCoffre.Zone;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -19,6 +21,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * (voir DispositionCoffre), se réserve sa place auprès d'EMI et se coupe dans les réglages.
  */
 public final class AideCoffre {
+    private static final String NOM = "Collecte", RETRAIT = "Retrait…";
     private static AbstractContainerScreen<?> ecran;
     private static Zone occupee;
     private static Disposition disposition;
@@ -72,9 +75,27 @@ public final class AideCoffre {
                 objets.isEmpty()
                         ? null
                         : DispositionCoffre.calculer(
-                                ecran.width, ecran.height, occupee, objets.size());
+                                ecran.width,
+                                ecran.height,
+                                occupee,
+                                objets.size(),
+                                libelles(Minecraft.getInstance().font));
         page = disposition == null ? 0 : Math.min(page, derniere());
         actualise = System.currentTimeMillis();
+    }
+
+    /** Le titre le plus long possible reste entier : la disposition ne bouge pas avec le total. */
+    private static Libelles libelles(Font font) {
+        return PanneauAssistant.libelles(
+                font,
+                List.of(NOM, aPrendre(999_999), RETRAIT),
+                List.of("Prendre"),
+                List.of("Tout"),
+                false);
+    }
+
+    private static String aPrendre(long total) {
+        return Theme.nombre(total) + " à prendre";
     }
 
     private static int derniere() {
@@ -106,13 +127,18 @@ public final class AideCoffre {
         int mx = event.getMouseX(), my = event.getMouseY();
         boolean occupe = RetraitCoffre.occupe();
         PanneauAssistant.fond(g, c);
-        PanneauAssistant.titre(
-                g,
-                font,
-                d.titre(),
-                "Collecte",
-                occupe ? "Transfert…" : plan.total() + " à prendre");
+        String detail = occupe ? RETRAIT : aPrendre(plan.total());
+        PanneauAssistant.titre(g, font, d.titre(), NOM, detail);
         List<Component> infobulle = null;
+        if (d.titre().contient(mx, my)) {
+            infobulle = new ArrayList<>();
+            infobulle.add(
+                    Component.literal(
+                            NOM + " · " + (occupe ? RETRAIT : plan.total() + " à prendre")));
+            infobulle.add(
+                    Component.literal("Ingrédients du scan EMI présents dans ce coffre")
+                            .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
+        }
         for (int rang = 0; rang < d.parPage(); rang++) {
             int n = page * d.parPage() + rang;
             if (n >= objets.size()) break;
@@ -129,28 +155,45 @@ public final class AideCoffre {
                 infobulle =
                         List.of(
                                 item.getHoverName(),
-                                Component.literal(quantite + " à prendre · Clic : choisir")
-                                        .withStyle(s -> s.withColor(Hud.GRIS)));
+                                Component.literal(quantite + " à prendre")
+                                        .withStyle(s -> s.withColor(PanneauAssistant.GRIS)),
+                                Component.literal("Clic : choisir pour Prendre")
+                                        .withStyle(s -> s.withColor(PanneauAssistant.BLEU)));
         }
         if (d.pages()) {
-            PanneauAssistant.bouton(
-                    g, font, d.precedent(), "‹", !occupe && page > 0, false, mx, my);
-            PanneauAssistant.bouton(
-                    g, font, d.suivant(), "›", !occupe && page < derniere(), false, mx, my);
-            if (d.precedent().contient(mx, my) || d.suivant().contient(mx, my))
+            boolean avant =
+                    PanneauAssistant.bouton(
+                            g,
+                            font,
+                            d.precedent(),
+                            "‹",
+                            Theme.Genre.NORMAL,
+                            !occupe && page > 0,
+                            mx,
+                            my);
+            boolean apres =
+                    PanneauAssistant.bouton(
+                            g,
+                            font,
+                            d.suivant(),
+                            "›",
+                            Theme.Genre.NORMAL,
+                            !occupe && page < derniere(),
+                            mx,
+                            my);
+            if (avant || apres)
                 infobulle =
                         List.of(Component.literal("Page " + (page + 1) + "/" + (derniere() + 1)));
         }
         int choix = plan.pour(choisi).total(), tout = plan.total();
-        PanneauAssistant.bouton(
-                g, font, d.prendre(), "Prendre", !occupe && choix > 0, false, mx, my);
-        PanneauAssistant.bouton(g, font, d.tout(), "Tout", !occupe && tout > 0, true, mx, my);
-        if (d.prendre().contient(mx, my))
+        if (PanneauAssistant.bouton(
+                g, font, d.prendre(), "Prendre", Theme.Genre.NORMAL, !occupe && choix > 0, mx, my))
             infobulle =
                     List.of(
                             Component.literal(
                                     "Prendre " + choix + " " + choisi.getHoverName().getString()));
-        else if (d.tout().contient(mx, my))
+        if (PanneauAssistant.bouton(
+                g, font, d.tout(), "Tout", Theme.Genre.PRINCIPAL, !occupe && tout > 0, mx, my))
             infobulle =
                     List.of(
                             Component.literal(

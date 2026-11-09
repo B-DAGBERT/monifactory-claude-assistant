@@ -9,37 +9,31 @@ from pathlib import Path
 
 from test_render_ui_safety import STUBS as BASE
 
+from tests import stubs_theme
+
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = dict(BASE)
+# Le suivi utilise le thème commun : police, bouton et infobulle viennent de ses stubs.
+STUBS.update(stubs_theme.STUBS)
 STUBS.update(
     {
         "net.minecraft.client.Minecraft": """public class Minecraft {
  public static Minecraft instance; public Minecraft(){instance=this;} public static Minecraft getInstance(){return instance;}
  public Object connection=new Object(),level=new Object(); public Object getConnection(){return connection;}
  public net.minecraft.client.gui.screens.Screen screen; public Player player=new Player();
+ public net.minecraft.client.gui.Font font=new net.minecraft.client.gui.Font();
  public void setScreen(net.minecraft.client.gui.screens.Screen s){screen=s;}
  public static class Player {public Object containerMenu=new Object();}}
-""",
-        "net.minecraft.client.gui.Font": """public class Font {
- public String plainSubstrByWidth(String s,int w){return s.substring(0,Math.min(s.length(),Math.max(0,w/6)));}
- public int width(String s){return s.length()*6;}}
 """,
         "net.minecraft.client.gui.GuiGraphics": """public class GuiGraphics {
  public java.util.List<String> texts=new java.util.ArrayList<>(); public boolean clipped;
  public void drawCenteredString(Font f,Object t,int x,int y,int color){texts.add(String.valueOf(t));}
  public void drawString(Font f,String t,int x,int y,int c,boolean shadow){texts.add(t);}
+ public void drawString(Font f,net.minecraft.util.FormattedCharSequence t,int x,int y,int c,boolean shadow){texts.add(String.valueOf(t));}
  public void fill(int x,int y,int right,int bottom,int c){if(right<x||bottom<y)throw new AssertionError("negative rectangle");}
+ public void renderOutline(int x,int y,int w,int h,int c){if(w<0||h<0)throw new AssertionError("negative outline");}
  public void enableScissor(int x,int y,int right,int bottom){clipped=true;}public void disableScissor(){clipped=false;}
  public void renderComponentTooltip(Font f,java.util.List<net.minecraft.network.chat.Component> t,int x,int y){}}
-""",
-        "net.minecraft.client.gui.components.Tooltip": """public record Tooltip(net.minecraft.network.chat.Component text){
- public static Tooltip create(net.minecraft.network.chat.Component c){return new Tooltip(c);}}""",
-        "net.minecraft.client.gui.components.Button": """import net.minecraft.network.chat.Component;
- public class Button {public Component title;public boolean active=true,visible=true;public int x,y,w,h;private final OnPress action;
- public interface OnPress{void onPress(Button b);}public Button(Component c,OnPress a){title=c;action=a;}
- public void setMessage(Component c){title=c;}public void setTooltip(Tooltip t){}public void press(){if(active&&visible)action.onPress(this);}
- public static Builder builder(Component c,OnPress a){return new Builder(c,a);}
- public static class Builder {Button b;Builder(Component c,OnPress a){b=new Button(c,a);}public Builder bounds(int x,int y,int w,int h){b.x=x;b.y=y;b.w=w;b.h=h;return this;}public Button build(){return b;}}}
 """,
         "net.minecraft.client.gui.screens.inventory.AbstractContainerScreen": """public class AbstractContainerScreen<T> extends net.minecraft.client.gui.screens.Screen {
  public final Object menu; public AbstractContainerScreen(Object m){super(net.minecraft.network.chat.Component.literal("Chest"));menu=m;}public Object getMenu(){return menu;}}""",
@@ -50,7 +44,6 @@ STUBS.update(
         "dev.emi.emi.api.EmiApi": """public class EmiApi {public static dev.emi.emi.api.recipe.EmiRecipe opened;
  public static void displayRecipe(dev.emi.emi.api.recipe.EmiRecipe r){opened=r;net.minecraft.client.Minecraft.getInstance().setScreen(new dev.emi.emi.screen.RecipeScreen());}}""",
         "dev.emi.emi.screen.RecipeScreen": """public class RecipeScreen extends net.minecraft.client.gui.screens.Screen {public RecipeScreen(){super(net.minecraft.network.chat.Component.literal("Recipe"));}}""",
-        "fr.assistantia.DispositionCoffre": """public class DispositionCoffre {public record Zone(int x,int y,int largeur,int hauteur){public boolean contient(double px,double py){return px>=x&&px<x+largeur&&py>=y&&py<y+hauteur;}}}""",
         "fr.assistantia.InventaireJoueur": "public class InventaireJoueur {public static boolean synchronise(){return true;}}",
         "fr.assistantia.compat.emi.CoffresArbreEmi": """public class CoffresArbreEmi {public static class Tree {public long batches=1;}public static Object tree=new Tree();public static Object arbreActif(){return tree;}public static boolean recalculer(){return true;}}""",
         "fr.assistantia.compat.emi.InstantaneArbreEmi": "public class InstantaneArbreEmi {public static long revision;public static long revisionStructureProduction(){return revision;}}",
@@ -74,14 +67,20 @@ STUBS.update(
 """,
     }
 )
-STUBS["net.minecraft.client.gui.screens.Screen"] = STUBS[
-    "net.minecraft.client.gui.screens.Screen"
-].replace(
-    " public boolean keyPressed(",
-    """ public boolean mouseClicked(double x,double y,int button){
+STUBS["net.minecraft.client.gui.screens.Screen"] = stubs_theme.membres(
+    STUBS["net.minecraft.client.gui.screens.Screen"].replace(
+        " public boolean keyPressed(",
+        """ public boolean mouseClicked(double x,double y,int button){
  for(var w:widgets)if(w instanceof net.minecraft.client.gui.components.Button b&&b.visible&&b.active&&x>=b.x&&x<b.x+b.w&&y>=b.y&&y<b.y+b.h){b.press();return true;}return false;}
  public boolean mouseScrolled(double x,double y,double delta){return false;}
+ public boolean mouseDragged(double x,double y,int b,double dx,double dy){return false;}
+ public boolean mouseReleased(double x,double y,int b){return false;}
  public boolean keyPressed(""",
+    ),
+    stubs_theme.ECRAN,
+)
+STUBS["net.minecraft.client.gui.components.EditBox"] = stubs_theme.membres(
+    STUBS["net.minecraft.client.gui.components.EditBox"], stubs_theme.CHAMP
 )
 
 HARNESS = """package fr.assistantia.compat.emi;
@@ -108,6 +107,17 @@ public class SuiviOrderMenuTest {
     button(s,"Tout replier").press();assert ((List<?>)field(s,"entrees")).size()==4;
     render(s);assert !button(s,"Recette").active;assert !button(s,"En cours").active;
     for(Object w:s.widgets)if(w instanceof Button v)assert v.x>=0&&v.y>=0&&v.w>0&&v.x+v.w<=320&&v.y+v.h<=240;
+    var boutons=s.widgets.stream().filter(w->w instanceof Button v&&v.visible).map(w->(Button)w).toList();
+    for(var p:boutons){assert p.h==16:"theme button height";for(var q:boutons)assert p==q||p.x+p.w<=q.x||q.x+q.w<=p.x||p.y+p.h<=q.y||q.y+q.h<=p.y:"overlapping buttons";}
+   }
+   case "scroll-drag" -> {
+    var rows=new ArrayList<MachinesEmi.Ligne>();for(int i=0;i<20;i++)rows.add(row(i,a,0));MachinesEmi.rows=rows;refresh(s);render(s);
+    var max=s.getClass().getDeclaredMethod("maximumDefilement");max.setAccessible(true);int fin=(int)max.invoke(s);assert fin>0;
+    var barre=(fr.assistantia.BarreDefilement)field(s,"barre");assert barre.visible();
+    assert s.mouseClicked(barre.x()+1,barre.curseur()+1,0);assert s.mouseDragged(barre.x()+1,10_000,0,0,0);
+    assert (int)field(s,"debut")==fin:"dragging the shared scrollbar scrolls the list";
+    s.mouseReleased(barre.x()+1,10_000,0);assert !s.mouseDragged(barre.x()+1,0,0,0,0)&&(int)field(s,"debut")==fin;
+    render(s);assert barre.position()==fin;
    }
    case "fallback-group" -> {
     MachinesEmi.rows=List.of(row(11,a,2),row(-1,b,3));refresh(s);render(s);
@@ -187,14 +197,17 @@ class MachineOrderMenuTests(unittest.TestCase):
             for name, body in STUBS.items():
                 path = root / (name.replace(".", "/") + ".java")
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("package " + name.rsplit(".", 1)[0] + ";\n" + body)
+                path.write_text(
+                    "package " + name.rsplit(".", 1)[0] + ";\n" + body, encoding="utf-8"
+                )
                 sources.append(str(path))
             harness = root / "SuiviOrderMenuTest.java"
-            harness.write_text(HARNESS)
+            harness.write_text(HARNESS, encoding="utf-8")
             sources.extend(
                 [
                     str(harness),
                     str(ROOT / "mod/src/main/java/fr/assistantia/compat/emi/SuiviEmiEcran.java"),
+                    *map(str, stubs_theme.SOURCES),
                 ]
             )
             result = subprocess.run(
@@ -222,6 +235,7 @@ class MachineOrderMenuTests(unittest.TestCase):
                 "empty-problem",
                 "scissor",
                 "scroll-resize",
+                "scroll-drag",
             ):
                 with self.subTest(case=case):
                     result = subprocess.run(

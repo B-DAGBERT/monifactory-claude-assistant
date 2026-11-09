@@ -295,10 +295,11 @@ public final class MachinesEmi {
                 : null;
     }
 
+    /** Libellés courts (voir PanneauMachineEmi.ETATS) ; la raison complète reste au survol. */
     private static String etat(OrdreMachines.Ligne<EmiRecipe> ligne) {
         if (ligne.cycle()) return "Cycle détecté";
         if (ligne.mode() == OrdreMachines.Mode.PRET) return "Prêt";
-        if (ligne.conflit()) return "Stock partagé · autre priorité";
+        if (ligne.conflit()) return "Stock partagé";
         String raison = ligne.raison();
         if (raison.startsWith("Circuit")) return "Circuit à régler";
         if (raison.startsWith("Machine")) return "Machine à vérifier";
@@ -791,14 +792,7 @@ public final class MachinesEmi {
                     selected.fois() == 0
                             ? null
                             : EnvoiMachine.preparer(ecran, selected.recette(), selected.fois());
-            disposition =
-                    DispositionCoffre.calculer(
-                            ecran.width,
-                            ecran.height,
-                            PanneauAssistant.occupee(ecran),
-                            locales.size(),
-                            46,
-                            104);
+            disposition = PanneauMachineEmi.disposer(ecran, locales.size());
             page = Math.min(page, (locales.size() - 1) / disposition.parPage());
             if (choixExplicite
                     && (choix < page * disposition.parPage()
@@ -890,8 +884,7 @@ public final class MachinesEmi {
             if (circuitARegler(op.recette())) return "Circuit à régler";
             var priorite = prioritesLocales.get(op.recette());
             if (priorite != null) {
-                if (priorite.conflit() && plan != null && plan.possible())
-                    return "Autre priorité · stock partagé";
+                if (priorite.conflit() && plan != null && plan.possible()) return "Autre priorité";
                 return etat(priorite);
             }
             return "Stock inconnu";

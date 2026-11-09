@@ -2,8 +2,10 @@ package fr.assistantia.compat.emi;
 
 import com.mojang.logging.LogUtils;
 import fr.assistantia.ArbreEmi;
+import fr.assistantia.BoutonTheme;
 import fr.assistantia.MemoireCollecte;
 import fr.assistantia.RechercheEmi;
+import fr.assistantia.Theme;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +14,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -20,13 +21,16 @@ import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-/** Un seul interrupteur près de Recipe Tree. Aucune mutation de l'arbre ni des favoris EMI. */
+/**
+ * Un seul interrupteur près de Recipe Tree. Aucune mutation de l'arbre ni des favoris EMI. Les
+ * boutons suivent le thème commun : scan actif en doré ({@link BoutonTheme#choisi}).
+ */
 public final class CoffresArbreEmi {
     private static final String ID = "assistantia:coffres_arbre";
-    private static final Map<Screen, Button> boutons = new WeakHashMap<>();
-    private static final Map<Screen, Button> suivis = new WeakHashMap<>();
-    private static final Map<Screen, Button> sacs = new WeakHashMap<>();
-    private static final Map<Screen, Button> menus = new WeakHashMap<>();
+    private static final Map<Screen, BoutonTheme> boutons = new WeakHashMap<>();
+    private static final Map<Screen, BoutonTheme> suivis = new WeakHashMap<>();
+    private static final Map<Screen, BoutonTheme> sacs = new WeakHashMap<>();
+    private static final Map<Screen, BoutonTheme> menus = new WeakHashMap<>();
     private static long lectureSacDate;
     private static int typesSac;
     private static Field boutonArbre, barreRecherche;
@@ -96,37 +100,35 @@ public final class CoffresArbreEmi {
         if (!(screen instanceof AbstractContainerScreen<?>)
                 && !name.equals("dev.emi.emi.screen.RecipeScreen")
                 && !name.equals("dev.emi.emi.screen.BoMScreen")) return;
-        var scan = new BoutonOutilEmi(Component.literal("Coffres OFF"), b -> basculer());
-        var suivi = new BoutonOutilEmi(Component.literal("Suivi"), b -> ouvrirSuivi(screen));
+        var scan = outil("Coffres OFF", b -> basculer());
+        var suivi =
+                outil("Suivi", b -> ouvrirSuivi(screen))
+                        .infobulle("Suivre les fabrications, recalculer ou annuler un lot");
         var sac =
-                new BoutonOutilEmi(
-                        Component.literal("Sac"),
+                outil(
+                        "Sac",
                         b ->
                                 Minecraft.getInstance()
                                         .setScreen(new fr.assistantia.EcranSac(screen)));
         var menu =
-                new BoutonOutilEmi(
-                        Component.literal("Aide…"),
-                        b -> ouvrirDepuisCoffre(screen, new Menu(screen)));
+                outil("Aide…", b -> ouvrirDepuisCoffre(screen, new Menu(screen)))
+                        .infobulle("Outils EMI : recherche dans les coffres, suivi et backpack");
         boutons.put(screen, scan);
         suivis.put(screen, suivi);
         sacs.put(screen, sac);
         menus.put(screen, menu);
-        for (var bouton : List.of(scan, suivi, sac, menu)) {
-            bouton.visible = false;
-            event.addListener(bouton);
-        }
-        suivi.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Suivre les fabrications, recalculer ou annuler un lot")));
-        menu.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Outils EMI : recherche dans les coffres, suivi et backpack")));
+        for (var bouton : List.of(scan, suivi, sac, menu)) event.addListener(bouton);
     }
 
-    private static List<Map<Screen, Button>> cartes() {
+    /** Bouton de la barre : thème commun, infobulle après un court survol, caché jusqu'au rendu. */
+    private static BoutonTheme outil(String texte, Button.OnPress action) {
+        var bouton = BoutonTheme.creer(texte, action);
+        bouton.setTooltipDelay(150);
+        bouton.visible = false;
+        return bouton;
+    }
+
+    private static List<Map<Screen, BoutonTheme>> cartes() {
         return List.of(boutons, suivis, sacs, menus);
     }
 
@@ -164,41 +166,35 @@ public final class CoffresArbreEmi {
                 : "Sac…";
     }
 
-    private static void reglerScan(Button bouton) throws ReflectiveOperationException {
+    private static void reglerScan(BoutonTheme bouton) throws ReflectiveOperationException {
         boolean selection = RechercheEmi.selectionnee(ID);
         boolean attend = selection && !fr.assistantia.InventaireJoueur.synchronise();
         bouton.active = selection || ArbreEmi.consulte() != null;
-        bouton.setMessage(
-                Component.literal(attend ? "Coffres…" : selection ? "Coffres ON" : "Coffres OFF"));
-        bouton.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                attend
-                                        ? "Lecture du backpack en cours · cliquer pour arrêter le scan"
-                                        : selection
-                                                ? "Scan actif · cliquer pour arrêter la recherche dans les coffres"
-                                                : bouton.active
-                                                        ? "Chercher les ingrédients de l’arbre EMI dans les coffres"
-                                                        : "Choisis d’abord une recette dans Recipe Tree")));
-        if (bouton instanceof BoutonOutilEmi outil) outil.accent(selection ? 0x55D88C : 0);
+        bouton.texte(attend ? "Coffres…" : selection ? "Coffres ON" : "Coffres OFF")
+                .choisi(selection)
+                .infobulle(
+                        attend
+                                ? "Lecture du backpack en cours · cliquer pour arrêter le scan"
+                                : selection
+                                        ? "Scan actif · cliquer pour arrêter la recherche dans les coffres"
+                                        : bouton.active
+                                                ? "Chercher les ingrédients de l’arbre EMI dans les coffres"
+                                                : "Choisis d’abord une recette dans Recipe Tree");
     }
 
-    private static void reglerSac(Button bouton) {
-        bouton.setMessage(Component.literal(nomSac()));
-        bouton.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                fr.assistantia.InventaireJoueur.disponible()
-                                        ? typesSac
-                                                + " types d’objets dans tes backpacks · déjà sur toi et comptés dans EMI"
-                                        : "Lecture du backpack en cours · ouvrir la liste des objets portés")));
-        if (bouton instanceof BoutonOutilEmi outil) outil.accent(typesSac > 0 ? 0x65C7F3 : 0);
+    private static void reglerSac(BoutonTheme bouton) {
+        bouton.texte(nomSac())
+                .infobulle(
+                        fr.assistantia.InventaireJoueur.disponible()
+                                ? typesSac
+                                        + " types d’objets dans tes backpacks · déjà sur toi et comptés dans EMI"
+                                : "Lecture du backpack en cours · ouvrir la liste des objets portés");
     }
 
     @SubscribeEvent
     public static void rendu(ScreenEvent.Render.Pre event) {
         Screen screen = event.getScreen();
-        Button scan = boutons.get(screen);
+        BoutonTheme scan = boutons.get(screen);
         if (scan == null) return;
         try {
             charger();
@@ -208,25 +204,28 @@ public final class CoffresArbreEmi {
                 masquer(screen);
                 return;
             }
-            int x = tree.getX() + tree.getWidth() + 4, y = tree.getY();
+            // Rangée d'EMI : les boutons du thème, moins hauts, sont centrés sur Recipe Tree.
+            int x = tree.getX() + tree.getWidth() + Theme.ECART, haut = tree.getY();
+            int y = haut + (tree.getHeight() - fr.assistantia.BarreOutilsEmi.HAUTEUR) / 2;
             int place = screen.width - x - 2;
             if (search != null
                     && search.visible
                     && search.getX() >= x
-                    && search.getY() < y + 20
-                    && search.getY() + search.getHeight() > y)
-                place = Math.min(place, search.getX() - x - 4);
+                    && search.getY() < haut + tree.getHeight()
+                    && search.getY() + search.getHeight() > haut)
+                place = Math.min(place, search.getX() - x - Theme.ECART);
             var font = Minecraft.getInstance().font;
             var disposition =
                     fr.assistantia.BarreOutilsEmi.calculer(
                             x,
                             y,
                             place,
-                            Math.max(font.width("Coffres OFF"), font.width("Coffres ON")) + 12,
-                            font.width("Suivi") + 12,
-                            Math.max(font.width("Sac 99+"), font.width("Sac…")) + 12,
-                            font.width("Aide…") + 12);
-            Button suivi = suivis.get(screen), sac = sacs.get(screen), menu = menus.get(screen);
+                            Math.max(largeur(font, "Coffres OFF"), largeur(font, "Coffres ON")),
+                            largeur(font, "Suivi"),
+                            Math.max(largeur(font, "Sac 99+"), largeur(font, "Sac…")),
+                            largeur(font, "Aide…"));
+            BoutonTheme suivi = suivis.get(screen), sac = sacs.get(screen);
+            BoutonTheme menu = menus.get(screen);
             placer(scan, disposition.scan());
             placer(suivi, disposition.suivi());
             placer(sac, disposition.sac());
@@ -235,29 +234,29 @@ public final class CoffresArbreEmi {
             reglerScan(scan);
             reglerSac(sac);
             suivi.active = ArbreEmi.actif() != null || MachinesEmi.dernierTermine();
-            menu.setMessage(
-                    Component.literal(menu.getWidth() >= font.width("Aide…") + 12 ? "Aide…" : "…"));
-            if (menu instanceof BoutonOutilEmi outil)
-                outil.accent(RechercheEmi.selectionnee(ID) ? 0x55D88C : 0);
+            // Accès compact : doré tant que le scan des coffres, rangé dans le menu, est actif.
+            menu.texte(menu.getWidth() >= largeur(font, "Aide…") ? "Aide…" : "…")
+                    .choisi(RechercheEmi.selectionnee(ID));
         } catch (ReflectiveOperationException | RuntimeException e) {
             masquer(screen);
             signaler(e);
         }
     }
 
-    private static void placer(Button bouton, fr.assistantia.BarreOutilsEmi.Zone zone) {
+    private static int largeur(net.minecraft.client.gui.Font font, String texte) {
+        return Theme.largeurBouton(font, texte, 200);
+    }
+
+    private static void placer(BoutonTheme bouton, fr.assistantia.BarreOutilsEmi.Zone zone) {
         if (bouton == null) return;
         bouton.visible = zone != null;
-        if (zone == null) return;
-        bouton.setX(zone.x());
-        bouton.setY(zone.y());
-        bouton.setWidth(zone.largeur());
+        if (zone != null) bouton.zone(zone.x(), zone.y(), zone.largeur());
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
         for (var carte : cartes()) {
-            Button bouton = carte.get(event.getScreen());
+            BoutonTheme bouton = carte.get(event.getScreen());
             if (bouton == null
                     || !bouton.visible
                     || !bouton.isMouseOver(event.getMouseX(), event.getMouseY())) continue;
@@ -286,9 +285,11 @@ public final class CoffresArbreEmi {
 
     /** Repli unique : aucune rangée supplémentaire ne recouvre les contrôles des autres mods. */
     private static final class Menu extends Screen {
+        private static final String AIDE = "Coffres, fabrications et backpack";
         private final Screen parent;
         private final Object connexionOuverture, mondeOuverture;
-        private Button scan, suivi, sac;
+        private BoutonTheme scan, suivi, sac;
+        private Theme.Fenetre fenetre;
 
         Menu(Screen parent) {
             super(Component.literal("Outils EMI"));
@@ -300,37 +301,41 @@ public final class CoffresArbreEmi {
 
         @Override
         protected void init() {
-            int largeur = Math.min(280, width - 24), x = (width - largeur) / 2;
+            int pas = Theme.BOUTON + Theme.ECART;
+            int hauteur =
+                    Theme.TITRE
+                            + Theme.LIGNE
+                            + Theme.ECART
+                            + 3 * pas
+                            + 2 * Theme.MARGE
+                            + Theme.BOUTON;
+            fenetre = Theme.Fenetre.centree(width, height, 300, hauteur);
+            int x = fenetre.contenuX(), largeur = fenetre.contenuLargeur();
+            int y = fenetre.contenuY() + Theme.LIGNE + Theme.ECART;
             scan =
                     addRenderableWidget(
-                            Button.builder(
-                                            Component.literal(""),
+                            BoutonTheme.creer(
+                                            "",
                                             b -> {
                                                 basculer();
                                                 onClose();
                                             })
-                                    .bounds(x, 58, largeur, 20)
-                                    .build());
+                                    .zone(x, y, largeur));
             suivi =
                     addRenderableWidget(
-                            Button.builder(
-                                            Component.literal("Suivi des fabrications"),
-                                            b -> ouvrirSuivi(parent))
-                                    .bounds(x, 86, largeur, 20)
-                                    .build());
+                            BoutonTheme.creer("Suivi des fabrications", b -> ouvrirSuivi(parent))
+                                    .zone(x, y + pas, largeur));
             sac =
                     addRenderableWidget(
-                            Button.builder(
-                                            Component.literal(""),
+                            BoutonTheme.creer(
+                                            "",
                                             b ->
                                                     minecraft.setScreen(
                                                             new fr.assistantia.EcranSac(parent)))
-                                    .bounds(x, 114, largeur, 20)
-                                    .build());
+                                    .zone(x, y + 2 * pas, largeur));
             addRenderableWidget(
-                    Button.builder(Component.literal("Retour à EMI"), b -> onClose())
-                            .bounds(x, height - 28, largeur, 20)
-                            .build());
+                    BoutonTheme.creer("Retour à EMI", b -> onClose())
+                            .zone(x, fenetre.basBoutons(), largeur));
             tick();
         }
 
@@ -343,11 +348,9 @@ public final class CoffresArbreEmi {
                 suivi.active = ArbreEmi.actif() != null || MachinesEmi.dernierTermine();
             } catch (ReflectiveOperationException | RuntimeException e) {
                 scan.active = suivi.active = false;
-                scan.setMessage(Component.literal("Coffres indisponibles"));
-                scan.setTooltip(
-                        Tooltip.create(
-                                Component.literal(
-                                        "Arbre EMI illisible · retourne dans Recipe Tree")));
+                scan.texte("Coffres indisponibles")
+                        .choisi(false)
+                        .infobulle("Arbre EMI illisible · retourne dans Recipe Tree");
                 signaler(e);
             }
         }
@@ -355,9 +358,17 @@ public final class CoffresArbreEmi {
         @Override
         public void render(GuiGraphics g, int mx, int my, float delta) {
             renderBackground(g);
-            g.drawCenteredString(font, title, width / 2, 14, 0xFFFFC94A);
-            g.drawCenteredString(
-                    font, "Coffres, fabrications et backpack", width / 2, 33, 0xAAAAAA);
+            fenetre.dessiner(g, font, title.getString(), null, mx, my);
+            Theme.texte(
+                    g,
+                    font,
+                    AIDE,
+                    fenetre.contenuX(),
+                    fenetre.contenuY(),
+                    fenetre.contenuLargeur(),
+                    Theme.TEXTE_SECONDAIRE,
+                    mx,
+                    my);
             super.render(g, mx, my, delta);
         }
 

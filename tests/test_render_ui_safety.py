@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import stubs_theme
+
 ROOT = Path(__file__).resolve().parents[1]
 
 STUBS = {
@@ -77,6 +79,18 @@ public class MachinesEmi {public static int max=10,calls,last;public static bool
  public static int declarables(EmiRecipe r){return max;}public static boolean declarer(EmiRecipe r,int q){calls++;last=q;return accept;}}
 """,
 }
+
+# DeclarerFabricationEcran utilise le thème commun. STUBS reste la base des autres harnais ;
+# celui-ci compile l'écran contre une copie complétée de ce qu'appelle le thème.
+ECRAN_STUBS = dict(STUBS)
+ECRAN_STUBS.update(stubs_theme.STUBS)
+for _nom, _ajouts in (
+    ("net.minecraft.client.gui.GuiGraphics", stubs_theme.GRAPHIQUES),
+    ("net.minecraft.client.gui.screens.Screen", stubs_theme.ECRAN),
+    ("net.minecraft.client.Minecraft", stubs_theme.JEU),
+    ("net.minecraft.client.gui.components.EditBox", stubs_theme.CHAMP),
+):
+    ECRAN_STUBS[_nom] = stubs_theme.membres(ECRAN_STUBS[_nom], _ajouts)
 
 HARNESS = """
 package fr.assistantia;
@@ -189,17 +203,18 @@ class RenderUiSafetyTests(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         cls.directory = Path(cls.temp.name)
         fixtures = []
-        for name, body in STUBS.items():
+        for name, body in ECRAN_STUBS.items():
             package, _ = name.rsplit(".", 1)
             source = cls.directory / (name.replace(".", "/") + ".java")
             source.parent.mkdir(parents=True, exist_ok=True)
-            source.write_text(f"package {package};\n{body}")
+            source.write_text(f"package {package};\n{body}", encoding="utf-8")
             fixtures.append(str(source))
         harness = cls.directory / "RenderUiSafetyTest.java"
-        harness.write_text(HARNESS)
+        harness.write_text(HARNESS, encoding="utf-8")
         sources = [
             ROOT / "mod/src/main/java/fr/assistantia/LiaisonTexture.java",
             ROOT / "mod/src/main/java/fr/assistantia/compat/emi/DeclarerFabricationEcran.java",
+            *stubs_theme.SOURCES,
         ]
         compiled = subprocess.run(
             [

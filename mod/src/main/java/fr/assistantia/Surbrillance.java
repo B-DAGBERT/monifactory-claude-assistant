@@ -10,10 +10,11 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 /**
  * Dans un coffre, une machine ou l'inventaire : ce que tu as demandé à chercher pulse en cyan («
- * trouve-moi mes torches ») ou les objets de la recherche EMI explicite pulsent en cyan.
+ * trouve-moi mes torches ») ou les objets de la recherche EMI explicite pulsent en cyan, la couleur
+ * de recherche du thème.
  */
 public final class Surbrillance {
-    private static final int CADRE_RECHERCHE = 0xFF40E0FF;
+    private static final int CYAN = Theme.CYAN & 0xFFFFFF;
 
     private Surbrillance() {}
 
@@ -41,8 +42,8 @@ public final class Surbrillance {
             if (RechercheEmi.actif()
                     ? RechercheEmi.cherche(id.toString())
                     : recherche && Pont.cherche(id.toString())) {
-                g.fill(x, y, x + 16, y + 16, alpha | 0x30D0FF);
-                g.renderOutline(x - 1, y - 1, 18, 18, CADRE_RECHERCHE);
+                g.fill(x, y, x + 16, y + 16, alpha | CYAN);
+                g.renderOutline(x - 1, y - 1, 18, 18, Theme.CYAN);
             }
         }
         g.pose().popPose();
