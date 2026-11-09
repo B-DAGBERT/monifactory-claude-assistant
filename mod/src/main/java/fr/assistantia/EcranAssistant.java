@@ -316,6 +316,7 @@ public class EcranAssistant extends Screen {
         if (onglet == Onglet.REGLAGES && defilementReglages.glisser(y)) return true;
         if (onglet == Onglet.DISCUSSION && discussion.glisser(y)) return true;
         if (onglet == Onglet.BASE && base.glisser(y)) return true;
+        if (onglet == Onglet.FILONS && filons.glisser(y)) return true;
         return super.mouseDragged(x, y, bouton, dx, dy);
     }
 
@@ -324,6 +325,7 @@ public class EcranAssistant extends Screen {
         recette.relacher();
         discussion.relacher();
         base.relacher();
+        filons.relacher();
         defilementReglages.relacher();
         return super.mouseReleased(x, y, bouton);
     }
