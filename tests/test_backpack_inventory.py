@@ -120,11 +120,21 @@ class BackpackInventoryTests(unittest.TestCase):
         self.assertEqual(personal_inventory(merged, self.snapshot, 100600), merged)
         self.assertEqual(self.state, original)
 
+    def test_unchanged_snapshot_stays_current_between_confirmations(self):
+        # The mod writes a changed inventory at once and confirms an unchanged one every 2 s.
+        for age in (0, 2000, 3500, 4999):
+            with self.subTest(age=age):
+                merged = personal_inventory(
+                    self.state, {**self.snapshot, "t": 100500 - age}, 100500
+                )
+                self.assertEqual(merged["inventaire"], {"iron": 12, "plate": 2})
+
     def test_unknown_stale_and_foreign_backpacks_are_not_counted(self):
         for update in (
             {"synchronise": False},
             {"actif": False},
-            {"t": 97000},
+            {"t": 95500},
+            {"t": 95000},
             {"t": 110000},
             {"joueur": "Collègue"},
             {"dimension": "minecraft:the_nether"},

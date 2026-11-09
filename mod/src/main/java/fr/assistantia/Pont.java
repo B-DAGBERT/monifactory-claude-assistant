@@ -15,7 +15,6 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -438,36 +437,19 @@ public final class Pont {
         return ecrireDemande("recherche_emi.json", demande);
     }
 
+    /** Export périodique : écrit entièrement sur le fil d'écriture, sans attendre le disque. */
     public static boolean envoyerInventaire(JsonObject inventaire) {
-        return ecrireDemande("inventaire_joueur.json", inventaire);
+        if (!annoterContexte(inventaire)) return false;
+        Ecritures.publier(
+                DOSSIER.resolve("inventaire_joueur.json"), Ecritures.json(inventaire, false));
+        return true;
     }
 
     private static boolean ecrireDemande(String nom, JsonObject demande) {
         if (!annoterContexte(demande)) return false;
-        try {
-            Files.createDirectories(DOSSIER);
-            Path temporaire = DOSSIER.resolve(nom + ".tmp");
-            Files.writeString(temporaire, demande.toString(), StandardCharsets.UTF_8);
-            for (int essai = 1; ; essai++) {
-                try {
-                    Files.move(
-                            temporaire,
-                            DOSSIER.resolve(nom),
-                            StandardCopyOption.REPLACE_EXISTING,
-                            StandardCopyOption.ATOMIC_MOVE);
-                    return true;
-                } catch (AccessDeniedException e) {
-                    // Windows refuse le remplacement tant que l'assistant lit encore le fichier.
-                    if (essai == 4) throw e;
-                    Thread.sleep(5L * essai);
-                }
-            }
-        } catch (IOException e) {
-            LOGGER.warn("Assistant IA : demande non transmise", e);
-            return false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
+        // Un seul essai sur le thread client : si l'assistant lit encore le fichier (refus de
+        // Windows), le fil d'écriture réessaie sans faire attendre le jeu, et sans jamais
+        // remplacer une demande plus récente par celle-ci.
+        return Ecritures.ecrire(DOSSIER.resolve(nom), Ecritures.texte(demande.toString()));
     }
 }

@@ -1,5 +1,9 @@
 """Read the client's complete personal inventory, including carried backpacks."""
 
+# The mod rewrites inventaire_joueur.json as soon as it changes and confirms an unchanged
+# snapshot every 2 s; like etat.json, it stays current for 5 s (a short client stall included).
+SNAPSHOT_MAX_AGE_MS = 5000
+
 
 def personal_inventory(state, snapshot, now_ms):
     if not isinstance(state, dict) or not isinstance(snapshot, dict):
@@ -10,7 +14,7 @@ def personal_inventory(state, snapshot, now_ms):
         or snapshot.get("synchronise") is not True
         or not isinstance(stamp, (int, float))
         or isinstance(stamp, bool)
-        or not 0 <= now_ms - stamp < 2500
+        or not 0 <= now_ms - stamp < SNAPSHOT_MAX_AGE_MS
         or snapshot.get("joueur") != state.get("joueur")
         or snapshot.get("dimension") != state.get("dimension")
     ):

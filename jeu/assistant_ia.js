@@ -28,11 +28,18 @@ try {
 } catch (e) { console.warn('Assistant IA : EMI introuvable, pas d\'export des recettes') }
 try { QuestFile = Java.loadClass('dev.ftb.mods.ftbquests.client.ClientQuestFile') } catch (e) { console.warn('Assistant IA : FTB Quests introuvable') }
 
-let IdentiteMonde = null, MemoireMonde = null
+let IdentiteMonde = null, MemoireMonde = null, Echanges = null
 try {
   IdentiteMonde = Java.loadClass('fr.assistantia.IdentiteMonde')
   MemoireMonde = Java.loadClass('fr.assistantia.MemoireMondeKubeJS')
 } catch (e) { /* Ancien mod ou fonctionnement KubeJS seul. */ }
+// Avec le mod : relevés écrits sur son fil d'écriture (le jeu n'attend pas le disque) et
+// progression des quêtes comparée par empreinte. Sans lui, écriture directe comme avant.
+try { Echanges = Java.loadClass('fr.assistantia.EchangesKubeJS') } catch (e) { /* Mod plus ancien. */ }
+const ECHANGES = Echanges != null && typeof Echanges.publier == 'function'
+const CONFIRMATION_ETAT = 2000    // etat.json inchangé : réécrit pour rester récent (Python : 5 s)
+const PROGRES_QUETES = 30000      // progression de tâche seule : quetes.json réécrit au plus toutes les 30 s
+const ATTENTE_STOCKAGE = 2000     // coffre qu'on range : stockage.json écrit au plus toutes les 2 s
 
 let contexte = null
 let memoireMonde = null
@@ -52,6 +59,11 @@ let mineraisModifies = false
 let ecranPrecedent = null
 let manquants = {}       // coffres mémorisés introuvables à la dernière vérification
 let dimensionPrecedente = null, debutDimension = 0
+let etatEcrit = null, etatEcritA = 0   // dernier etat.json écrit : texte sans l'heure, et date
+let quetesEcrites = null // empreintes du dernier quetes.json écrit : { quetes, progres, t }
+let resume = null        // dernier comptage des quêtes : { empreinte, terminees, total }
+let stockageEnAttente = 0, ecranStockage = null   // première modification non écrite, et l'écran d'alors
+let mondeVerifie = null, sessionVerifiee = null   // identifiants déjà validés
 
 function isolationDemandee() {
   if (IdentiteMonde != null) return IdentiteMonde.isolation() == true
@@ -72,7 +84,12 @@ function contexteCourant() {
   if (!isolationDemandee()) return { monde: '', session: '', dimension: '' }
   if (IdentiteMonde == null || MemoireMonde == null || Client.level == null || Client.player == null) return null
   const monde = str(IdentiteMonde.monde()), session = str(IdentiteMonde.session())
-  if (!/^m1_[0-9a-f]{64}$/.test(monde) || !/^[0-9a-f]{32}$/.test(session)) return null
+  // Lu à chaque tick : seul un identifiant nouveau est revalidé
+  if (monde !== mondeVerifie || session !== sessionVerifiee) {
+    if (!/^m1_[0-9a-f]{64}$/.test(monde) || !/^[0-9a-f]{32}$/.test(session)) return null
+    mondeVerifie = monde
+    sessionVerifiee = session
+  }
   return { monde: monde, session: session, dimension: str(Client.level.dimension) }
 }
 
@@ -144,6 +161,8 @@ function synchroniserContexte(suivant) {
   }
   conteneur = ecranPrecedent = mineraiVise = null
   dimensionPrecedente = null
+  etatEcrit = quetesEcrites = ecranStockage = null   // relevés du nouveau contexte écrits sans attendre
+  stockageEnAttente = 0
   amorcerCommande()
   inventaire = {}
   manquants = {}
@@ -268,13 +287,45 @@ function lireQuetes(details) {
   return { terminees: terminees, total: total, chapitres: chapitres, disponibles: disponibles, terminees_titres: faites }
 }
 
+// Avec le mod, le fichier est remplacé atomiquement sur son fil d'écriture ; sinon écriture directe
+function ecrireReleve(nom, data) {
+  if (ECHANGES && Echanges.publier(nom, JSON.stringify(data, null, '\t'))) return
+  JsonIO.write(DOSSIER + nom, data)
+}
+
+function cleContexte() {
+  return contexte == null ? '' : contexte.monde + '|' + contexte.session + '|' + contexte.dimension
+}
+
+// Empreintes de la progression FTB Quests, lues par le mod sans parcourir les quêtes (null sans lui)
+function empreinteQuetes() {
+  if (!ECHANGES || QuestFile == null || !QuestFile.exists()) return null
+  const fichier = QuestFile.INSTANCE
+  const equipe = fichier.selfTeamData
+  if (equipe == null) return null
+  const quetes = str(Echanges.empreinteQuetes(fichier, equipe)), progres = str(Echanges.progresQuetes(equipe))
+  return quetes === '' || progres === '' ? null : { quetes: quetes + '|' + cleContexte(), progres: progres }
+}
+
+// Le comptage des quêtes de etat.json n'est refait que si elles ont changé
+function resumeQuetes() {
+  const empreinte = empreinteQuetes()
+  if (empreinte == null || resume == null || resume.empreinte !== empreinte.quetes) {
+    const quetes = lireQuetes(false)
+    resume = quetes == null ? null
+      : { empreinte: empreinte == null ? null : empreinte.quetes, terminees: quetes.terminees, total: quetes.total }
+  }
+  return resume
+}
+
 function ecrireEtat() {
   const p = Client.player
-  const quetes = lireQuetes(false)
-  JsonIO.write(DOSSIER + 'etat.json', annoterTrame({
-    t: Date.now(),
+  const quetes = resumeQuetes()
+  const etat = annoterTrame({
+    t: 0,   // daté à l'écriture
     version_script: VERSION_SCRIPT,
-    serveur_recu: mondeRecu,
+    serveur_recu: ECHANGES && contexte != null
+      ? Number(Echanges.recu(contexte.monde, contexte.session, contexte.dimension)) : mondeRecu,
     joueur: texte(p.getName()),
     dimension: str(Client.level.dimension),   // KubeJS en fait une propriété (ResourceLocation)
     x: Math.floor(p.getX()), y: Math.floor(p.getY()), z: Math.floor(p.getZ()),
@@ -287,7 +338,7 @@ function ecrireEtat() {
     sante: nombre([() => p.getHealth(), () => p.health]),
     sante_max: nombre([() => p.getMaxHealth(), () => p.maxHealth]),
     faim: nombre([() => p.getFoodData().getFoodLevel(), () => p.foodLevel]),
-    heure: nombre([() => Client.level.getDayTime() % 24000, () => Client.level.dayTime % 24000]),
+    heure: null,   // avance sans cesse : lue à l'écriture, pas un changement
     pluie: premiereValeur([() => Client.level.isRaining() == true, () => Client.level.raining == true]),
     cases_libres: casesLibres(),
     mort: premiereValeur([() => p.isDeadOrDying() == true, () => p.getHealth() <= 0]),
@@ -296,14 +347,30 @@ function ecrireEtat() {
     quetes_total: quetes == null ? -1 : quetes.total,
     recettes: etatRecettes,
     erreurs: erreurs
-  }))
+  })
+  // Rien de changé : seulement confirmé toutes les 2 s
+  const signature = JSON.stringify(etat)
+  const maintenant = Date.now()
+  if (signature === etatEcrit && maintenant - etatEcritA < CONFIRMATION_ETAT) return
+  etat.t = maintenant
+  etat.heure = nombre([() => Client.level.getDayTime() % 24000, () => Client.level.dayTime % 24000])
+  ecrireReleve('etat.json', etat)
+  etatEcrit = signature
+  etatEcritA = maintenant
 }
 
+// Réécrit seulement si les quêtes ont changé ; une progression de tâche seule, au plus toutes les 30 s
 function ecrireQuetes() {
+  const empreinte = empreinteQuetes()
+  const maintenant = Date.now()
+  if (empreinte != null && quetesEcrites != null && empreinte.quetes === quetesEcrites.quetes
+    && (empreinte.progres === quetesEcrites.progres || maintenant - quetesEcrites.t < PROGRES_QUETES)) return
   const quetes = lireQuetes(true)
   if (quetes != null) {
-    quetes.t = Date.now()
-    JsonIO.write(DOSSIER + 'quetes.json', annoterTrame(quetes))
+    quetes.t = maintenant
+    ecrireReleve('quetes.json', annoterTrame(quetes))
+    quetesEcrites = empreinte == null ? null : { quetes: empreinte.quetes, progres: empreinte.progres, t: maintenant }
+    if (empreinte != null) resume = { empreinte: empreinte.quetes, terminees: quetes.terminees, total: quetes.total }
   }
 }
 
@@ -482,7 +549,15 @@ function suivreConteneur() {
   else if (ecran != ecranPrecedent) surOuvertureEcran()
   ecranPrecedent = ecran
   if (conteneur != null) lireConteneur()
-  ecrireStockage()
+  if (!stockageModifie) return
+  // Un coffre qu'on range change à chaque déplacement : toute la mémoire est écrite au plus
+  // toutes les 2 s tant qu'il reste ouvert, et dès que l'écran se ferme ou change.
+  const maintenant = Date.now()
+  if (stockageEnAttente == 0) {
+    stockageEnAttente = maintenant
+    ecranStockage = ecran
+  }
+  if (ecran == null || ecran != ecranStockage || maintenant - stockageEnAttente >= ATTENTE_STOCKAGE) ecrireStockage()
 }
 
 function ecrireStockage() {
@@ -492,6 +567,8 @@ function ecrireStockage() {
     machines: Object.keys(machines).map(k => machines[k])
   })
   stockageModifie = false
+  stockageEnAttente = 0
+  ecranStockage = null
 }
 
 // ---------- Export des recettes (EMI) ----------
@@ -628,6 +705,13 @@ function recevoirMonde(event) {
     lirePartie(d, 'assistant_monde') !== courant.monde
     || lirePartie(d, 'assistant_session') !== courant.session
   )) return
+  // Avec le mod : assemblage, contrôle de la dimension, annotation et écriture hors du thread du jeu
+  if (typeof Echanges != 'undefined' && Echanges != null && typeof Echanges.transmettreMonde == 'function') {
+    const erreur = str(Echanges.erreurMonde())
+    if (erreur !== '') noterErreur('données du serveur', erreur)
+    Echanges.transmettreMonde(d, n, courant.monde, courant.session, courant.dimension)
+    return
+  }
   let json = ''
   for (let i = 0; i < n; i++) json += lirePartie(d, 'p' + i)
   const trame = JsonIO.parseRaw(json).getAsJsonObject()
@@ -660,13 +744,11 @@ ClientEvents.tick(function (event) {
   if (Client.player == null || Client.level == null || courant == null || !memeContexte(contexte, courant)) return
   ticks++
   if (exportRecettes != null) essayer('export des recettes', avancerExportRecettes)
-  if (ticks % 10 == 0) {
-    essayer('inventaire', () => { inventaire = lireInventaire() })
-  }
   if (ticks % 5 == 0) essayer('coffres', suivreConteneur)
   if (ticks % 4 == 2) essayer('minerais', suivreMinerais)
   if (ticks % 100 == 20) essayer('écriture des minerais', ecrireMinerais)
   if (ticks % 20 == 0) {
+    essayer('inventaire', () => { inventaire = lireInventaire() })   // pour etat.json seulement
     essayer('commande', lireCommande)
     essayer('état', ecrireEtat)
   }
