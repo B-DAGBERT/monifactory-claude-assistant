@@ -1,7 +1,6 @@
 """Compact local diagnostics; no AI request, credentials or account data."""
 
 import subprocess
-import time
 
 from monifactory_assistant.paths import ROOT
 from monifactory_assistant.persistence import ISSUES
@@ -9,12 +8,15 @@ from monifactory_assistant.runtime import LAST_ERROR
 
 
 def view(app):
+    """Diagnostic du menu Y. Les dates restent des dates : le mod calcule les âges lui-même, la
+    vue ne change donc pas à chaque seconde et vue_mod.json n'est réécrit qu'à un vrai
+    changement."""
     state = app.game or {}
     bridge = app.bridge
     stamp = (state or getattr(bridge, "last_state", None) or {}).get("t", 0)
-    age = (
-        max(0, round((time.time() * 1000 - stamp) / 1000, 1))
-        if isinstance(stamp, (int, float)) and stamp
+    stamp = (
+        int(stamp)
+        if isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and stamp > 0
         else None
     )
     queue = getattr(app, "request_queue", None)
@@ -22,7 +24,7 @@ def view(app):
     return {
         "revision": getattr(app, "diagnostic_revision", ""),
         "jeu_connecte": bool(state),
-        "age_inventaire": age,
+        "inventaire_t": stamp,  # date du relevé (ms) ; le mod en affiche l'âge
         "dimension": state.get("dimension", ""),
         "serveur_actif": app.world.active,
         "occupe": app.busy,

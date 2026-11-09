@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -14,73 +13,103 @@ import net.minecraft.network.chat.Component;
  * l'assistant. Les valeurs « plan » de la configuration sont renvoyées telles quelles.
  */
 public final class EcranConfigurationIA extends Screen {
+    private static final String NOTE = "Appliquer prend effet au prochain échange.";
     private final Screen parent;
     // Même après fermeture de Y, conserver l'accusé attendu et le brouillon local.
     private static final EtatConfigurationIA etat = new EtatConfigurationIA();
-    private Button question;
+    private BoutonTheme question;
     private List<CatalogueModeles.Modele> modeles = List.of();
     private String sourceCatalogue = "";
-    private Button effortQuestion, appliquer, defauts, actualiser;
-    private int gauche, largeur;
+    private BoutonTheme effortQuestion, appliquer, defauts, actualiser, retour;
+    private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
+
+    /** Carte du modèle, texte d'état et ligne de note, fixés par {@link #init()}. */
+    private int hautCarte, hautStatut, ligneNote;
+
+    private boolean actualiserPlace;
 
     public EcranConfigurationIA(Screen parent) {
         super(Component.literal("Modèles IA"));
         this.parent = parent;
     }
 
-    private Button bouton(String titre, int x, int y, int l, Button.OnPress action) {
-        return addRenderableWidget(
-                Button.builder(Component.literal(titre), action).bounds(x, y, l, 20).build());
+    private BoutonTheme bouton(String titre, Button.OnPress action) {
+        return addRenderableWidget(BoutonTheme.creer(titre, action));
     }
 
     @Override
     protected void init() {
-        largeur = Math.min(500, width - 24);
-        gauche = (width - largeur) / 2;
-        int reflexion = Math.min(124, largeur / 2 - 6);
-        question = bouton("Choisir…", gauche, 64, largeur - reflexion - 6, b -> choisirModele());
+        fenetre = Theme.Fenetre.centree(width, height, 500, 260);
+        int x = fenetre.contenuX(), l = fenetre.contenuLargeur();
+        hautCarte = fenetre.contenuY();
+        // Dans la carte : le titre de la section puis la rangée modèle · réflexion.
+        int rangee = hautCarte + 5 + Theme.LIGNE + 2, interieur = l - 10;
+        int reflexion = Math.min(124, interieur / 2 - Theme.ECART);
+        question =
+                bouton("Choisir…", b -> choisirModele())
+                        .zone(x + 5, rangee, interieur - reflexion - Theme.ECART);
         effortQuestion =
-                bouton("Réflexion", gauche + largeur - reflexion, 64, reflexion, b -> cycler());
-        int tiers = (largeur - 12) / 3;
-        appliquer = bouton("Appliquer", gauche, height - 28, tiers, b -> appliquer());
+                bouton("Réflexion", b -> cycler())
+                        .zone(x + 5 + interieur - reflexion, rangee, reflexion);
+        hautStatut = rangee + Theme.BOUTON + 5 + 2 * Theme.ECART;
+        ligneNote = fenetre.basBoutons() - Theme.ECART - Theme.LIGNE + 1;
+        appliquer = bouton("Appliquer", b -> appliquer()).genre(Theme.Genre.PRINCIPAL);
         defauts =
                 bouton(
-                        "Défauts",
-                        gauche + tiers + 6,
-                        height - 28,
-                        tiers,
-                        b -> {
-                            etat.defauts(System.currentTimeMillis());
-                            remplir();
-                        });
-        defauts.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Remettre les valeurs par défaut dans le brouillon. Appliquer reste nécessaire.")));
-        bouton(
-                "Retour",
-                gauche + 2 * (tiers + 6),
-                height - 28,
-                largeur - 2 * (tiers + 6),
-                b -> onClose());
+                                "Défauts",
+                                b -> {
+                                    etat.defauts(System.currentTimeMillis());
+                                    remplir();
+                                })
+                        .infobulle(
+                                "Remettre les valeurs par défaut dans le brouillon. Appliquer reste nécessaire.");
         actualiser =
                 bouton(
-                        "Actualiser",
-                        gauche + largeur - 94,
-                        height - 54,
-                        94,
-                        b -> {
-                            etat.actualiser(System.currentTimeMillis());
-                            remplir();
-                        });
-        actualiser.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Relire la version de configuration courante sans remplacer ton brouillon.")));
+                                "Actualiser",
+                                b -> {
+                                    etat.actualiser(System.currentTimeMillis());
+                                    remplir();
+                                })
+                        .infobulle(
+                                "Relire la version de configuration courante sans remplacer ton brouillon.");
         actualiser.visible = false;
+        retour = bouton("Retour", b -> onClose());
+        actualiserPlace = !actualiser.visible;
+        placerBoutons();
         rafraichir();
         remplir();
         actualiserBoutons();
+    }
+
+    /**
+     * Rangée du bas : Appliquer, Défauts et, quand la configuration a changé ailleurs, Actualiser ;
+     * Retour à droite.
+     */
+    private void placerBoutons() {
+        if (actualiserPlace == actualiser.visible) return;
+        actualiserPlace = actualiser.visible;
+        int x = fenetre.contenuX(), droite = fenetre.contenuDroite(), y = fenetre.basBoutons();
+        int lRetour = Theme.largeurBouton(font, "Retour", 120);
+        retour.zone(droite - lRetour, y, lRetour);
+        int place = droite - lRetour - Theme.MARGE - x;
+        int lAppliquer =
+                Math.max(
+                        Theme.largeurBouton(font, "Appliquer", 120),
+                        Theme.largeurBouton(font, "En cours…", 120));
+        int lDefauts = Theme.largeurBouton(font, "Défauts", 120);
+        int lActualiser = Theme.largeurBouton(font, "Actualiser", 120);
+        int voulu =
+                lAppliquer
+                        + Theme.ECART
+                        + lDefauts
+                        + (actualiser.visible ? Theme.ECART + lActualiser : 0);
+        if (voulu > place) { // fenêtre étroite : la rangée se partage la place restante
+            int n = actualiser.visible ? 3 : 2;
+            lAppliquer = lDefauts = lActualiser = (place - (n - 1) * Theme.ECART) / n;
+        }
+        appliquer.zone(x, y, lAppliquer);
+        defauts.zone(x + lAppliquer + Theme.ECART, y, lDefauts);
+        actualiser.zone(x + lAppliquer + lDefauts + 2 * Theme.ECART, y, lActualiser);
     }
 
     private void choisirModele() {
@@ -235,29 +264,21 @@ public final class EcranConfigurationIA extends Screen {
         var valeurs = etat.brouillon();
         String id = valeurs == null ? "" : valeurs.modelQuestion();
         String nom = CatalogueModeles.nom(modeles, id);
-        question.setMessage(
-                Component.literal(font.plainSubstrByWidth(nom, question.getWidth() - 20) + " ▾"));
-        question.setTooltip(
-                Tooltip.create(Component.literal("Choisir un modèle\n" + nom + "\n" + id)));
+        // La flèche reste visible : seul le nom est coupé, complet dans l'infobulle.
+        question.texte(Theme.couper(font, nom, question.getWidth() - 6 - font.width(" ▾")) + " ▾");
+        question.infobulle("Choisir un modèle\n" + nom + "\n" + id);
         appliquer.active = etat.peutAppliquer(Pont.assistantActif(), maintenant);
-        appliquer.setMessage(Component.literal(etat.attente() ? "En cours…" : "Appliquer"));
+        appliquer.texte(etat.attente() ? "En cours…" : "Appliquer");
         defauts.active = edition;
         actualiser.visible = etat.perimee();
         actualiser.active = edition && Pont.assistantActif() && etat.configuration().modifiable();
+        placerBoutons();
         String effort = valeurs == null ? "" : valeurs.effortQuestion();
         String reflexion = EtatConfigurationIA.nomEffort(effort);
         effortQuestion.active = edition && !etat.configuration().efforts().isEmpty();
-        effortQuestion.setMessage(
-                Component.literal(
-                        font.plainSubstrByWidth(reflexion, effortQuestion.getWidth() - 8)));
-        effortQuestion.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Réflexion : "
-                                        + reflexion
-                                        + " ("
-                                        + effort
-                                        + ") · cliquer pour changer")));
+        effortQuestion.texte(reflexion);
+        effortQuestion.infobulle(
+                "Réflexion : " + reflexion + " (" + effort + ") · cliquer pour changer");
     }
 
     @Override
@@ -269,33 +290,59 @@ public final class EcranConfigurationIA extends Screen {
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
         renderBackground(g);
-        g.drawCenteredString(font, title, width / 2, 12, Hud.OR);
         var conf = etat.configuration();
-        String moteur = "Moteur actif : " + (conf == null ? "indisponible" : conf.nom());
-        g.drawCenteredString(
-                font, font.plainSubstrByWidth(moteur, largeur), width / 2, 29, Hud.GRIS);
-        g.fill(gauche - 4, 45, gauche + largeur + 4, 90, 0xA0202730);
-        g.drawString(font, "Discussion et fiches", gauche, 50, Hud.BLANC, false);
-        g.drawString(font, "Réflexion", effortQuestion.getX(), 50, Hud.GRIS, false);
+        fenetre.dessiner(
+                g,
+                font,
+                title.getString(),
+                "Moteur actif : " + (conf == null ? "indisponible" : conf.nom()),
+                mx,
+                my);
+        int x = fenetre.contenuX(), l = fenetre.contenuLargeur();
+        int hautRangee = question.getY();
+        Theme.carte(g, x, hautCarte, l, hautRangee + Theme.BOUTON + 5 - hautCarte, false);
+        int titreY = hautCarte + 6;
+        Theme.texte(
+                g,
+                font,
+                "Discussion et fiches",
+                x + 5,
+                titreY,
+                effortQuestion.getX() - Theme.ECART - x - 5,
+                Theme.TEXTE,
+                mx,
+                my);
+        Theme.texte(
+                g,
+                font,
+                "Réflexion",
+                effortQuestion.getX(),
+                titreY,
+                effortQuestion.getWidth(),
+                Theme.TEXTE_SECONDAIRE,
+                mx,
+                my);
         String statut = etat.message(Pont.assistantActif());
-        int y = 98, limite = height - 62;
-        for (var ligne : font.split(Component.literal(statut), largeur)) {
-            if (y + 10 > limite) break;
-            g.drawString(font, ligne, gauche, y, etat.attente() ? Hud.JAUNE : Hud.GRIS, false);
-            y += 11;
-        }
+        int limite = (actualiser.visible ? fenetre.basBoutons() : ligneNote) - Theme.ECART;
+        int lignes = Math.max(1, (limite - hautStatut) / Theme.LIGNE);
+        Theme.paragraphe(
+                g,
+                font,
+                statut,
+                x,
+                hautStatut,
+                l,
+                etat.attente() ? Theme.JAUNE : Theme.TEXTE_SECONDAIRE,
+                lignes);
+        if (Theme.lignes(font, statut, l) > lignes
+                && mx >= x
+                && mx < x + l
+                && my >= hautStatut
+                && my < hautStatut + lignes * Theme.LIGNE)
+            Theme.infobulle(font, Component.literal(statut));
         if (!actualiser.visible)
-            g.drawString(
-                    font,
-                    font.plainSubstrByWidth("Appliquer prend effet au prochain échange.", largeur),
-                    gauche,
-                    height - 48,
-                    Hud.GRIS,
-                    false);
+            Theme.texte(g, font, NOTE, x, ligneNote, l, Theme.TEXTE_SECONDAIRE, mx, my);
         super.render(g, mx, my, delta);
-        if (mx >= gauche && mx < gauche + largeur && my >= 96 && my < limite)
-            g.renderTooltip(
-                    font, font.split(Component.literal(statut), Math.min(320, width - 24)), mx, my);
     }
 
     @Override

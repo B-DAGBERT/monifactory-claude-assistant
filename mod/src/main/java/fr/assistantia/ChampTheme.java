@@ -24,6 +24,22 @@ public class ChampTheme extends EditBox {
         this(font, x, y, largeur, Theme.BOUTON, nom);
     }
 
+    /**
+     * Champ dont le contour occupe exactement la zone donnée, haute de {@link Theme#BOUTON} : il
+     * s'aligne sur les boutons de la même rangée (EditBox dessine son contour autour du champ).
+     */
+    public static ChampTheme dans(Font font, int x, int y, int largeur, Component nom) {
+        return new ChampTheme(font, x + 1, y + 1, Math.max(1, largeur - 2), Theme.BOUTON - 2, nom);
+    }
+
+    /** Replace le champ pour que son contour occupe la zone donnée, comme {@link #dans}. */
+    public ChampTheme zone(int x, int y, int largeur) {
+        setX(x + 1);
+        setY(y + 1);
+        setWidth(Math.max(1, largeur - 2));
+        return this;
+    }
+
     @Override
     public void setBordered(boolean bordure) {
         super.setBordered(bordure);

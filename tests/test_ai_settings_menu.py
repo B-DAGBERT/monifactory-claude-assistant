@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import stubs_theme
 from tests.test_render_ui_safety import STUBS as COMMON_STUBS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,6 +73,48 @@ public class ModList {public static ModList get(){return new ModList();}public j
     }
 )
 
+# Les écrans réels (Modèles IA, choix du modèle, Diagnostic) utilisent le thème commun. STUBS
+# reste la base d'autres harnais ; ces écrans se compilent contre une copie complétée, dont la
+# police de 6 pixels coupe en lignes et dont GuiGraphics garde les textes écrits.
+ECRAN_STUBS = dict(STUBS)
+ECRAN_STUBS.update(stubs_theme.STUBS)
+ECRAN_STUBS.update(
+    {
+        "net.minecraft.client.gui.Font": """
+public class Font {public int width(String s){return s.length()*6;}
+ public String plainSubstrByWidth(String s,int w){return s.substring(0,Math.min(s.length(),Math.max(0,w/6)));}
+ public java.util.List<net.minecraft.util.FormattedCharSequence> split(net.minecraft.network.chat.Component c,int w){
+  var out=new java.util.ArrayList<net.minecraft.util.FormattedCharSequence>();String s=c.getString();int n=Math.max(1,w/6);
+  for(int i=0;i<s.length();i+=n)out.add(net.minecraft.util.FormattedCharSequence.of(s.substring(i,Math.min(s.length(),i+n))));
+  if(out.isEmpty())out.add(net.minecraft.util.FormattedCharSequence.of(""));return out;}}
+""",
+        "net.minecraft.client.gui.GuiGraphics": """
+public class GuiGraphics {public static final java.util.List<String> TEXTES=new java.util.ArrayList<>();
+ public void drawCenteredString(Font f,Object text,int x,int y,int color){TEXTES.add(String.valueOf(text));}
+ public void fill(int a,int b,int c,int d,int color){}public void renderOutline(int x,int y,int w,int h,int c){}
+ public void drawString(Font f,Object s,int x,int y,int c,boolean shadow){TEXTES.add(String.valueOf(s));}
+ public void renderTooltip(Font f,Object s,int x,int y){}
+ public void enableScissor(int a,int b,int c,int d){}public void disableScissor(){}}
+""",
+    }
+)
+ECRAN_STUBS["net.minecraft.client.gui.screens.Screen"] = stubs_theme.membres(
+    ECRAN_STUBS["net.minecraft.client.gui.screens.Screen"].replace(
+        "public boolean isPauseScreen()",
+        "public boolean mouseClicked(double x,double y,int b){return false;}"
+        "public boolean mouseScrolled(double x,double y,double d){return false;}"
+        "public boolean mouseDragged(double x,double y,int b,double dx,double dy){return false;}"
+        "public boolean mouseReleased(double x,double y,int b){return false;}public boolean isPauseScreen()",
+    ),
+    stubs_theme.ECRAN,
+)
+ECRAN_STUBS["net.minecraft.client.Minecraft"] = stubs_theme.membres(
+    ECRAN_STUBS["net.minecraft.client.Minecraft"], stubs_theme.JEU
+)
+ECRAN_STUBS["net.minecraft.client.gui.components.EditBox"] = stubs_theme.membres(
+    ECRAN_STUBS["net.minecraft.client.gui.components.EditBox"], stubs_theme.CHAMP
+)
+
 DIAGNOSTIC_HARNESS = r"""
 package fr.assistantia;
 import net.minecraft.client.Minecraft;
@@ -84,8 +127,13 @@ public class DiagnosticScreenTest {
   Pont.ecran.add("diagnostic",com.google.gson.JsonParser.parseString("{\"sauvegardes\":[{\"fichier\":\"a\",\"message\":\"récupérée\"},{\"fichier\":\"b\",\"message\":\"récupérée\"},{\"fichier\":\"c\",\"message\":\"récupérée\"}]}").getAsJsonObject());
   Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Réglages"));
   var s=new EcranDiagnostic(parent);mc.screen=s;s.init(mc,320,240);s.tick();s.render(new GuiGraphics(),0,0,0);
-  for(var w:s.widgets)if(w instanceof Button b){assert b.x>=0&&b.y>=0&&b.x+b.w<=320&&b.y+b.h<=240;if(b.title.getString().equals("Suivant")){assert b.active;b.press();}}
-  s.render(new GuiGraphics(),0,0,0);assert Pont.sends==0;
+  for(var w:s.widgets)if(w instanceof Button b)assert b instanceof BoutonTheme&&b.h==Theme.BOUTON&&b.x>=0&&b.y>=0&&b.x+b.w<=320&&b.y+b.h<=240:"themed footer inside the screen";
+  // 320 x 240 : the three backups do not fit, the list scrolls (no more paging).
+  GuiGraphics.TEXTES.clear();s.render(new GuiGraphics(),0,0,0);
+  assert GuiGraphics.TEXTES.contains("Mod chargé")&&!GuiGraphics.TEXTES.contains("c · récupérée"):GuiGraphics.TEXTES;
+  s.mouseScrolled(160,120,-100);GuiGraphics.TEXTES.clear();s.render(new GuiGraphics(),0,0,0);
+  assert GuiGraphics.TEXTES.contains("c · récupérée")&&!GuiGraphics.TEXTES.contains("Mod chargé"):"scrolling reveals the last backup";
+  assert Pont.sends==0;
   s.keyPressed(256,0,0);assert mc.screen==parent;
   s.init(mc,640,480);s.render(new GuiGraphics(),0,0,0);assert Pont.sends==0;
  }
@@ -102,7 +150,8 @@ import net.minecraft.network.chat.Component;
 public class ConfigurationScreenTest {
  static Button button(Screen s,String name){return (Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals(name)).findFirst().orElseThrow();}
  static EtatConfigurationIA state(EcranConfigurationIA s)throws Exception{var f=EcranConfigurationIA.class.getDeclaredField("etat");f.setAccessible(true);return (EtatConfigurationIA)f.get(s);}
- static void bounds(Screen s){for(var w:s.widgets){if(w instanceof Button b)assert b.x>=0&&b.y>=0&&b.w>0&&b.x+b.w<=s.width&&b.y+b.h<=s.height:"button bounds";}}
+ static void bounds(Screen s){for(var w:s.widgets){if(w instanceof Button b)assert b.x>=0&&b.y>=0&&b.w>0&&b.x+b.w<=s.width&&b.y+b.h<=s.height:"button bounds";}
+   for(var w:s.widgets)if(w instanceof Button b)assert b instanceof BoutonTheme&&b.h==Theme.BOUTON:"theme button "+b.title.getString();}
  static void choose(Minecraft mc,EcranConfigurationIA s,String from,String to){
    button(s,from).press();var picker=(EcranChoixModele)mc.screen;picker.init(mc,320,240);bounds(picker);
    button(picker,to).press();assert mc.screen==s; s.init(mc,320,240);
@@ -129,6 +178,16 @@ public class ConfigurationScreenTest {
    var search=(EditBox)picker.widgets.stream().filter(w->w instanceof EditBox).findFirst().orElseThrow();
    search.setValue("absent");assert picker.widgets.stream().noneMatch(w->w instanceof Button b&&b.visible&&b.title.getString().equals("New readable"));
    search.setValue("New");button(picker,"New readable").press();assert mc.screen==s&&Pont.sends==0;
+   // A long catalogue scrolls row by row instead of paging; each row stays a theme button.
+   var many=new java.util.ArrayList<CatalogueModeles.Modele>();
+   for(int i=0;i<12;i++)many.add(new CatalogueModeles.Modele("m-"+i,"Model "+i,"origin "+i,java.util.List.of("low")));
+   var list=new EcranChoixModele(s,"Modèle",many,"m-0","catalogue",m->{});mc.screen=list;list.init(mc,320,240);bounds(list);
+   assert list.widgets.stream().anyMatch(w->w instanceof Button b&&b.visible&&b.title.getString().equals("✓ Model 0")&&((BoutonTheme)b).choisi());
+   assert list.widgets.stream().noneMatch(w->w instanceof Button b&&b.visible&&b.title.getString().equals("Model 11")):"only the rows that fit";
+   for(int i=0;i<20;i++)list.mouseScrolled(0,0,-1);
+   assert list.widgets.stream().anyMatch(w->w instanceof Button b&&b.visible&&b.title.getString().equals("Model 11")):"scrolled to the last model";
+   assert list.widgets.stream().noneMatch(w->w instanceof Button b&&b.visible&&b.title.getString().equals("✓ Model 0"));
+   bounds(list);
    return;
   }
   Pont.actif=false;s.tick();assert !button(s,"Appliquer").active;
@@ -218,14 +277,14 @@ class AiSettingsMenuTests(unittest.TestCase):
         if gson is None:
             self.skipTest("Gson Gradle dependency required for the real screen adapter")
         fixtures = []
-        for name, body in STUBS.items():
+        for name, body in ECRAN_STUBS.items():
             package, _ = name.rsplit(".", 1)
             source = self.directory / (name.replace(".", "/") + ".java")
             source.parent.mkdir(parents=True, exist_ok=True)
-            source.write_text(f"package {package};\n{body}")
+            source.write_text(f"package {package};\n{body}", encoding="utf-8")
             fixtures.append(source)
         harness = self.directory / "ConfigurationScreenTest.java"
-        harness.write_text(SCREEN_HARNESS)
+        harness.write_text(SCREEN_HARNESS, encoding="utf-8")
         classpath = str(self.directory) + os.pathsep + str(gson)
         self.compile(
             [
@@ -236,6 +295,7 @@ class AiSettingsMenuTests(unittest.TestCase):
                 ROOT / "mod/src/main/java/fr/assistantia/EcranDiagnostic.java",
                 ROOT / "mod/src/main/java/fr/assistantia/FileDemandes.java",
                 ROOT / "tests/java/fr/assistantia/FileDemandesTest.java",
+                *stubs_theme.SOURCES,
                 harness,
             ],
             classpath,
@@ -244,7 +304,7 @@ class AiSettingsMenuTests(unittest.TestCase):
         self.run_java("fr.assistantia.ConfigurationScreenTest", classpath, "submit")
 
         diagnostic_harness = self.directory / "DiagnosticScreenTest.java"
-        diagnostic_harness.write_text(DIAGNOSTIC_HARNESS)
+        diagnostic_harness.write_text(DIAGNOSTIC_HARNESS, encoding="utf-8")
         self.compile([diagnostic_harness], classpath)
         self.run_java("fr.assistantia.DiagnosticScreenTest", classpath)
         self.run_java("fr.assistantia.FileDemandesTest", classpath)

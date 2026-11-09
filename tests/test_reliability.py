@@ -254,7 +254,7 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
             self.assertEqual(storage.totals()["iron"], 2)
         self.assertEqual(storage.totals()["iron"], 7)
 
-    def test_diagnostic_reports_stale_inventory_and_omits_private_config(self):
+    def test_diagnostic_dates_the_inventory_and_omits_private_config(self):
         from monifactory_assistant.diagnostics import view
 
         app = SimpleNamespace(
@@ -265,12 +265,43 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
             settings={"secret": "not-exported"},
             diagnostic_revision="test",
         )
-        with patch("monifactory_assistant.diagnostics.time.time", return_value=110):
+        with patch("time.time", return_value=110):
             data = view(app)
+        # The mod shows the age from this date: the view must not change second after second,
+        # or vue_mod.json would be rewritten and re-read by the game every second.
+        with patch("time.time", return_value=999):
+            self.assertEqual(view(app), data)
         self.assertFalse(data["jeu_connecte"])
-        self.assertEqual(data["age_inventaire"], 10)
+        self.assertEqual(data["inventaire_t"], 100_000)
+        self.assertNotIn("age_inventaire", data)
         self.assertEqual(data["revision"], "test")
         self.assertNotIn("not-exported", json.dumps(data))
+        app.bridge.last_state = {}
+        self.assertIsNone(view(app)["inventaire_t"])
+
+    def test_render_duration_alone_does_not_rewrite_the_mod_view(self):
+        app = InterfaceController()
+        app.bridge = SimpleNamespace(write=Mock())
+        app.last_mod_view = None
+        timings = iter([1.2, 3.4, 5.0, 5.1])
+        others = iter([1, 1, 1, 2])
+
+        def diagnostic(_app):
+            return {"rendu_ms": next(timings), "file": next(others)}
+
+        with (
+            patch(
+                "monifactory_assistant.application.interface.build_mod_view",
+                side_effect=lambda _app: {"vie": 7, "ecran": {"machines": []}},
+            ),
+            patch("monifactory_assistant.application.interface.diagnostic_view", diagnostic),
+        ):
+            for _ in range(4):
+                app.refresh_views()
+        # Written on the first view and on a real change, not when only the timing moved.
+        self.assertEqual(app.bridge.write.call_count, 2)
+        written = app.bridge.write.call_args.args[1]
+        self.assertEqual(written["ecran"]["diagnostic"], {"rendu_ms": 5.1, "file": 2})
 
     def test_valid_receipt_survives_file_delete_failure_without_reexecution(self):
         with tempfile.TemporaryDirectory() as directory:
