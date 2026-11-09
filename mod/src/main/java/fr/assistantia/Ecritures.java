@@ -201,6 +201,8 @@ public final class Ecritures {
         } catch (RuntimeException e) {
             erreur = new IOException(e);
         }
+        // Confirmer avant de libérer la tâche : une écriture terminée est toujours confirmée.
+        if (ecrit) reussite(cible, contenu);
         synchronized (verrou) {
             if (refuse && tache.contenu == null) {
                 tache.contenu = contenu;
@@ -213,7 +215,6 @@ public final class Ecritures {
             signaler(cible, erreur);
             return false;
         }
-        if (ecrit) reussite(cible, contenu);
         return true;
     }
 
@@ -237,6 +238,7 @@ public final class Ecritures {
         } catch (RuntimeException e) {
             erreur = new IOException(e);
         }
+        if (ecrit) reussite(tache.cible, contenu); // avant de libérer la tâche (voir essayer)
         boolean abandon = false;
         synchronized (verrou) {
             if (refuse) {
@@ -251,7 +253,6 @@ public final class Ecritures {
         if (erreur != null) signaler(tache.cible, erreur);
         else if (abandon)
             signaler(tache.cible, new IOException("fichier toujours tenu par son lecteur"));
-        else if (ecrit) reussite(tache.cible, contenu);
     }
 
     /** Sous le verrou : reprogramme la tâche s'il reste un contenu, sinon la retire. */
