@@ -12,7 +12,7 @@ from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
 from monifactory_assistant.game.snapshots import file_stamp
 from monifactory_assistant.game.storage import Storage, StorageMonitor
-from monifactory_assistant.game.veins import find_veins
+from monifactory_assistant.game.veins import find_veins, vein_files_stamp
 from monifactory_assistant.game.world import World, machine_status, observation_date
 from monifactory_assistant.game.world_scope import scope_file, scope_folder
 from monifactory_assistant.paths import ROOT
@@ -128,8 +128,12 @@ class GameController:
                 log("Erreur dans le jeu : " + error)
 
         if time.time() - self.veins_read > 5:
-            self.veins, self.veins_read = find_veins(self.bridge), time.time()
-            self.check_new_veins()
+            # Le résumé du mod ne change qu'à ses sauvegardes : ne le relire que s'il a changé.
+            stamp = vein_files_stamp(self.bridge)
+            if stamp is None or stamp != getattr(self, "veins_stamp", None):
+                self.veins, self.veins_stamp = find_veins(self.bridge), stamp
+                self.check_new_veins()
+            self.veins_read = time.time()
         if self.world.poll(self.bridge, state.get("dimension")):
             for error in self.world.errors:
                 if error not in self.logged_errors:

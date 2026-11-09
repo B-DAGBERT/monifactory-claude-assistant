@@ -60,6 +60,10 @@ let conteneur = null     // bloc dont l'interface est ouverte (coffre ou machine
 let minerais = {}        // "dimension|x|y|z" -> { bloc, x, y, z, dimension, t, mine } : minerais vus ou minés
 let mineraiVise = null   // dernier minerai regardé : s'il disparaît, il vient d'être miné
 let mineraisModifies = false
+// Le mod suit lui-même les filons GregTech (scan complet, compte en direct) : le relevé KubeJS de
+// filons.json ne sert plus qu'au fonctionnement sans mod, où l'application le lit en secours.
+let FilonsMod = null
+try { FilonsMod = Java.loadClass('fr.assistantia.Filons') } catch (e) { /* mod absent ou ancien */ }
 let ecranPrecedent = null
 let manquants = {}       // coffres mémorisés introuvables à la dernière vérification
 let dimensionPrecedente = null, debutDimension = 0
@@ -454,8 +458,17 @@ function verifierCarte(carte, dimension) {
   }
 }
 
+function filonsDuMod() {
+  if (FilonsMod == null) return false
+  try { return FilonsMod.suiviNatif() == true } catch (e) { return false }
+}
+
 // Minerais : ceux que le joueur regarde sont retenus ; si le dernier regardé disparaît, il vient d'être miné
 function suivreMinerais() {
+  if (filonsDuMod()) {
+    mineraiVise = null
+    return
+  }
   if (mineraiVise != null && str(Client.level.getBlock(mineraiVise.x, mineraiVise.y, mineraiVise.z).id) != mineraiVise.bloc) {
     mineraiVise.mine = true
     mineraiVise.t = Date.now()
@@ -477,7 +490,8 @@ function suivreMinerais() {
 }
 
 function ecrireMinerais() {
-  if (!mineraisModifies) return
+  // Aucune écriture (ni gel du rendu) quand le mod tient les filons : filons.json reste tel quel.
+  if (!mineraisModifies || filonsDuMod()) return
   let blocs = Object.keys(minerais).map(k => minerais[k])
   if (blocs.length > MINERAIS_MAX) {
     blocs.sort((a, b) => b.t - a.t)

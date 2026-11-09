@@ -48,7 +48,7 @@ def prepare_import(instance, dry_run=False):
             "Les anciens blocs ne sont pas des gisements GregTech. Utilise le journal de prospection GregTech puis Scanner dans la fiche du filon."
         )
     world = data.get("monde", "")
-    if data.get("v") != 1 or not re.fullmatch(r"[0-9a-f]{24}", world):
+    if data.get("v") not in (1, 2) or not re.fullmatch(r"[0-9a-f]{24}", world):
         raise RuntimeError("Le mod doit avoir identifié le monde actuel.")
     age = time.time() - active.stat().st_mtime
     if not -5 <= age <= 90:
@@ -117,17 +117,78 @@ def ore_material(block):
     return name
 
 
+def vein_files_stamp(bridge):
+    """Taille et date des relevés de filons, avec la portée du pont : relire seulement s'ils changent.
+
+    None si le pont ne donne pas ses chemins : relire à chaque fois.
+    """
+    data_path = getattr(bridge, "data_path", None)
+    if data_path is None:
+        return None
+    stamp = [repr(getattr(bridge, "scope", None))]
+    for name in ("filons_mod.json", "filons.json"):
+        try:
+            info = data_path(name).stat()
+            stamp.append((info.st_mtime_ns, info.st_size))
+        except (OSError, TypeError, AttributeError):
+            stamp.append(None)
+    return tuple(stamp)
+
+
+def _summary_veins(scanned):
+    """Résumé v2 du mod : comptes par gisement et par type de bloc, sans aucune position."""
+    veins = []
+    for g in scanned.get("gisements", []):
+        counts = {}
+        for block, pair in (g.get("minerais") or {}).items():
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                continue
+            present, mined = (int(v) if isinstance(v, (int, float)) else 0 for v in pair)
+            total = counts.setdefault(ore_material(block), [0, 0])
+            total[0] += max(0, present)
+            total[1] += max(0, mined)
+        materials = {ore_material(item) for item in g.get("composition", [])} | counts.keys()
+        complete = g.get("scan") == "complet"
+        for material in sorted(materials):
+            present, mined = counts.get(material, (0, 0))
+            veins.append(
+                {
+                    "minerai": material,
+                    "gisement": g.get("nom", g.get("definition", "")),
+                    "dimension": g["dimension"],
+                    "x": g["x"],
+                    "y": g["y"],
+                    "z": g["z"],
+                    "vus": present,
+                    "mines": mined,
+                    "trouves": present + mined,
+                    "t": g.get("verification") or scanned.get("t", 0),
+                    "partiel": not complete,
+                    "complet": complete,
+                    "presque_epuise": bool(g.get("presque_epuise")),
+                    "epuise": bool(g.get("epuise") or g.get("epuise_manuel")),
+                    "epuise_manuel": bool(g.get("epuise_manuel")),
+                }
+            )
+    return veins
+
+
 def find_veins(bridge, radius=24):
     """Regroupe les minerais vus ou minés par le joueur en filons (même minerai, à moins de radius blocs)."""
     # Le mod scanne et revérifie les blocs chargés ; sa mémoire est séparée par monde.
     scanned = bridge.read("filons_mod.json")
     data = (
         scanned
-        if isinstance(scanned, dict) and scanned.get("v") == 1 and scanned.get("monde")
+        if isinstance(scanned, dict) and scanned.get("v") in (1, 2) and scanned.get("monde")
         else bridge.read("filons.json")
     )
     blocks = (data or {}).get("blocs") or []
-    if isinstance(scanned, dict) and scanned.get("source") == "gregtech":
+    gregtech = isinstance(scanned, dict) and scanned.get("source") == "gregtech"
+    if gregtech and type(scanned.get("v")) is int and scanned["v"] >= 2:
+        # Résumé du mod (v2, et les versions suivantes qui gardent ses comptes) : un fichier
+        # léger, relu toutes les 5 s, sans aucune position de bloc.
+        return _summary_veins(scanned)
+    if gregtech:
         # Les gisements existent indépendamment des relevés de blocs, y compris sans scan.
         releves = {}
         for block in blocks:
@@ -224,17 +285,25 @@ def describe_veins(veins, state, limit=25):
     parts = []
     for v in sorted(veins, key=distance)[:limit]:
         position = f"{int(v['x'])} {int(v['y'])} {int(v['z'])} ({v['dimension']})"
-        if v.get("partiel"):
+        if v.get("complet") or v.get("partiel"):
             etat = (
                 "marqué épuisé par le joueur"
                 if v.get("epuise_manuel")
                 else "épuisé selon GregTech"
                 if v.get("epuise")
+                else "presque épuisé"
+                if v.get("presque_epuise")
+                else "scan complet du gisement"
+                if v.get("complet")
                 else "quantité totale restante inconnue"
             )
+            compte = (
+                f"{v['vus']} blocs restants sur {v.get('trouves', v['vus'])} trouvés"
+                if v.get("complet")
+                else f"{v['vus']} blocs compatibles observés à proximité (limites du gisement non vérifiées)"
+            )
             parts.append(
-                f"{v.get('gisement', '')} : {v['minerai']} en {position}, {etat}, "
-                f"{v['vus']} blocs compatibles observés à proximité (limites du gisement non vérifiées)"
+                f"{v.get('gisement', '')} : {v['minerai']} en {position}, {etat}, {compte}"
             )
         else:
             parts.append(
