@@ -183,7 +183,7 @@ final class OrdonnancementEmi {
             return OrdreMachines.Condition.preparer("Circuit à régler · " + probleme);
         }
         if (probleme.startsWith("À collecter :"))
-            return OrdreMachines.Condition.preparer("À récupérer dans les poches");
+            return OrdreMachines.Condition.preparer(OrdreMachines.A_RECUPERER);
         if (probleme.startsWith("Pose l’objet"))
             return OrdreMachines.Condition.preparer("Ranger l’objet du curseur");
         if (probleme.startsWith("Libère une case"))

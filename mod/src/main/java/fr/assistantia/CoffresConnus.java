@@ -47,17 +47,35 @@ public final class CoffresConnus {
 
     private static final Empreinte ABSENT = new Empreinte(-1, -1);
 
-    /** Totaux mémorisés ; {@code pret} faux tant que la première lecture n'a pas abouti. */
+    /**
+     * Totaux mémorisés de tous les coffres connus, toutes dimensions ({@code objets}), et chaque
+     * coffre placé ({@code conteneurs}) ; {@code pret} faux tant que la première lecture n'a pas
+     * abouti.
+     */
     public record Etat(
             Path dossier,
             Empreinte memoire,
             Empreinte fusion,
             Map<String, Long> objets,
             Set<String> machines,
+            List<Conteneur> conteneurs,
             long revision,
             boolean pret) {}
 
-    private static final Etat VIDE = new Etat(null, ABSENT, ABSENT, Map.of(), Set.of(), 0, false);
+    /** Un coffre retenu, position connue, avec son contenu. */
+    public record Conteneur(
+            String dimension, long x, long z, String bloc, Map<String, Long> objets) {}
+
+    /** Rayon, en blocs à l'horizontale, des coffres que le plan compte comme à portée. */
+    public static final int RAYON_PLAN = 256;
+
+    private static final Etat VIDE =
+            new Etat(null, ABSENT, ABSENT, Map.of(), Set.of(), List.of(), 0, false);
+
+    private record CleProches(long revision, String zone) {}
+
+    private static CleProches cleProches;
+    private static Map<String, Long> proches = Map.of();
     private static final ExecutorService LECTEUR =
             Executors.newSingleThreadExecutor(
                     tache -> {
@@ -77,6 +95,58 @@ public final class CoffresConnus {
 
     public static Etat etat() {
         return ETAT.get();
+    }
+
+    /**
+     * Zone du joueur pour {@link #proches()} : dimension et case de 64 blocs. Un changement de zone
+     * suffit à refaire un plan qui en dépend.
+     */
+    public static String zone() {
+        var mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) return "";
+        var pos = mc.player.blockPosition();
+        return mc.level.dimension().location() + "|" + (pos.getX() >> 6) + "|" + (pos.getZ() >> 6);
+    }
+
+    /**
+     * Totaux des coffres que le plan peut compter comme à récupérer : même dimension que le joueur,
+     * à moins de {@link #RAYON_PLAN} blocs à l'horizontale, jamais un coffre à butin (Lootr). Les
+     * coffres vus en exploration ou dans une autre dimension restent connus (« Introuvable »), mais
+     * ne remplacent jamais une fabrication. Calculé au plus une fois par zone et par relevé.
+     */
+    public static Map<String, Long> proches() {
+        var etat = ETAT.get();
+        var mc = Minecraft.getInstance();
+        if (!etat.pret() || mc.player == null || mc.level == null) return Map.of();
+        var cle = new CleProches(etat.revision(), zone());
+        if (cle.equals(cleProches)) return proches;
+        var pos = mc.player.blockPosition();
+        proches =
+                proches(
+                        etat.conteneurs(),
+                        mc.level.dimension().location().toString(),
+                        pos.getX(),
+                        pos.getZ(),
+                        RAYON_PLAN);
+        cleProches = cle;
+        return proches;
+    }
+
+    /** Calcul pur de {@link #proches()}. */
+    static Map<String, Long> proches(
+            List<Conteneur> conteneurs, String dimension, long x, long z, int rayon) {
+        Map<String, Long> totaux = new HashMap<>();
+        long r2 = (long) rayon * rayon;
+        for (var c : conteneurs) {
+            if (!c.dimension().equals(dimension) || c.bloc().startsWith("lootr:")) continue;
+            long dx = c.x() - x, dz = c.z() - z;
+            if (dx * dx + dz * dz > r2) continue;
+            c.objets()
+                    .forEach(
+                            (k, n) ->
+                                    totaux.merge(k, n, (a, b) -> Math.min(1_000_000_000L, a + b)));
+        }
+        return Map.copyOf(totaux);
     }
 
     /** Appelé à chaque tick client : programme au plus une lecture toutes les trois secondes. */
@@ -135,6 +205,7 @@ public final class CoffresConnus {
                     precedent.pret()
                                     && lu.objets().equals(precedent.objets())
                                     && lu.machines().equals(precedent.machines())
+                                    && lu.conteneurs().equals(precedent.conteneurs())
                             ? precedent.revision()
                             : REVISIONS.incrementAndGet();
             publier(
@@ -144,6 +215,7 @@ public final class CoffresConnus {
                             empreinteFusion,
                             lu.objets(),
                             lu.machines(),
+                            lu.conteneurs(),
                             revision,
                             true),
                     precedent);
@@ -174,7 +246,7 @@ public final class CoffresConnus {
         ETAT.compareAndSet(precedent, suivant);
     }
 
-    record Lecture(Map<String, Long> objets, Set<String> machines) {}
+    record Lecture(Map<String, Long> objets, Set<String> machines, List<Conteneur> conteneurs) {}
 
     /** Un conteneur observé, avec sa position quand elle est complète ({@code cle} sinon nulle). */
     private record Releve(
@@ -205,14 +277,22 @@ public final class CoffresConnus {
         ajouter(fusion, true, parPosition, releves);
         releves.addAll(sansJumeaux(new ArrayList<>(parPosition.values())));
         Map<String, Long> objets = new HashMap<>();
-        for (var r : releves)
+        List<Conteneur> conteneurs = new ArrayList<>();
+        for (var r : releves) {
+            Map<String, Long> contenu = new HashMap<>();
             for (JsonElement o : tableau(r.json(), "objets")) {
                 if (!o.isJsonObject() || objets.size() >= MAX_OBJETS) continue;
                 String item = chaine(o.getAsJsonObject(), "item");
                 long n = entier(o.getAsJsonObject(), "n");
-                if (!item.isEmpty() && n > 0)
+                if (!item.isEmpty() && n > 0) {
                     objets.merge(item, n, (x, y) -> Math.min(1_000_000_000L, x + y));
+                    contenu.merge(item, n, (x, y) -> Math.min(1_000_000_000L, x + y));
+                }
             }
+            if (r.cle() != null && !contenu.isEmpty())
+                conteneurs.add(
+                        new Conteneur(r.dimension(), r.x(), r.z(), r.bloc(), Map.copyOf(contenu)));
+        }
         Set<String> machines = new HashSet<>();
         for (var json : new JsonObject[] {memoire, fusion}) {
             if (json == null) continue;
@@ -222,7 +302,7 @@ public final class CoffresConnus {
                     if (!bloc.isEmpty()) machines.add(bloc);
                 }
         }
-        return new Lecture(Map.copyOf(objets), Set.copyOf(machines));
+        return new Lecture(Map.copyOf(objets), Set.copyOf(machines), List.copyOf(conteneurs));
     }
 
     /**

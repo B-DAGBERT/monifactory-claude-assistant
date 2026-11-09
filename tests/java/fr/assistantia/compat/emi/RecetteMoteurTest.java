@@ -111,6 +111,10 @@ public final class RecetteMoteurTest {
         return NOMS.getOrDefault(cle, cle);
     }
 
+    private static boolean presque(double a, double b) {
+        return Math.abs(a - b) < 1e-5;
+    }
+
     private static boolean proche(double a, double b) {
         return Math.abs(a - b) < 1e-9;
     }
@@ -139,6 +143,8 @@ public final class RecetteMoteurTest {
             case "nouvelles" -> nouvelles();
             case "stabiliser" -> stabiliser();
             case "etoile" -> etoile();
+            case "traits" -> traits();
+            case "provenance" -> provenance();
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.println("PASS " + args[0]);
@@ -374,6 +380,32 @@ public final class RecetteMoteurTest {
                         16);
         assert !ailleurs.get("m2").etoile() && ailleurs.get("m2").texte().equals("2")
                 : "no machine star while the current step is at the crafting table";
+    }
+
+    /** Étiquettes des machines en segments : symboles, nombre de traits, cadre du dessin. */
+    private static void traits() {
+        assert fr.assistantia.TraitsReperes.symboles("★ 3").equals("★3");
+        assert fr.assistantia.TraitsReperes.symboles("12").equals("12");
+        assert fr.assistantia.TraitsReperes.symboles("3 · prêt").equals("3✓");
+        assert fr.assistantia.TraitsReperes.symboles("★ 3 · prêt").equals("★3✓");
+        assert fr.assistantia.TraitsReperes.symboles("4 · en cours").equals("4…");
+        var huit = fr.assistantia.TraitsReperes.dessiner("8");
+        assert huit.traits().size() == 7 && presque(huit.largeur(), 0.6) : huit;
+        assert fr.assistantia.TraitsReperes.dessiner("1").traits().size() == 2;
+        var etoile = fr.assistantia.TraitsReperes.dessiner("★12");
+        assert etoile.traits().size() == 10 + 2 + 5 : etoile.traits().size();
+        assert presque(etoile.largeur(), 1 + 0.25 + 0.6 + 0.25 + 0.6) : etoile.largeur();
+        for (var t : etoile.traits())
+            for (float[] p : new float[][] {{t.x1(), t.y1()}, {t.x2(), t.y2()}})
+                assert p[0] >= -1e-4
+                                && p[0] <= etoile.largeur() + 1e-4
+                                && p[1] >= -1e-4
+                                && p[1] <= 1 + 1e-4
+                        : "segment inside the label frame";
+        // Le deuxième chiffre commence après le premier et l'écart.
+        var deux = fr.assistantia.TraitsReperes.dessiner("11");
+        assert deux.traits().stream().anyMatch(t -> presque(t.x1(), 0.6 + 0.25 + 0.6));
+        assert fr.assistantia.TraitsReperes.dessiner("").traits().isEmpty();
     }
 
     /** Une chaîne de 300 ingrédients est bornée et déclarée incomplète. */
@@ -659,6 +691,72 @@ public final class RecetteMoteurTest {
                 RangsRecette.reperes(
                         etapes, List.of("bender"), (p, r) -> r.equals("bend"), Map.of(), 16);
         assert reperes.get("bender").attenue() && !reperes.get("bender").etoile();
+    }
+
+    /** Demande du joueur : dire explicitement si c'est dans le backpack ou dans un coffre. */
+    private static void provenance() {
+        PlanMachines.Noeud<String, String> plaque =
+                new PlanMachines.Noeud<>(s -> s.equals("plate"), 1, 1, false, "craft", List.of());
+        var operations = List.of(new PlanMachines.Operation<>("craft", 1));
+        List<OrdreMachines.Regle<String>> regles =
+                List.of(
+                        new OrdreMachines.Regle<>("ingot"::equals, 2, false, "Iron Ingot"),
+                        new OrdreMachines.Regle<>("hammer"::equals, 1, true, "Hammer"),
+                        new OrdreMachines.Regle<>("coal"::equals, 1, false, "Coal"),
+                        new OrdreMachines.Regle<>("stick"::equals, 1, false, "Stick"));
+        var stock =
+                List.of(
+                        source("ingot", 1, OrdreMachines.Origine.POCHES),
+                        source("ingot", 5, OrdreMachines.Origine.SAC),
+                        source("hammer", 1, OrdreMachines.Origine.SAC),
+                        source("coal", 9, OrdreMachines.Origine.COFFRE),
+                        source("stick", 4, OrdreMachines.Origine.POCHES));
+        var resultat =
+                OrdreMachines.calculer(
+                        plaque,
+                        operations,
+                        r -> regles,
+                        stock,
+                        r -> OrdreMachines.Condition.prete(),
+                        true);
+        var ligne = resultat.lignes().get(0);
+        assert ligne.mode() == OrdreMachines.Mode.PREPARER : ligne;
+        assert ligne.raison()
+                        .equals(
+                                "À sortir du backpack : Iron Ingot, Hammer · À prendre dans un"
+                                        + " coffre : Coal")
+                : ascii(ligne.raison());
+        // Une machine ouverte qui demande de collecter : même provenance précise.
+        var machine =
+                OrdreMachines.calculer(
+                        plaque,
+                        operations,
+                        r -> regles,
+                        stock,
+                        r -> OrdreMachines.Condition.preparer(OrdreMachines.A_RECUPERER),
+                        true);
+        assert machine.lignes().get(0).raison().startsWith(OrdreMachines.DU_SAC);
+        // Tout est dans les poches sauf une autre condition : sa raison est gardée.
+        var raisonPropre =
+                OrdreMachines.calculer(
+                        plaque,
+                        operations,
+                        r -> regles,
+                        stock,
+                        r -> OrdreMachines.Condition.preparer("Machine à poser : Bender"),
+                        true);
+        assert raisonPropre.lignes().get(0).raison().equals("Machine à poser : Bender");
+    }
+
+    private static OrdreMachines.StockSource<String> source(
+            String objet, int n, OrdreMachines.Origine origine) {
+        return new OrdreMachines.StockSource<>(
+                new PlanRetrait.Stock<>(
+                        objet,
+                        n,
+                        origine == OrdreMachines.Origine.POCHES
+                                || origine == OrdreMachines.Origine.MACHINE),
+                origine);
     }
 
     // ---------- Racine ----------

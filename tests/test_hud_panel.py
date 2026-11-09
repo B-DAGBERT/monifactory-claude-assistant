@@ -141,8 +141,19 @@ public class HudPanelTest {
   assert pose[2]>=0.75F&&pose[2]<=1F:"panel scale "+pose[2];
   largeur=panel(calls);assert largeur*pose[2]<=320*0.42F+1:"panel width "+largeur;
   inside(starting(calls,"text "+gold+" "),largeur);inside(starting(calls,"text "+grey+" "),largeur);
+  // Player request: every ready step, not only the next one, listed under the current step.
+  String green=Integer.toHexString(Theme.VERT);
+  Hud.source(()->new Hud.Etape(new ItemStack("gtceu:lv_bender"),titre,detail,List.of("2. 8 x Iron Plate - Basic Bender"," ","3. 4 x Bronze Ingot - Alloy Smelter")));
+  calls=render();var pretes=starting(calls,"text "+green+" ");
+  assert pretes.size()==2&&pretes.get(0).endsWith("2. 8 x Iron Plate - Basic Bender"):pretes;
+  assert text(calls,"Aussi pr")&&starting(calls,"text "+gold+" ").size()==1:calls;
+  largeur=panel(calls);inside(pretes,largeur);
+  var beaucoup=new ArrayList<String>();for(int i=2;i<12;i++)beaucoup.add(i+". 1 x Gear - Crafting Table");
+  Hud.source(()->new Hud.Etape(ItemStack.EMPTY,"* Crafting Table","",beaucoup));calls=render();
+  assert starting(calls,"text "+green+" ").size()==Hud.SUITE_MAX&&text(calls,"+4 autres"):calls;
+  calls=render(320,240);largeur=panel(calls);inside(starting(calls,"text "+green+" "),largeur);
   Hud.source(()->new Hud.Etape(ItemStack.EMPTY,"Prochaine etape",""));calls=render();
-  assert !text(calls,"item ")&&text(calls,"Prochaine etape"):calls;
+  assert !text(calls,"item ")&&text(calls,"Prochaine etape")&&!text(calls,"Aussi pr"):calls;
   // The panel setting hides only the panel: the reply bubble stays.
   var bulle=new JsonObject();bulle.addProperty("texte","Voici la recette");bulle.addProperty("en_cours",true);Pont.vue.add("bulle",bulle);
   var hud=new JsonObject();hud.addProperty("visible",false);Pont.vue.add("hud",hud);

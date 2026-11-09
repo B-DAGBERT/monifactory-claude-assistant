@@ -43,7 +43,9 @@ sur une icône ouvre ses recettes dans EMI.
   cours porte une **★** et reste en tête jusqu’à ce qu’elle soit faite : fabriquée ou envoyée en
   machine (une seule action), ou, pour les sorties d’un lot, récupérées jusqu’à la dernière.
   Ramasser la matière d’une autre étape ne la fait plus passer devant. Ce qui est déjà dans un
-  coffre connu n’est plus à fabriquer, seulement à récupérer. Le survol détaille l’étape et
+  coffre connu à portée n’est plus à fabriquer, seulement à récupérer : un coffre de ta dimension,
+  à moins de 256 blocs de toi, jamais un coffre à butin (Lootr). Les coffres vus en exploration ou
+  dans une autre dimension restent connus pour **Introuvable**. Le survol détaille l’étape et
   explique sa place.
 - **Meilleures alternatives** : une autre recette pour un produit de l’arbre, objet final compris,
   avec le gain en clair, par exemple « 1 Iron Ingot au lieu de 2 par Iron Plate · 2 étapes au lieu
@@ -79,18 +81,20 @@ Si le plan ne peut pas encore être calculé (inventaire ou sac pas encore synch
 l’onglet affiche **Plan non calculé** avec la raison au lieu de « Rien à fabriquer ». Une lecture
 impossible de l’arbre EMI affiche « Arbre EMI illisible · détails dans le journal ».
 
-Dans le monde, les machines entourées en rouge affichent au-dessus d’elles le numéro de leur étape.
-La **★** dorée marque la plus proche machine de l’étape en cours (« ★ 3 · prêt » pour un lot à
-récupérer) et aucune quand l’étape en cours se fait à l’établi ; un numéro grisé signale une étape
-qui ne peut pas encore se faire et « 3 · en cours » ou « 3 · prêt » suit un lot déjà envoyé. Au
-plus 16 machines, les plus proches, sont numérotées. Seules les machines encore utiles brillent :
-quand le résultat, ou une partie de l’arbre, est déjà dans un coffre connu, les machines qui le
-fabriqueraient ne sont plus entourées. Ces repères n’apparaissent que si le mode fabrication de
+Dans le monde, les machines entourées en rouge portent le numéro de leur étape, tracé comme sur un
+afficheur au milieu de leur face tournée vers toi. La **★** dorée marque la plus proche machine de
+l’étape en cours (★ 3 ✓ pour un lot à récupérer) et aucune quand l’étape en cours se fait à
+l’établi ; un numéro grisé signale une étape qui ne peut pas encore se faire, ✓ un lot prêt et
+… un lot en cours. Au plus 16 machines, les plus proches, sont numérotées. Seules les machines
+encore utiles brillent : quand le résultat, ou une partie de l’arbre, est déjà dans un coffre
+connu à portée, les machines qui le fabriqueraient ne sont plus entourées. Ces repères n’apparaissent que si le mode fabrication de
 Recipe Tree ou **Coffres** est actif ; sinon, l’onglet le rappelle.
 
-La prochaine étape s’affiche aussi dans le panneau en haut à gauche, par exemple
-**★ Basic Bender** puis « 4 Iron Ingot → 4 Iron Plate ». **F9** ou **Y → Réglages → Panneau en
-jeu** masque ce panneau ; les réponses de l’assistant restent dans leur bulle.
+L’étape en cours s’affiche aussi dans le panneau en haut à gauche, par exemple
+**★ Basic Bender** puis « 4 Iron Ingot → 4 Iron Plate ». Dessous, **Aussi prêtes** liste en vert
+les autres étapes prêtes (« 2. 8 × Iron Plate · Basic Bender »), six au plus puis « +N autres ».
+**F9** ou **Y → Réglages → Panneau en jeu** masque ce panneau ; les réponses de l’assistant restent
+dans leur bulle.
 
 Limites : les coûts sont comparés par unité produite et peuvent être fractionnaires ; un tag compte
 pour sa première variante ; un multibloc est supposé assez puissant ; « facile » ignore le NBT.
@@ -100,6 +104,8 @@ choix.
 ## Backpack comme inventaire
 
 Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans l’arbre natif EMI et sa liste latérale, les besoins du scan, la planification des machines et l’onglet Recette. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
+
+Le plan dit où aller chercher ce qui manque aux poches : « À sortir du backpack : Iron Ingot, Hammer », « À prendre dans un coffre : Coal » ou « À reprendre en main : … » (main secondaire, armure, curseur). La carte de l’étape affiche « Dans ton backpack », « Dans un coffre » ou « Backpack + coffre », et le panneau en jeu la phrase complète. Backpack ouvert, les cases à sortir sont entourées en or pour l’étape en cours (★), ou pour le produit choisi à l’instant dans le panneau d’une machine (pendant deux minutes). Un outil est reconnu quelle que soit son usure ou sa charge ; un outil d’un autre matériau reste un autre objet, sauf si la recette accepte plusieurs matériaux.
 
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 

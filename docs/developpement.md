@@ -531,10 +531,14 @@ utilisent le produit (extraire une batterie pour sa coque).
 
 `RangsRecette.stabiliser` garde l’étape en cours en tête d’un calcul du plan à l’autre (clé recette
 ou lot) : prête ou à préparer jusqu’à sa fabrication ou son envoi, lot à récupérer jusqu’à la
-dernière sortie. `MachinesEmi` calcule aussi les opérations encore utiles avec les coffres connus
-(`stockCoffres`) : la surbrillance, les repères et le plan de l’onglet Recette les suivent, le panneau
-d’une machine garde toutes les opérations. Les repères sont dessinés 1,3 bloc au-dessus de la
-machine par le tampon principal du jeu. `PossessionsRecette` relève les postes posés (rayon de 48 blocs, une rangée de chunks par
+dernière sortie. `MachinesEmi` calcule aussi les opérations encore utiles avec les coffres à portée
+(`stockCoffres`, `CoffresConnus.proches` : même dimension que le joueur, 256 blocs à l’horizontale,
+jamais `lootr:`) : la surbrillance, les repères et le plan de l’onglet Recette les suivent, le
+panneau d’une machine garde toutes les opérations. Les totaux globaux de `CoffresConnus` servent
+toujours aux possessions et à « Introuvable ». Les repères sont tracés en segments
+(`TraitsReperes`) avec les lignes des contours rouges, au milieu de la face vue de la machine : le
+texte de la police du jeu ne s’affichait pas dans le monde chez le joueur (repères bien calculés,
+vérifié par un histogramme de classes du jeu en cours). `PossessionsRecette` relève les postes posés (rayon de 48 blocs, une rangée de chunks par
 tick, relevé serveur de la Base et blocs déjà ouverts), portés ou rangés (inventaire, sac, coffres
 connus lus hors du rendu par `CoffresConnus`) et les sorties attendues des lots. Les outils
 réutilisables nouveaux (moules, lentilles, formes) doivent aussi être possédés. `DecisionTension`

@@ -10,7 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = {
     "net.minecraft.world.item.ItemStack": """
-public record ItemStack(Object getItem) {public boolean isEmpty(){return getItem==null;}}
+public record ItemStack(Object getItem) {public boolean isEmpty(){return getItem==null;}
+ public boolean isDamageableItem(){return getItem instanceof String s&&s.startsWith("damageable");}}
 """,
     "dev.emi.emi.api.stack.Comparison": """
 public class Comparison {public static final Comparison DEFAULT_COMPARISON=new Comparison();
@@ -57,6 +58,13 @@ public class EmiComparisonTest {
   assert strict.comparison==Comparison.NBT&&strict.amount==4;
   assert custom.comparison==Comparison.DEFAULT_COMPARISON:"source stack unchanged";
   assert !strict.isEqual(new EmiStack("other:tool",customItem,1,4)):"other material-in-NBT items stay strict";
+  // Player report: worn or charged tools were not always highlighted in the backpack.
+  assert !worn.isEqual(fresh)&&ComparaisonEmi.meme(worn,fresh):"a worn or charged GT tool is the same tool";
+  assert !ComparaisonEmi.meme(worn,new EmiStack("gtceu:iron_hammer",otherMaterial,0,1)):"another material stays another tool";
+  var shears=new EmiStack("minecraft:shears","damageable shears",40,1);shears.comparison=Comparison.NBT;
+  assert ComparaisonEmi.meme(shears,new EmiStack("minecraft:shears","damageable shears",0,1)):"any worn damageable tool";
+  var strictItem=new EmiStack("other:data",customItem,1,1);strictItem.comparison=Comparison.NBT;
+  assert !ComparaisonEmi.meme(strictItem,new EmiStack("other:data",customItem,2,1)):"NBT still matters for non-tools";
   var gt=new com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe();
   var circuit=new EmiStack("gtceu:programmed_circuit",new Object(),99,1);
   assert ComparaisonEmi.circuitVirtuel(gt,circuit,true);
