@@ -36,9 +36,13 @@ public final class RechercheEmi {
 
     private RechercheEmi() {}
 
-    /** Nombre d'objets à sortir de ce conteneur pour la recherche en cours, 0 sinon. */
+    /**
+     * Nombre d'objets à sortir de ce conteneur pour la recherche en cours, 0 sinon. Lu à chaque
+     * image pour chaque coffre : l'appelant vérifie {@link #actif()} une fois par image ; la table
+     * est vidée dès que la recherche s'arrête.
+     */
     public static int aSortir(Pont.Repere repere) {
-        return actif() && InventaireJoueur.synchronise() ? aSortir.getOrDefault(cle(repere), 0) : 0;
+        return aSortir.isEmpty() ? 0 : aSortir.getOrDefault(cle(repere), 0);
     }
 
     private static boolean contexteValide() {
