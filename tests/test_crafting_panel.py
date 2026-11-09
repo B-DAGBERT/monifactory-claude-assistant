@@ -248,13 +248,32 @@ class CraftingPanelTests(unittest.TestCase):
             self.assertIn("Click revalidation OK", result.stdout)
 
     def test_panel_refreshes_without_inventory_change_and_keeps_emi_optional(self):
-        source = (JAVA / "fr/assistantia/AideEcran.java").read_text()
+        source = (JAVA / "fr/assistantia/AideEcran.java").read_text(encoding="utf-8")
         self.assertIn("maintenant >= prochainCalcul", source)
         self.assertIn("prochainCalcul = maintenant + 250_000_000L", source)
         self.assertIn('Class.forName("fr.assistantia.compat.emi.AtelierEmi")', source)
         self.assertIn("if (arbre != null) return arbre;", source)
         self.assertIn("if (!autorise()) return List.of();", source)
-        self.assertLess(
-            source.index("if (arbre != null) return arbre;"),
-            source.index('Pont.liste(Pont.vue(), "fabrications")'),
+        # Projets et objectifs retirés : sans arbre EMI actif, aucun ancien craft du plan.
+        self.assertNotIn('"fabrications"', source)
+        self.assertNotIn("Pont.vue()", source)
+        calcul = source[source.index("private static List<Proposition> calculer(") :]
+        calcul = calcul[: calcul.index("\n    }\n")]
+        self.assertTrue(
+            calcul.rstrip().endswith("if (arbre != null) return arbre;\n        return List.of();"),
+            calcul,
         )
+
+    def test_panel_uses_shared_layout_and_reserves_its_place_in_emi(self):
+        source = (JAVA / "fr/assistantia/AideEcran.java").read_text(encoding="utf-8")
+        plugin = (JAVA / "fr/assistantia/compat/emi/AssistantEmiPlugin.java").read_text(
+            encoding="utf-8"
+        )
+        # Même panneau que les coffres et machines : placé hors de l'établi, réservé auprès d'EMI.
+        self.assertIn("DispositionCoffre.calculer(", source)
+        self.assertIn("PanneauAssistant.occupee(", source)
+        self.assertIn("AideEcran.zoneEmi(screen)", plugin)
+        # Les clics sur le panneau ne traversent jamais vers l'établi ou EMI, ni leur relâchement.
+        self.assertIn("RelachementSouris.consommer(event); // jamais de clic qui traverse", source)
+        self.assertNotIn("plainSubstrByWidth", source)
+        self.assertNotIn("Button.builder", source)

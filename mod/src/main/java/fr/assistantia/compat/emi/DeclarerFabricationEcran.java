@@ -1,26 +1,31 @@
 package fr.assistantia.compat.emi;
 
 import dev.emi.emi.api.recipe.EmiRecipe;
+import fr.assistantia.BoutonTheme;
+import fr.assistantia.ChampTheme;
 import fr.assistantia.PlanMachines;
+import fr.assistantia.Theme;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 /** Une déclaration masque les ingrédients ; seuls les objets réellement reçus acquittent le lot. */
 public final class DeclarerFabricationEcran extends Screen {
+    /** Largeur du champ, contour compris, puis les boutons de quantité sur la même rangée. */
+    private static final int CHAMP = 66;
+
     private static long dernierClic;
     private final Screen parent;
     private final EmiRecipe recette;
     private final Object arbre;
     private final int envoyes, limite, lot;
-    private EditBox nombre;
-    private Button confirmer, tout, charge;
+    private ChampTheme nombre;
+    private BoutonTheme confirmer, tout, charge;
     private String erreur = "", brouillon;
     private boolean valide;
+    private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
 
     /** Le seuil porte sur les objets produits, pas sur le nombre de fabrications. */
     public static boolean demandeQuantite(EmiRecipe recette, int fois) {
@@ -85,10 +90,29 @@ public final class DeclarerFabricationEcran extends Screen {
                 .orElse(0);
     }
 
+    /** Ordonnées du contenu : nom, aide, consigne, champ, résultat, rappel, erreur. */
+    private int yChamp() {
+        return fenetre.contenuY() + 3 * Theme.LIGNE + Theme.ECART;
+    }
+
+    private int yResultat() {
+        return yChamp() + Theme.BOUTON + 2 * Theme.ECART;
+    }
+
     @Override
     protected void init() {
-        int largeur = Math.min(360, width - 24), x = (width - largeur) / 2, y = 91;
-        nombre = new EditBox(font, x, y, 66, 20, Component.literal("Nombre de fabrications"));
+        int hauteur =
+                Theme.TITRE
+                        + 9 * Theme.LIGNE
+                        + Theme.BOUTON
+                        + 4 * Theme.ECART
+                        + Theme.MARGE
+                        + Theme.BOUTON
+                        + Theme.MARGE;
+        fenetre = Theme.Fenetre.centree(width, height, 360, hauteur);
+        int x = fenetre.contenuX(), largeur = fenetre.contenuLargeur(), y = yChamp();
+        // Contour du champ dans la rangée de 16 px des boutons voisins.
+        nombre = ChampTheme.dans(font, x, y, CHAMP, Component.literal("Nombre de fabrications"));
         nombre.setMaxLength(7);
         nombre.setFilter(s -> s.isEmpty() || s.matches("[0-9]{1,7}"));
         nombre.setValue(brouillon);
@@ -98,41 +122,37 @@ public final class DeclarerFabricationEcran extends Screen {
                     erreur = "";
                 });
         addRenderableWidget(nombre);
+        int bx = x + CHAMP + Theme.ECART, reste = fenetre.contenuDroite() - bx;
+        int moitie = (reste - Theme.ECART) / 2;
         charge =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal(
-                                                envoyes > 0 ? "Juste envoyé" : "Quantité saisie"),
+                        BoutonTheme.creer(
+                                        envoyes > 0 ? "Juste envoyé" : "Quantité saisie",
                                         b ->
                                                 nombre.setValue(
                                                         String.valueOf(
                                                                 envoyes > 0
                                                                         ? envoyes
                                                                         : quantite())))
-                                .bounds(x + 72, y, (largeur - 78) / 2, 20)
-                                .build());
+                                .zone(bx, y, moitie));
         tout =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal("Tout le lot"),
+                        BoutonTheme.creer(
+                                        "Tout le lot",
                                         b -> nombre.setValue(String.valueOf(maximum())))
-                                .bounds(x + 78 + (largeur - 78) / 2, y, (largeur - 78) / 2, 20)
-                                .build());
+                                .zone(bx + moitie + Theme.ECART, y, reste - moitie - Theme.ECART));
+        int bas = fenetre.basBoutons(), bouton = (largeur - Theme.ECART) / 2;
         confirmer =
                 addRenderableWidget(
-                        Button.builder(Component.literal("Confirmer"), b -> confirmer())
-                                .bounds(x, height - 28, (largeur - 6) / 2, 20)
-                                .build());
+                        BoutonTheme.creer("Confirmer", b -> confirmer())
+                                .genre(Theme.Genre.PRINCIPAL)
+                                .zone(x, bas, bouton));
         addRenderableWidget(
-                Button.builder(Component.literal("Retour"), b -> onClose())
-                        .bounds(x + (largeur + 6) / 2, height - 28, (largeur - 6) / 2, 20)
-                        .build());
+                BoutonTheme.creer("Retour", b -> onClose())
+                        .zone(x + largeur - bouton, bas, bouton));
         setInitialFocus(nombre);
         charge.visible = envoyes > 0;
-        if (envoyes == 0) {
-            tout.setX(x + 72);
-            tout.setWidth(largeur - 72);
-        }
+        if (envoyes == 0) tout.zone(bx, y, reste);
         tick();
     }
 
@@ -189,13 +209,13 @@ public final class DeclarerFabricationEcran extends Screen {
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
         renderBackground(g);
-        g.drawCenteredString(font, title, width / 2, 16, 0xFFFFC94A);
+        fenetre.dessiner(g, font, title.getString(), null, mx, my);
+        int x = fenetre.contenuX(), largeur = fenetre.contenuLargeur(), y = fenetre.contenuY();
         String nom =
                 recette.getOutputs().isEmpty()
                         ? "Recette"
                         : recette.getOutputs().get(0).getName().getString();
-        g.drawCenteredString(
-                font, font.plainSubstrByWidth(nom, width - 24), width / 2, 35, 0xFFFFFF);
+        Theme.texte(g, font, nom, x, y, largeur, Theme.TEXTE, mx, my);
         String aide =
                 envoyes > 0
                         ? resultat(envoyes)
@@ -203,21 +223,59 @@ public final class DeclarerFabricationEcran extends Screen {
                                 + resultat(maximum())
                                 + " pour tout le lot"
                         : "Fabrications déjà chargées · maximum " + maximum();
-        g.drawCenteredString(
-                font, font.plainSubstrByWidth(aide, width - 24), width / 2, 55, 0xAAAAAA);
-        g.drawCenteredString(font, "Nombre de fabrications à marquer", width / 2, 76, 0xAAAAAA);
-        g.drawCenteredString(
-                font, resultat(quantite()) + " résultat(s) attendus", width / 2, 124, 0xFFCC55);
-        g.drawCenteredString(
-                font, "Résultats accessibles à « Scanner coffres »", width / 2, 141, 0xAAAAAA);
+        Theme.texte(g, font, aide, x, y + Theme.LIGNE, largeur, Theme.TEXTE_SECONDAIRE, mx, my);
+        Theme.texte(
+                g,
+                font,
+                "Nombre de fabrications à marquer",
+                x,
+                yChamp() - Theme.LIGNE,
+                largeur,
+                Theme.TEXTE_SECONDAIRE,
+                mx,
+                my);
+        int suite = yResultat();
+        Theme.texte(
+                g,
+                font,
+                resultat(quantite()) + " résultat(s) attendus",
+                x,
+                suite,
+                largeur,
+                Theme.ACCENT,
+                mx,
+                my);
+        suite =
+                Theme.paragraphe(
+                        g,
+                        font,
+                        "Résultats ensuite accessibles avec « Coffres ON »",
+                        x,
+                        suite + Theme.LIGNE + Theme.ECART,
+                        largeur,
+                        Theme.TEXTE_SECONDAIRE,
+                        2);
         if (envoyes > 0)
-            g.drawCenteredString(
+            Theme.paragraphe(
+                    g,
                     font,
                     "Le surplus doit être alimenté par ton stockage.",
-                    width / 2,
-                    157,
-                    0xAAAAAA);
-        if (!erreur.isEmpty()) g.drawCenteredString(font, erreur, width / 2, height - 45, 0xFF7777);
+                    x,
+                    suite,
+                    largeur,
+                    Theme.TEXTE_SECONDAIRE,
+                    2);
+        if (!erreur.isEmpty())
+            Theme.texte(
+                    g,
+                    font,
+                    erreur,
+                    x,
+                    fenetre.basBoutons() - Theme.ECART - Theme.LIGNE + 1,
+                    largeur,
+                    Theme.ROUGE,
+                    mx,
+                    my);
         super.render(g, mx, my, delta);
     }
 

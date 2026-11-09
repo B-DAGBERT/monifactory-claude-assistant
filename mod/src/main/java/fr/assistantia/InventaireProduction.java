@@ -42,12 +42,8 @@ final class InventaireProduction {
         json.addProperty("dimension", contexte.dimension());
         json.addProperty("actif", true);
         for (String cle :
-                java.util.List.of(
-                        "projet",
-                        "revision_projet",
-                        "catalogue_source",
-                        "catalogue_generation",
-                        "catalogue_sha256")) json.add(cle, demande.get(cle));
+                java.util.List.of("catalogue_source", "catalogue_generation", "catalogue_sha256"))
+            json.add(cle, demande.get(cle));
         JsonObject stock = depuisCoffre ? StockProduction.capturer(maintenant) : null;
         if (stock != null) json.add("stock", stock);
         json.addProperty("coffre_demande", depuisCoffre);
@@ -110,15 +106,15 @@ final class InventaireProduction {
         var production = ecran.get("production_v2");
         if (production == null || !production.isJsonObject()) return false;
         var courant = production.getAsJsonObject().get("contexte");
-        if (courant == null
-                || !courant.isJsonObject()
-                || !capture.contexte
-                        .projet()
-                        .equals(Pont.texte(courant.getAsJsonObject(), "projet"))
-                || !capture.contexte
-                        .revision()
-                        .equals(Pont.texte(courant.getAsJsonObject(), "revision_projet")))
-            return false;
+        if (courant == null || !courant.isJsonObject()) return false;
+        // La capture appartient au contexte que l'assistant publie encore (monde, connexion,
+        // dimension) : un service devenu indisponible ou une autre connexion la périment.
+        var publie = courant.getAsJsonObject();
+        if (!capture.contexte.equals(
+                new EtatProduction.Contexte(
+                        Pont.texte(publie, "monde_actif"),
+                        Pont.texte(publie, "session_monde"),
+                        Pont.texte(publie, "dimension_monde")))) return false;
         if (capture.lots.isEmpty()) return true;
         try {
             return capture.revisionLots

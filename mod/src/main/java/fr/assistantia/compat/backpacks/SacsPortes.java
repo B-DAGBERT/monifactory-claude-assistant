@@ -9,7 +9,10 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.items.IItemHandler;
 import net.minecraftforge.registries.ForgeRegistries;
 
-/** Inventaire des seuls sacs portés. Les réponses natives restent liées à leur requête. */
+/**
+ * Inventaire des seuls sacs portés. Les réponses natives restent liées à leur requête. Lu à chaque
+ * tick : sans changement, rien n'est copié ni recompté et le même relevé est rendu.
+ */
 public final class SacsPortes {
     public record Etat(List<ItemStack> objets, boolean synchronise) {}
 
@@ -24,8 +27,10 @@ public final class SacsPortes {
     }
 
     public interface Lecteur {
+        /** Les sacs portés, tels que le jeu les tient : ils ne sont ni copiés ni modifiés. */
         List<ItemStack> portes(Player player) throws ReflectiveOperationException;
 
+        /** Les piles affichées du sac ouvert (non copiées), ou null s'il n'est pas ouvert. */
         List<ItemStack> ouvert(Player player, UUID id) throws ReflectiveOperationException;
 
         CompoundTag donnees(UUID id) throws ReflectiveOperationException;
@@ -44,18 +49,38 @@ public final class SacsPortes {
     }
 
     private static final class Releve {
-        List<ItemStack> objets = List.of();
+        List<ItemStack> objets = List.of(); // copies privées, jamais modifiées ensuite
+        List<UUID> imbriques = List.of(); // sacs contenus, dans l'ordre des objets
         long requete = -10000, recu = -1, revisionRequete = -1, revisionRecue = -1;
         boolean attente;
         Tag marqueur;
+
+        void contenu(List<ItemStack> copies) {
+            objets = copies;
+            List<UUID> sacs = new ArrayList<>();
+            for (var item : copies) {
+                UUID id = identite(item);
+                if (id != null) sacs.add(id);
+            }
+            imbriques = sacs.isEmpty() ? List.of() : sacs;
+        }
     }
 
     private final Lecteur lecteur;
     private final Map<UUID, Releve> releves = new LinkedHashMap<>();
     private Object connexion, menu;
-    private List<ItemStack> precedent = List.of();
+    // Base déjà lue : une même instance de liste a toujours le même contenu.
+    private List<ItemStack> baseLue;
+    private Map<String, Long> quantitesBase = Map.of();
+    private final Map<UUID, ItemStack> racinesBase = new LinkedHashMap<>();
     private long revision, maintenant;
     private boolean erreurSignalee;
+    // Parcours d'un tick, réutilisés ; le relevé n'est recomposé que si le parcours change.
+    private final Map<UUID, ItemStack> racines = new LinkedHashMap<>();
+    private final Set<UUID> vus = new HashSet<>();
+    private final List<ItemStack> portesSeuls = new ArrayList<>();
+    private final List<Object> parcours = new ArrayList<>(), parcoursCompose = new ArrayList<>();
+    private Etat dernier = new Etat(List.of(), true);
 
     public SacsPortes(Lecteur lecteur) {
         this.lecteur = lecteur;
@@ -72,9 +97,17 @@ public final class SacsPortes {
 
     public void vider() {
         releves.clear();
-        precedent = List.of();
         connexion = menu = null;
         revision = 0;
+        baseLue = null;
+        quantitesBase = Map.of();
+        racinesBase.clear();
+        // Aucune pile de l'ancienne connexion ne reste référencée par les listes du parcours.
+        racines.clear();
+        portesSeuls.clear();
+        parcours.clear();
+        parcoursCompose.clear();
+        dernier = new Etat(List.of(), true);
     }
 
     private static Map<String, Long> quantites(List<ItemStack> items) {
@@ -84,12 +117,6 @@ public final class SacsPortes {
             if (id != null) result.merge(id + ":" + identite(s), (long) s.getCount(), Long::sum);
         }
         return result;
-    }
-
-    private static boolean meme(List<ItemStack> a, List<ItemStack> b) {
-        // L'usure, la charge ou le déplacement entre deux cases ne modifient pas les quantités.
-        // Le contenu conserve malgré tout son NBT exact pour les comparaisons EMI.
-        return quantites(a).equals(quantites(b));
     }
 
     public boolean ouvertPorte(Player joueur) {
@@ -122,7 +149,7 @@ public final class SacsPortes {
     public void accepter(UUID id, CompoundTag nbt) {
         var r = releves.get(id);
         if (r == null || nbt == null) return;
-        r.objets = decoder(nbt);
+        r.contenu(decoder(nbt));
         r.marqueur = nbt.get("inventory");
         r.recu = maintenant;
         // Une réponse partie avant le dernier déplacement d'inventaire ne valide pas ce
@@ -131,6 +158,10 @@ public final class SacsPortes {
         r.attente = false;
     }
 
+    /**
+     * La base ne doit plus être modifiée après l'appel : la même instance est considérée comme le
+     * même contenu au tick suivant.
+     */
     public Etat lire(Player joueur, List<ItemStack> base, Object connexion, long temps) {
         maintenant = temps;
         if (joueur == null) {
@@ -141,35 +172,47 @@ public final class SacsPortes {
             vider();
             this.connexion = connexion;
         }
-        if (!meme(precedent, base) || menu != joueur.containerMenu) {
-            revision++;
-            precedent = base.stream().map(ItemStack::copy).toList();
-            menu = joueur.containerMenu;
-        }
-        List<ItemStack> resultat = new ArrayList<>();
-        Map<UUID, ItemStack> racines = new LinkedHashMap<>();
-        Set<UUID> dansBase = new HashSet<>();
-        for (var item : base) {
-            UUID id = identite(item);
-            if (id != null) {
-                racines.putIfAbsent(id, item);
-                dansBase.add(id);
+        boolean quantitesChangees = false;
+        if (base != baseLue) {
+            // L'usure, la charge ou le déplacement entre deux cases ne modifient pas les quantités.
+            // Le contenu conserve malgré tout son NBT exact pour les comparaisons EMI.
+            var quantites = quantites(base);
+            if (!quantites.equals(quantitesBase)) {
+                quantitesChangees = true;
+                quantitesBase = quantites;
+            }
+            baseLue = base;
+            racinesBase.clear();
+            for (var item : base) {
+                UUID id = identite(item);
+                if (id != null) racinesBase.putIfAbsent(id, item);
             }
         }
+        if (quantitesChangees || menu != joueur.containerMenu) {
+            revision++;
+            menu = joueur.containerMenu;
+        }
+        racines.clear();
+        racines.putAll(racinesBase);
         try {
+            portesSeuls.clear();
             for (var item : lecteur.portes(joueur)) {
                 UUID id = identite(item);
                 if (id != null && !racines.containsKey(id)) {
                     racines.put(id, item);
-                    if (!dansBase.contains(id))
-                        resultat.add(item.copy()); // Curios / emplacement porté.
+                    portesSeuls.add(item); // Curios / emplacement porté.
                 }
             }
-            Set<UUID> vus = new HashSet<>();
+            vus.clear();
+            parcours.clear();
+            for (var item : portesSeuls) {
+                parcours.add(item);
+                parcours.add(item.getTag());
+            }
             boolean complet = true;
-            for (var item : racines.values()) complet &= lireSac(joueur, item, resultat, vus, 0);
+            for (UUID id : racines.keySet()) complet &= lireSac(joueur, id, 0);
             releves.keySet().retainAll(vus);
-            return new Etat(List.copyOf(resultat), complet);
+            return etat(complet);
         } catch (ReflectiveOperationException | RuntimeException e) {
             if (!erreurSignalee) {
                 LogUtils.getLogger().warn("Assistant : lecture des backpacks indisponible", e);
@@ -179,27 +222,60 @@ public final class SacsPortes {
         }
     }
 
-    private boolean lireSac(
-            Player joueur, ItemStack sac, List<ItemStack> resultat, Set<UUID> vus, int profondeur)
+    /** Même parcours (mêmes piles portées, mêmes contenus) : même relevé, sans recopier. */
+    private Etat etat(boolean complet) {
+        List<ItemStack> objets = dernier.objets();
+        if (!memeParcours()) {
+            List<ItemStack> resultat = new ArrayList<>();
+            for (var item : portesSeuls) resultat.add(item.copy());
+            Set<UUID> composes = new HashSet<>();
+            for (UUID id : racines.keySet()) composer(id, resultat, composes, 0);
+            objets = List.copyOf(resultat);
+            parcoursCompose.clear();
+            parcoursCompose.addAll(parcours);
+        }
+        if (objets != dernier.objets() || complet != dernier.synchronise())
+            dernier = new Etat(objets, complet);
+        return dernier;
+    }
+
+    private boolean memeParcours() {
+        if (parcours.size() != parcoursCompose.size()) return false;
+        for (int i = 0; i < parcours.size(); i++)
+            if (parcours.get(i) != parcoursCompose.get(i)) return false;
+        return true;
+    }
+
+    /** L'ordre et les limites de lireSac, sans effet de bord : contenu puis sacs imbriqués. */
+    private void composer(UUID id, List<ItemStack> resultat, Set<UUID> composes, int profondeur) {
+        if (composes.contains(id) || profondeur > 8 || composes.size() >= 64) return;
+        composes.add(id);
+        Releve r = releves.get(id);
+        if (r == null) return;
+        for (var item : r.objets) {
+            resultat.add(item);
+            UUID sous = identite(item);
+            if (sous != null) composer(sous, resultat, composes, profondeur + 1);
+        }
+    }
+
+    private boolean lireSac(Player joueur, UUID id, int profondeur)
             throws ReflectiveOperationException {
-        UUID id = identite(sac);
-        if (id == null || vus.contains(id)) return true;
+        if (vus.contains(id)) return true;
         if (profondeur > 8 || vus.size() >= 64) return false;
         vus.add(id);
         Releve r = releves.computeIfAbsent(id, k -> new Releve());
         var ouvert = lecteur.ouvert(joueur, id);
         if (ouvert != null) {
-            r.objets = ouvert.stream().map(ItemStack::copy).toList();
+            if (!memes(ouvert, r.objets)) r.contenu(copies(ouvert));
             r.revisionRecue = revision;
             r.recu = maintenant;
-        } else {
+        } else if (r.attente || demandeDue(r)) {
             CompoundTag donnees = lecteur.donnees(id);
             // Repli pour les versions où le hook de réception n'est pas disponible.
             if (r.attente && donnees.get("inventory") != r.marqueur) accepter(id, donnees);
             // Une seule requête en vol : une réponse tardive ne doit pas valider la suivante.
-            if (!r.attente
-                    && maintenant - r.requete >= 500
-                    && (r.revisionRecue < revision || maintenant - r.recu >= 2000)) {
+            if (demandeDue(r)) {
                 r.marqueur = donnees.get("inventory");
                 r.requete = maintenant;
                 r.revisionRequete = revision;
@@ -214,12 +290,31 @@ public final class SacsPortes {
             }
         }
         boolean complet = r.revisionRecue == revision && maintenant - r.recu < 8000;
-        for (var item : r.objets) {
-            resultat.add(item.copy());
-            if (identite(item) != null)
-                complet &= lireSac(joueur, item, resultat, vus, profondeur + 1);
-        }
+        parcours.add(r.objets);
+        for (UUID sous : r.imbriques) complet &= lireSac(joueur, sous, profondeur + 1);
         return complet;
+    }
+
+    private boolean demandeDue(Releve r) {
+        return !r.attente
+                && maintenant - r.requete >= 500
+                && (r.revisionRecue < revision || maintenant - r.recu >= 2000);
+    }
+
+    private static boolean memes(List<ItemStack> affiches, List<ItemStack> connus) {
+        int n = 0;
+        for (var item : affiches) {
+            if (item.isEmpty()) continue;
+            if (n >= connus.size() || !ItemStack.matches(item, connus.get(n))) return false;
+            n++;
+        }
+        return n == connus.size();
+    }
+
+    private static List<ItemStack> copies(List<ItemStack> affiches) {
+        List<ItemStack> result = new ArrayList<>();
+        for (var item : affiches) if (!item.isEmpty()) result.add(item.copy());
+        return List.copyOf(result);
     }
 
     /**
@@ -231,7 +326,8 @@ public final class SacsPortes {
         private Method provider, parcourir, storage, donnees, envoyer;
         private Constructor<?> requete;
         private Class<?> consumer;
-        private Object canal;
+        private Object canal, action;
+        private final List<ItemStack> portes = new ArrayList<>();
 
         private void charger() throws ReflectiveOperationException {
             if (charge) return;
@@ -256,34 +352,36 @@ public final class SacsPortes {
                         Class.forName(
                                         "net.p3pp3rf1y.sophisticatedbackpacks.network.RequestBackpackInventoryContentsMessage")
                                 .getConstructor(UUID.class);
+                // Un seul relais, réutilisé à chaque tick.
+                action =
+                        Proxy.newProxyInstance(
+                                consumer.getClassLoader(),
+                                new Class<?>[] {consumer},
+                                (proxy, method, args) -> {
+                                    if (method.getName().equals("accept")) {
+                                        portes.add((ItemStack) args[0]);
+                                        return false;
+                                    }
+                                    if (method.getName().equals("toString"))
+                                        return "AssistantBackpacks";
+                                    if (method.getName().equals("hashCode"))
+                                        return System.identityHashCode(proxy);
+                                    if (method.getName().equals("equals")) return proxy == args[0];
+                                    return null;
+                                });
             } catch (ClassNotFoundException e) {
                 absent = true;
             }
             charge = true;
         }
 
+        /** Valable jusqu'à l'appel suivant (liste réutilisée). */
         public List<ItemStack> portes(Player p) throws ReflectiveOperationException {
             charger();
             if (absent) return List.of();
-            List<ItemStack> sacs = new ArrayList<>();
-            Object action =
-                    Proxy.newProxyInstance(
-                            consumer.getClassLoader(),
-                            new Class<?>[] {consumer},
-                            (proxy, method, args) -> {
-                                if (method.getName().equals("accept")) {
-                                    sacs.add(((ItemStack) args[0]).copy());
-                                    return false;
-                                }
-                                if (method.getName().equals("toString"))
-                                    return "AssistantBackpacks";
-                                if (method.getName().equals("hashCode"))
-                                    return System.identityHashCode(proxy);
-                                if (method.getName().equals("equals")) return proxy == args[0];
-                                return null;
-                            });
+            portes.clear();
             parcourir.invoke(provider.invoke(null), p, action);
-            return sacs;
+            return portes;
         }
 
         public CompoundTag donnees(UUID id) throws ReflectiveOperationException {
@@ -312,9 +410,11 @@ public final class SacsPortes {
                     (IItemHandler)
                             wrapper.getClass().getMethod("getInventoryHandler").invoke(wrapper);
             List<ItemStack> result = new ArrayList<>();
-            for (int i = 0; i < Math.min(4096, inv.getSlots()); i++)
-                if (!inv.getStackInSlot(i).isEmpty()) result.add(inv.getStackInSlot(i).copy());
-            return List.copyOf(result);
+            for (int i = 0; i < Math.min(4096, inv.getSlots()); i++) {
+                var pile = inv.getStackInSlot(i);
+                if (!pile.isEmpty()) result.add(pile);
+            }
+            return result;
         }
     }
 }

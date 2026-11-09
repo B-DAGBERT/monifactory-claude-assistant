@@ -103,7 +103,6 @@ def factory(**changes):
                 source="joueur", reference="declaration-1", status=KnowledgeStatus.USER_CONFIRMED
             ),
         ),
-        project_ids=("project-1",),
     )
     return FactoryDefinition(**dict(values, **changes))
 
@@ -146,7 +145,6 @@ class FactoryTests(unittest.TestCase):
             {"evidence": (evidence(status=KnowledgeStatus.DERIVED),)},
             {"evidence": (evidence(status=KnowledgeStatus.USER_CONFIRMED, world=OTHER),)},
             {"members": (MachineRef(KEY, MACHINE),) * 2},
-            {"project_ids": ("project-1",) * 2},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 factory(**invalid)
@@ -167,7 +165,6 @@ class FactoryTests(unittest.TestCase):
                 (view,) = project_factories(knowledge, (group,))
                 self.assertEqual(view.members[0].state, state)
                 self.assertIs(view.definition, original)
-                self.assertEqual(view.definition.project_ids, ("project-1",))
                 self.assertFalse(view.physical_connections_known)
 
     def test_conflicts_and_partial_absence_are_not_reconciled_by_guessing(self):

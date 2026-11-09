@@ -1,18 +1,11 @@
-"""Descriptions du joueur, des stocks et des quêtes pour les requêtes."""
+"""Descriptions du joueur et des stocks pour les requêtes."""
 
-import math
 import re
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 
 from monifactory_assistant.game.world import observation_date
-
-
-def cardinal(dx, dz):
-    """Direction d'un déplacement (N, NE, E...), le nord étant vers -Z comme dans Minecraft."""
-    angle = math.degrees(math.atan2(dx, -dz)) % 360
-    return ["N", "NE", "E", "SE", "S", "SO", "O", "NO"][round(angle / 45) % 8]
 
 
 def describe_state(state, inventory_limit=60, *, items=None):
@@ -65,45 +58,6 @@ def describe_storage(storage, limit=150, *, items=None):
         f"Coffres mémorisés ({len(storage.containers)}, quantités observées aux dates indiquées, "
         "stock actuel à vérifier) : " + " ; ".join(parts)
     )
-
-
-def describe_quests(quests, limit=25, per_chapter=8):
-    if not quests:
-        return "Quêtes : pas encore lues."
-    lines = [
-        f"Quêtes : {int(quests['terminees'])}/{int(quests['total'])} terminées.",
-        "Chapitres : "
-        + " ; ".join(
-            f"{c['titre']} {int(c['terminees'])}/{int(c['total'])}"
-            for c in quests["chapitres"]
-            if c["total"]
-        ),
-    ]
-    # Quêtes principales d'abord, dans l'ordre des chapitres, sans qu'un gros chapitre prenne toute la place
-    available, per_chapter_count = [], {}
-    for q in sorted(quests["disponibles"], key=lambda q: q["optionnelle"]):
-        if per_chapter_count.get(q["chapitre"], 0) < per_chapter:
-            per_chapter_count[q["chapitre"]] = per_chapter_count.get(q["chapitre"], 0) + 1
-            available.append(q)
-    lines.append(
-        f"Quêtes disponibles maintenant (non terminées, {len(quests['disponibles'])} au total) :"
-    )
-    for q in available[:limit]:
-        tasks = ", ".join(
-            f"{t['titre']} {int(t['progres'])}/{int(t['max'])}"
-            + (f" [{t['item']}]" if t.get("item") else "")
-            for t in q["taches"]
-        )
-        optional = " (optionnelle)" if q["optionnelle"] else ""
-        lines.append(
-            f"- [{q['chapitre']}] {q['titre']}{optional} : {tasks}. {q['description'][:250]}"
-        )
-    return "\n".join(lines)
-
-
-def where_hint(target, state):
-    dx, dz = target["x"] - state["x"], target["z"] - state["z"]
-    return f"{round(math.hypot(dx, dz))} blocs {cardinal(dx, dz)}"
 
 
 _ITEM_ID = re.compile(r"(?<![A-Za-z0-9_.-])[a-z0-9_.-]+:[a-z0-9_./-]+")

@@ -1,8 +1,8 @@
 # Assistant Monifactory — Claude et Codex
 
-La branche **main**, source de référence, réunit les mêmes menus, filons GregTech, scan manuel, luminosité,
-coffres, objectifs en pause et projets multiples pour les deux moteurs. Le choix de l’IA est local :
-aucun compte, modèle personnel, plan, coffre ou conversation n’est publié sur Git.
+La branche **main**, source de référence, réunit les mêmes menus, dont l’onglet Recette, les filons
+GregTech et leur scan, la luminosité et les coffres pour les deux moteurs. Le choix de l’IA est local :
+aucun compte, modèle personnel, coffre ou conversation n’est publié sur Git.
 
 ## Installer pour la première fois
 
@@ -34,14 +34,11 @@ Les valeurs de `assistant.local.json` ont priorité. Exemple :
   "provider": "claude",
   "providers": {
     "claude": {
-      "model_plan": "sonnet",
       "model_question": "sonnet",
       "model_quick": "haiku",
-      "effort_plan": "medium",
       "effort_question": "low"
     },
     "codex": {
-      "model_plan": "gpt-6.1-sol",
       "model_question": "gpt-5.6-sol",
       "model_quick": "gpt-5.6-sol"
     }
@@ -49,10 +46,11 @@ Les valeurs de `assistant.local.json` ont priorité. Exemple :
 }
 ```
 
-`effort_plan` et `effort_question` règlent la réflexion avant de répondre : `low`, `medium`, `high`,
+`effort_question` règle la réflexion avant de répondre : `low`, `medium`, `high`,
 `xhigh` ou `max`, selon ce que le modèle accepte. Une valeur plus élevée demande davantage de
-réflexion et peut allonger le traitement. Sans réglage, les plans utilisent `medium` et les questions `low`.
-Les anciens `model_plan`, `model_question` et `model_quick` à la racine concernent uniquement Codex.
+réflexion et peut allonger le traitement. Sans réglage, les questions utilisent `low`.
+`model_plan` et `effort_plan` réglaient les anciens projets et objectifs : ils restent lus, sans effet.
+Les anciens `model_question` et `model_quick` à la racine concernent uniquement Codex.
 Ils ne sont jamais envoyés à Claude. Le chemin de l’instance peut être défini par `minecraft_dir`,
 et celui du JDK 17 qui compile le mod par `java_home` (utile sur Windows, où le Java de CurseForge
 n’a pas de compilateur).
@@ -62,16 +60,15 @@ Les discussions sont séparées : `session.json` pour Codex, `session_claude.jso
 Claude démarre à la première demande, garde son processus pour les suivantes et reprend la session
 sauvegardée après redémarrage. Une erreur ou un délai dépassé ne renvoie jamais automatiquement
 une question. Ctrl+F8 remet à zéro uniquement la conversation du moteur actif.
-Projets, objectifs, pause, fiches et mémoire des coffres restent communs sur chaque installation.
+Fiches, lieux, filons et mémoire des coffres restent communs sur chaque installation.
 
 ## Configurer les modèles dans Minecraft
 
-Dans **Y → Réglages → Modèles IA…**, le moteur actif est affiché avec deux profils :
+Dans **Y → Réglages → Modèles IA…**, le moteur actif est affiché avec son profil :
 
-| Profil               | Utilisation                                          | Valeurs Codex par défaut          |
-| -------------------- | ---------------------------------------------------- | --------------------------------- |
-| Discussion et fiches | Questions écrites/vocales et nouvelles fiches avec I | `gpt-5.6-sol`, réflexion `low`    |
-| Projets et objectifs | Génération d’un nouveau projet ou objectif           | `gpt-6.1-sol`, réflexion `medium` |
+| Profil               | Utilisation                                          | Valeurs Codex par défaut       |
+| -------------------- | ---------------------------------------------------- | ------------------------------ |
+| Discussion et fiches | Questions écrites/vocales et nouvelles fiches avec I | `gpt-5.6-sol`, réflexion `low` |
 
 Cliquer sur le nom du modèle pour ouvrir la liste, rechercher son nom si nécessaire et le sélectionner.
 Il n’est plus nécessaire de connaître son identifiant. Choisir ensuite le niveau de réflexion, puis
@@ -173,7 +170,7 @@ une avance rapide. Les installations sur `shared-assistant` ou `codex-compat` pa
 si tous leurs commits y sont déjà intégrés. Une branche de développement, un HEAD détaché ou
 un commit local absent de main arrête la mise à jour. Une branche locale main contenant des
 commits non publiés est également conservée, sans changer de branche ni lancer l’installation.
-Le choix d’IA, les modèles, les objectifs, les coffres et les conversations locales sont conservés.
+Le choix d’IA, les modèles, les coffres, les filons et les conversations locales sont conservés.
 Relancer ensuite le jeu et l’assistant.
 
 La branche distante `shared-assistant` est supprimée après cette migration. Les anciens lanceurs

@@ -2,19 +2,23 @@ package fr.assistantia;
 
 import java.util.List;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 /** Repérage local des objets portés dans le backpack, y compris fermé. */
 public final class EcranSac extends Screen {
+    private static final int PAS = 24;
+    private static final String AIDE = "Déjà sur toi · comptés dans EMI · retrait manuel";
     private final Screen parent;
     private final BarreDefilement barre = new BarreDefilement();
-    private EditBox recherche;
+    private ChampTheme recherche;
     private String filtre = "";
     private List<ListeSac.Entree> entrees = List.of();
     private long actualise;
+    private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
+
+    /** Liste des objets : sous la recherche, au-dessus du bouton de retour. */
+    private int haut, bas;
 
     public EcranSac(Screen parent) {
         super(Component.literal("Dans le backpack"));
@@ -23,10 +27,13 @@ public final class EcranSac extends Screen {
 
     @Override
     protected void init() {
-        int l = Math.min(440, width - 24), x = (width - l) / 2;
+        fenetre = Theme.Fenetre.centree(width, height, 460);
+        int x = fenetre.contenuX(), l = fenetre.contenuLargeur();
+        int y = fenetre.contenuY() + Theme.LIGNE + Theme.ECART;
+        // Contour du champ dans une rangée de 16 px, comme un bouton.
         recherche =
                 addRenderableWidget(
-                        new EditBox(font, x, 46, l, 20, Component.literal("Chercher dans le sac")));
+                        ChampTheme.dans(font, x, y, l, Component.literal("Chercher dans le sac")));
         recherche.setMaxLength(100);
         recherche.setHint(Component.literal("Chercher dans le sac…"));
         recherche.setValue(filtre);
@@ -35,10 +42,12 @@ public final class EcranSac extends Screen {
                     filtre = s;
                     actualise = 0;
                 });
+        haut = y + Theme.BOUTON + Theme.ECART;
+        bas = Math.max(haut + 1, fenetre.basBoutons() - Theme.ECART);
+        int retour = Theme.largeurBouton(font, "Retour à EMI", l);
         addRenderableWidget(
-                Button.builder(Component.literal("Retour à EMI"), b -> onClose())
-                        .bounds(x, height - 28, l, 20)
-                        .build());
+                BoutonTheme.creer("Retour à EMI", b -> onClose())
+                        .zone(fenetre.contenuDroite() - retour, fenetre.basBoutons(), retour));
     }
 
     @Override
@@ -58,50 +67,53 @@ public final class EcranSac extends Screen {
             entrees = ListeSac.lire(InventaireJoueur.sacs(), filtre);
             actualise = maintenant;
         }
-        int l = Math.min(440, width - 24), x = (width - l) / 2, haut = 74, bas = height - 38;
-        barre.regler(x + l - 4, haut, bas - haut, entrees.size() * 24);
-        g.drawCenteredString(font, title, width / 2, 10, Hud.OR);
-        g.drawCenteredString(
-                font, "Déjà sur toi · comptés dans EMI · retrait manuel", width / 2, 27, Hud.GRIS);
-        g.enableScissor(x, haut, x + l - 10, bas);
+        fenetre.dessiner(g, font, title.getString(), null, mx, my);
+        int x = fenetre.contenuX(), droite = fenetre.contenuDroite(), l = droite - x;
+        Theme.texte(g, font, AIDE, x, fenetre.contenuY(), l, Theme.TEXTE_SECONDAIRE, mx, my);
+        barre.regler(droite - Theme.DEFILEMENT, haut, bas - haut, entrees.size() * PAS);
+        // La barre garde sa colonne ; les lignes s'arrêtent avant elle.
+        int fin = barre.visible() ? droite - Theme.DEFILEMENT - Theme.ECART : droite;
         ItemTooltip survol = null;
-        for (int i = 0; i < entrees.size(); i++) {
-            int y = haut + i * 24 - barre.position();
-            if (y + 24 <= haut || y >= bas) continue;
-            var e = entrees.get(i);
-            g.fill(x, y, x + l - 12, y + 22, 0x44325978);
-            g.renderItem(e.pile(), x + 3, y + 3);
-            String quantite = "× " + e.nombre();
-            g.drawString(
-                    font,
-                    font.plainSubstrByWidth(
-                            e.pile().getHoverName().getString(), l - 45 - font.width(quantite)),
-                    x + 25,
-                    y + 7,
-                    Hud.BLANC,
-                    false);
-            g.drawString(
-                    font, quantite, x + l - 18 - font.width(quantite), y + 7, Hud.BLANC, false);
-            if (mx >= x && mx < x + l - 12 && my >= Math.max(y, haut) && my < Math.min(y + 22, bas))
-                survol = new ItemTooltip(e.pile());
+        g.enableScissor(x, haut, droite, bas);
+        try {
+            for (int i = 0; i < entrees.size(); i++) {
+                int y = haut + i * PAS - barre.position();
+                if (y + PAS <= haut || y >= bas) continue;
+                var e = entrees.get(i);
+                boolean dessus =
+                        mx >= x
+                                && mx < fin
+                                && my >= Math.max(y, haut)
+                                && my < Math.min(y + PAS - 2, bas);
+                Theme.carte(g, x, y, fin - x, PAS - 2, dessus);
+                g.renderItem(e.pile(), x + 3, y + 3);
+                String quantite = "× " + e.nombre();
+                int qx = fin - 6 - font.width(quantite);
+                // Le nom complet est dans l'infobulle de l'objet : pas de seconde infobulle.
+                Theme.texte(
+                        g,
+                        font,
+                        e.pile().getHoverName().getString(),
+                        x + 24,
+                        y + 7,
+                        qx - Theme.ECART - x - 24,
+                        Theme.TEXTE);
+                Theme.texte(g, font, quantite, qx, y + 7, fin - qx, Theme.TEXTE);
+                if (dessus) survol = new ItemTooltip(e.pile());
+            }
+        } finally {
+            g.disableScissor();
         }
-        g.disableScissor();
-        if (barre.visible()) {
-            g.fill(barre.x(), haut, barre.x() + 4, bas, 0x50333333);
-            g.fill(
-                    barre.x(),
-                    barre.curseur(),
-                    barre.x() + 4,
-                    barre.curseur() + barre.taille(),
-                    0xBBAAAAAA);
-        }
+        Theme.barre(g, barre, mx, my);
         if (entrees.isEmpty())
-            g.drawCenteredString(
+            Theme.texteCentre(
+                    g,
                     font,
                     disponible ? "Aucun objet trouvé dans le sac" : "Lecture du sac…",
-                    width / 2,
+                    x,
                     haut + 10,
-                    Hud.GRIS);
+                    l,
+                    Theme.TEXTE_SECONDAIRE);
         super.render(g, mx, my, delta);
         if (survol != null) g.renderTooltip(font, survol.pile(), mx, my);
     }

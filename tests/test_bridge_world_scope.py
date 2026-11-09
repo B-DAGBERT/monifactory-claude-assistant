@@ -47,7 +47,8 @@ import net.minecraft.client.Minecraft;
 public class BridgeWorldScopeTest {
  static Path root;
  static JsonObject json(String s){return JsonParser.parseString(s).getAsJsonObject();}
- static JsonObject read(String s)throws Exception{return json(Files.readString(root.resolve(s)));}
+ // Periodic exports are written on the mod's writer thread: wait for them before reading.
+ static JsonObject read(String s)throws Exception{assert Ecritures.attendre(5000);return json(Files.readString(root.resolve(s)));}
  static void context(String world,String session,String dimension){
   IdentiteMonde.isole=true;IdentiteMonde.monde=world;IdentiteMonde.session=session;
   Minecraft.getInstance().level=new Minecraft.Level();Minecraft.getInstance().level.dim=dimension;
@@ -108,10 +109,12 @@ public class BridgeWorldScopeTest {
    Minecraft.getInstance().level=null;empty();return;
   }
   if(args[0].equals("channels")){
-   assert Pont.envoyerInventaire(new JsonObject());assert Pont.envoyerProgresFabrication(new JsonObject());
+   assert Pont.envoyerInventaire(new JsonObject());
    assert Pont.envoyerConfigurationIa(new JsonObject());assert Pont.envoyerRechercheEmi(new JsonObject());
    assert Pont.envoyer(json("{\"type\":\"question\"}"));
-   for(String name:List.of("inventaire_joueur.json","fabrication_emi.json","configuration_ia.json","recherche_emi.json","demande_mod.json"))assert Pont.contexteValide(read(name)):name;
+   for(String name:List.of("inventaire_joueur.json","configuration_ia.json","recherche_emi.json","demande_mod.json"))assert Pont.contexteValide(read(name)):name;
+   assert !read("demande_mod.json").has("projet")&&read("demande_mod.json").has("dimension_envoi"):"no project binding, dimension kept";
+   assert Pont.envoyer(json("{\"type\":\"production_v2\"}"));assert !read("demande_mod.json").has("dimension_envoi"):"production keeps its own binding";
    publish(view("queue"),time);assert Pont.envoyer(json("{\"type\":\"question\"}"));
    try(var paths=Files.list(root.resolve("demandes"))){var files=paths.toList();assert files.size()==1;assert Pont.contexteValide(json(Files.readString(files.get(0))));}
    var late=read("demande_mod.json");var bytes=Files.readAllBytes(root.resolve("demande_mod.json"));context(b,s2,dim);
@@ -190,6 +193,7 @@ class BridgeWorldScopeTests(unittest.TestCase):
                 *map(str, sources),
                 str(ROOT / "mod/src/main/java/fr/assistantia/Pont.java"),
                 str(ROOT / "mod/src/main/java/fr/assistantia/FileDemandes.java"),
+                str(ROOT / "mod/src/main/java/fr/assistantia/Ecritures.java"),
                 str(harness),
             ],
             capture_output=True,

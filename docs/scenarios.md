@@ -3,7 +3,7 @@
 Ouvrir **Tester Mac.command** sur Mac ou **Tester.bat** sur Windows, puis choisir **Basique**,
 **Complexe** ou **Tous**. Minecraft peut rester ouvert : les tests utilisent des données fictives,
 des processus Java temporaires et les vrais contrôleurs du dépôt. Ils ne lancent aucune IA,
-ne déplacent rien en jeu et ne modifient ni objectif, ni coffre, ni configuration personnelle.
+ne déplacent rien en jeu et ne modifient ni coffre, ni configuration personnelle.
 
 En ligne de commande, depuis le dépôt :
 
@@ -38,7 +38,7 @@ Dix-neuf parcours ajoutent notamment :
 - une machine qui termine après plus de dix minutes ;
 - l’assistant lent ou une écriture temporairement refusée, avec reprises espacées et bornées ;
 - deux lots concurrents du même résultat et les livraisons partielles ;
-- les anciennes réponses après modification des besoins, la pause et la déconnexion ;
+- les anciennes réponses après modification des besoins, l’arrêt de l’arbre et la déconnexion ;
 - les déplacements en backpack pendant sa synchronisation ;
 - cent coffres mélangés, dont quarante utiles, et un lot de 320 objets reçu en huit étapes ;
 - la priorité aux composants déjà prêts plutôt qu’à leurs ingrédients et outils ;

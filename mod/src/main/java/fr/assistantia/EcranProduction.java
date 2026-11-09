@@ -6,31 +6,36 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import org.lwjgl.glfw.GLFW;
 
-/** Une vue de lecture, partagée par Objectif, Projet et Base ; aucune action de jeu. */
+/** Lecture du plan ou du diagnostic de l'arbre EMI, ouverte depuis Base ; aucune action de jeu. */
 public final class EcranProduction extends Screen {
-    private static final String[] NOMS = {"Plan", "Diagnostic", "Projet"};
-    private static final String[] OPERATIONS = {"plan", "diagnostic", "memoire"};
+    private static final String[] NOMS = {"Plan", "Diagnostic"};
+    private static final String[] OPERATIONS = {"plan", "diagnostic"};
     private final Screen parent;
     private final boolean depuisCoffre;
     private final EtatProduction etat = new EtatProduction();
-    private final List<Button> onglets = new ArrayList<>();
+    private final List<BoutonTheme> onglets = new ArrayList<>();
     private final List<FormattedCharSequence> lignes = new ArrayList<>();
-    private EditBox quantite;
-    private Button calculer, valeurEmi, choix, precedent, suivant;
+    private final BarreDefilement defilement = new BarreDefilement();
+    private ChampTheme quantite;
+    private BoutonTheme calculer, valeurEmi, choix;
     private String saisie = "", recette = "", signatureCatalogue = "", produit = "Arbre EMI actuel";
     private String captureActive = "", empreinteCapture = "";
-    private int onglet, gauche, largeur, page, parPage, contenuY;
+    private int onglet;
     private long derniereLecture, revisionAffichee = -1;
     private List<EtatProduction.Alternative> alternatives = List.of();
     private boolean transmission;
+    private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
+
+    /** Rangées de la fenêtre et carte des résultats, fixées par {@link #init()}. */
+    private int ligneOnglets, ligneQuantite, finOnglets, hautListe, basListe, ligneStatut;
+
+    private int largeurTexte = 100;
 
     public EcranProduction(Screen parent) {
         this(parent, false);
@@ -49,17 +54,18 @@ public final class EcranProduction extends Screen {
     @Override
     protected void init() {
         etat.ouvrir();
-        largeur = Math.min(620, width - 24);
-        gauche = (width - largeur) / 2;
+        fenetre = Theme.Fenetre.centree(width, height, 620);
+        int x = fenetre.contenuX(), droite = fenetre.contenuDroite(), l = droite - x;
+        ligneOnglets = fenetre.contenuY();
         onglets.clear();
+        int ox = x;
         for (int i = 0; i < NOMS.length; i++) {
             final int index = i;
-            int debut = gauche + i * (largeur + 6) / 3;
-            int fin = gauche + (i + 1) * (largeur + 6) / 3 - 6;
+            int lOnglet = Theme.largeurBouton(font, NOMS[i], 120);
             onglets.add(
                     addRenderableWidget(
-                            Button.builder(
-                                            Component.literal(NOMS[i]),
+                            BoutonTheme.creer(
+                                            NOMS[i],
                                             b -> {
                                                 if (onglet == index) return;
                                                 onglet = index;
@@ -67,20 +73,24 @@ public final class EcranProduction extends Screen {
                                                 captureActive = empreinteCapture = "";
                                                 alternatives = List.of();
                                                 etat.invalider(
-                                                        "Choisis une lecture ; aucun objectif ne sera modifié.");
-                                                page = 0;
+                                                        "Choisis une lecture ; rien ne sera modifié dans le jeu.");
                                                 actualiser();
                                             })
-                                    .bounds(debut, 29, fin - debut, 18)
-                                    .build()));
+                                    .genre(Theme.Genre.ONGLET)
+                                    .zone(ox, ligneOnglets, lOnglet)));
+            ox += lOnglet + Theme.ECART;
         }
+        finOnglets = ox - Theme.ECART;
+
+        ligneQuantite = ligneOnglets + Theme.BOUTON + 2 * Theme.ECART;
+        int lLibelle = font.width("Qté") + Theme.ECART, lQuantite = 50;
+        int lEmi = Theme.largeurBouton(font, "Quantité EMI", 140);
         quantite =
-                new EditBox(
+                ChampTheme.dans(
                         font,
-                        gauche + largeur - 60,
-                        53,
-                        60,
-                        18,
+                        x + lLibelle,
+                        ligneQuantite,
+                        lQuantite,
                         Component.literal("Quantité, vide pour celle d’EMI"));
         quantite.setMaxLength(10);
         quantite.setFilter(s -> s.isEmpty() || s.matches("[0-9]{0,10}"));
@@ -92,44 +102,33 @@ public final class EcranProduction extends Screen {
                         Component.literal(
                                 "Vide : quantité de l’arbre EMI. Sinon, quantité entière de 1 à 1 000 000.")));
         addRenderableWidget(quantite);
-        calculer =
-                addRenderableWidget(
-                        Button.builder(Component.literal("Calculer l’arbre"), b -> demander())
-                                .bounds(gauche, 79, largeur - 108, 20)
-                                .build());
+        int ex = x + lLibelle + lQuantite + Theme.ECART;
         valeurEmi =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal("Quantité EMI"),
-                                        b -> quantite.setValue(""))
-                                .bounds(gauche + largeur - 102, 79, 102, 20)
-                                .build());
+                        BoutonTheme.creer("Quantité EMI", b -> quantite.setValue(""))
+                                .infobulle("Vider la quantité : celle de l’arbre EMI.")
+                                .zone(ex, ligneQuantite, lEmi));
+        int cx = ex + lEmi + Theme.ECART;
+        calculer =
+                addRenderableWidget(
+                        BoutonTheme.creer("Calculer l’arbre", b -> demander())
+                                .genre(Theme.Genre.PRINCIPAL)
+                                .zone(cx, ligneQuantite, Math.max(Theme.BOUTON, droite - cx)));
+        int ligneRecette = ligneQuantite + Theme.BOUTON + Theme.ECART;
         choix =
                 addRenderableWidget(
-                        Button.builder(
-                                        Component.literal("Recette : choix EMI"),
-                                        b -> choisirRecette())
-                                .bounds(gauche, 103, largeur, 18)
-                                .build());
-        int tiers = (largeur - 12) / 3;
-        precedent =
-                addRenderableWidget(
-                        Button.builder(Component.literal("Précédent"), b -> changerPage(-1))
-                                .bounds(gauche, height - 28, tiers, 20)
-                                .build());
-        suivant =
-                addRenderableWidget(
-                        Button.builder(Component.literal("Suivant"), b -> changerPage(1))
-                                .bounds(gauche + tiers + 6, height - 28, tiers, 20)
-                                .build());
+                        BoutonTheme.creer("Recette : choix EMI", b -> choisirRecette())
+                                .zone(x, ligneRecette, l));
+
+        hautListe = ligneRecette + Theme.BOUTON + 2 * Theme.ECART;
+        ligneStatut = fenetre.basBoutons() - Theme.ECART - Theme.LIGNE + 1;
+        basListe = Math.max(hautListe + Theme.LIGNE + 4, ligneStatut - Theme.ECART);
+        // Les résultats sont dans une carte : 5 px de marge, la barre à droite dans la carte.
+        largeurTexte = Math.max(40, l - 10 - Theme.DEFILEMENT - Theme.ECART);
+        int lRetour = Theme.largeurBouton(font, "Retour", 120);
         addRenderableWidget(
-                Button.builder(Component.literal("Retour"), b -> onClose())
-                        .bounds(
-                                gauche + (tiers + 6) * 2,
-                                height - 28,
-                                largeur - (tiers + 6) * 2,
-                                20)
-                        .build());
+                BoutonTheme.creer("Retour", b -> onClose())
+                        .zone(droite - lRetour, fenetre.basBoutons(), lRetour));
         revisionAffichee = -1;
         actualiser();
     }
@@ -159,9 +158,7 @@ public final class EcranProduction extends Screen {
         return new EtatProduction.Contexte(
                 texte(objet, "monde_actif"),
                 texte(objet, "session_monde"),
-                texte(objet, "dimension_monde"),
-                texte(objet, "projet"),
-                texte(objet, "revision_projet"));
+                texte(objet, "dimension_monde"));
     }
 
     private static List<String> textes(JsonObject objet, String cle) {
@@ -214,13 +211,12 @@ public final class EcranProduction extends Screen {
 
     private void demander() {
         actualiser();
-        if (onglet != 2 && !quantiteValide()) return;
+        if (!quantiteValide()) return;
         long maintenant = System.currentTimeMillis();
         if (!etat.commencer(maintenant)) return;
         signatureCatalogue = "";
         captureActive = empreinteCapture = "";
-        if (onglet == 2) transmettre(new JsonObject());
-        else if (!CatalogueProduction.demander())
+        if (!CatalogueProduction.demander())
             etat.invalider(texte(CatalogueProduction.etat(), "message"));
         actualiserBoutons();
         preparerLignes();
@@ -244,71 +240,64 @@ public final class EcranProduction extends Screen {
             demande.addProperty("type", "production_v2");
             demande.addProperty("preuves_natives", 2);
             demande.addProperty("operation", OPERATIONS[onglet]);
-            demande.addProperty("projet", etat.contexte().projet());
-            demande.addProperty("revision_projet", etat.contexte().revision());
             InventaireProduction.annoter(demande, etat.contexte());
-            if (onglet != 2) {
-                var contexte = etat.contexte();
-                if (!texte(catalogue, "monde_actif").equals(contexte.monde())
-                        || !texte(catalogue, "session_monde").equals(contexte.session())
-                        || !texte(catalogue, "dimension_monde").equals(contexte.dimension())) {
-                    etat.invalider(
-                            "Catalogue d’une autre connexion. Relance la lecture de l’arbre EMI.");
-                    return;
-                }
-                var cible = objet(catalogue, "cible");
-                var ressource = objet(cible, "resource");
-                long nombre = saisie.isBlank() ? entier(cible, "quantity") : Long.parseLong(saisie);
-                if (nombre <= 0 || nombre > 1_000_000L || texte(ressource, "id").isEmpty()) {
-                    etat.invalider(
-                            "Cible EMI indisponible. Ouvre Recipe Tree et choisis une recette.");
-                    return;
-                }
-                demande.addProperty("item", texte(ressource, "id"));
-                demande.addProperty("quantite", nombre);
-                for (String cle : List.of("kind", "unit", "variant"))
-                    demande.addProperty(cle, texte(ressource, cle));
-                demande.addProperty("catalogue_source", texte(catalogue, "source"));
-                demande.addProperty("catalogue_generation", entier(catalogue, "generation"));
-                demande.addProperty("catalogue_sha256", texte(catalogue, "sha256"));
-                if (!recette.isEmpty()) demande.addProperty("recette", recette);
-                String capture = UUID.randomUUID().toString();
-                demande.addProperty("capture", capture);
-                signatureCatalogue = signature(catalogue);
-                captureActive = capture;
-                var pile = Pont.objet(texte(ressource, "id"));
-                produit =
-                        nombre
-                                + " × "
-                                + (pile.isEmpty()
-                                        ? texte(ressource, "id")
-                                        : pile.getHoverName().getString());
-                var publicationStock =
-                        InventaireProduction.exporter(
-                                demande, etat.contexte(), catalogue, depuisCoffre);
-                publication = true;
-                publicationStock.whenComplete(
-                        (empreinte, erreur) ->
-                                minecraft.execute(
-                                        () -> {
-                                            transmission = false;
-                                            if (minecraft.screen != this
-                                                    || !etat.preparation()
-                                                    || !capture.equals(captureActive)) return;
-                                            if (erreur != null
-                                                    || !InventaireProduction.confirmerCapture(
-                                                            capture, empreinte)) {
-                                                etat.invalider(
-                                                        "Relevé de production modifié ou indisponible. Relance le calcul.");
-                                            } else {
-                                                empreinteCapture = empreinte;
-                                                demande.addProperty("capture_sha256", empreinte);
-                                                envoyer(demande);
-                                            }
-                                        }));
+            var contexte = etat.contexte();
+            if (!texte(catalogue, "monde_actif").equals(contexte.monde())
+                    || !texte(catalogue, "session_monde").equals(contexte.session())
+                    || !texte(catalogue, "dimension_monde").equals(contexte.dimension())) {
+                etat.invalider(
+                        "Catalogue d’une autre connexion. Relance la lecture de l’arbre EMI.");
                 return;
             }
-            envoyer(demande);
+            var cible = objet(catalogue, "cible");
+            var ressource = objet(cible, "resource");
+            long nombre = saisie.isBlank() ? entier(cible, "quantity") : Long.parseLong(saisie);
+            if (nombre <= 0 || nombre > 1_000_000L || texte(ressource, "id").isEmpty()) {
+                etat.invalider("Cible EMI indisponible. Ouvre Recipe Tree et choisis une recette.");
+                return;
+            }
+            demande.addProperty("item", texte(ressource, "id"));
+            demande.addProperty("quantite", nombre);
+            for (String cle : List.of("kind", "unit", "variant"))
+                demande.addProperty(cle, texte(ressource, cle));
+            demande.addProperty("catalogue_source", texte(catalogue, "source"));
+            demande.addProperty("catalogue_generation", entier(catalogue, "generation"));
+            demande.addProperty("catalogue_sha256", texte(catalogue, "sha256"));
+            if (!recette.isEmpty()) demande.addProperty("recette", recette);
+            String capture = UUID.randomUUID().toString();
+            demande.addProperty("capture", capture);
+            signatureCatalogue = signature(catalogue);
+            captureActive = capture;
+            var pile = Pont.objet(texte(ressource, "id"));
+            produit =
+                    nombre
+                            + " × "
+                            + (pile.isEmpty()
+                                    ? texte(ressource, "id")
+                                    : pile.getHoverName().getString());
+            var publicationStock =
+                    InventaireProduction.exporter(
+                            demande, etat.contexte(), catalogue, depuisCoffre);
+            publication = true;
+            publicationStock.whenComplete(
+                    (empreinte, erreur) ->
+                            minecraft.execute(
+                                    () -> {
+                                        transmission = false;
+                                        if (minecraft.screen != this
+                                                || !etat.preparation()
+                                                || !capture.equals(captureActive)) return;
+                                        if (erreur != null
+                                                || !InventaireProduction.confirmerCapture(
+                                                        capture, empreinte)) {
+                                            etat.invalider(
+                                                    "Relevé de production modifié ou indisponible. Relance le calcul.");
+                                        } else {
+                                            empreinteCapture = empreinte;
+                                            demande.addProperty("capture_sha256", empreinte);
+                                            envoyer(demande);
+                                        }
+                                    }));
         } finally {
             if (!publication) transmission = false;
         }
@@ -361,7 +350,7 @@ public final class EcranProduction extends Screen {
             produit = "Arbre EMI actuel";
             quantite.setValue("");
         }
-        if (onglet != 2 && (etat.preparation() || !signatureCatalogue.isEmpty())) {
+        if (etat.preparation() || !signatureCatalogue.isEmpty()) {
             JsonObject catalogue = CatalogueProduction.etat();
             String statut = texte(catalogue, "etat");
             if (etat.preparation()) {
@@ -383,46 +372,28 @@ public final class EcranProduction extends Screen {
     }
 
     private void actualiserBoutons() {
-        for (int i = 0; i < onglets.size(); i++) onglets.get(i).active = i != onglet;
-        boolean projet = onglet == 2;
-        quantite.visible = valeurEmi.visible = choix.visible = !projet;
+        for (int i = 0; i < onglets.size(); i++) onglets.get(i).choisi(i == onglet);
         quantite.setEditable(!etat.attente());
         valeurEmi.active = !etat.attente();
-        calculer.setY(projet ? 55 : 79);
-        calculer.setWidth(projet ? largeur : largeur - 108);
-        calculer.setMessage(
-                Component.literal(
-                        etat.attente()
-                                ? "Chargement…"
-                                : projet
-                                        ? "Lire le projet"
-                                        : onglet == 1 ? "Analyser l’arbre" : "Calculer l’arbre"));
-        calculer.active =
-                etat.peutDemander(System.currentTimeMillis()) && (projet || quantiteValide());
+        calculer.texte(
+                etat.attente()
+                        ? "Chargement…"
+                        : onglet == 1 ? "Analyser l’arbre" : "Calculer l’arbre");
+        calculer.active = etat.peutDemander(System.currentTimeMillis()) && quantiteValide();
         choix.active = !etat.attente() && !alternatives.isEmpty();
         String nom = recette.isEmpty() ? "Recette : choix EMI" : "Recette : " + recette;
-        choix.setMessage(Component.literal(font.plainSubstrByWidth(nom, largeur - 12)));
-        choix.setTooltip(
-                Tooltip.create(Component.literal(nom + " · choix local, recalcul explicite")));
-        contenuY = projet ? 83 : 129;
-        parPage = Math.max(1, (height - 56 - contenuY) / 11);
+        choix.texte(nom).infobulle(nom + " · choix local, recalcul explicite");
     }
 
     private void preparerLignes() {
-        if (revisionAffichee == etat.revision()) {
-            bornerPage();
-            return;
-        }
+        if (revisionAffichee == etat.revision()) return;
         revisionAffichee = etat.revision();
         lignes.clear();
         var resultat = etat.resultat();
         if (resultat == null) {
             ajouter(etat.message());
-            if (!etat.attente() && onglet != 2)
+            if (!etat.attente())
                 ajouter("Ouvre Recipe Tree dans EMI, choisis la recette, puis reviens ici.");
-            if (onglet == 2)
-                ajouter(
-                        "Les informations du projet seront lues sans modifier sa progression ni sa pause.");
         } else {
             ajouter(resultat.titre());
             for (String ligne : resultat.lignes()) ajouter(ligne);
@@ -431,23 +402,11 @@ public final class EcranProduction extends Screen {
             for (var alternative : alternatives) ajouter("Alternative · " + alternative.texte());
             actualiserBoutons();
         }
-        page = 0;
-        bornerPage();
+        defilement.aller(0); // un nouveau résultat se lit depuis le début
     }
 
     private void ajouter(String ligne) {
-        lignes.addAll(font.split(Component.literal(ligne), largeur - 8));
-    }
-
-    private void bornerPage() {
-        page = Math.max(0, Math.min(page, Math.max(0, (lignes.size() - 1) / parPage)));
-        precedent.active = page > 0;
-        suivant.active = (page + 1) * parPage < lignes.size();
-    }
-
-    private void changerPage(int delta) {
-        page += delta;
-        bornerPage();
+        lignes.addAll(font.split(Component.literal(ligne), largeurTexte));
     }
 
     @Override
@@ -457,13 +416,38 @@ public final class EcranProduction extends Screen {
         else actualiserBoutons();
     }
 
+    private void reglerDefilement() {
+        defilement.regler(
+                fenetre.contenuDroite() - Theme.DEFILEMENT - 2,
+                hautListe + 2,
+                basListe - hautListe - 4,
+                lignes.size() * Theme.LIGNE + 4);
+    }
+
     @Override
     public boolean mouseScrolled(double x, double y, double delta) {
-        if (y >= contenuY && y < height - 50) {
-            changerPage(delta > 0 ? -1 : 1);
+        if (y >= hautListe && y < basListe) {
+            reglerDefilement();
+            defilement.defiler(delta);
             return true;
         }
         return super.mouseScrolled(x, y, delta);
+    }
+
+    @Override
+    public boolean mouseClicked(double x, double y, int bouton) {
+        return defilement.cliquer(x, y, bouton) || super.mouseClicked(x, y, bouton);
+    }
+
+    @Override
+    public boolean mouseDragged(double x, double y, int bouton, double dx, double dy) {
+        return defilement.glisser(y) || super.mouseDragged(x, y, bouton, dx, dy);
+    }
+
+    @Override
+    public boolean mouseReleased(double x, double y, int bouton) {
+        defilement.relacher();
+        return super.mouseReleased(x, y, bouton);
     }
 
     @Override
@@ -478,45 +462,40 @@ public final class EcranProduction extends Screen {
     @Override
     public void render(GuiGraphics g, int x, int y, float delta) {
         renderBackground(g);
-        g.drawCenteredString(font, title, width / 2, 10, Hud.OR);
-        if (onglet != 2) {
-            g.drawString(
-                    font,
-                    font.plainSubstrByWidth(produit, largeur - 96),
-                    gauche,
-                    57,
-                    Hud.BLANC,
-                    false);
-            g.drawString(font, "Qté", gauche + largeur - 84, 57, Hud.GRIS, false);
+        fenetre.dessiner(g, font, "Production", "lecture seule", x, y);
+        int gauche = fenetre.contenuX(), droite = fenetre.contenuDroite(), l = droite - gauche;
+        Theme.separateur(g, gauche, ligneOnglets + Theme.BOUTON - 1, l);
+        // Le produit visé, à droite des onglets ; complet au survol s'il est coupé.
+        int debutProduit = finOnglets + Theme.MARGE;
+        int lProduit = Math.min(font.width(produit), droite - debutProduit);
+        Theme.texte(
+                g, font, produit, droite - lProduit, ligneOnglets + 4, lProduit, Theme.TEXTE, x, y);
+        g.drawString(font, "Qté", gauche, ligneQuantite + 4, Theme.TEXTE_SECONDAIRE, false);
+        Theme.carte(g, gauche, hautListe, l, basListe - hautListe, false);
+        reglerDefilement();
+        g.enableScissor(gauche + 1, hautListe + 1, droite - 1, basListe - 1);
+        try {
+            int premiere = Math.max(0, (defilement.position() - 4) / Theme.LIGNE);
+            for (int i = premiere; i < lignes.size(); i++) {
+                int ly = hautListe + 4 + i * Theme.LIGNE - defilement.position();
+                if (ly >= basListe) break;
+                g.drawString(font, lignes.get(i), gauche + 5, ly, Theme.TEXTE, false);
+            }
+        } finally {
+            g.disableScissor();
         }
-        g.fill(gauche - 4, contenuY - 4, gauche + largeur + 4, height - 52, 0xB00D1013);
-        for (int i = 0; i < parPage && page * parPage + i < lignes.size(); i++)
-            g.drawString(
-                    font,
-                    lignes.get(page * parPage + i),
-                    gauche,
-                    contenuY + i * 11,
-                    Hud.BLANC,
-                    false);
-        String statut =
-                etat.message()
-                        + " · "
-                        + (page + 1)
-                        + "/"
-                        + Math.max(1, (lignes.size() + parPage - 1) / parPage);
-        g.drawString(
+        Theme.barre(g, defilement, x, y);
+        Theme.texte(
+                g,
                 font,
-                font.plainSubstrByWidth(statut, largeur),
+                etat.message(),
                 gauche,
-                height - 43,
-                etat.attente() ? Hud.JAUNE : Hud.GRIS,
-                false);
+                ligneStatut,
+                l,
+                etat.attente() ? Theme.JAUNE : Theme.TEXTE_SECONDAIRE,
+                x,
+                y);
         super.render(g, x, y, delta);
-        if (y >= height - 47 && y < height - 30)
-            g.renderTooltip(
-                    font, font.split(Component.literal(statut), Math.max(100, largeur)), x, y);
-        else if (onglet != 2 && y >= 52 && y <= 73 && x < gauche + largeur - 90)
-            g.renderTooltip(font, Component.literal(produit), x, y);
     }
 
     @Override

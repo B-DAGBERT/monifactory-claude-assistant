@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests import stubs_theme
+
 ROOT = Path(__file__).resolve().parents[1]
 
 STUBS = {
@@ -77,6 +79,29 @@ public class MachinesEmi {public static int max=10,calls,last;public static bool
  public static int declarables(EmiRecipe r){return max;}public static boolean declarer(EmiRecipe r,int q){calls++;last=q;return accept;}}
 """,
 }
+
+# DeclarerFabricationEcran utilise le thème commun. STUBS reste la base des autres harnais ;
+# celui-ci compile l'écran contre une copie complétée de ce qu'appelle le thème.
+ECRAN_STUBS = dict(STUBS)
+ECRAN_STUBS.update(stubs_theme.STUBS)
+# Le champ retient sa place : son contour doit occuper la rangée de 16 px de ses boutons.
+ECRAN_STUBS["net.minecraft.client.gui.components.EditBox"] = ECRAN_STUBS[
+    "net.minecraft.client.gui.components.EditBox"
+].replace(
+    "public EditBox(Font f,int x,int y,int w,int h,Component c){}",
+    "public int x,y,w,h;"
+    "public EditBox(Font f,int x,int y,int w,int h,Component c){this.x=x;this.y=y;this.w=w;this.h=h;}"
+    "public int getX(){return x;}public int getY(){return y;}"
+    "public int getWidth(){return w;}public int getHeight(){return h;}"
+    "public void setX(int v){x=v;}public void setY(int v){y=v;}public void setWidth(int v){w=v;}",
+)
+for _nom, _ajouts in (
+    ("net.minecraft.client.gui.GuiGraphics", stubs_theme.GRAPHIQUES),
+    ("net.minecraft.client.gui.screens.Screen", stubs_theme.ECRAN),
+    ("net.minecraft.client.Minecraft", stubs_theme.JEU),
+    ("net.minecraft.client.gui.components.EditBox", stubs_theme.CHAMP),
+):
+    ECRAN_STUBS[_nom] = stubs_theme.membres(ECRAN_STUBS[_nom], _ajouts)
 
 HARNESS = """
 package fr.assistantia;
@@ -166,6 +191,13 @@ public class RenderUiSafetyTest {
    assert MachinesEmi.calls==0&&mc.screen==screen;
   } else if(args[0].equals("escape")){
    screen.keyPressed(256,0,0);assert mc.screen==parent&&MachinesEmi.calls==0;
+  } else if(args[0].equals("row")){
+   for(int envoyes:new int[]{0,64})for(int[] t:new int[][]{{320,240},{640,480}}){
+    screen=new DeclarerFabricationEcran(parent,recipe,envoyes,200,1);mc.screen=screen;screen.init(mc,t[0],t[1]);
+    var champ=input(screen);var tout=button(screen,"Tout le lot");
+    assert champ.y-1==tout.y&&champ.h+2==tout.h&&tout.h==16:"field outline is the 16 px row of its buttons";
+    assert champ.x+champ.w+1<tout.x:"field outline stops before the buttons";
+   }
   }
  }
 }
@@ -189,17 +221,18 @@ class RenderUiSafetyTests(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         cls.directory = Path(cls.temp.name)
         fixtures = []
-        for name, body in STUBS.items():
+        for name, body in ECRAN_STUBS.items():
             package, _ = name.rsplit(".", 1)
             source = cls.directory / (name.replace(".", "/") + ".java")
             source.parent.mkdir(parents=True, exist_ok=True)
-            source.write_text(f"package {package};\n{body}")
+            source.write_text(f"package {package};\n{body}", encoding="utf-8")
             fixtures.append(str(source))
         harness = cls.directory / "RenderUiSafetyTest.java"
-        harness.write_text(HARNESS)
+        harness.write_text(HARNESS, encoding="utf-8")
         sources = [
             ROOT / "mod/src/main/java/fr/assistantia/LiaisonTexture.java",
             ROOT / "mod/src/main/java/fr/assistantia/compat/emi/DeclarerFabricationEcran.java",
+            *stubs_theme.SOURCES,
         ]
         compiled = subprocess.run(
             [
@@ -261,6 +294,9 @@ class RenderUiSafetyTests(unittest.TestCase):
 
     def test_escape_returns_to_follow_up_without_declaration(self):
         self.run_case("escape")
+
+    def test_quantity_field_outline_matches_its_button_row(self):
+        self.run_case("row")
 
     def test_sent_batch_or_whole_lot_and_stale_tree(self):
         for case in ("sent", "all", "changed-tree"):

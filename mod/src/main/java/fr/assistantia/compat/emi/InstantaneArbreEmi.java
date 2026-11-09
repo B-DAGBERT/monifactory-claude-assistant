@@ -40,6 +40,14 @@ public record InstantaneArbreEmi(
         invalider();
     }
 
+    /**
+     * Le crochet natif a été vu sur un arbre temporaire d'EMI : le cache reste fiable, sans
+     * invalider les calculs de l'arbre réel (voir {@link ArbreReel}).
+     */
+    public static void notificationDisponible() {
+        notificationNative = true;
+    }
+
     /** Un recalcul du scan ne change pas les choix natifs de l'arbre. */
     public static long revisionStructureProduction() {
         return revisionStructure.get();
@@ -134,8 +142,6 @@ public record InstantaneArbreEmi(
             boolean outil = true;
             for (var pile : ingredient.getEmiStacks()) {
                 var item = pile.getItemStack();
-                // Le livre synthétique est une racine de plan, pas un ingrédient.
-                if (item.hasTag() && item.getTag().contains("assistantia_objectif")) continue;
                 var copie = pile.copy();
                 variantesMachine.add(copie);
                 if (item.isEmpty()) continue;

@@ -352,8 +352,7 @@ def app_logic():
     app.body = [
         n
         for n in app.body
-        if isinstance(n, ast.FunctionDef)
-        and n.name in {"work_info", "work_plan", "check_mod_requests"}
+        if isinstance(n, ast.FunctionDef) and n.name in {"work_info", "check_mod_requests"}
     ]
     conversation = next(
         n for n in source.body if isinstance(n, ast.ClassDef) and n.name == "Conversation"
@@ -366,11 +365,7 @@ def app_logic():
         log=Mock(),
         ask_claude=Mock(return_value="answer"),
         parse_info=lambda text: text,
-        parse_plan=lambda text: text,
-        describe_quests=lambda _: "quests",
         INFO_REQUEST="Info {nom} {item}",
-        PLAN_REQUEST="Plan {context}",
-        NEW_PLAN_EXTRA="",
         SYSTEM_PROMPT="rules",
         TIMEOUT=420,
     )
@@ -381,7 +376,7 @@ def app_logic():
 
 
 class DynamicRoutingTests(unittest.TestCase):
-    def test_each_info_and_plan_reads_current_config_and_discussion_reconfigures(self):
+    def test_each_info_reads_current_config_and_discussion_reconfigures(self):
         config = {
             "provider": "codex",
             "providers": {
@@ -417,9 +412,6 @@ class DynamicRoutingTests(unittest.TestCase):
             app.work_info("item", "Name")
             self.assertEqual(logic["ask_claude"].call_args.args[2], "new")
             self.assertEqual(logic["ask_claude"].call_args.kwargs["effort"], "high")
-            app.work_plan(None)
-            self.assertEqual(logic["ask_claude"].call_args.args[2], "new-plan")
-            self.assertEqual(logic["ask_claude"].call_args.kwargs["effort"], "max")
             self.assertEqual(conversation.ask("question"), "answer")
             backend.configure.assert_called_once_with("new", "high")
             backend.restart.assert_not_called()

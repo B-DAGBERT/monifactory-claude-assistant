@@ -24,8 +24,73 @@ public final class SauvegardeFilonsTest {
         acquittementAncien(dossier);
         refusExecuteur(dossier);
         departSansPublication(dossier);
+        contenuParesseux(dossier);
+        copieVersion1(dossier);
         System.out.println(
-                "Publication filons : reconnexion, reprise, ordre et acquittements validés");
+                "Publication filons : reconnexion, reprise, ordre, acquittements et texte calcule"
+                        + " sur le thread IO valides");
+    }
+
+    /** Copie v1 : complète ou absente, faite une seule fois, retentée après un échec. */
+    static void copieVersion1(Path dossier) throws Exception {
+        Path v1 = dossier.resolve("monde-v1.json"), copie = dossier.resolve("monde-v1.json.v1.bak");
+        String ancien = "{\"v\":1,\"monde\":\"m\",\"blocs\":[]}";
+        Files.writeString(v1, ancien);
+        // Échec simulé : le nom temporaire est occupé par un dossier non vide.
+        Path tmp = dossier.resolve("monde-v1.json.v1.bak.tmp");
+        Files.createDirectories(tmp.resolve("occupe"));
+        boolean echec = false;
+        try {
+            SauvegardeFilons.conserverVersion1(v1);
+        } catch (java.io.IOException e) {
+            echec = true;
+        }
+        assert echec && !Files.exists(copie) : "Échec : aucune copie partielle sous le nom final";
+        Files.delete(tmp.resolve("occupe"));
+        Files.delete(tmp);
+        SauvegardeFilons.conserverVersion1(v1);
+        assert Files.readString(copie).equals(ancien) && !Files.exists(tmp)
+                : "Copie complète, sans temporaire restant";
+        Files.writeString(v1, "{\"v\":2,\"monde\":\"m\"}");
+        SauvegardeFilons.conserverVersion1(v1);
+        assert Files.readString(copie).equals(ancien) : "La copie v1 n'est jamais remplacée";
+        Path v2 = dossier.resolve("monde-v2.json");
+        Files.writeString(v2, "{\"v\":2}");
+        SauvegardeFilons.conserverVersion1(v2);
+        assert !Files.exists(dossier.resolve("monde-v2.json.v1.bak"))
+                : "Pas de copie d'un fichier v2";
+    }
+
+    /** Le texte se calcule une seule fois, sur l'exécuteur IO, jamais au moment d'enregistrer. */
+    static void contenuParesseux(Path dossier) throws Exception {
+        var file = new ArrayDeque<Runnable>();
+        var calculs = new AtomicInteger();
+        var threads = new java.util.ArrayList<String>();
+        Object source = new Object();
+        Path a = dossier.resolve("paresseux.json"),
+                export = dossier.resolve("export-paresseux.json");
+        var sauvegarde = new SauvegardeFilons(file::add, Files::writeString, () -> 0);
+        var natif =
+                new SauvegardeFilons.Contenu(
+                        () -> {
+                            calculs.incrementAndGet();
+                            threads.add(Thread.currentThread().getName());
+                            return APRES;
+                        },
+                        source);
+        var resume = new SauvegardeFilons.Contenu(() -> "resume", null);
+        sauvegarde.enregistrer(a, natif, export, resume, SauvegardeFilonsTest::erreurInattendue);
+        assert calculs.get() == 0 : "Aucun calcul de texte sur le thread client";
+        assert sauvegarde.attente(a).source() == source
+                : "La reconnexion reprend l'instantané lui-même, sans relire le fichier";
+        var io = new Thread(() -> file.remove().run(), "io-test");
+        io.start();
+        io.join();
+        assert calculs.get() == 1 && threads.equals(java.util.List.of("io-test"))
+                : "Texte calculé une fois, sur le thread d'écriture";
+        assert Files.readString(a).equals(APRES) && Files.readString(export).equals("resume");
+        assert sauvegarde.attente(a) == null : "Acquitté après écriture";
+        assert sauvegarde.lire(a).equals(APRES) && calculs.get() == 1;
     }
 
     static void reconnexion(Path dossier) throws Exception {

@@ -22,6 +22,11 @@ public final class BarreDefilement {
         return position;
     }
 
+    /** Place le contenu à {@code position} pixels, borné comme la molette et le glisser. */
+    public void aller(int position) {
+        this.position = Math.max(0, Math.min(position, maximum()));
+    }
+
     public int x() {
         return x;
     }

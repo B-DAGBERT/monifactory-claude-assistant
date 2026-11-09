@@ -98,27 +98,39 @@ public final class MachinesEmi {
         return problemeOrdre;
     }
 
+    // Onglet Recette : lectures seules du suivi, sans recalcul ni effet sur les lots.
+
+    static Object arbreSuivi() {
+        return arbre;
+    }
+
+    static InstantaneArbreEmi instantaneSuivi() {
+        return instantane;
+    }
+
+    static List<PlanMachines.Operation<EmiRecipe>> operationsSuivies() {
+        return toutes;
+    }
+
+    static List<LotMachine> lotsSuivis() {
+        return lots.actifs();
+    }
+
+    static List<BlockPos> machinesSurlignees() {
+        return machines;
+    }
+
+    /**
+     * Onglet Recette : après une vraie modification de l'arbre (choix appliqué, résolution EMI),
+     * relire l'arbre tout de suite plutôt qu'au prochain relevé de dix ticks.
+     */
+    static void relireArbre() {
+        actualiserArbre();
+    }
+
     /** Identité de navigation, y compris lorsque le service Production n'est pas disponible. */
     public static String contexteSelection() {
-        var vue = fr.assistantia.Pont.partie("ecran");
-        String projet = "";
-        var projets = vue.get("projets");
-        if (projets != null && projets.isJsonObject())
-            projet = ProjectionLotsEmi.texte(projets.getAsJsonObject(), "actif");
-        String revision = "";
-        var production = vue.get("production_v2");
-        if (production != null && production.isJsonObject()) {
-            var contexte = production.getAsJsonObject().get("contexte");
-            if (contexte != null && contexte.isJsonObject())
-                revision = ProjectionLotsEmi.texte(contexte.getAsJsonObject(), "revision_projet");
-        }
-        return fr.assistantia.Pont.cleContexte()
-                + "|"
-                + projet
-                + "|"
-                + ProjectionLotsEmi.texte(vue, "objectif_version")
-                + "|"
-                + revision;
+        return fr.assistantia.Pont.cleContexte();
     }
 
     private static ProjectionLotsEmi.Portee porteeProduction() {
@@ -130,10 +142,7 @@ public final class MachinesEmi {
                 || actif() != arbre
                 || mc.getConnection() != connexion
                 || !dimension.equals(mc.level.dimension().location().toString())) return null;
-        var vue = fr.assistantia.Pont.partie("ecran");
-        var projets = vue.get("projets");
-        if (projets == null || !projets.isJsonObject()) return null;
-        var production = vue.get("production_v2");
+        var production = fr.assistantia.Pont.partie("ecran").get("production_v2");
         if (production == null || !production.isJsonObject()) return null;
         var contexte = production.getAsJsonObject().get("contexte");
         if (contexte == null || !contexte.isJsonObject()) return null;
@@ -150,8 +159,6 @@ public final class MachinesEmi {
                 fr.assistantia.IdentiteMonde.monde(),
                 fr.assistantia.IdentiteMonde.session(),
                 dimension,
-                ProjectionLotsEmi.texte(projets.getAsJsonObject(), "actif"),
-                ProjectionLotsEmi.texte(contexte.getAsJsonObject(), "revision_projet"),
                 InstantaneArbreEmi.revisionStructureProduction(),
                 quantite);
     }
@@ -169,13 +176,7 @@ public final class MachinesEmi {
                         : null;
         boolean courant = actuel != null && actuel.isJsonObject() && contexte != null;
         if (courant)
-            for (String cle :
-                    List.of(
-                            "monde_actif",
-                            "session_monde",
-                            "dimension_monde",
-                            "projet",
-                            "revision_projet"))
+            for (String cle : List.of("monde_actif", "session_monde", "dimension_monde"))
                 courant &=
                         contexte.has(cle)
                                 && actuel.getAsJsonObject().has(cle)
@@ -324,10 +325,11 @@ public final class MachinesEmi {
                 : null;
     }
 
+    /** Libellés courts (voir PanneauMachineEmi.ETATS) ; la raison complète reste au survol. */
     private static String etat(OrdreMachines.Ligne<EmiRecipe> ligne) {
         if (ligne.cycle()) return "Cycle détecté";
         if (ligne.mode() == OrdreMachines.Mode.PRET) return "Prêt";
-        if (ligne.conflit()) return "Stock partagé · autre priorité";
+        if (ligne.conflit()) return "Stock partagé";
         String raison = ligne.raison();
         if (raison.startsWith("Circuit")) return "Circuit à régler";
         if (raison.startsWith("Machine")) return "Machine à vérifier";
@@ -611,9 +613,7 @@ public final class MachinesEmi {
         if (current != arbre || connexion != mc.getConnection() || !dim.equals(dimension)) {
             OrdonnancementEmi.invalider();
             EnvoiMachine.arreter();
-            if ((current == null && !fr.assistantia.PauseObjectifEmi.enPause())
-                    || connexion != mc.getConnection()
-                    || !dim.equals(dimension)) {
+            if (current == null || connexion != mc.getConnection() || !dim.equals(dimension)) {
                 lots.vider();
                 entreesConnues.clear();
                 entreesVersion++;
@@ -689,6 +689,7 @@ public final class MachinesEmi {
         if (event.phase != TickEvent.Phase.END) return;
         if (actif() != arbre || ++ticks % 10 == 0) actualiserArbre();
         lots.actualiser();
+        AnalyseRecette.tick(); // onglet Recette : calcul incrémental borné, jamais pendant le rendu
         if (ticks % 100 == 0) compatibilites.clear();
         if (ticks % 40 != 0) return;
         var mc = Minecraft.getInstance();
@@ -734,6 +735,7 @@ public final class MachinesEmi {
                         .12f,
                         .95f);
         buffers.endBatch(Lignes.TRAVERSANTES);
+        ReperesRecette.dessiner(event); // rangs déjà calculés pendant le tick
     }
 
     @SubscribeEvent
@@ -822,14 +824,7 @@ public final class MachinesEmi {
                     selected.fois() == 0
                             ? null
                             : EnvoiMachine.preparer(ecran, selected.recette(), selected.fois());
-            disposition =
-                    DispositionCoffre.calculer(
-                            ecran.width,
-                            ecran.height,
-                            PanneauAssistant.occupee(ecran),
-                            locales.size(),
-                            46,
-                            104);
+            disposition = PanneauMachineEmi.disposer(ecran, locales.size());
             page = Math.min(page, (locales.size() - 1) / disposition.parPage());
             if (choixExplicite
                     && (choix < page * disposition.parPage()
@@ -921,8 +916,7 @@ public final class MachinesEmi {
             if (circuitARegler(op.recette())) return "Circuit à régler";
             var priorite = prioritesLocales.get(op.recette());
             if (priorite != null) {
-                if (priorite.conflit() && plan != null && plan.possible())
-                    return "Autre priorité · stock partagé";
+                if (priorite.conflit() && plan != null && plan.possible()) return "Autre priorité";
                 return etat(priorite);
             }
             return "Stock inconnu";
@@ -944,7 +938,8 @@ public final class MachinesEmi {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
         if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
-        event.setCanceled(true);
+        // Ni la machine ni EMI ne prennent ce clic, ni son relâchement, même hors du panneau.
+        fr.assistantia.RelachementSouris.consommer(event);
         if (event.getButton() != 0 || EnvoiMachine.occupe()) return;
         var d = dispositionAffichee;
         double x = event.getMouseX(), y = event.getMouseY();
@@ -1035,11 +1030,8 @@ public final class MachinesEmi {
         }
     }
 
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
-    public static void relache(ScreenEvent.MouseButtonReleased.Pre event) {
-        if (surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY()))
-            event.setCanceled(true);
-    }
+    // Pas d'annulation du relâchement selon sa position : RelachementSouris retient celui des clics
+    // pris par le panneau, et un glisser commencé dans la machine (widget GT) doit s'y terminer.
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void molette(ScreenEvent.MouseScrolled.Pre event) {

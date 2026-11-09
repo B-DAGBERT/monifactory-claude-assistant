@@ -7,7 +7,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.util.FormattedCharSequence;
@@ -19,10 +19,16 @@ import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Discussion lisible, défilement stable et copie locale, sans aucun nouvel appel à l’IA. */
+/**
+ * Discussion lisible, défilement stable et copie locale, sans aucun nouvel appel à l’IA. L'état de
+ * l'assistant (prêt, occupé, arrêté) s'affiche dans la ligne d'état du tableau de bord.
+ */
 final class OngletDiscussion {
-    private static final int LIGNE = 11, ESPACE = 8;
+    /** Une carte : titre à 5 px du haut, texte à 19 px, 6 px sous la dernière ligne. */
+    private static final int ESPACE = 6, TEXTE_Y = 19, BAS_CARTE = 6;
+
     private static final Pattern ACCENT = Pattern.compile("\\*\\*(.+?)\\*\\*|`([^`]+)`");
+    private static final String VIDE = "Pose une question sur un bloc, un craft ou ta progression.";
 
     private record Carte(
             boolean joueur,
@@ -36,26 +42,25 @@ final class OngletDiscussion {
     private final EtatDiscussion etat;
     private final List<Carte> cartes = new ArrayList<>();
     private final List<Copie> copies = new ArrayList<>();
+    private final BarreDefilement barre = new BarreDefilement();
     private Font font;
-    private Button derniers;
+    private BoutonTheme derniers;
     private JsonArray source;
     private boolean apercuCourant = true;
     private String attente = "", copie = "";
     private long copieJusqua;
-    private int largeurCache = -1, hauteur, hautVue, basVue, barreX;
-    private boolean visible, glisse;
-    private double ancrageBarre;
+    private int largeurCache = -1, hauteur, hautVue, basVue, gauche, droite;
+    private boolean visible;
 
     OngletDiscussion(EtatDiscussion etat) {
         this.etat = etat;
     }
 
-    void init(Font font, Consumer<Button> ajouter) {
+    void init(Font font, Consumer<AbstractWidget> ajouter) {
         this.font = font;
         derniers =
-                Button.builder(Component.literal("Derniers messages ↓"), b -> etat.derniers())
-                        .bounds(0, 0, 130, 18)
-                        .build();
+                BoutonTheme.creer("Derniers messages ↓", b -> etat.derniers())
+                        .infobulle("Revenir en bas, aux messages les plus récents.");
         derniers.visible = false;
         ajouter.accept(derniers);
     }
@@ -64,7 +69,7 @@ final class OngletDiscussion {
         visible = valeur;
         if (!valeur) {
             derniers.visible = false;
-            glisse = false;
+            barre.relacher();
             copies.clear();
         }
     }
@@ -157,7 +162,13 @@ final class OngletDiscussion {
 
     private void ajouter(boolean joueur, String texte, int largeur, boolean attente) {
         List<FormattedCharSequence> lignes = font.split(texte(texte), Math.max(30, largeur - 16));
-        Carte carte = new Carte(joueur, texte, lignes, 25 + lignes.size() * LIGNE, attente);
+        Carte carte =
+                new Carte(
+                        joueur,
+                        texte,
+                        lignes,
+                        TEXTE_Y + lignes.size() * Theme.LIGNE + BAS_CARTE - 2,
+                        attente);
         cartes.add(carte);
         hauteur += carte.hauteur + ESPACE;
     }
@@ -172,148 +183,144 @@ final class OngletDiscussion {
             int sourisX,
             int sourisY) {
         copies.clear();
+        gauche = x;
+        droite = x + largeur;
         String moteur = Pont.texte(Pont.vue(), "moteur");
         if (moteur.isEmpty()) moteur = "Assistant";
-        boolean actif = Pont.assistantActif(), occupe = Pont.vrai(ecran, "occupe");
-        g.drawString(font, "Discussion · " + moteur, x + 3, y + 3, Hud.BLANC, false);
-        String statut =
-                !actif
-                        ? "Assistant arrêté · ton brouillon est conservé"
-                        : !ecran.has("question_recue")
-                                ? "Relance l'assistant pour activer la discussion"
-                                : etat.enAttente()
-                                        ? "Transmission de ta question…"
-                                        : occupe
-                                                ? Pont.texte(ecran, "statut")
-                                                : "Prêt · une question à la fois";
-        if (occupe && statut.isEmpty()) statut = moteur + " prépare la réponse…";
-        if (actif && (occupe || etat.enAttente()))
-            statut = "● " + statut + ".".repeat((int) (System.currentTimeMillis() / 450 % 4));
-        int disponible = !actif ? largeur - 132 : largeur;
-        g.drawString(
-                font,
-                font.plainSubstrByWidth(statut, Math.max(25, disponible)),
-                x + 3,
-                y + 17,
-                actif ? (occupe || etat.enAttente() ? Hud.JAUNE : Hud.VERT) : Hud.ROUGE,
-                false);
-        hautVue = y + 34;
+        hautVue = y;
         String avertissement = Pont.texte(ecran, "erreur_connexion");
         String bulle = Pont.texte(Pont.partie("bulle"), "texte");
         if (avertissement.isEmpty() && bulle.startsWith("Erreur :")) avertissement = bulle;
         if (avertissement.isEmpty()) avertissement = etat.information();
-        boolean survolAvertissement = false;
         if (!avertissement.isEmpty()) {
-            List<FormattedCharSequence> lignes =
-                    font.split(Component.literal(avertissement), Math.max(30, largeur - 12));
-            int nb = Math.min(3, lignes.size());
-            g.fill(x, hautVue, x + largeur, hautVue + nb * LIGNE + 8, 0xA0503020);
-            for (int i = 0; i < nb; i++)
-                g.drawString(font, lignes.get(i), x + 5, hautVue + 4 + i * LIGNE, Hud.JAUNE, false);
-            survolAvertissement =
-                    sourisX >= x
-                            && sourisX < x + largeur
-                            && sourisY >= hautVue
-                            && sourisY < hautVue + nb * LIGNE + 8;
-            hautVue += nb * LIGNE + 14;
+            int lignes = Math.min(3, Theme.lignes(font, avertissement, largeur - 12));
+            int h = lignes * Theme.LIGNE + 8;
+            Theme.carteChoisie(g, x, hautVue, largeur, h);
+            Theme.paragraphe(
+                    g, font, avertissement, x + 6, hautVue + 5, largeur - 12, Theme.JAUNE, 3);
+            if (sourisX >= x
+                    && sourisX < x + largeur
+                    && sourisY >= hautVue
+                    && sourisY < hautVue + h
+                    && Theme.lignes(font, avertissement, largeur - 12) > 3)
+                Theme.infobulle(font, Component.literal(avertissement));
+            hautVue += h + Theme.ECART;
         }
-        basVue = Math.max(hautVue + 1, bas - 24);
-        barreX = x + largeur - 4;
-        int retrait = Math.min(24, largeur / 12),
-                largeurCarte = Math.max(50, largeur - retrait - 10);
+        basVue = Math.max(hautVue + 1, bas);
+        // La colonne de la barre reste réservée : le texte ne se recoupe pas quand elle apparaît.
+        int fin = x + largeur - Theme.DEFILEMENT - Theme.ECART;
+        int retrait = Math.min(24, largeur / 12), largeurCarte = Math.max(50, fin - x - retrait);
         preparer(ecran, largeurCarte);
         etat.ajuster(hauteur, basVue - hautVue);
+        barre.regler(x + largeur - Theme.DEFILEMENT, hautVue, basVue - hautVue, hauteur);
+        barre.aller(etat.position());
+        int lDerniers = Theme.largeurBouton(font, derniers.getMessage().getString(), largeur / 2);
         derniers.visible = visible && !etat.suitDerniers();
-        derniers.setX(x + largeur - derniers.getWidth());
-        derniers.setY(bas - 20);
+        derniers.zone(fin - lDerniers, basVue - Theme.BOUTON - Theme.ECART, lDerniers);
+        // « Derniers messages » passe devant les cartes : rien de ce qu'il couvre ne réagit.
+        boolean dansVue =
+                sourisX >= x
+                        && sourisX < fin
+                        && sourisY >= hautVue
+                        && sourisY < basVue
+                        && !surDerniers(sourisX, sourisY);
         g.enableScissor(x, hautVue, x + largeur, basVue);
-        if (cartes.isEmpty()) {
-            int ligneY = hautVue + 10;
-            for (FormattedCharSequence ligne :
-                    font.split(
-                            Component.literal(
-                                    "Pose une question sur un bloc, un craft ou ta progression."),
-                            Math.max(30, largeur - 12))) {
-                g.drawString(font, ligne, x + 4, ligneY, Hud.GRIS, false);
-                ligneY += LIGNE;
-            }
-        }
-        int position = hautVue - etat.position();
-        for (Carte carte : cartes) {
-            int cx = x + (carte.joueur ? retrait : 0);
-            if (position + carte.hauteur > hautVue && position < basVue) {
-                g.fill(
-                        cx,
-                        position,
-                        cx + largeurCarte,
-                        position + carte.hauteur,
-                        carte.joueur ? 0xD020382F : 0xD0202730);
-                g.fill(
-                        cx,
-                        position,
-                        cx + 2,
-                        position + carte.hauteur,
-                        carte.joueur ? 0xFF4CA580 : 0xFF5987AD);
-                String titre =
-                        carte.joueur ? (carte.attente ? "Toi · envoi en cours" : "Toi") : moteur;
-                g.drawString(
+        try {
+            if (cartes.isEmpty())
+                Theme.paragraphe(
+                        g,
                         font,
-                        titre,
-                        cx + 7,
-                        position + 5,
-                        carte.joueur ? Hud.VERT : Hud.BLEU,
-                        false);
-                int bx = cx + largeurCarte - 44;
-                boolean survol =
-                        sourisX >= bx
-                                && sourisX < bx + 40
-                                && sourisY >= position + 3
-                                && sourisY < position + 16;
-                String libelle =
-                        carte.texte.equals(copie) && System.currentTimeMillis() < copieJusqua
-                                ? "Copié"
-                                : "Copier";
-                g.drawString(
-                        font, libelle, bx + 2, position + 5, survol ? Hud.BLANC : Hud.GRIS, false);
-                if (position + 3 >= hautVue && position + 16 <= basVue)
-                    copies.add(new Copie(bx, position + 3, 40, carte.texte));
-                int premiere = Math.max(0, (hautVue - position - 19) / LIGNE);
-                int derniere =
-                        Math.min(carte.lignes.size(), (basVue - position - 19 + LIGNE - 1) / LIGNE);
-                for (int i = premiere; i < derniere; i++)
-                    g.drawString(
-                            font,
-                            carte.lignes.get(i),
-                            cx + 7,
-                            position + 19 + i * LIGNE,
-                            Hud.BLANC,
-                            false);
+                        VIDE,
+                        x + 4,
+                        hautVue + 6,
+                        largeur - 12,
+                        Theme.TEXTE_SECONDAIRE,
+                        Math.max(1, (basVue - hautVue - 6) / Theme.LIGNE));
+            int position = hautVue - etat.position();
+            for (Carte carte : cartes) {
+                if (position + carte.hauteur > hautVue && position < basVue)
+                    dessiner(
+                            g,
+                            carte,
+                            x + (carte.joueur ? retrait : 0),
+                            position,
+                            largeurCarte,
+                            moteur,
+                            dansVue ? sourisX : Integer.MIN_VALUE,
+                            dansVue ? sourisY : Integer.MIN_VALUE);
+                position += carte.hauteur + ESPACE;
+                if (position >= basVue) break;
             }
-            position += carte.hauteur + ESPACE;
+        } finally {
+            g.disableScissor();
         }
-        g.disableScissor();
-        if (etat.maximum() > 0) {
-            int fenetre = basVue - hautVue;
-            int curseur = hauteurCurseur();
-            int by = hautVue + (fenetre - curseur) * etat.position() / etat.maximum();
-            g.fill(barreX, hautVue, barreX + 3, basVue, 0x553C4550);
-            g.fill(barreX, by, barreX + 3, by + curseur, 0xFF7B99AE);
-        }
-        if (survolAvertissement)
-            g.renderTooltip(
-                    font,
-                    font.split(Component.literal(avertissement), Math.min(320, largeur)),
-                    sourisX,
-                    sourisY);
+        Theme.barre(g, barre, sourisX, sourisY);
     }
 
-    private int hauteurCurseur() {
-        int fenetre = basVue - hautVue;
-        return Math.min(fenetre, Math.max(12, fenetre * fenetre / Math.max(1, hauteur)));
+    private void dessiner(
+            GuiGraphics g,
+            Carte carte,
+            int cx,
+            int position,
+            int largeurCarte,
+            String moteur,
+            int sourisX,
+            int sourisY) {
+        g.fill(cx, position, cx + largeurCarte, position + carte.hauteur, Theme.CARTE);
+        g.renderOutline(cx, position, largeurCarte, carte.hauteur, Theme.BORDURE);
+        g.fill(
+                cx,
+                position,
+                cx + 2,
+                position + carte.hauteur,
+                carte.joueur ? Theme.VERT : Theme.BLEU);
+        boolean copiee = carte.texte.equals(copie) && System.currentTimeMillis() < copieJusqua;
+        String libelle = copiee ? "Copié" : "Copier";
+        int lLibelle = font.width(libelle), bx = cx + largeurCarte - lLibelle - 7;
+        boolean survol =
+                sourisX >= bx - 3
+                        && sourisX < bx + lLibelle + 3
+                        && sourisY >= position + 2
+                        && sourisY < position + 15;
+        String titre = carte.joueur ? (carte.attente ? "Toi · envoi en cours" : "Toi") : moteur;
+        Theme.texte(
+                g,
+                font,
+                titre,
+                cx + 7,
+                position + 5,
+                bx - Theme.ECART - cx - 7,
+                carte.joueur ? Theme.VERT : Theme.BLEU,
+                sourisX,
+                sourisY);
+        g.drawString(
+                font,
+                libelle,
+                bx,
+                position + 5,
+                copiee ? Theme.VERT : survol ? Theme.ACCENT : Theme.TEXTE_SECONDAIRE,
+                false);
+        if (position + 2 >= hautVue
+                && position + 15 <= basVue
+                && !sousDerniers(bx - 3, position + 2, lLibelle + 6, 13))
+            copies.add(new Copie(bx - 3, position + 2, lLibelle + 6, carte.texte));
+        int premiere = Math.max(0, (hautVue - position - TEXTE_Y) / Theme.LIGNE);
+        int derniere =
+                Math.min(
+                        carte.lignes.size(),
+                        (basVue - position - TEXTE_Y + Theme.LIGNE - 1) / Theme.LIGNE);
+        for (int i = premiere; i < derniere; i++)
+            g.drawString(
+                    font,
+                    carte.lignes.get(i),
+                    cx + 7,
+                    position + TEXTE_Y + i * Theme.LIGNE,
+                    Theme.TEXTE,
+                    false);
     }
 
     boolean defiler(double x, double y, double delta) {
-        if (!visible || y < hautVue || y > basVue) return false;
+        if (!visible || x < gauche || x >= droite || y < hautVue || y > basVue) return false;
         etat.defiler((int) -Math.round(delta * 33));
         return true;
     }
@@ -323,14 +330,38 @@ final class OngletDiscussion {
         if (touche == GLFW.GLFW_KEY_PAGE_UP || touche == GLFW.GLFW_KEY_PAGE_DOWN) {
             etat.defiler(
                     (touche == GLFW.GLFW_KEY_PAGE_UP ? -1 : 1)
-                            * Math.max(11, basVue - hautVue - 11));
+                            * Math.max(Theme.LIGNE, basVue - hautVue - Theme.LIGNE));
             return true;
         }
         return false;
     }
 
+    /** Le point est sur le bouton « Derniers messages » affiché. */
+    private boolean surDerniers(double x, double y) {
+        return derniers.visible
+                && x >= derniers.getX()
+                && x < derniers.getX() + derniers.getWidth()
+                && y >= derniers.getY()
+                && y < derniers.getY() + derniers.getHeight();
+    }
+
+    /** La zone touche le bouton « Derniers messages » affiché. */
+    private boolean sousDerniers(int x, int y, int largeur, int hauteur) {
+        return derniers.visible
+                && x < derniers.getX() + derniers.getWidth()
+                && x + largeur > derniers.getX()
+                && y < derniers.getY() + derniers.getHeight()
+                && y + hauteur > derniers.getY();
+    }
+
     boolean cliquer(double x, double y, int bouton) {
-        if (!visible || bouton != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
+        // Le clic sur « Derniers messages » revient au bouton, jamais à la carte dessous.
+        if (!visible || surDerniers(x, y)) return false;
+        if (barre.cliquer(x, y, bouton)) {
+            etat.position(barre.position());
+            return true;
+        }
+        if (bouton != GLFW.GLFW_MOUSE_BUTTON_LEFT) return false;
         for (Copie c : copies)
             if (x >= c.x && x < c.x + c.largeur && y >= c.y && y < c.y + 13) {
                 Minecraft.getInstance().keyboardHandler.setClipboard(c.texte);
@@ -338,33 +369,16 @@ final class OngletDiscussion {
                 copieJusqua = System.currentTimeMillis() + 1500;
                 return true;
             }
-        if (etat.maximum() > 0
-                && x >= barreX - 3
-                && x < barreX + 6
-                && y >= hautVue
-                && y <= basVue) {
-            int curseur = hauteurCurseur();
-            int sommet = hautVue + (basVue - hautVue - curseur) * etat.position() / etat.maximum();
-            ancrageBarre = y >= sommet && y <= sommet + curseur ? y - sommet : curseur / 2.0;
-            glisse = true;
-            glisser(y);
-            return true;
-        }
         return false;
     }
 
     boolean glisser(double y) {
-        if (!glisse) return false;
-        etat.position(
-                (int)
-                        Math.round(
-                                (y - hautVue - ancrageBarre)
-                                        * etat.maximum()
-                                        / Math.max(1, basVue - hautVue - hauteurCurseur())));
+        if (!visible || !barre.glisser(y)) return false;
+        etat.position(barre.position());
         return true;
     }
 
     void relacher() {
-        glisse = false;
+        barre.relacher();
     }
 }

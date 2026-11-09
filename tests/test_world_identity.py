@@ -109,7 +109,9 @@ public class IdentiteMondeTest {
   Files.createDirectories(DIR);Files.writeString(DIR.resolve("isolation_mondes.json"),json);
   var f=IdentiteMonde.class.getDeclaredField("prochaineLecture");f.setAccessible(true);f.setLong(null,Long.MIN_VALUE);
  }
+ // The identity is written on the mod's writer thread: wait for it before reading.
  static JsonObject exported()throws Exception{
+  assert Ecritures.attendre(5000);
   return JsonParser.parseString(Files.readString(DIR.resolve("identite_monde.json"))).getAsJsonObject();
  }
  static boolean cancelled(String channel,Object origin)throws Exception {
@@ -157,8 +159,10 @@ public class IdentiteMondeTest {
   assert !IdentiteMonde.annoterPaquet(new Origin(new NetworkEvent.Context(a)),tag);
   IdentiteMonde.recevoirGregTech(a,GT);assert IdentiteMonde.monde().isEmpty();
   IdentiteMonde.recevoirGregTech(b,GT);assert IdentiteMonde.monde().equals(world);
+  assert Ecritures.attendre(5000);
   var before=Files.readString(DIR.resolve("identite_monde.json"));
   IdentiteMonde.deconnexion(new ClientPlayerNetworkEvent.LoggingOut(a));
+  assert Ecritures.attendre(5000);
   assert Files.readString(DIR.resolve("identite_monde.json")).equals(before);
   marker("{\"v\":1,\"actif\":true,\"monde\":\""+world+"\",\"revision\":\""+"a".repeat(64)+"\",\"preuve_restauration\":\""+"b".repeat(64)+"\"}");
   tick();assert IdentiteMonde.isolation()&&IdentiteMonde.monde().equals(world);
@@ -180,7 +184,16 @@ public class IdentiteMondeTest {
   mc.listener=null;mc.level=null;mc.player=null;tick();
   assert exported().get("dimension").getAsString().isEmpty();
   assert !before.contains("SERVER.test")&&!before.contains("server.test")&&!before.contains(GT);
+  assert Ecritures.attendre(5000);
   try(var files=Files.list(DIR)){assert files.noneMatch(p->p.toString().endsWith(".tmp"));}
+  // A stopped integrated server (worlds, chunks) is never kept alive by the identity cache.
+  var c=new Connection();mc.listener=new ClientPacketListener(c);mc.level=new ClientLevel();mc.player=new Object();
+  var solo=new net.minecraft.client.server.IntegratedServer(Path.of(System.getProperty("test.game"),"saves","Monde"));
+  var faible=new java.lang.ref.WeakReference<Object>(solo);
+  mc.solo=solo;tick();assert IdentiteMonde.session().matches("[0-9a-f]{32}");
+  mc.solo=null;solo=null;mc.listener=null;mc.level=null;mc.player=null;tick();
+  for(int i=0;i<50&&faible.get()!=null;i++){System.gc();Thread.sleep(20);}
+  assert faible.get()==null:"stopped integrated server still referenced";
   System.out.println("IdentiteMonde OK");
  }
 }
@@ -222,6 +235,7 @@ class WorldIdentityTests(unittest.TestCase):
                     *map(str, sources),
                     str(JAVA / "SessionMonde.java"),
                     str(JAVA / "IdentiteMonde.java"),
+                    str(JAVA / "Ecritures.java"),
                     str(JAVA / "mixin/OrigineMondeKubeJSMixin.java"),
                     str(ROOT / "tests/java/fr/assistantia/SessionMondeTest.java"),
                     str(harness),

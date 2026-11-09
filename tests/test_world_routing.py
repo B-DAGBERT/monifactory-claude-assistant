@@ -11,7 +11,6 @@ from unittest.mock import Mock, patch
 
 from monifactory_assistant.application.game import GameController
 from monifactory_assistant.application.interface import InterfaceController
-from monifactory_assistant.application.projects import ProjectsController
 from monifactory_assistant.game.bridge import Bridge
 from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.storage import StorageMonitor
@@ -239,37 +238,33 @@ class WorldRoutingTests(unittest.TestCase):
         )
         self.assertEqual(self.bridge.state()["inventaire"], {"test:plate": 1})
 
-    def test_switch_preserves_projects_places_and_world_memory_at_rest(self):
-        class App(ProjectsController, GameController):
-            pass
-
-        app = App()
+    def test_switch_preserves_places_world_memory_and_old_project_saves_at_rest(self):
+        app = GameController()
         app.bridge = self.bridge
         app.world = World(enabled=False)
-        app.load_plan(None)
         first = self.root / "mondes" / WORLD_A
+        # An old project save of this world is kept as is, never read nor rewritten.
         dump(first / "plan_ia.json", {"plan": {"objectif": "Mine A"}, "objectif_en_pause": True})
+        saved_plan = (first / "plan_ia.json").read_bytes()
         dump(first / "lieux.json", {"Base A": {"x": 0}})
         with patch("monifactory_assistant.application.game.ROOT", self.root):
             self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
             app.apply_world_scope(self.bridge.scope)
-            self.assertEqual(app.plan["objectif"], "Mine A")
-            self.assertTrue(app.objective_paused)
+            self.assertEqual(app.places, {"Base A": {"x": 0}})
             self.assertTrue(enter(self.bridge, WORLD_B, SESSION_B))
             app.apply_world_scope(self.bridge.scope)
-            self.assertIsNone(app.plan)
             self.assertEqual(app.places, {})
             app.places["Base B"] = {"x": 0}
             app.save_places()
             self.assertTrue(enter(self.bridge, WORLD_A, "3" * 32))
             app.apply_world_scope(self.bridge.scope)
             self.assertEqual(app.places, {"Base A": {"x": 0}})
-            self.assertEqual(app.plan["objectif"], "Mine A")
-            self.assertTrue(app.objective_paused)
         self.assertEqual(
             json.loads((self.root / "mondes" / WORLD_B / "lieux.json").read_text()),
             {"Base B": {"x": 0}},
         )
+        self.assertEqual((first / "plan_ia.json").read_bytes(), saved_plan)
+        self.assertFalse((self.root / "mondes" / WORLD_B / "plan_ia.json").exists())
 
     def test_expired_native_receipt_cannot_reactivate_cached_state(self):
         self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))

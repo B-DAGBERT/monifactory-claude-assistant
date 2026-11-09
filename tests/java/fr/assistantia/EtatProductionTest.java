@@ -3,9 +3,9 @@ package fr.assistantia;
 import java.util.List;
 
 public class EtatProductionTest {
-    static EtatProduction.Contexte contexte(String session, String projet, String version) {
+    static EtatProduction.Contexte contexte(String monde, String session, String dimension) {
         return new EtatProduction.Contexte(
-                "m1_" + "a".repeat(64), session.repeat(32), "minecraft:overworld", projet, version);
+                "m1_" + monde.repeat(64), session.repeat(32), "minecraft:" + dimension);
     }
 
     static EtatProduction.Resultat resultat(long n, EtatProduction.Contexte contexte) {
@@ -20,8 +20,8 @@ public class EtatProductionTest {
     }
 
     public static void main(String[] args) {
-        var a = contexte("a", "projet", "v1");
-        var b = contexte("b", "projet", "v1");
+        var a = contexte("a", "a", "overworld");
+        var b = contexte("a", "b", "overworld");
         var etat = new EtatProduction();
         etat.ouvrir();
         etat.observer(a, true, "", resultat(1, a), 1000);
@@ -59,7 +59,7 @@ public class EtatProductionTest {
         assert etat.resultat() == null && !etat.attente() : "Expired result accepted";
         assert etat.message().contains("Délai");
         for (var suivant :
-                List.of(b, contexte("a", "autre", "v1"), contexte("a", "projet", "v2"))) {
+                List.of(b, contexte("c", "a", "overworld"), contexte("a", "a", "the_nether"))) {
             var local = new EtatProduction();
             local.ouvrir();
             local.observer(a, true, "", null, 1000);
@@ -70,6 +70,7 @@ public class EtatProductionTest {
         }
         etat.observer(a, false, "Assistant arrêté", null, 100_000);
         assert !etat.peutDemander(100_001) && etat.message().equals("Assistant arrêté");
-        assert !new EtatProduction.Contexte("legacy", "", "", "", "").valide();
+        assert !new EtatProduction.Contexte("legacy", "", "").valide();
+        assert a.valide();
     }
 }

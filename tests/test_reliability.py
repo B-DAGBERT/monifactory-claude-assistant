@@ -166,15 +166,15 @@ class RequestQueueTests(unittest.TestCase):
 
     def test_context_change_disconnect_and_busy_refuse_without_starting_ai(self):
         app = InterfaceController()
-        app.projects = SimpleNamespace(active="new-project")
         app.game = {"dimension": "minecraft:overworld"}
         app.question_ack = {}
         app.mod_request_n = None
         app.start_question, app.notify = Mock(), Mock()
-        for update in ({"projet": "old"}, {"dimension_envoi": "minecraft:the_nether"}):
-            result = app.dispatch_queued_request(
-                {"n": 1, "type": "question", "texte": "Q", **update}
-            )
+        for request in (
+            {"n": 1, "type": "question", "texte": "Q", "dimension_envoi": "minecraft:the_nether"},
+            {"n": 1, "type": "projet", "action": "choisir", "id": "principal"},
+        ):
+            result = app.dispatch_queued_request(request)
             self.assertEqual(result["etat"], "refusee")
         app.game = None
         result = app.dispatch_queued_request(
@@ -205,7 +205,7 @@ class RenderingTests(unittest.TestCase):
         compute.return_value = {"iron": 3}
         self.assertEqual(frame_value(app, "stock", compute), {"iron": 3})
 
-    def test_unchanged_plan_still_throttles_and_failed_render_can_retry(self):
+    def test_unchanged_view_still_throttles_and_failed_render_can_retry(self):
         app = InterfaceController()
         app.root = SimpleNamespace(after=Mock())
         app.refresh_pending = False
@@ -254,7 +254,7 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
             self.assertEqual(storage.totals()["iron"], 2)
         self.assertEqual(storage.totals()["iron"], 7)
 
-    def test_diagnostic_reports_stale_inventory_and_omits_private_config(self):
+    def test_diagnostic_dates_the_inventory_and_omits_private_config(self):
         from monifactory_assistant.diagnostics import view
 
         app = SimpleNamespace(
@@ -265,12 +265,70 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
             settings={"secret": "not-exported"},
             diagnostic_revision="test",
         )
-        with patch("monifactory_assistant.diagnostics.time.time", return_value=110):
+        with patch("time.time", return_value=110):
             data = view(app)
+        # The mod shows the age from this date: the view must not change second after second,
+        # or vue_mod.json would be rewritten and re-read by the game every second.
+        with patch("time.time", return_value=999):
+            self.assertEqual(view(app), data)
         self.assertFalse(data["jeu_connecte"])
-        self.assertEqual(data["age_inventaire"], 10)
+        self.assertEqual(data["inventaire_t"], 100_000)
+        self.assertNotIn("age_inventaire", data)
         self.assertEqual(data["revision"], "test")
         self.assertNotIn("not-exported", json.dumps(data))
+        app.bridge.last_state = {}
+        self.assertIsNone(view(app)["inventaire_t"])
+
+    def test_render_duration_alone_does_not_rewrite_the_mod_view(self):
+        app = InterfaceController()
+        app.bridge = SimpleNamespace(write=Mock())
+        app.last_mod_view = None
+        timings = iter([1.2, 3.4, 5.0, 5.1])
+        others = iter([1, 1, 1, 2])
+
+        def diagnostic(_app):
+            return {"rendu_ms": next(timings), "file": next(others)}
+
+        with (
+            patch(
+                "monifactory_assistant.application.interface.build_mod_view",
+                side_effect=lambda _app: {"vie": 7, "ecran": {"machines": []}},
+            ),
+            patch("monifactory_assistant.application.interface.diagnostic_view", diagnostic),
+        ):
+            for _ in range(4):
+                app.refresh_views()
+        # Written on the first view and on a real change, not when only the timing moved.
+        self.assertEqual(app.bridge.write.call_count, 2)
+        written = app.bridge.write.call_args.args[1]
+        self.assertEqual(written["ecran"]["diagnostic"], {"rendu_ms": 5.1, "file": 2})
+
+    def test_inventory_date_alone_waits_for_the_heartbeat(self):
+        # etat.json is rewritten every 1-2 s with a new date: only the 5 s "vie" heartbeat (or a
+        # real change) rewrites the view, which then carries the latest date for the mod's age.
+        app = InterfaceController()
+        app.bridge = SimpleNamespace(write=Mock())
+        app.last_mod_view = None
+        dates = iter([1_000, 2_000, 3_000, 4_000, 6_000, 7_000])
+        heartbeats = iter([0, 0, 0, 0, 1, 1])
+
+        def diagnostic(_app):
+            return {"inventaire_t": next(dates), "rendu_ms": 1.0, "file": 0}
+
+        with (
+            patch(
+                "monifactory_assistant.application.interface.build_mod_view",
+                side_effect=lambda _app: {"vie": next(heartbeats), "ecran": {"machines": []}},
+            ),
+            patch("monifactory_assistant.application.interface.diagnostic_view", diagnostic),
+        ):
+            for _ in range(6):
+                app.refresh_views()
+        self.assertEqual(app.bridge.write.call_count, 2)
+        first, second = (call.args[1] for call in app.bridge.write.call_args_list)
+        self.assertEqual(first["ecran"]["diagnostic"]["inventaire_t"], 1_000)
+        self.assertEqual(second["vie"], 1)
+        self.assertEqual(second["ecran"]["diagnostic"]["inventaire_t"], 6_000)
 
     def test_valid_receipt_survives_file_delete_failure_without_reexecution(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -304,32 +362,6 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
         self.assertEqual(app.question_ack, {"n": 200, "etat": "acceptee"})
         self.assertEqual(app.mod_request_n, 200)
 
-    def test_failed_pause_write_keeps_previous_memory_and_disk_state(self):
-        from monifactory_assistant.app import App
-        from monifactory_assistant.game.projects import ProjectStore
-
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "plan.json"
-            store = ProjectStore(path)
-            state = {
-                "objectif_en_pause": True,
-                "version": 4,
-                "plan": {"objectif": "LV", "etapes": [], "recettes": [], "cibles": []},
-            }
-            store.save(state)
-            app = App.__new__(App)
-            app.projects = store
-            app.restore_project(state)
-            app.busy = False
-            with patch(
-                "monifactory_assistant.game.projects.atomic_json", side_effect=OSError("disk full")
-            ):
-                with self.assertRaises(OSError):
-                    app.set_objective_paused(False)
-            self.assertTrue(app.objective_paused)
-            self.assertTrue(app.projects.snapshot()["objectif_en_pause"])
-            self.assertTrue(ProjectStore(path).snapshot()["objectif_en_pause"])
-
     def test_new_inbox_does_not_revive_an_old_legacy_action_on_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -341,7 +373,6 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
             app = InterfaceController()
             app.bridge = SimpleNamespace(dir=root)
             app.request_queue = CommandQueue(root, clock=lambda: 1000)
-            app.projects = SimpleNamespace(active="current")
             app.game = {"dimension": "minecraft:overworld"}
             app.root = SimpleNamespace(after=Mock())
             app.mod_request_n = app.mod_request_time = None

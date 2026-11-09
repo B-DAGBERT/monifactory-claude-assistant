@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,7 +22,7 @@ def guarded(name, *args, **kwargs):
         raise AssertionError("Unexpected desktop/audio import: " + name)
     return original(name, *args, **kwargs)
 builtins.__import__ = guarded
-for module in ("game.bridge", "game.storage", "game.recipes", "game.world", "game.veins", "game.context", "game.objectives", "application.projects", "application.game", "providers.responses", "providers.session", "ui.views"):
+for module in ("game.bridge", "game.storage", "game.recipes", "game.world", "game.veins", "game.context", "application.game", "providers.responses", "providers.session", "ui.views"):
     importlib.import_module("monifactory_assistant." + module)
 assert "monifactory_assistant.app" not in sys.modules
 assert "monifactory_assistant.providers.codex" not in sys.modules
@@ -33,51 +33,79 @@ assert "monifactory_assistant.providers.claude" not in sys.modules
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_real_app_restores_paused_project_after_switch_and_restart(self):
+    def test_real_app_has_no_objective_api_and_never_prepares_one_on_connection(self):
         from monifactory_assistant.app import App
-        from monifactory_assistant.game.storage import Storage
 
+        for name in (
+            "load_plan",
+            "save_plan",
+            "handle_project_request",
+            "set_objective_paused",
+            "auto_next_objective",
+            "on_next_objective",
+            "start_objective",
+            "on_plan",
+        ):
+            self.assertFalse(hasattr(App, name), name)
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "plan_ia.json"
-            path.write_text(
-                json.dumps(
-                    {
-                        "objectif_en_pause": True,
-                        "plan": {"objectif": "LV", "recettes": [], "cibles": [], "etapes": []},
-                        "version": 42,
-                        "etapes_faites": [0],
-                        "obtenus": {"minecraft:iron_ingot": 3},
-                    }
-                )
-            )
-            with patch("monifactory_assistant.application.projects.PLAN_FILE", path):
-                app = App.__new__(App)
-                app.load_plan()
-                before = app.project_snapshot()
-                app.busy, app.game, app.storage = False, {"inventaire": {}}, Storage([])
-                app.notify, app.refresh, app.start_objective = Mock(), Mock(), Mock()
-                app.handle_project_request(
-                    {
-                        "action": "creer",
-                        "id": "farm",
-                        "nom": "Ferme",
-                        "mode": "objectif",
-                        "origine": "principal",
-                        "token": "new",
-                    }
-                )
-                self.assertTrue(app.project_feedback["ok"])
-                app.handle_project_request(
-                    {"action": "choisir", "id": "principal", "origine": "farm", "token": "back"}
-                )
-                self.assertTrue(app.project_feedback["ok"])
-                self.assertTrue(app.objective_paused)
-                for field in ("plan", "obtenus", "etapes_faites", "objectif_en_pause"):
-                    self.assertEqual(app.project_snapshot()[field], before[field], field)
-                restored = App.__new__(App)
-                restored.load_plan()
-                self.assertEqual(restored.project_snapshot(), app.project_snapshot())
-                app.start_objective.assert_called_once_with("Ferme", new_plan=False)
+            old = Path(directory) / "plan_ia.json"
+            old.write_text(json.dumps({"plan": {"objectif": "LV"}, "objectif_en_pause": True}))
+            before = old.read_bytes()
+            app = App.__new__(App)
+            app.session_open, app.journal_file = False, Path(directory) / "journal.jsonl"
+            app.root = Mock()
+            app.on_game_connected()
+            # Connecting no longer schedules an AI request (it spent the subscription).
+            app.root.after.assert_not_called()
+            self.assertTrue(app.session_open)
+            self.assertEqual(old.read_bytes(), before)
+
+    def test_old_mod_project_and_objective_requests_are_refused_without_effect(self):
+        from monifactory_assistant.app import App
+
+        app = App.__new__(App)
+        app.bridge = Mock(isolated=False)
+        app.game = {"dimension": "minecraft:overworld"}
+        app.busy, app.question_ack, app.mod_request_n = False, {}, None
+        app.notify, app.refresh, app.set_setting, app.start_question = (
+            Mock(),
+            Mock(),
+            Mock(),
+            Mock(),
+        )
+        app.on_hide, app.on_voice, app.show_info = Mock(), Mock(), Mock()
+        for request in (
+            {"type": "projet", "action": "supprimer", "id": "principal", "n": 1},
+            {"type": "action", "action": "objectif_suivant", "projet": "principal", "n": 2},
+            {"type": "action", "action": "pause_objectif", "version": "42", "n": 3},
+            {"type": "action", "action": "refaire_objectif", "n": 4},
+            {"type": "action", "action": "etape", "index": 0, "n": 5},
+        ):
+            with self.subTest(request=request):
+                # Explicit refusal: the old button must not look « pris en compte ».
+                result = App.dispatch_queued_request(app, dict(request))
+                self.assertEqual(result["etat"], "refusee")
+                self.assertIn("Fonction retirée", result["message"])
+                self.assertIn("relance Minecraft", result["message"])
+                App.handle_mod_request(app, dict(request))
+        for request in (
+            {"type": "inconnu", "n": 7},
+            {"type": "action", "action": "teleporter", "n": 8},
+            {"n": 9},
+        ):
+            with self.subTest(request=request):
+                result = App.dispatch_queued_request(app, dict(request))
+                self.assertEqual(result["etat"], "refusee")
+                self.assertIn("Demande inconnue", result["message"])
+        for mock in (app.notify, app.set_setting, app.start_question, app.on_hide, app.on_voice):
+            mock.assert_not_called()
+        # Supported requests keep their normal receipt.
+        result = App.dispatch_queued_request(app, {"type": "action", "action": "voix", "n": 10})
+        self.assertEqual(result["etat"], "traitee")
+        app.on_voice.assert_called_once()
+        # The question protocol of the same requests keeps working.
+        App.handle_mod_request(app, {"type": "question", "texte": "Recette ?", "n": 6})
+        app.start_question.assert_called_once_with("Recette ?", None)
 
     def test_controller_composition_does_not_hide_any_method(self):
         from monifactory_assistant.app import App
@@ -88,5 +116,5 @@ assert "monifactory_assistant.providers.claude" not in sys.modules
                 if callable(member) or isinstance(member, property):
                     self.assertNotIn(name, names, (name, names.get(name), controller.__name__))
                     names[name] = controller.__name__
-        for name in ("set_objective_paused", "handle_mod_request", "work_question", "check_game"):
+        for name in ("have", "handle_mod_request", "work_question", "check_game"):
             self.assertTrue(callable(getattr(App, name)))

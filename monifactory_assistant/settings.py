@@ -9,8 +9,6 @@ from monifactory_assistant.paths import WORLD_FILE as WORLD_FILE
 
 MINECRAFT_DIR = minecraft_dir()
 
-HOTKEY_PLAN = "f7"
-
 HOTKEY_TALK = "f8"  # à maintenir pendant qu'on parle
 
 HOTKEY_TYPE = "shift+f8"
@@ -33,22 +31,13 @@ SETTINGS = {
     ),
     "panneau": (
         "Panneau en jeu",
-        "L'objectif, l'étape en cours et les objets utiles, en haut à gauche.",
+        "En haut à gauche, la prochaine étape du plan de l'onglet Recette. "
+        "Les réponses de l'assistant restent affichées dans leur bulle.",
         True,
     ),
     "progression": (
         "Annonces de progression",
-        "Étapes et quêtes terminées, nouveaux filons, machines retenues.",
-        True,
-    ),
-    "enchainer": (
-        "Objectif suivant automatique",
-        "Un objectif terminé, le suivant du plan se prépare tout seul.",
-        True,
-    ),
-    "surbrillance": (
-        "Surbrillance des besoins",
-        "Les objets dont l'objectif a besoin brillent en vert dans les coffres.",
+        "Un message quand une quête est terminée, un filon repéré ou une machine retenue.",
         True,
     ),
     "faisceaux": (
@@ -80,8 +69,6 @@ TIMEOUT = 420  # secondes max par réponse
 
 CAPTURES = HERE / "captures"
 
-PLAN_FILE = HERE / "plan_ia.json"
-
 PLACES_FILE = HERE / "lieux.json"
 
 JOURNAL_FILE = HERE / "journal.jsonl"
@@ -101,10 +88,6 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 SAMPLE_RATE = 16000
 
 BG, FG, FG_DIM = "#1e1f22", "#f2f2f2", "#a8a8a8"
-
-FOOTER = "F7 objectif · F8 parler · Maj+F8 écrire · F9 cacher"
-
-MAX_TO_MAKE, MAX_MISSING = 4, 5  # lignes affichées au plus dans « À fabriquer » et « Il te manque »
 
 WHISPER_HINT = (
     "Minecraft, Monifactory, GregTech, Steam, Boiler, Alloy Smelter, Coke Oven, "

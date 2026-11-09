@@ -26,8 +26,6 @@ final class ProjectionLotsEmi {
             String monde,
             String session,
             String dimension,
-            String projet,
-            String revisionProjet,
             long revisionArbre,
             long lotsArbre) {
         boolean accepte(JsonObject contexte) {
@@ -39,9 +37,6 @@ final class ProjectionLotsEmi {
                     && monde.equals(texte(contexte, "monde_actif"))
                     && session.equals(texte(contexte, "session_monde"))
                     && dimension.equals(texte(contexte, "dimension_monde"))
-                    && projet.equals(texte(contexte, "projet"))
-                    && !revisionProjet.isBlank()
-                    && revisionProjet.equals(texte(contexte, "revision_projet"))
                     && revisionArbre >= 0
                     && lotsArbre > 0;
         }
@@ -55,8 +50,6 @@ final class ProjectionLotsEmi {
                     && monde.equals(p.monde)
                     && session.equals(p.session)
                     && dimension.equals(p.dimension)
-                    && projet.equals(p.projet)
-                    && revisionProjet.equals(p.revisionProjet)
                     && revisionArbre == p.revisionArbre
                     && lotsArbre == p.lotsArbre;
         }
@@ -70,8 +63,6 @@ final class ProjectionLotsEmi {
                     monde,
                     session,
                     dimension,
-                    projet,
-                    revisionProjet,
                     revisionArbre,
                     lotsArbre);
         }
@@ -118,8 +109,7 @@ final class ProjectionLotsEmi {
             if (disponible)
                 for (var lot : suivi.actifs()) {
                     if (!portee.equals(suivi.origine(lot.id()))) {
-                        limites.add(
-                                "Lots d'un autre arbre, projet ou contexte non attribué exclus.");
+                        limites.add("Lots d'un autre arbre ou contexte non attribué exclus.");
                         continue;
                     }
                     if (lot.suivi().receptionNonAttribuee()) {
@@ -159,13 +149,7 @@ final class ProjectionLotsEmi {
         JsonObject preuve = new JsonObject();
         preuve.add("suivi", result.deepCopy());
         JsonObject contexteExact = new JsonObject();
-        for (String cle :
-                List.of(
-                        "monde_actif",
-                        "session_monde",
-                        "dimension_monde",
-                        "projet",
-                        "revision_projet"))
+        for (String cle : List.of("monde_actif", "session_monde", "dimension_monde"))
             if (contexte != null && contexte.has(cle)) contexteExact.add(cle, contexte.get(cle));
         preuve.add("contexte", contexteExact);
         JsonObject selection = new JsonObject();

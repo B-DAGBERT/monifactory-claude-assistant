@@ -15,7 +15,6 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -48,7 +47,6 @@ public final class Pont {
 
     private static long dateLue = -1;
     private static JsonObject vue = new JsonObject();
-    private static Set<String> besoins = Set.of();
     private static List<Cible> cibles = List.of();
     private static Set<String> cherches = Set.of(); // objets cherchés : ids exacts...
     private static List<Pattern> motifs = List.of(); // ... et ids avec * (gtceu:*_iron_ore)
@@ -102,7 +100,7 @@ public final class Pont {
     private static void verifierVue() {
         if (contexteValide(vue)) return;
         vue = new JsonObject();
-        besoins = cherches = Set.of();
+        cherches = Set.of();
         cibles = List.of();
         motifs = List.of();
         reperes = List.of();
@@ -124,10 +122,6 @@ public final class Pont {
                     JsonParser.parseString(Files.readString(VUE, StandardCharsets.UTF_8))
                             .getAsJsonObject();
             if (!contexteValide(lu)) return;
-            Set<String> nouveauxBesoins = new HashSet<>();
-            for (JsonElement e : tableau(lu, "besoins")) {
-                nouveauxBesoins.add(e.getAsString());
-            }
             List<Cible> nouvellesCibles = new ArrayList<>();
             lireCibles(tableau(lu, "guidage"), 256, nouvellesCibles);
             JsonObject recherche =
@@ -157,7 +151,6 @@ public final class Pont {
                                 texte(c, "texte")));
             }
             vue = lu;
-            besoins = nouveauxBesoins;
             cibles = nouvellesCibles;
             cherches = nouveauxCherches;
             motifs = nouveauxMotifs;
@@ -259,9 +252,12 @@ public final class Pont {
                 });
     }
 
+    /**
+     * Les objets dont un objectif avait besoin. Les objectifs ont été retirés : toujours vide,
+     * conservé pour les appelants (tri des filons) jusqu'à leur remplacement.
+     */
     public static Set<String> besoins() {
-        verifierVue();
-        return besoins;
+        return Set.of();
     }
 
     public static List<Cible> cibles() {
@@ -404,16 +400,12 @@ public final class Pont {
             dernierEnvoi = Math.max(System.currentTimeMillis(), dernierEnvoi + 1);
             demande.addProperty("n", dernierEnvoi);
             demande.addProperty("requete", java.util.UUID.randomUUID().toString());
-            JsonObject ecran = partie("ecran");
-            if (!demande.has("projet") && !"reglage".equals(texte(demande, "type"))) {
-                JsonObject projets =
-                        ecran.has("projets") && ecran.get("projets").isJsonObject()
-                                ? ecran.getAsJsonObject("projets")
-                                : new JsonObject();
-                if (!texte(projets, "actif").isEmpty())
-                    demande.addProperty("projet", texte(projets, "actif"));
-                demande.addProperty("dimension_envoi", texte(ecran, "dimension_actuelle"));
-            }
+            // La dimension du clic : l'assistant refuse l'action si le joueur en a changé depuis.
+            // Production porte déjà son propre contexte (monde, connexion, dimension).
+            String type = texte(demande, "type");
+            if (!"reglage".equals(type) && !"production_v2".equals(type))
+                demande.addProperty(
+                        "dimension_envoi", texte(partie("ecran"), "dimension_actuelle"));
         }
         JsonObject ecran = partie("ecran");
         if (ecran.has("demandes")
@@ -445,40 +437,19 @@ public final class Pont {
         return ecrireDemande("recherche_emi.json", demande);
     }
 
+    /** Export périodique : écrit entièrement sur le fil d'écriture, sans attendre le disque. */
     public static boolean envoyerInventaire(JsonObject inventaire) {
-        return ecrireDemande("inventaire_joueur.json", inventaire);
-    }
-
-    public static boolean envoyerProgresFabrication(JsonObject progres) {
-        return ecrireDemande("fabrication_emi.json", progres);
+        if (!annoterContexte(inventaire)) return false;
+        Ecritures.publier(
+                DOSSIER.resolve("inventaire_joueur.json"), Ecritures.json(inventaire, false));
+        return true;
     }
 
     private static boolean ecrireDemande(String nom, JsonObject demande) {
         if (!annoterContexte(demande)) return false;
-        try {
-            Files.createDirectories(DOSSIER);
-            Path temporaire = DOSSIER.resolve(nom + ".tmp");
-            Files.writeString(temporaire, demande.toString(), StandardCharsets.UTF_8);
-            for (int essai = 1; ; essai++) {
-                try {
-                    Files.move(
-                            temporaire,
-                            DOSSIER.resolve(nom),
-                            StandardCopyOption.REPLACE_EXISTING,
-                            StandardCopyOption.ATOMIC_MOVE);
-                    return true;
-                } catch (AccessDeniedException e) {
-                    // Windows refuse le remplacement tant que l'assistant lit encore le fichier.
-                    if (essai == 4) throw e;
-                    Thread.sleep(5L * essai);
-                }
-            }
-        } catch (IOException e) {
-            LOGGER.warn("Assistant IA : demande non transmise", e);
-            return false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
+        // Un seul essai sur le thread client : si l'assistant lit encore le fichier (refus de
+        // Windows), le fil d'écriture réessaie sans faire attendre le jeu, et sans jamais
+        // remplacer une demande plus récente par celle-ci.
+        return Ecritures.ecrire(DOSSIER.resolve(nom), Ecritures.texte(demande.toString()));
     }
 }

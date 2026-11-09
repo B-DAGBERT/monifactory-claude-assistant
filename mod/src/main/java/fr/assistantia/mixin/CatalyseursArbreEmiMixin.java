@@ -1,8 +1,8 @@
 package fr.assistantia.mixin;
 
 import dev.emi.emi.api.recipe.EmiRecipe;
+import fr.assistantia.compat.emi.ArbreReel;
 import fr.assistantia.compat.emi.CatalyseursArbreEmi;
-import fr.assistantia.compat.emi.InstantaneArbreEmi;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.Unique;
@@ -27,8 +27,9 @@ public abstract class CatalyseursArbreEmiMixin {
                 assistantia$erreurCatalyseurs = true;
             }
         } finally {
-            InstantaneArbreEmi.arbreModifie();
-            fr.assistantia.CatalogueProduction.rechargement();
+            // Seul l'arbre réel invalide le suivi, les captures Production et l'onglet Recette :
+            // les arbres temporaires d'EMI (infobulle de coût) sont recréés à chaque image.
+            ArbreReel.defini(this);
         }
     }
 }

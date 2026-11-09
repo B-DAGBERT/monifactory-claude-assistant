@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from monifactory_assistant.game.objectives import machine_label
+from monifactory_assistant.game.world import machine_label
 from monifactory_assistant.game.world_scope import scope_file
 from monifactory_assistant.production.acquisition import (
     acquire,
@@ -20,21 +20,25 @@ from monifactory_assistant.production.acquisition import (
 from monifactory_assistant.production.analysis import analyse_observed
 from monifactory_assistant.production.catalog import CatalogueReader
 from monifactory_assistant.production.knowledge import Freshness
-from monifactory_assistant.production.memory import read_projects
 from monifactory_assistant.production.planner import StockLedger
 from monifactory_assistant.production.recipes import Amount, Resource
 
-_CONTEXT = ("monde_actif", "session_monde", "dimension_monde", "projet", "revision_projet")
+# Une consultation appartient à un monde, une connexion et une dimension ; rien d'autre.
+_CONTEXT = ("monde_actif", "session_monde", "dimension_monde")
+# Compatibilité d'une version : un mod antérieur au retrait des projets exige encore ces deux
+# champs, constants, dans le contexte publié et dans ses résultats. Ils ne lient rien : le
+# nouveau mod les ignore et aucune demande n'est comparée sur eux. À retirer ensuite.
+_LEGACY_CONTEXT = {"projet": "", "revision_projet": "sans-projet"}
+# Seule une question qui vise explicitement le calcul Production peut être refusée faute de
+# résultat courant ; « cette recette », « cette machine » ou « diagnostic » restent libres.
+_EXPLICIT = re.compile(
+    r"\b(v2|plan de production|diagnostic de production|calcul de production"
+    r"|(?:écran|ecran|onglet|menu|lecture) (?:de )?production)\b"
+)
 _RESOURCE = re.compile(r"[a-z0-9_.-]+:[a-z0-9_./-]+")
 _MAX_AGE = 45_000
 _RESULT_MAX_AGE = 180_000
 _PROOF_VERSION = 2
-
-
-def _project_context(app):
-    project = getattr(getattr(app, "projects", None), "active", "") or ""
-    revision = f"{getattr(app, 'plan_version', 0)}:{getattr(app, 'objective_epoch', 0)}:{int(bool(getattr(app, 'objective_paused', False)))}"
-    return project, revision
 
 
 def _safe(text, limit=300):
@@ -195,7 +199,6 @@ class ProductionService:
         self._generation = 0
         self._context = {}
         self._scope = None
-        self._target = {"item": "", "quantite": 1, "kind": "item", "unit": "item", "variant": ""}
         self._result = None
         self._reader = None
         self._reader_source = None
@@ -203,50 +206,19 @@ class ProductionService:
         self._finished = []
         self._seen = {}
         self._updated = 0
-        self._app = None
         self._marker_cache = (None, None)
 
     def poll(self, app):
         """Small main-loop maintenance only; no catalogue, stock or planning read here."""
         scope = active_scope(self.bridge, int(self.clock() * 1000))
-        project, revision = _project_context(app)
-        context = (
-            {**scope.fields(), "projet": project, "revision_projet": revision}
-            if scope is not None
-            else {}
-        )
-        target = self._target
-        plan = getattr(app, "plan", None)
-        if isinstance(plan, dict):
-            candidates = plan.get("cibles") or ()
-            if (
-                isinstance(candidates, (tuple, list))
-                and candidates
-                and isinstance(candidates[0], dict)
-            ):
-                item, quantity = candidates[0].get("item"), candidates[0].get("quantite", 1)
-                if (
-                    isinstance(item, str)
-                    and _RESOURCE.fullmatch(item)
-                    and type(quantity) is int
-                    and 0 < quantity <= 1_000_000
-                ):
-                    target = {
-                        "item": item,
-                        "quantite": quantity,
-                        "kind": "item",
-                        "unit": "item",
-                        "variant": "",
-                    }
+        context = {**scope.fields(), **_LEGACY_CONTEXT} if scope is not None else {}
         changed = False
         with self._lock:
-            self._app = app
             self._updated = self.clock()
             if context != self._context:
                 self._generation += 1
                 self._context, self._scope = context, scope
                 self._result, self._ai_context = None, ""
-                self._target = target
                 changed = True
             while self._finished:
                 generation, result, summary = self._finished.pop(0)
@@ -282,11 +254,10 @@ class ProductionService:
                     "v": 1,
                     "preuves_natives": _PROOF_VERSION,
                     "disponible": available,
-                    "message": "Lecture seule : aucun transfert ni modification d'objectif."
+                    "message": "Lecture seule : aucun transfert ni modification du jeu."
                     if available
                     else "Entre dans un monde identifié pour consulter la production.",
                     "contexte": self._context if available else {},
-                    "cible": self._target,
                     "resultat": self._result if available else None,
                 }
             )
@@ -303,16 +274,15 @@ class ProductionService:
                 is None
             ):
                 return None
+            explicit = _EXPLICIT.search(question.casefold()) is not None
             if (
                 not self._context
                 or self.clock() - self._updated >= 4
                 or not self._result
                 or self._result.get("etat") != "pret"
             ):
-                if require_current and (
-                    self._result is not None
-                    or re.search(r"\b(v2|plan de production)\b", question.casefold())
-                ):
+                # Un ancien résultat ne bloque pas les autres questions de la discussion.
+                if require_current and explicit:
                     raise ValueError(
                         "Ouvre Production dans Minecraft pour obtenir un calcul actuel."
                     )
@@ -330,7 +300,7 @@ class ProductionService:
             )
         if self.context_valid(proof):
             return text, proof
-        if require_current:
+        if require_current and explicit:
             raise ValueError(
                 "Le calcul de production n’est plus vérifiable. Relance-le dans Minecraft."
             )
@@ -361,11 +331,6 @@ class ProductionService:
             or not self._result_fresh()
         ):
             return False
-        if self._app is None or _project_context(self._app) != (
-            self._context["projet"],
-            self._context["revision_projet"],
-        ):
-            return False
         return active_scope(
             self.bridge, int(self.clock() * 1000)
         ) == self._scope and self._catalogue_matches(self._result.get("catalogue"), self._scope)
@@ -387,10 +352,8 @@ class ProductionService:
         return 0 <= age <= _RESULT_MAX_AGE
 
     def _live_catalogue(self, catalogue, scope, *, wait=False):
-        if catalogue is None:
-            return True  # Project-memory reads have no EMI generation.
-        if scope is None:
-            return False
+        if catalogue is None or scope is None:
+            return False  # Every ready consultation is bound to an EMI tree.
         acquired = (
             self._attestation_lock.acquire(timeout=0.5)
             if wait
@@ -407,7 +370,7 @@ class ProductionService:
 
     def _catalogue_matches(self, catalogue, scope):
         if catalogue is None:
-            return True  # Project-memory reads do not depend on an EMI tree.
+            return False  # Every ready consultation is bound to an EMI tree.
         try:
             path = scope_file(self.bridge.dir, "catalogue_production_etat.json")
             stamp = capture_stamp(path)
@@ -449,16 +412,10 @@ class ProductionService:
                 or not -5000 <= now - number <= _MAX_AGE
             ):
                 return {"etat": "refusee", "message": "Demande de production expirée."}
-            if (
-                not self._matches(request)
-                or active_scope(self.bridge, now) != self._scope
-                or self._app is None
-                or _project_context(self._app)
-                != (self._context["projet"], self._context["revision_projet"])
-            ):
+            if not self._matches(request) or active_scope(self.bridge, now) != self._scope:
                 return {
                     "etat": "refusee",
-                    "message": "Monde, connexion ou projet modifié ; renouvelle le clic.",
+                    "message": "Monde, connexion ou dimension modifiés ; renouvelle le clic.",
                 }
             if number in self._seen:
                 return self._seen[number]
@@ -466,33 +423,36 @@ class ProductionService:
                 return {"etat": "refusee", "message": "Un calcul de production est déjà en cours."}
             try:
                 operation = request.get("operation")
-                if operation not in {"plan", "diagnostic", "memoire"}:
-                    raise ValueError("Consultation inconnue.")
-                target = None
-                if operation != "memoire":
-                    if not isinstance(request.get("capture"), str) or not re.fullmatch(
-                        r"[a-zA-Z0-9_.:/|\-]{1,128}", request["capture"]
-                    ):
-                        raise ValueError("Identifiant de capture native invalide.")
-                    if not isinstance(request.get("capture_sha256"), str) or not re.fullmatch(
-                        r"[0-9a-f]{64}", request["capture_sha256"]
-                    ):
-                        raise ValueError("Empreinte de capture native invalide.")
-                    kind = request.get("kind", "item")
-                    resource = Resource(
-                        kind,
-                        request.get("item"),
-                        request.get("unit", "mB" if kind == "fluid" else "item"),
-                        request.get("variant", ""),
+                if operation == "memoire":
+                    # Onglet Projet d'un ancien mod : les projets n'existent plus.
+                    raise ValueError(
+                        "Fonction retirée : relance Minecraft pour charger la nouvelle version du mod."
                     )
-                    quantity = request.get("quantite")
-                    if (
-                        type(quantity) is not int
-                        or not 0 < quantity <= 1_000_000
-                        or len(resource.variant) > 8192
-                    ):
-                        raise ValueError("Quantité ou variante hors limite.")
-                    target = Amount(resource, quantity)
+                if operation not in {"plan", "diagnostic"}:
+                    raise ValueError("Consultation inconnue.")
+                if not isinstance(request.get("capture"), str) or not re.fullmatch(
+                    r"[a-zA-Z0-9_.:/|\-]{1,128}", request["capture"]
+                ):
+                    raise ValueError("Identifiant de capture native invalide.")
+                if not isinstance(request.get("capture_sha256"), str) or not re.fullmatch(
+                    r"[0-9a-f]{64}", request["capture_sha256"]
+                ):
+                    raise ValueError("Empreinte de capture native invalide.")
+                kind = request.get("kind", "item")
+                resource = Resource(
+                    kind,
+                    request.get("item"),
+                    request.get("unit", "mB" if kind == "fluid" else "item"),
+                    request.get("variant", ""),
+                )
+                quantity = request.get("quantite")
+                if (
+                    type(quantity) is not int
+                    or not 0 < quantity <= 1_000_000
+                    or len(resource.variant) > 8192
+                ):
+                    raise ValueError("Quantité ou variante hors limite.")
+                target = Amount(resource, quantity)
                 if request.get("recette") is not None and (
                     not isinstance(request["recette"], str)
                     or not _RESOURCE.fullmatch(request["recette"])
@@ -584,6 +544,7 @@ class ProductionService:
         result = {
             "n": request["n"],
             **{key: request[key] for key in _CONTEXT},
+            **_LEGACY_CONTEXT,
             "alternatives": [],
             "limites": [],
         }
@@ -591,187 +552,154 @@ class ProductionService:
         try:
             if active_scope(self.bridge) != scope:
                 raise ValueError("Connexion modifiée avant le calcul.")
-            if request["operation"] == "memoire":
-                isolated = getattr(self.bridge.routing, "mode", None) == "isolated"
-                projects = read_projects(
-                    self.python_root, self.bridge.dir, scope if isolated else None
+            catalogue, metadata = self._catalogue(scope)
+            if any(
+                request.get("catalogue_" + key) != metadata.get(key)
+                for key in ("source", "generation", "sha256")
+            ):
+                raise ValueError(
+                    "Le catalogue EMI ne correspond plus au clic ; renouvelle la consultation."
                 )
-                project = next(
-                    (row for row in projects if row.ref.project == request["projet"]), None
-                )
-                if project is None:
-                    raise ValueError("Aucun projet sauvegardé correspondant.")
-                lines = [
-                    "Projet en pause" if project.paused else "Projet actif",
-                    _safe(project.objective),
-                ]
+            root_target = Amount.from_dict(metadata.get("cible"))
+            if root_target.resource != target.resource:
+                raise ValueError("Le produit ne correspond pas à l'arbre EMI sélectionné.")
+            choices, ingredients = {}, {}
+            for entry in metadata.get("choix_recettes", []):
+                resource = Resource.from_dict(entry["resource"])
+                if resource in choices and choices[resource] != entry["recipe"]:
+                    raise ValueError("Branches EMI contradictoires pour la même ressource.")
+                choices[resource] = entry["recipe"]
+            for entry in metadata.get("choix_ingredients", []):
+                key = f"{entry['recipe']}#{entry['index']}"
+                resource = Resource.from_dict(entry["resource"])
+                if key in ingredients and ingredients[key] != resource:
+                    raise ValueError("Alternatives EMI contradictoires.")
+                ingredients[key] = resource
+            selected = request.get("recette") or metadata.get("recette_racine")
+            if selected:
+                choices[target.resource] = selected
+            now = int(self.clock() * 1000)
+            try:
+                native = acquire_native(self.bridge, scope, request, now)
+            except (OSError, ValueError, TypeError, RecursionError):
+                native = None
+            snapshot = acquire(self.bridge, self.python_root, scope, request, now)
+            analysis = analyse_observed(
+                catalogue,
+                snapshot,
+                target,
+                stock_ledger=native.ledger if native else StockLedger(),
+                stock_evidence=native.evidence if native else (),
+                recipe_choices=choices,
+                ingredient_choices=ingredients,
+                diagnose_recipe=selected,
+                machine_key=request.get("machine_key"),
+            )
+            lines = [
+                "Produit : " + _amount(target),
+                "Plan conditionnel : les machines ne sont pas déclarées prêtes par ce calcul.",
+            ]
+            source_lines = _native_lines(native)
+            lines.extend(source_lines)
+            allocations = _allocation_lines(analysis.plan)
+            if request["operation"] == "plan":
+                lines.extend(allocations)
                 lines.extend(
-                    ("Fait : " if step.completed else "À faire : ") + _safe(step.text)
-                    for step in project.steps[:100]
+                    "À obtenir selon les relevés : " + _amount(amount)
+                    for amount in analysis.plan.missing[:50]
                 )
-                result.update(
-                    titre="Mémoire du projet",
-                    lignes=lines,
-                    limites=["Lecture du projet sauvegardé ; progression inchangée."],
+                lines.extend(
+                    "À attendre : " + _amount(amount) for amount in analysis.plan.waiting[:30]
                 )
-                summary = "Mémoire du projet consultée sans modifier sa progression."
-            else:
-                catalogue, metadata = self._catalogue(scope)
-                if any(
-                    request.get("catalogue_" + key) != metadata.get(key)
-                    for key in ("source", "generation", "sha256")
-                ):
-                    raise ValueError(
-                        "Le catalogue EMI ne correspond plus au clic ; renouvelle la consultation."
+                lines.extend(_historical_lines(snapshot, analysis.plan.missing))
+                for index, step in enumerate(analysis.plan.steps[:64], 1):
+                    lines.append(
+                        f"{index}. {step.batches} fabrication(s) · {step.recipe_id}"
+                        + (f" · circuit {step.circuit}" if step.circuit is not None else "")
                     )
-                root_target = Amount.from_dict(metadata.get("cible"))
-                if root_target.resource != target.resource:
-                    raise ValueError("Le produit ne correspond pas à l'arbre EMI sélectionné.")
-                choices, ingredients = {}, {}
-                for entry in metadata.get("choix_recettes", []):
-                    resource = Resource.from_dict(entry["resource"])
-                    if resource in choices and choices[resource] != entry["recipe"]:
-                        raise ValueError("Branches EMI contradictoires pour la même ressource.")
-                    choices[resource] = entry["recipe"]
-                for entry in metadata.get("choix_ingredients", []):
-                    key = f"{entry['recipe']}#{entry['index']}"
-                    resource = Resource.from_dict(entry["resource"])
-                    if key in ingredients and ingredients[key] != resource:
-                        raise ValueError("Alternatives EMI contradictoires.")
-                    ingredients[key] = resource
-                selected = request.get("recette") or metadata.get("recette_racine")
-                if selected:
-                    choices[target.resource] = selected
-                now = int(self.clock() * 1000)
-                try:
-                    native = acquire_native(self.bridge, scope, request, now)
-                except (OSError, ValueError, TypeError, RecursionError):
-                    native = None
-                snapshot = acquire(self.bridge, self.python_root, scope, request, now)
-                analysis = analyse_observed(
-                    catalogue,
-                    snapshot,
-                    target,
-                    stock_ledger=native.ledger if native else StockLedger(),
-                    stock_evidence=native.evidence if native else (),
-                    recipe_choices=choices,
-                    ingredient_choices=ingredients,
-                    diagnose_recipe=selected,
-                    machine_key=request.get("machine_key"),
+                    if step.machines:
+                        lines.append(_compatible_posts(step))
+                lines.extend(
+                    "Limite : " + _safe(issue.message) for issue in analysis.plan.issues[:25]
                 )
-                lines = [
-                    "Produit : " + _amount(target),
-                    "Plan conditionnel : les machines ne sont pas déclarées prêtes par ce calcul.",
-                ]
-                source_lines = _native_lines(native)
-                lines.extend(source_lines)
-                allocations = _allocation_lines(analysis.plan)
-                if request["operation"] == "plan":
-                    lines.extend(allocations)
+            if analysis.diagnosis is not None:
+                labels = {
+                    "observed": "CONFIRMÉ",
+                    "calculated": "DÉDUIT",
+                    "hypothesis": "HYPOTHÈSE",
+                    "unknown": "INCONNU",
+                }
+                for finding in (*analysis.diagnosis.findings, *analysis.diagnosis.hypotheses):
+                    lines.append(
+                        labels.get(finding.certainty, "INCONNU") + " · " + _safe(finding.message)
+                    )
+                    if finding.next_check:
+                        lines.append("Vérifier : " + _safe(finding.next_check))
                     lines.extend(
-                        "À obtenir selon les relevés : " + _amount(amount)
-                        for amount in analysis.plan.missing[:50]
+                        "Preuve : " + _proof_text(proof) + " · réf. " + _safe(proof.reference, 120)
+                        for proof in finding.evidence[:2]
                     )
+                    lines.extend("Inconnu : " + _safe(value) for value in finding.missing[:3])
                     lines.extend(
-                        "À attendre : " + _amount(amount) for amount in analysis.plan.waiting[:30]
+                        "Contradiction : " + _safe(value) for value in finding.contradictions[:2]
                     )
-                    lines.extend(_historical_lines(snapshot, analysis.plan.missing))
-                    for index, step in enumerate(analysis.plan.steps[:64], 1):
-                        lines.append(
-                            f"{index}. {step.batches} fabrication(s) · {step.recipe_id}"
-                            + (f" · circuit {step.circuit}" if step.circuit is not None else "")
-                        )
-                        if step.machines:
-                            lines.append(_compatible_posts(step))
-                    lines.extend(
-                        "Limite : " + _safe(issue.message) for issue in analysis.plan.issues[:25]
-                    )
-                if analysis.diagnosis is not None:
-                    labels = {
-                        "observed": "CONFIRMÉ",
-                        "calculated": "DÉDUIT",
-                        "hypothesis": "HYPOTHÈSE",
-                        "unknown": "INCONNU",
-                    }
-                    for finding in (*analysis.diagnosis.findings, *analysis.diagnosis.hypotheses):
-                        lines.append(
-                            labels.get(finding.certainty, "INCONNU")
-                            + " · "
-                            + _safe(finding.message)
-                        )
-                        if finding.next_check:
-                            lines.append("Vérifier : " + _safe(finding.next_check))
-                        lines.extend(
-                            "Preuve : "
-                            + _proof_text(proof)
-                            + " · réf. "
-                            + _safe(proof.reference, 120)
-                            for proof in finding.evidence[:2]
-                        )
-                        lines.extend("Inconnu : " + _safe(value) for value in finding.missing[:3])
-                        lines.extend(
-                            "Contradiction : " + _safe(value)
-                            for value in finding.contradictions[:2]
-                        )
-                alternatives = [
-                    {"id": recipe.id, "texte": recipe.id}
-                    for recipe in catalogue.catalog.recipes
-                    if any(output.amount.resource == target.resource for output in recipe.outputs)
-                ][:32]
-                limits = list(analysis.limits) + [
-                    "Catalogue limité à l'arbre EMI choisi ; branches extérieures non connues.",
-                    "Fluides et variantes NBT de l'inventaire ne sont pas comptés comme stock disponible.",
-                ]
-                if native:
-                    limits.extend(native.limitations)
-                limits.extend(
-                    _safe(value) for value in metadata.get("limites", ()) if isinstance(value, str)
+            alternatives = [
+                {"id": recipe.id, "texte": recipe.id}
+                for recipe in catalogue.catalog.recipes
+                if any(output.amount.resource == target.resource for output in recipe.outputs)
+            ][:32]
+            limits = list(analysis.limits) + [
+                "Catalogue limité à l'arbre EMI choisi ; branches extérieures non connues.",
+                "Fluides et variantes NBT de l'inventaire ne sont pas comptés comme stock disponible.",
+            ]
+            if native:
+                limits.extend(native.limitations)
+            limits.extend(
+                _safe(value) for value in metadata.get("limites", ()) if isinstance(value, str)
+            )
+            result.update(
+                titre="Diagnostic de production"
+                if request["operation"] == "diagnostic"
+                else "Plan de production",
+                lignes=lines[:220],
+                alternatives=alternatives,
+                limites=list(dict.fromkeys(limits))[:35],
+                catalogue={
+                    "source": catalogue.source,
+                    "generation": catalogue.catalog.generation,
+                    "sha256": catalogue.sha256,
+                    "capture": request["capture"],
+                    "capture_sha256": request["capture_sha256"],
+                },
+                rapport=_bounded_report(analysis.plan),
+                preuves={
+                    "stock": native.stock_mode if native and native.stock_available else "inconnu",
+                    "lots_exploitables": bool(native and native.lots_available),
+                    "couverture_complete": False,
+                },
+            )
+            if result["rapport"].get("partial_view"):
+                result["limites"].append(
+                    "Affichage structuré limité ; le calcul porte sur toutes les étapes de l'arbre fourni."
                 )
-                result.update(
-                    titre="Diagnostic de production"
-                    if request["operation"] == "diagnostic"
-                    else "Plan de production",
-                    lignes=lines[:220],
-                    alternatives=alternatives,
-                    limites=list(dict.fromkeys(limits))[:35],
-                    catalogue={
-                        "source": catalogue.source,
-                        "generation": catalogue.catalog.generation,
-                        "sha256": catalogue.sha256,
-                        "capture": request["capture"],
-                        "capture_sha256": request["capture_sha256"],
-                    },
-                    rapport=_bounded_report(analysis.plan),
-                    preuves={
-                        "stock": native.stock_mode
-                        if native and native.stock_available
-                        else "inconnu",
-                        "lots_exploitables": bool(native and native.lots_available),
-                        "couverture_complete": False,
-                    },
-                )
-                if result["rapport"].get("partial_view"):
-                    result["limites"].append(
-                        "Affichage structuré limité ; le calcul porte sur toutes les étapes de l'arbre fourni."
-                    )
-                summary = f"Produit {target.resource.id}, quantité {target.quantity} {target.resource.unit}. Catalogue génération {catalogue.catalog.generation}; statut du calcul {analysis.plan.status}.\n"
-                summary += "\n".join(source_lines[:16] + allocations[:12]) + "\n"
-                summary += "\n".join(
-                    "Besoin calculé : " + _amount(amount) for amount in analysis.plan.missing[:12]
-                )
+            summary = f"Produit {target.resource.id}, quantité {target.quantity} {target.resource.unit}. Catalogue génération {catalogue.catalog.generation}; statut du calcul {analysis.plan.status}.\n"
+            summary += "\n".join(source_lines[:16] + allocations[:12]) + "\n"
+            summary += "\n".join(
+                "Besoin calculé : " + _amount(amount) for amount in analysis.plan.missing[:12]
+            )
+            summary += "\n" + "\n".join(
+                "Recette choisie : " + step.recipe_id + ", fabrications " + str(step.batches)
+                for step in analysis.plan.steps[:8]
+            )
+            if analysis.diagnosis is not None:
                 summary += "\n" + "\n".join(
-                    "Recette choisie : " + step.recipe_id + ", fabrications " + str(step.batches)
-                    for step in analysis.plan.steps[:8]
+                    _diagnostic_summary(finding)
+                    for finding in (
+                        *analysis.diagnosis.findings,
+                        *analysis.diagnosis.hypotheses,
+                    )[:8]
                 )
-                if analysis.diagnosis is not None:
-                    summary += "\n" + "\n".join(
-                        _diagnostic_summary(finding)
-                        for finding in (
-                            *analysis.diagnosis.findings,
-                            *analysis.diagnosis.hypotheses,
-                        )[:8]
-                    )
-                    summary += "\nVérifications : contrôler la recette sélectionnée, l'état de la machine et ses entrées ; aucune connexion ou alimentation n'est présumée."
+                summary += "\nVérifications : contrôler la recette sélectionnée, l'état de la machine et ses entrées ; aucune connexion ou alimentation n'est présumée."
             if active_scope(self.bridge) != scope:
                 raise ValueError("Connexion modifiée pendant le calcul.")
             catalogue = result.get("catalogue")

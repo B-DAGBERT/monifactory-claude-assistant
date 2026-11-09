@@ -28,7 +28,7 @@ public final class ArbreEmi {
                 : null;
     }
 
-    /** Réservé aux actions explicites Objectif EMI et Scanner coffres. */
+    /** Réservé à l'action explicite Scanner coffres. */
     public static boolean activer() throws ReflectiveOperationException {
         charger();
         if (arbre.get(null) == null || (boolean) desactive.invoke(null)) return false;

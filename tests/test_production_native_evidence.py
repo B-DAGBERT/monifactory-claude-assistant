@@ -43,8 +43,6 @@ def fixture(*, personal=2, lots=None, menu=False):
     binding = {
         **SCOPE.fields(),
         "capture": "capture-native-1",
-        "projet": "project-a",
-        "revision_projet": "3:7:1",
         "catalogue_source": "emi/fixture",
         "catalogue_generation": 1,
         "catalogue_sha256": "c" * 64,
@@ -245,11 +243,9 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual(result.ledger.expected, ())
         self.assertFalse(result.stock_available)
 
-    def test_all_click_project_catalogue_and_scope_bindings_are_exact(self):
+    def test_all_click_catalogue_and_scope_bindings_are_exact(self):
         for key, changed in (
             ("capture", "old-click"),
-            ("projet", "other-project"),
-            ("revision_projet", "old-revision"),
             ("catalogue_source", "emi/old"),
             ("catalogue_generation", 2),
             ("catalogue_generation", True),
@@ -263,6 +259,12 @@ class NativeEvidenceTests(unittest.TestCase):
                 data[key] = changed
                 with self.assertRaises(ValueError):
                     decode(data, request)
+
+    def test_project_fields_of_an_older_mod_no_longer_bind_the_capture(self):
+        data, request = fixture()
+        data.update(projet="project-a", revision_projet="3:7:1")
+        request.update(projet="other-project", revision_projet="old-revision")
+        self.assertTrue(decode(data, request).lots_available)
 
     def test_stale_future_and_legacy_captures_cannot_be_relabelled_current(self):
         for changed in ({"v": 1}, {"v": True}, {"t": NOW - 2501}, {"t": NOW + 1}, {"t": True}):

@@ -1,22 +1,16 @@
-// Assistant IA (Claude) : exporte l'état du jeu, mémorise le contenu des coffres ouverts, et affiche
-// à l'écran les lignes préparées par l'assistant (plan.json). Les calculs se font dans assistant_mc.py.
+// Assistant IA (Claude) : exporte l'état du jeu et mémorise le contenu des coffres ouverts. L'affichage
+// en jeu est celui du mod de l'assistant ; les calculs se font dans assistant_mc.py.
 // Installé et mis à jour automatiquement par assistant_mc.py : ne pas modifier cette copie.
 //
 // Pièges de ce Rhino (KubeJS 6) :
-// - les textes passent souvent par les méthodes Java (substring, split, length) : voir longueur, couper, decoupe ;
+// - les textes passent souvent par les méthodes Java (substring, split, length) : voir longueur, couper ;
 // - les listes internes de Java (List.of, keySet...) refusent les appels : liste() les copie dans une ArrayList ;
 // - pas de let/const dans un bloc (try, if, boucle) à l'intérieur d'une fonction fléchée : Rhino y voit une
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 12  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_SCRIPT = 13  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
 const VERSION_RECETTES = 2 // export des recettes plus ancien : refait au chargement (2 : durée et EU/t des recettes GregTech)
-const COULEURS = { or: 0xFFC94A, blanc: 0xFFFFFF, gris: 0xA8A8A8, vert: 0x6BE36B, bleu: 0x8FC7FF, rouge: 0xFF8A7A, jaune: 0xFFE45C }
-const FOND = 0xB4101418 | 0
-const LARGEUR_MAX = 230
-const HUD_X = 6, HUD_Y = 16      // sous le compteur de FPS
-const HUD_LARGEUR_ECRAN = 0.3    // le panneau prend au plus 30 % de la largeur de l'écran
-const HUD_HAUTEUR_ECRAN = 0.7    // et 70 % de sa hauteur
 const RECETTES_PAR_TICK = 400
 const RECETTES_PAR_FICHIER = 15000
 const STOCKAGE = /chest|barrel|crate|drawer|shulker|storage|cabinet|drum|safe|backpack/
@@ -34,21 +28,23 @@ try {
 } catch (e) { console.warn('Assistant IA : EMI introuvable, pas d\'export des recettes') }
 try { QuestFile = Java.loadClass('dev.ftb.mods.ftbquests.client.ClientQuestFile') } catch (e) { console.warn('Assistant IA : FTB Quests introuvable') }
 
-let IdentiteMonde = null, MemoireMonde = null
+let IdentiteMonde = null, MemoireMonde = null, Echanges = null
 try {
   IdentiteMonde = Java.loadClass('fr.assistantia.IdentiteMonde')
   MemoireMonde = Java.loadClass('fr.assistantia.MemoireMondeKubeJS')
 } catch (e) { /* Ancien mod ou fonctionnement KubeJS seul. */ }
+// Avec le mod : relevés écrits sur son fil d'écriture (le jeu n'attend pas le disque) et
+// progression des quêtes comparée par empreinte. Sans lui, écriture directe comme avant.
+try { Echanges = Java.loadClass('fr.assistantia.EchangesKubeJS') } catch (e) { /* Mod plus ancien. */ }
+const ECHANGES = Echanges != null && typeof Echanges.publier == 'function'
+const CONFIRMATION_ETAT = 2000    // etat.json inchangé : réécrit pour rester récent (Python : 5 s)
+const PROGRES_QUETES = 30000      // progression de tâche seule : quetes.json réécrit au plus toutes les 30 s
+const ATTENTE_STOCKAGE = 2000     // coffre qu'on range : stockage.json écrit au plus toutes les 2 s
 
 let contexte = null
 let memoireMonde = null
 let ticks = 0
-let plan = null          // plan.json : { version, visible, lignes }
-let icones = {}          // id -> ItemStack pour dessiner les icônes
 let inventaire = {}      // id -> nombre
-let lignes = []          // ce qu'on dessine : { s, c, icone }
-let hauteur = 0, largeur = 0
-let iconesActives = true
 let derniereCommande = null
 let exportRecettes = null
 let etatRecettes = { etat: 'attente' }
@@ -60,9 +56,18 @@ let conteneur = null     // bloc dont l'interface est ouverte (coffre ou machine
 let minerais = {}        // "dimension|x|y|z" -> { bloc, x, y, z, dimension, t, mine } : minerais vus ou minés
 let mineraiVise = null   // dernier minerai regardé : s'il disparaît, il vient d'être miné
 let mineraisModifies = false
+// Le mod suit lui-même les filons GregTech (scan complet, compte en direct) : le relevé KubeJS de
+// filons.json ne sert plus qu'au fonctionnement sans mod, où l'application le lit en secours.
+let FilonsMod = null
+try { FilonsMod = Java.loadClass('fr.assistantia.Filons') } catch (e) { /* mod absent ou ancien */ }
 let ecranPrecedent = null
 let manquants = {}       // coffres mémorisés introuvables à la dernière vérification
 let dimensionPrecedente = null, debutDimension = 0
+let etatEcrit = null, etatEcritA = 0   // dernier etat.json écrit : texte sans l'heure, et date
+let quetesEcrites = null // empreintes du dernier quetes.json écrit : { quetes, progres, t }
+let resume = null        // dernier comptage des quêtes : { empreinte, terminees, total }
+let stockageEnAttente = 0, ecranEcrit = null   // modification non écrite depuis ; écran de la dernière écriture
+let mondeVerifie = null, sessionVerifiee = null   // identifiants déjà validés
 
 function isolationDemandee() {
   if (IdentiteMonde != null) return IdentiteMonde.isolation() == true
@@ -83,7 +88,12 @@ function contexteCourant() {
   if (!isolationDemandee()) return { monde: '', session: '', dimension: '' }
   if (IdentiteMonde == null || MemoireMonde == null || Client.level == null || Client.player == null) return null
   const monde = str(IdentiteMonde.monde()), session = str(IdentiteMonde.session())
-  if (!/^m1_[0-9a-f]{64}$/.test(monde) || !/^[0-9a-f]{32}$/.test(session)) return null
+  // Lu à chaque tick : seul un identifiant nouveau est revalidé
+  if (monde !== mondeVerifie || session !== sessionVerifiee) {
+    if (!/^m1_[0-9a-f]{64}$/.test(monde) || !/^[0-9a-f]{32}$/.test(session)) return null
+    mondeVerifie = monde
+    sessionVerifiee = session
+  }
   return { monde: monde, session: session, dimension: str(Client.level.dimension) }
 }
 
@@ -108,13 +118,24 @@ function contexteTrame(data) {
       && str(data.get('dimension_monde')) === contexte.dimension)
 }
 
+// Avec le mod, les mémoires sont écrites sur son fil d'écriture (le jeu n'attend pas le disque) ;
+// une relecture voit toujours la dernière écriture, même encore en file
+function memoireDifferee() {
+  return MemoireMonde != null && typeof MemoireMonde.ecrireHistorique == 'function'
+}
+
 function lireMemoire(nom) {
-  return memoireMonde ? MemoireMonde.lire(memoireMonde, nom) : JsonIO.read(DOSSIER + nom)
+  if (memoireMonde) return MemoireMonde.lire(memoireMonde, nom)
+  return memoireDifferee() ? MemoireMonde.lireHistorique(nom) : JsonIO.read(DOSSIER + nom)
 }
 
 function ecrireMemoire(nom, data) {
-  if (memoireMonde) MemoireMonde.ecrire(memoireMonde, nom, JsonIO.of(data).getAsJsonObject())
+  let erreur = ''
+  if (memoireMonde) erreur = str(MemoireMonde.ecrire(memoireMonde, nom, JsonIO.of(data).getAsJsonObject()))
+  else if (memoireDifferee()) erreur = str(MemoireMonde.ecrireHistorique(nom, JsonIO.of(data).getAsJsonObject()))
   else JsonIO.write(DOSSIER + nom, data)
+  // Échec d'une écriture précédente : noté une seule fois ; le mod la retente lui-même jusqu'à réussite
+  if (erreur !== '') noterErreur('mémoire', erreur)
 }
 
 function amorcerCommande() {
@@ -154,10 +175,11 @@ function synchroniserContexte(suivant) {
     }
   }
   conteneur = ecranPrecedent = mineraiVise = null
-  dimensionPrecedente = plan = null
+  dimensionPrecedente = null
+  etatEcrit = quetesEcrites = ecranEcrit = null   // relevés du nouveau contexte écrits sans attendre
+  stockageEnAttente = 0
   amorcerCommande()
   inventaire = {}
-  lignes = []
   manquants = {}
   mondeRecu = 0
   contexte = suivant
@@ -186,10 +208,8 @@ function liste(x) {
 }
 
 function str(x) { return x == null ? '' : String(x) }
-function num(x) { return x == null ? null : Number(x) }
 function longueur(s) { return typeof s.length == 'function' ? s.length() : s.length }
 function couper(s, n) { s = str(s); return longueur(s) > n ? s.substring(0, n) : s }
-function decoupe(s, separateur) { return liste(str(s).split(separateur)).map(str) }
 function texte(composant) { return composant == null ? '' : str(composant.getString()) }
 function sansCodes(s) { return str(s).replace(/&[0-9a-fk-or]/g, '') }
 
@@ -282,13 +302,45 @@ function lireQuetes(details) {
   return { terminees: terminees, total: total, chapitres: chapitres, disponibles: disponibles, terminees_titres: faites }
 }
 
+// Avec le mod, le fichier est remplacé atomiquement sur son fil d'écriture ; sinon écriture directe
+function ecrireReleve(nom, data) {
+  if (ECHANGES && Echanges.publier(nom, JSON.stringify(data, null, '\t'))) return
+  JsonIO.write(DOSSIER + nom, data)
+}
+
+function cleContexte() {
+  return contexte == null ? '' : contexte.monde + '|' + contexte.session + '|' + contexte.dimension
+}
+
+// Empreintes de la progression FTB Quests, lues par le mod sans parcourir les quêtes (null sans lui)
+function empreinteQuetes() {
+  if (!ECHANGES || QuestFile == null || !QuestFile.exists()) return null
+  const fichier = QuestFile.INSTANCE
+  const equipe = fichier.selfTeamData
+  if (equipe == null) return null
+  const quetes = str(Echanges.empreinteQuetes(fichier, equipe)), progres = str(Echanges.progresQuetes(equipe))
+  return quetes === '' || progres === '' ? null : { quetes: quetes + '|' + cleContexte(), progres: progres }
+}
+
+// Le comptage des quêtes de etat.json n'est refait que si elles ont changé
+function resumeQuetes() {
+  const empreinte = empreinteQuetes()
+  if (empreinte == null || resume == null || resume.empreinte !== empreinte.quetes) {
+    const quetes = lireQuetes(false)
+    resume = quetes == null ? null
+      : { empreinte: empreinte == null ? null : empreinte.quetes, terminees: quetes.terminees, total: quetes.total }
+  }
+  return resume
+}
+
 function ecrireEtat() {
   const p = Client.player
-  const quetes = lireQuetes(false)
-  JsonIO.write(DOSSIER + 'etat.json', annoterTrame({
-    t: Date.now(),
+  const quetes = resumeQuetes()
+  const etat = annoterTrame({
+    t: 0,   // daté à l'écriture
     version_script: VERSION_SCRIPT,
-    serveur_recu: mondeRecu,
+    serveur_recu: ECHANGES && contexte != null
+      ? Number(Echanges.recu(contexte.monde, contexte.session, contexte.dimension)) : mondeRecu,
     joueur: texte(p.getName()),
     dimension: str(Client.level.dimension),   // KubeJS en fait une propriété (ResourceLocation)
     x: Math.floor(p.getX()), y: Math.floor(p.getY()), z: Math.floor(p.getZ()),
@@ -301,24 +353,42 @@ function ecrireEtat() {
     sante: nombre([() => p.getHealth(), () => p.health]),
     sante_max: nombre([() => p.getMaxHealth(), () => p.maxHealth]),
     faim: nombre([() => p.getFoodData().getFoodLevel(), () => p.foodLevel]),
-    heure: nombre([() => Client.level.getDayTime() % 24000, () => Client.level.dayTime % 24000]),
+    heure: null,   // avance sans cesse : lue à l'écriture, pas un changement
     pluie: premiereValeur([() => Client.level.isRaining() == true, () => Client.level.raining == true]),
     cases_libres: casesLibres(),
     mort: premiereValeur([() => p.isDeadOrDying() == true, () => p.getHealth() <= 0]),
     inventaire: inventaire,
     quetes_terminees: quetes == null ? -1 : quetes.terminees,
     quetes_total: quetes == null ? -1 : quetes.total,
-    plan_version: plan == null ? 0 : plan.version,
     recettes: etatRecettes,
     erreurs: erreurs
-  }))
+  })
+  // Rien de changé : seulement confirmé toutes les 2 s
+  const signature = JSON.stringify(etat)
+  const maintenant = Date.now()
+  if (signature === etatEcrit && maintenant - etatEcritA < CONFIRMATION_ETAT) return
+  etat.t = maintenant
+  etat.heure = nombre([() => Client.level.getDayTime() % 24000, () => Client.level.dayTime % 24000])
+  ecrireReleve('etat.json', etat)
+  etatEcrit = signature
+  etatEcritA = maintenant
 }
 
+// Réécrit seulement si les quêtes ont changé ; une progression de tâche seule, au plus toutes les 30 s.
+// Un fichier que le mod n'a pas pu écrire (erreur, verrou trop long) est republié tel quel.
 function ecrireQuetes() {
+  if (quetesEcrites != null && ECHANGES && typeof Echanges.perdu == 'function'
+    && Echanges.perdu('quetes.json') == true) quetesEcrites = null
+  const empreinte = empreinteQuetes()
+  const maintenant = Date.now()
+  if (empreinte != null && quetesEcrites != null && empreinte.quetes === quetesEcrites.quetes
+    && (empreinte.progres === quetesEcrites.progres || maintenant - quetesEcrites.t < PROGRES_QUETES)) return
   const quetes = lireQuetes(true)
   if (quetes != null) {
-    quetes.t = Date.now()
-    JsonIO.write(DOSSIER + 'quetes.json', annoterTrame(quetes))
+    quetes.t = maintenant
+    ecrireReleve('quetes.json', annoterTrame(quetes))
+    quetesEcrites = empreinte == null ? null : { quetes: empreinte.quetes, progres: empreinte.progres, t: maintenant }
+    if (empreinte != null) resume = { empreinte: empreinte.quetes, terminees: quetes.terminees, total: quetes.total }
   }
 }
 
@@ -454,8 +524,17 @@ function verifierCarte(carte, dimension) {
   }
 }
 
+function filonsDuMod() {
+  if (FilonsMod == null) return false
+  try { return FilonsMod.suiviNatif() == true } catch (e) { return false }
+}
+
 // Minerais : ceux que le joueur regarde sont retenus ; si le dernier regardé disparaît, il vient d'être miné
 function suivreMinerais() {
+  if (filonsDuMod()) {
+    mineraiVise = null
+    return
+  }
   if (mineraiVise != null && str(Client.level.getBlock(mineraiVise.x, mineraiVise.y, mineraiVise.z).id) != mineraiVise.bloc) {
     mineraiVise.mine = true
     mineraiVise.t = Date.now()
@@ -477,7 +556,8 @@ function suivreMinerais() {
 }
 
 function ecrireMinerais() {
-  if (!mineraisModifies) return
+  // Aucune écriture (ni gel du rendu) quand le mod tient les filons : filons.json reste tel quel.
+  if (!mineraisModifies || filonsDuMod()) return
   let blocs = Object.keys(minerais).map(k => minerais[k])
   if (blocs.length > MINERAIS_MAX) {
     blocs.sort((a, b) => b.t - a.t)
@@ -497,7 +577,19 @@ function suivreConteneur() {
   else if (ecran != ecranPrecedent) surOuvertureEcran()
   ecranPrecedent = ecran
   if (conteneur != null) lireConteneur()
-  ecrireStockage()
+  if (ecran == null) ecranEcrit = null
+  if (!stockageModifie) return
+  // Première modification d'un écran : écrite aussitôt (l'assistant annonce le coffre mémorisé).
+  // Un coffre qu'on range change ensuite à chaque déplacement : toute la mémoire est écrite au plus
+  // toutes les 2 s tant qu'il reste ouvert, et dès que l'écran se ferme ou change.
+  if (ecran == null || ecran != ecranEcrit) {
+    ecrireStockage()
+    ecranEcrit = ecran
+    return
+  }
+  const maintenant = Date.now()
+  if (stockageEnAttente == 0) stockageEnAttente = maintenant
+  if (maintenant - stockageEnAttente >= ATTENTE_STOCKAGE) ecrireStockage()
 }
 
 function ecrireStockage() {
@@ -507,6 +599,7 @@ function ecrireStockage() {
     machines: Object.keys(machines).map(k => machines[k])
   })
   stockageModifie = false
+  stockageEnAttente = 0
 }
 
 // ---------- Export des recettes (EMI) ----------
@@ -602,27 +695,7 @@ function verifierRecettes() {
   else etatRecettes = { etat: 'pret' }
 }
 
-// ---------- Ce que l'assistant demande d'afficher ----------
-
-function lireLigne(l) {
-  const d = l.get('dir')
-  return {
-    t: str(l.get('t')), c: str(l.get('c')), item: str(l.get('item')), indent: Number(l.get('indent')) || 0,
-    dir: d == null ? null : { x: num(d.get('x')), y: num(d.get('y')), z: num(d.get('z')) },
-    // rangée d'icônes avec quantités (recette de l'étape en cours)
-    icones: liste(l.get('icones')).map(o => ({ item: str(o.get('item')), n: Number(o.get('n')) || 1 }))
-  }
-}
-
-function lirePlan() {
-  const p = JsonIO.read(DOSSIER + 'plan.json')
-  if (p == null || !contexteTrame(p)) { plan = null; return }
-  plan = {
-    version: Number(p.get('version')) || 0,
-    visible: str(p.get('visible')) != 'false',
-    lignes: liste(p.get('lignes')).map(lireLigne)
-  }
-}
+// ---------- Ce que l'assistant demande ----------
 
 function lireCommande() {
   const c = JsonIO.read(DOSSIER + 'commande.json')
@@ -637,139 +710,6 @@ function lireCommande() {
     liste(c.get('cles')).forEach(cle => { delete stockage[str(cle)] })
     stockageModifie = true
   }
-}
-
-// ---------- Affichage ----------
-
-function decouper(s, largeurMax) {
-  const font = Client.font
-  const mots = decoupe(s, ' ')
-  const res = []
-  let ligne = ''
-  mots.forEach(m => {
-    const essai = ligne == '' ? m : ligne + ' ' + m
-    if (font.width(essai) > largeurMax && ligne != '') { res.push(ligne); ligne = m } else ligne = essai
-  })
-  if (ligne != '') res.push(ligne)
-  return res
-}
-
-// Distance et flèche vers un point, recalculées en direct
-function direction(c) {
-  const p = Client.player
-  let s = ''
-  if (c.x != null && c.z != null) {
-    let dx = c.x + 0.5 - p.getX(), dz = c.z + 0.5 - p.getZ()
-    let distance = Math.round(Math.sqrt(dx * dx + dz * dz))
-    let angle = Math.atan2(-dx, dz) * 180 / Math.PI   // orientation (yaw) qui regarde la cible
-    let yaw = lireYaw(p)
-    if (distance < 3) {
-      s += ' : tu y es'
-    } else if (yaw != null) {
-      let relatif = (((angle - yaw) % 360) + 360) % 360
-      s += ' : ' + distance + ' blocs ' + ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'][Math.round(relatif / 45) % 8]
-    } else {
-      let points = ['sud', 'sud-ouest', 'ouest', 'nord-ouest', 'nord', 'nord-est', 'est', 'sud-est']
-      s += ' : ' + distance + ' blocs au ' + points[Math.round(((angle % 360) + 360) % 360 / 45) % 8]
-    }
-  }
-  if (c.y != null) {
-    let dy = c.y - Math.floor(p.getY())
-    s += dy == 0 ? ' (bonne hauteur)' : dy > 0 ? ' (monte de ' + dy + ')' : ' (descends de ' + (-dy) + ')'
-  }
-  return s
-}
-
-function icone(id) {
-  if (!icones[id]) icones[id] = Item.of(id)
-  return icones[id]
-}
-
-function construireLignes() {
-  const res = []
-  if (plan != null && plan.visible) {
-    for (let i = 0; i < plan.lignes.length; i++) {
-      let l = plan.lignes[i]
-      let s = l.dir == null ? l.t : l.t + direction(l.dir)
-      let c = COULEURS[l.c] != null ? COULEURS[l.c] : COULEURS.blanc
-      if (l.icones.length > 0) {
-        res.push({ s: s, c: c, rangee: l.icones.map(o => icone(o.item)), quantites: l.icones.map(o => o.n) })
-      } else if (l.item != '') {
-        res.push({ s: s, c: c, icone: icone(l.item) })
-      } else {
-        let morceaux = decouper(s, LARGEUR_MAX - l.indent)
-        for (let j = 0; j < morceaux.length; j++) res.push({ s: (j > 0 ? '   ' : '') + morceaux[j], c: c })
-      }
-    }
-  }
-  lignes = res
-  hauteur = 0
-  largeur = 0
-  for (let i = 0; i < res.length; i++) {
-    let r = res[i]
-    hauteur += r.icone || r.rangee ? 18 : 10
-    largeur = Math.max(largeur, Client.font.width(r.s) + (r.icone ? 18 : 0) + (r.rangee ? 4 + 18 * r.rangee.length : 0))
-  }
-}
-
-function dessinerIcone(event, stack, x, y) {
-  if (!iconesActives) return
-  try { event.graphics.renderItem(stack, x, y) } catch (e) { iconesActives = false; noterErreur('icônes', e) }
-}
-
-// Fonction normale, pas fléchée (voir les pièges en haut du fichier)
-// Avec le mod de l'assistant, c'est lui qui dessine le panneau : ce script ne sert plus que de secours
-const MOD_PRESENT = premiereValeur([() => Platform.isLoaded('assistantia') == true]) == true
-
-function dessiner(event) {
-  if (MOD_PRESENT || lignes.length == 0 || Client.options.hideGui) return
-  // L'écran de l'assistant (mod, touche Y) montre déjà tout : le panneau le recouvrirait
-  if (Client.screen != null && texte(Client.screen.getTitle()) == 'Assistant IA') return
-  // Réduit le panneau quand l'échelle d'interface est grande, pour ne pas cacher le jeu
-  let echelle = Math.min(1, event.width * HUD_LARGEUR_ECRAN / (largeur + 8),
-    event.height * HUD_HAUTEUR_ECRAN / (hauteur + 6))
-  let y = 0
-  event.push()
-  try {
-    event.translate(HUD_X, HUD_Y)
-    event.scale(echelle)
-    // Fond : même séquence que les rectangles du Painter de KubeJS
-    event.setPositionColorShader()
-    event.blend(true)
-    event.beginQuads(false)
-    event.rectangle(-4, -4, 0, largeur + 8, hauteur + 6, FOND)
-    event.end()
-    for (let i = 0; i < lignes.length; i++) {
-      let l = lignes[i]
-      if (l.rangee) {
-        event.text(Text.of(l.s), 0, y + 4, l.c, true)
-        let x0 = Client.font.width(l.s) + 4
-        for (let k = 0; k < l.rangee.length; k++) {
-          dessinerIcone(event, l.rangee[k], x0 + 18 * k, y)
-          if (l.quantites[k] > 1) {
-            // la quantité par-dessus l'icône, comme dans un inventaire
-            let n = '' + l.quantites[k]
-            event.push()
-            event.translate(0, 0, 200)
-            event.text(Text.of(n), x0 + 18 * k + 17 - Client.font.width(n), y + 9, COULEURS.blanc, true)
-            event.pop()
-          }
-        }
-        y += 18
-      } else if (l.icone) {
-        dessinerIcone(event, l.icone, 0, y)
-        event.text(Text.of(l.s), 18, y + 4, l.c, true)
-        y += 18
-      } else {
-        event.text(Text.of(l.s), 0, y, l.c, true)
-        y += 10
-      }
-    }
-  } catch (e) {
-    noterErreur('affichage', e)
-    lignes = []
-  }
-  event.pop()
 }
 
 // ---------- Données du serveur (script assistant_ia_serveur.js sur le serveur) ----------
@@ -796,6 +736,13 @@ function recevoirMonde(event) {
     lirePartie(d, 'assistant_monde') !== courant.monde
     || lirePartie(d, 'assistant_session') !== courant.session
   )) return
+  // Avec le mod : assemblage, contrôle de la dimension, annotation et écriture hors du thread du jeu
+  if (typeof Echanges != 'undefined' && Echanges != null && typeof Echanges.transmettreMonde == 'function') {
+    const erreur = str(Echanges.erreurMonde())
+    if (erreur !== '') noterErreur('données du serveur', erreur)
+    Echanges.transmettreMonde(d, n, courant.monde, courant.session, courant.dimension)
+    return
+  }
   let json = ''
   for (let i = 0; i < n; i++) json += lirePartie(d, 'p' + i)
   const trame = JsonIO.parseRaw(json).getAsJsonObject()
@@ -825,18 +772,18 @@ ClientEvents.tick(function (event) {
     courant = contexteCourant()
     synchroniserContexte(courant)
   })
-  if (Client.player == null || Client.level == null || courant == null || !memeContexte(contexte, courant)) return
+  if (Client.player == null || Client.level == null || courant == null || !memeContexte(contexte, courant)) {
+    // Déconnexion brutale (expulsion, redémarrage du serveur) : la mémoire des coffres en attente est écrite
+    if (stockageModifie && (Client.player == null || Client.level == null)) essayer('coffres', ecrireStockage)
+    return
+  }
   ticks++
   if (exportRecettes != null) essayer('export des recettes', avancerExportRecettes)
-  if (ticks % 10 == 0) {
-    essayer('inventaire', () => { inventaire = lireInventaire() })
-    essayer('lecture du plan', lirePlan)
-    essayer('affichage du plan', construireLignes)
-  }
   if (ticks % 5 == 0) essayer('coffres', suivreConteneur)
   if (ticks % 4 == 2) essayer('minerais', suivreMinerais)
   if (ticks % 100 == 20) essayer('écriture des minerais', ecrireMinerais)
   if (ticks % 20 == 0) {
+    essayer('inventaire', () => { inventaire = lireInventaire() })   // pour etat.json seulement
     essayer('commande', lireCommande)
     essayer('état', ecrireEtat)
   }
@@ -844,8 +791,4 @@ ClientEvents.tick(function (event) {
   if (ticks % 200 == 10) essayer('présence', signalerPresence)
   if (ticks % 200 == 40) essayer('quêtes', ecrireQuetes)
   if (ticks % 100 == 60) essayer('recettes', verifierRecettes)
-})
-
-ClientEvents.paintScreen(function (event) {
-  if (!isolationDemandee() || contexte != null && memeContexte(contexte, contexteCourant())) dessiner(event)
 })

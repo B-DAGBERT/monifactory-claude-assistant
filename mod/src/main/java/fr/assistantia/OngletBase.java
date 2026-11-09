@@ -2,6 +2,7 @@ package fr.assistantia;
 
 import com.google.gson.*;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.*;
 import net.minecraft.network.chat.Component;
@@ -9,14 +10,22 @@ import java.text.Normalizer;
 import java.util.*;
 import java.util.function.Consumer;
 
-/** Machines lisibles, recherche locale et défilement sans dépendance à une requête IA. */
+/**
+ * Onglet Base : les machines vues par le serveur, groupées par type, avec une recherche locale, un
+ * filtre et la lecture Production de l'arbre EMI. Aucune requête IA.
+ */
 public final class OngletBase {
+    /** Hauteur d'une ligne de la liste et de sa carte (icône de 16 et deux lignes de texte). */
+    private static final int PAS = 28, CARTE = 26, RETRAIT = 10;
+
+    private static final String[] FILTRES = {"Toutes", "À vérifier", "En marche"};
     private final Minecraft mc = Minecraft.getInstance();
-    private EditBox recherche;
-    private Button filtre;
+    private final BarreDefilement barre = new BarreDefilement();
+    private ChampTheme recherche;
+    private BoutonTheme filtre, production;
     private static String texte = "";
     private static int categorie;
-    private int decalage, x, y, largeur, bas, lignes, total;
+    private int x, largeur, bas, haut;
     private long dernierClic;
     private boolean actif;
     private JsonArray source;
@@ -24,40 +33,54 @@ public final class OngletBase {
     private final GroupesMachines<JsonObject> groupes = new GroupesMachines<>(GROUPES_OUVERTS);
     private final List<ZoneGroupe> zones = new ArrayList<>();
 
-    private record ZoneGroupe(String type, int y) {}
+    /** Partie visible et cliquable d'un en-tête de groupe. */
+    private record ZoneGroupe(String type, int y, int h) {}
 
     private String filtreTexte = "";
     private int filtreCategorie = -1, alertes;
 
-    public void init(Consumer<AbstractWidget> ajout) {
-        recherche = new EditBox(mc.font, 0, 0, 100, 18, Component.literal("Chercher une machine"));
+    public void init(Consumer<AbstractWidget> ajout, Runnable ouvrirProduction) {
+        recherche = ChampTheme.dans(mc.font, 0, 0, 100, Component.literal("Chercher une machine"));
+        recherche.setMaxLength(100);
         recherche.setHint(Component.literal("Chercher une machine…"));
         recherche.setValue(texte);
         recherche.setResponder(
                 s -> {
                     texte = s;
-                    decalage = 0;
+                    barre.aller(0);
                 });
         ajout.accept(recherche);
         filtre =
-                Button.builder(
-                                Component.literal("Toutes"),
+                BoutonTheme.creer(
+                                FILTRES[categorie],
                                 b -> {
                                     if (System.currentTimeMillis() - dernierClic < 650) return;
                                     dernierClic = System.currentTimeMillis();
-                                    categorie = (categorie + 1) % 3;
-                                    decalage = 0;
+                                    categorie = (categorie + 1) % FILTRES.length;
+                                    barre.aller(0);
                                 })
-                        .bounds(0, 0, 100, 18)
-                        .build();
+                        .infobulle(
+                                "Filtrer : toutes les machines, alertes et attentes, ou machines en marche.");
         ajout.accept(filtre);
+        production =
+                BoutonTheme.creer("Production…", b -> ouvrirProduction.run())
+                        .infobulle(
+                                "Lire le plan de l’arbre EMI ou ses diagnostics, sans rien modifier dans le jeu.");
+        ajout.accept(production);
         visible(false);
     }
 
     public void visible(boolean valeur) {
         actif = valeur;
-        recherche.visible = filtre.visible = valeur;
-        if (!valeur) recherche.setFocused(false);
+        recherche.visible = filtre.visible = production.visible = valeur;
+        if (!valeur) {
+            recherche.setFocused(false);
+            barre.relacher();
+        }
+    }
+
+    public void tick() {
+        if (actif) recherche.tick();
     }
 
     private static String normaliser(String t) {
@@ -112,98 +135,88 @@ public final class OngletBase {
             GuiGraphics g, JsonObject vue, int x, int y, int largeur, int bas, int mx, int my) {
         visible(true);
         this.x = x;
-        this.y = y;
         this.largeur = largeur;
         this.bas = bas;
-        int l = Math.min(120, largeur / 3);
-        recherche.setX(x);
-        recherche.setY(y);
-        recherche.setWidth(largeur - l - 6);
-        filtre.setX(x + largeur - l);
-        filtre.setY(y);
-        filtre.setWidth(l);
-        filtre.setMessage(
-                Component.literal(new String[] {"Toutes", "À vérifier", "En marche"}[categorie]));
-        filtre.setTooltip(
-                Tooltip.create(
-                        Component.literal(
-                                "Filtrer : toutes les machines, alertes / attente ou machines en marche.")));
+        Font font = mc.font;
+        int lFiltre = 0;
+        for (String nom : FILTRES) lFiltre = Math.max(lFiltre, Theme.largeurBouton(font, nom, 120));
+        int lProduction = Theme.largeurBouton(font, "Production…", 120);
+        int lRecherche = Math.max(40, largeur - lFiltre - lProduction - 2 * Theme.ECART);
+        recherche.zone(x, y, lRecherche);
+        filtre.zone(x + lRecherche + Theme.ECART, y, lFiltre).texte(FILTRES[categorie]);
+        production.zone(x + largeur - lProduction, y, lProduction);
         actualiser(vue);
         zones.clear();
+
+        int ligneY = y + Theme.BOUTON + Theme.ECART + 2;
+        boolean serveur = Pont.vrai(vue, "serveur");
         String resume =
                 Pont.liste(vue, "machines").size()
                         + " machines · "
                         + (int) Pont.nombre(vue, "coffres", 0)
                         + " coffres"
-                        + (alertes > 0 ? " · " + alertes + " à vérifier" : "");
-        g.drawString(
-                mc.font, mc.font.plainSubstrByWidth(resume, largeur), x, y + 25, Hud.GRIS, false);
-        int debut = y + 40;
-        lignes = Math.max(0, (bas - 15 - debut) / 30);
-        total = groupes.lignes().size();
-        decalage = Math.min(decalage, Math.max(0, total - lignes));
-        for (int i = 0; i < lignes && decalage + i < total; i++) {
-            var ligne = groupes.lignes().get(decalage + i);
-            int ly = debut + i * 30;
-            boolean survol = mx >= x && mx < x + largeur && my >= ly && my < ly + 28;
-            if (ligne.entete()) {
-                dessinerGroupe(g, ligne.groupe(), ly, survol, mx, my);
-            } else {
-                dessinerMachine(
-                        g,
-                        ligne.machine().valeur(),
-                        ligne.groupe().machines().size() > 1,
-                        ly,
-                        survol,
-                        mx,
-                        my);
+                        + (alertes > 0 ? " · " + alertes + " à vérifier" : "")
+                        + (serveur ? " · liaison serveur active" : " · derniers relevés conservés");
+        Theme.texte(g, font, resume, x, ligneY, largeur, Theme.TEXTE_SECONDAIRE);
+        if (my >= ligneY - 2 && my < ligneY + Theme.LIGNE && mx >= x && mx < x + largeur)
+            Theme.infobulle(font, Component.literal(detailBase(vue, resume)));
+
+        haut = ligneY + Theme.LIGNE + Theme.ECART;
+        var lignes = groupes.lignes();
+        barre.regler(
+                x + largeur - Theme.DEFILEMENT, haut, Math.max(0, bas - haut), lignes.size() * PAS);
+        // La barre garde sa colonne : les cartes s'arrêtent avant elle.
+        int fin = x + largeur - Theme.DEFILEMENT - Theme.ECART;
+        boolean dedans = mx >= x && mx < fin && my >= haut && my < bas;
+        g.enableScissor(x, haut, x + largeur, bas);
+        try {
+            int premier = barre.position() / PAS;
+            for (int i = premier; i < lignes.size(); i++) {
+                int ly = haut + i * PAS - barre.position();
+                if (ly >= bas) break;
+                var ligne = lignes.get(i);
+                boolean survol = dedans && my >= ly && my < ly + CARTE;
+                if (ligne.entete()) dessinerGroupe(g, font, ligne.groupe(), ly, fin, survol);
+                else
+                    dessinerMachine(
+                            g,
+                            font,
+                            ligne.machine().valeur(),
+                            ligne.groupe().machines().size() > 1,
+                            ly,
+                            fin,
+                            survol);
             }
+        } finally {
+            g.disableScissor();
         }
-        if (total == 0)
-            g.drawString(
-                    mc.font,
-                    mc.font.plainSubstrByWidth(
-                            Pont.liste(vue, "machines").isEmpty()
-                                    ? "Aucune machine repérée. Approche-toi de ta base."
-                                    : "Aucune machine pour ce filtre.",
-                            largeur),
+        Theme.barre(g, barre, mx, my);
+        if (lignes.isEmpty())
+            Theme.paragraphe(
+                    g,
+                    font,
+                    Pont.liste(vue, "machines").isEmpty()
+                            ? "Aucune machine repérée. Approche-toi de ta base."
+                            : "Aucune machine pour ce filtre.",
                     x,
-                    debut + 4,
-                    Hud.GRIS,
-                    false);
-        String statut =
-                (total == 0 || lignes == 0
-                                ? "0"
-                                : (decalage + 1) + "–" + Math.min(total, decalage + lignes))
-                        + " / "
-                        + total
-                        + " lignes · "
-                        + (Pont.vrai(vue, "serveur")
-                                ? "liaison serveur active"
-                                : "derniers relevés conservés");
-        g.drawString(
-                mc.font, mc.font.plainSubstrByWidth(statut, largeur), x, bas - 10, Hud.GRIS, false);
-        if (my >= bas - 14 && my < bas && mx >= x && mx < x + largeur) {
-            var joueurs = Pont.liste(vue, "joueurs");
-            String detail =
-                    statut
-                            + (joueurs.isEmpty()
-                                    ? ""
-                                    : (Pont.vrai(vue, "serveur")
-                                                    ? "\nJoueurs :\n"
-                                                    : "\nDernières positions connues :\n")
-                                            + String.join(
-                                                    "\n",
-                                                    java.util.stream.StreamSupport.stream(
-                                                                    joueurs.spliterator(), false)
-                                                            .map(JsonElement::getAsString)
-                                                            .toList()));
-            g.renderTooltip(
-                    mc.font,
-                    mc.font.split(Component.literal(detail), Math.min(largeur, 320)),
-                    mx,
-                    my);
-        }
+                    haut + Theme.ECART,
+                    largeur,
+                    Theme.TEXTE_SECONDAIRE,
+                    Math.max(1, (bas - haut) / Theme.LIGNE));
+    }
+
+    /** Le résumé complet et les joueurs connus, au survol de la ligne de résumé. */
+    private static String detailBase(JsonObject vue, String resume) {
+        var joueurs = Pont.liste(vue, "joueurs");
+        if (joueurs.isEmpty()) return resume;
+        StringBuilder detail =
+                new StringBuilder(resume)
+                        .append(
+                                Pont.vrai(vue, "serveur")
+                                        ? "\nJoueurs :"
+                                        : "\nDernières positions connues :");
+        for (JsonElement joueur : joueurs) detail.append('\n').append(joueur.getAsString());
+        return detail.toString();
     }
 
     private static String position(JsonObject m) {
@@ -215,35 +228,37 @@ public final class OngletBase {
                 + (int) Pont.nombre(m, "z", 0);
     }
 
+    /** Carte d'une ligne : fond du thème, barre de la couleur d'état à gauche. */
+    private static void carte(
+            GuiGraphics g, int gauche, int ly, int fin, boolean survol, int etat) {
+        Theme.carte(g, gauche, ly, fin - gauche, CARTE, survol);
+        g.fill(gauche, ly, gauche + 2, ly + CARTE, 0xFF000000 | etat);
+    }
+
     private void dessinerGroupe(
             GuiGraphics g,
+            Font font,
             GroupesMachines.Groupe<JsonObject> groupe,
             int ly,
-            boolean survol,
-            int mx,
-            int my) {
-        zones.add(new ZoneGroupe(groupe.type(), ly));
+            int fin,
+            boolean survol) {
+        int debut = Math.max(ly, haut), finY = Math.min(ly + CARTE, bas);
+        if (finY > debut) zones.add(new ZoneGroupe(groupe.type(), debut, finY - debut));
         var representant = groupe.machines().get(0).valeur();
         boolean ouvert = groupes.ouvert(groupe.type());
-        g.fill(x, ly, x + largeur, ly + 28, survol ? 0x80404A53 : 0x50303840);
-        g.fill(
-                x,
-                ly,
-                x + 2,
-                ly + 28,
-                0xFF000000 | Hud.couleur(Pont.texte(representant, "couleur")));
-        g.renderItem(Pont.objet(Pont.texte(representant, "item")), x + 6, ly + 6);
+        carte(g, x, ly, fin, survol, Hud.couleur(Pont.texte(representant, "couleur")));
+        g.renderItem(Pont.objet(Pont.texte(representant, "item")), x + 6, ly + 5);
         String quantite = "× " + groupe.machines().size();
-        int lQuantite = mc.font.width(quantite);
-        g.drawString(mc.font, quantite, x + largeur - lQuantite - 6, ly + 3, Hud.OR, false);
-        g.drawString(
-                mc.font,
-                mc.font.plainSubstrByWidth(
-                        (ouvert ? "− " : "+ ") + groupe.nom(), largeur - lQuantite - 40),
-                x + 28,
-                ly + 3,
-                Hud.BLANC,
-                false);
+        int lQuantite = font.width(quantite), tx = x + 28;
+        Theme.texte(g, font, quantite, fin - 6 - lQuantite, ly + 4, lQuantite, Theme.ACCENT);
+        Theme.texte(
+                g,
+                font,
+                (ouvert ? "− " : "+ ") + groupe.nom(),
+                tx,
+                ly + 4,
+                fin - 6 - lQuantite - Theme.ECART - tx,
+                Theme.TEXTE);
         int marche = groupe.enMarche(), aVerifier = groupe.alertes();
         List<String> etats = new ArrayList<>();
         if (marche > 0) etats.add(marche + " en marche");
@@ -252,45 +267,40 @@ public final class OngletBase {
                 etats.isEmpty()
                         ? groupe.machines().size() + " emplacements"
                         : String.join(" · ", etats);
-        g.drawString(
-                mc.font,
-                mc.font.plainSubstrByWidth(resume, largeur - 32),
-                x + 28,
-                ly + 16,
-                Hud.GRIS,
-                false);
-        if (survol) {
-            String detail =
-                    groupe.nom()
-                            + " · "
-                            + quantite
-                            + "\n"
-                            + resume
-                            + (ouvert
-                                    ? "\nCliquer pour replier les emplacements."
-                                    : "\nCliquer pour voir chaque emplacement et son état.");
-            g.renderTooltip(
-                    mc.font,
-                    mc.font.split(Component.literal(detail), Math.min(largeur, 320)),
-                    mx,
-                    my);
-        }
+        Theme.texte(g, font, resume, tx, ly + 15, fin - 6 - tx, Theme.TEXTE_SECONDAIRE);
+        if (survol)
+            Theme.infobulle(
+                    font,
+                    Component.literal(
+                            groupe.nom()
+                                    + " · "
+                                    + quantite
+                                    + "\n"
+                                    + resume
+                                    + (ouvert
+                                            ? "\nCliquer pour replier les emplacements."
+                                            : "\nCliquer pour voir chaque emplacement et son état.")));
     }
 
     private void dessinerMachine(
-            GuiGraphics g, JsonObject m, boolean enfant, int ly, boolean survol, int mx, int my) {
-        int gauche = x + (enfant ? 10 : 0), espace = largeur - (enfant ? 10 : 0);
-        g.fill(gauche, ly, x + largeur, ly + 28, survol ? 0x60404A53 : 0x30303840);
-        g.fill(gauche, ly, gauche + 2, ly + 28, 0xFF000000 | Hud.couleur(Pont.texte(m, "couleur")));
-        g.renderItem(Pont.objet(Pont.texte(m, "item")), gauche + 6, ly + 6);
-        g.drawString(
-                mc.font,
-                mc.font.plainSubstrByWidth(
-                        enfant ? position(m) : Pont.texte(m, "nom"), espace - 32),
-                gauche + 28,
-                ly + 3,
-                Hud.BLANC,
-                false);
+            GuiGraphics g,
+            Font font,
+            JsonObject m,
+            boolean enfant,
+            int ly,
+            int fin,
+            boolean survol) {
+        int gauche = x + (enfant ? RETRAIT : 0), tx = gauche + 28;
+        carte(g, gauche, ly, fin, survol, Hud.couleur(Pont.texte(m, "couleur")));
+        g.renderItem(Pont.objet(Pont.texte(m, "item")), gauche + 6, ly + 5);
+        Theme.texte(
+                g,
+                font,
+                enfant ? position(m) : Pont.texte(m, "nom"),
+                tx,
+                ly + 4,
+                fin - 6 - tx,
+                Theme.TEXTE);
         String etat = Pont.texte(m, "etat");
         long vu = (long) Pont.nombre(m, "vu", 0);
         long age = System.currentTimeMillis() - vu;
@@ -298,37 +308,38 @@ public final class OngletBase {
                 m.has("actuel")
                         ? !Pont.vrai(m, "actuel") || age < 0 || age >= 15000
                         : vu == 0 || age > 30000;
-        g.drawString(
-                mc.font,
-                mc.font.plainSubstrByWidth((ancien ? "Dernier relevé : " : "") + etat, espace - 32),
-                gauche + 28,
-                ly + 16,
-                ancien ? Hud.GRIS : Hud.couleur(Pont.texte(m, "couleur")),
-                false);
-        if (survol) {
-            String detail =
-                    Pont.texte(m, "nom")
-                            + "\n"
-                            + etat
-                            + "\n"
-                            + position(m)
-                            + "\n"
-                            + Pont.texte(m, "dimension")
-                            + (ancien
-                                    ? "\nRelevé ancien : approche-toi pour actualiser."
-                                    : "\nObservation récente.");
-            g.renderTooltip(
-                    mc.font,
-                    mc.font.split(Component.literal(detail), Math.min(largeur, 320)),
-                    mx,
-                    my);
-        }
+        Theme.texte(
+                g,
+                font,
+                (ancien ? "Dernier relevé : " : "") + etat,
+                tx,
+                ly + 15,
+                fin - 6 - tx,
+                ancien
+                        ? Theme.TEXTE_SECONDAIRE
+                        : 0xFF000000 | Hud.couleur(Pont.texte(m, "couleur")));
+        if (survol)
+            Theme.infobulle(
+                    font,
+                    Component.literal(
+                            Pont.texte(m, "nom")
+                                    + "\n"
+                                    + etat
+                                    + "\n"
+                                    + position(m)
+                                    + "\n"
+                                    + Pont.texte(m, "dimension")
+                                    + (ancien
+                                            ? "\nRelevé ancien : approche-toi pour actualiser."
+                                            : "\nObservation récente.")));
     }
 
-    public boolean clic(double mx, double my, int bouton) {
-        if (!actif || bouton != 0 || mx < x || mx >= x + largeur) return false;
+    public boolean cliquer(double mx, double my, int bouton) {
+        if (!actif) return false;
+        if (barre.cliquer(mx, my, bouton)) return true;
+        if (bouton != 0 || mx < x || mx >= x + largeur) return false;
         for (var zone : zones)
-            if (my >= zone.y() && my < zone.y() + 28) {
+            if (my >= zone.y() && my < zone.y() + zone.h()) {
                 if (groupes.basculer(zone.type(), System.currentTimeMillis()))
                     recherche.setFocused(false);
                 return true;
@@ -337,10 +348,17 @@ public final class OngletBase {
     }
 
     public boolean defiler(double mx, double my, double delta) {
-        if (!actif || delta == 0 || mx < x || mx >= x + largeur || my < y + 40 || my >= bas - 15)
+        if (!actif || delta == 0 || mx < x || mx >= x + largeur || my < haut || my >= bas)
             return false;
-        decalage =
-                Math.max(0, Math.min(Math.max(0, total - lignes), decalage + (delta < 0 ? 1 : -1)));
+        barre.defiler(delta);
         return true;
+    }
+
+    public boolean glisser(double my) {
+        return actif && barre.glisser(my);
+    }
+
+    public void relacher() {
+        barre.relacher();
     }
 }

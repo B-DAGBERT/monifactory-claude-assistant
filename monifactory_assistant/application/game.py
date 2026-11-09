@@ -10,9 +10,9 @@ from datetime import datetime
 
 from monifactory_assistant.game.emi_search import RecipeChestSearch
 from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
-from monifactory_assistant.game.snapshots import file_stamp
+from monifactory_assistant.game.snapshots import file_stamp, frame_value
 from monifactory_assistant.game.storage import Storage, StorageMonitor
-from monifactory_assistant.game.veins import find_veins
+from monifactory_assistant.game.veins import find_veins, vein_files_stamp
 from monifactory_assistant.game.world import World, machine_status, observation_date
 from monifactory_assistant.game.world_scope import scope_file, scope_folder
 from monifactory_assistant.paths import ROOT
@@ -41,6 +41,13 @@ class GameController:
         if path is not None:
             atomic_json(path, self.places)
 
+    def have(self):
+        return frame_value(
+            self,
+            "inventaire",
+            lambda: {k: int(v) for k, v in (self.game or {}).get("inventaire", {}).items()},
+        )
+
     def apply_world_scope(self, scope):
         """Publish no view from the old partition under the newly observed connection."""
         previous = getattr(self, "active_world_scope", None)
@@ -51,32 +58,29 @@ class GameController:
         self.guide = self.search = self.info = None
         self.message, self.message_until = "", 0
         self.question_ack = {}
-        self.mod_request_n = self.project_reply_n = None
-        self.project_feedback = {}
-        self.last_view = self.last_mod_view = None
+        self.mod_request_n = None
+        self.last_mod_view = None
         self.quest_titles = self.known_machines = self.known_veins = None
         self.veins_read = self.quests_read = 0
-        self.veins = []
+        # Même portée retrouvée après une perte : relire les filons même si le fichier n'a pas changé.
+        self.veins, self.veins_stamp = [], None
         self.coach_queue = []
         self.storage_text = self.storage_export_key = None
         self.removed_chests = []
         self.forgotten_keys = set()
         self.storage, self.storage_monitor = Storage([]), StorageMonitor()
         self.emi_search = RecipeChestSearch()
-        self.objective_epoch += 1
         self.world.invalidate_live()
         if scope is None or previous is None or scope.world != previous.world:
             self.session_open = False
             self.journal_file = None
             self.world = World(enabled=False)
-            self.load_plan(None)
             self.load_places(None)
             if scope is not None:
                 folder = scope_folder(ROOT, scope.world, create=True)
-                for name in ("monde_memoire.json", "plan_ia.json", "lieux.json"):
+                for name in ("monde_memoire.json", "lieux.json"):
                     scope_file(folder, name + ".bak")
                 self.world = World(scope_file(folder, "monde_memoire.json"))
-                self.load_plan(scope_file(folder, "plan_ia.json"))
                 self.load_places(scope_file(folder, "lieux.json"))
                 self.journal_file = scope_file(folder, "journal.jsonl")
         self.active_world_scope = scope
@@ -128,8 +132,12 @@ class GameController:
                 log("Erreur dans le jeu : " + error)
 
         if time.time() - self.veins_read > 5:
-            self.veins, self.veins_read = find_veins(self.bridge), time.time()
-            self.check_new_veins()
+            # Le résumé du mod ne change qu'à ses sauvegardes : ne le relire que s'il a changé.
+            stamp = vein_files_stamp(self.bridge)
+            if stamp is None or stamp != getattr(self, "veins_stamp", None):
+                self.veins, self.veins_stamp = find_veins(self.bridge), stamp
+                self.check_new_veins()
+            self.veins_read = time.time()
         if self.world.poll(self.bridge, state.get("dimension")):
             for error in self.world.errors:
                 if error not in self.logged_errors:
@@ -166,8 +174,6 @@ class GameController:
         ):
             self.notify(f"Tu es arrivé : {self.guide['label']}.", 8, speak=True)
             self.guide = None
-
-        self.update_objective_progress()
 
     def journal(self, kind, text):
         path = getattr(self, "journal_file", JOURNAL_FILE)
@@ -259,10 +265,6 @@ class GameController:
             return
         self.session_open = True
         self.journal("session", "Début de la partie")
-        if not self.plan:
-            # Pas d'objectif en arrivant : l'assistant prépare le suivant du plan (ou un nouveau plan s'il n'y en a pas)
-            epoch = self.objective_epoch
-            self.root.after(25000, lambda: self.auto_next_objective(epoch))
 
     def check_quests(self):
         """Quêtes terminées depuis la dernière lecture (quetes.json est réécrit toutes les 10 s)."""
@@ -317,8 +319,6 @@ class GameController:
         if time.time() - self.coach_times.get(key, 0) < cooldown:
             return
         self.coach_times[key] = time.time()
-        if self.objective_paused and kind == "progression":
-            return
         self.coach_queue.append((text, speak, kind))
         self.flush_coach()
 

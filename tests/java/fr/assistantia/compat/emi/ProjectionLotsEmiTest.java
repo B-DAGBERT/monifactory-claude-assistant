@@ -19,23 +19,13 @@ public final class ProjectionLotsEmiTest {
     private static final Object TREE = new Object(), CONNECTION = new Object();
     private static final dev.emi.emi.api.recipe.EmiRecipeManager MANAGER =
             new dev.emi.emi.api.recipe.EmiRecipeManager();
-    private static ProjectionLotsEmi.Portee scope = portee(TREE, CONNECTION, MANAGER, "principal");
+    private static ProjectionLotsEmi.Portee scope = portee(TREE, CONNECTION, MANAGER);
     private static List<PlanRetrait.Stock<EmiStack>> inventory = List.of();
     private static int changes;
 
-    private static ProjectionLotsEmi.Portee portee(
-            Object tree, Object connection, Object manager, String project) {
+    private static ProjectionLotsEmi.Portee portee(Object tree, Object connection, Object manager) {
         return new ProjectionLotsEmi.Portee(
-                tree,
-                connection,
-                manager,
-                WORLD,
-                SESSION,
-                "minecraft:overworld",
-                project,
-                "project-revision",
-                0,
-                1);
+                tree, connection, manager, WORLD, SESSION, "minecraft:overworld", 0, 1);
     }
 
     private static EmiStack item(String id, int n) {
@@ -53,13 +43,11 @@ public final class ProjectionLotsEmiTest {
         return recipe;
     }
 
-    private static JsonObject context(String project) {
+    private static JsonObject context() {
         var value = new JsonObject();
         value.addProperty("monde_actif", WORLD);
         value.addProperty("session_monde", SESSION);
         value.addProperty("dimension_monde", "minecraft:overworld");
-        value.addProperty("projet", project);
-        value.addProperty("revision_projet", "project-revision");
         return value;
     }
 
@@ -72,13 +60,7 @@ public final class ProjectionLotsEmiTest {
     }
 
     private static JsonObject project(SuiviLotsEmi owner) {
-        return ProjectionLotsEmi.lire(owner, scope, inventory, true, currentContext(), catalogue());
-    }
-
-    private static JsonObject currentContext() {
-        var value = context(scope.projet());
-        value.addProperty("revision_projet", scope.revisionProjet());
-        return value;
+        return ProjectionLotsEmi.lire(owner, scope, inventory, true, context(), catalogue());
     }
 
     private static void machine() {
@@ -293,9 +275,7 @@ public final class ProjectionLotsEmiTest {
             assert owner.actifs().get(0).suivi().totalRecu() == 300;
             assert owner.actifs().get(0).suivi().receptionNonAttribuee();
             excluded(owner);
-        } else if (scenario.equals("project_revision")
-                || scenario.equals("tree_revision")
-                || scenario.equals("tree_quantity")) {
+        } else if (scenario.equals("tree_revision") || scenario.equals("tree_quantity")) {
             scope =
                     new ProjectionLotsEmi.Portee(
                             TREE,
@@ -304,10 +284,6 @@ public final class ProjectionLotsEmiTest {
                             WORLD,
                             SESSION,
                             "minecraft:overworld",
-                            "principal",
-                            scenario.equals("project_revision")
-                                    ? "new-revision"
-                                    : "project-revision",
                             scenario.equals("tree_revision") ? 1 : 0,
                             scenario.equals("tree_quantity") ? 2 : 1);
             var result = project(owner);
@@ -331,21 +307,19 @@ public final class ProjectionLotsEmiTest {
             assert excluded.getAsJsonArray("lots").isEmpty();
             assert !excluded.getAsJsonArray("limites").isEmpty();
         } else if (scenario.equals("scope_tree")
-                || scenario.equals("scope_project")
                 || scenario.equals("scope_connection")
                 || scenario.equals("scope_recipes")) {
             scope =
                     portee(
                             scenario.equals("scope_tree") ? new Object() : TREE,
                             scenario.equals("scope_connection") ? new Object() : CONNECTION,
-                            scenario.equals("scope_recipes") ? new Object() : MANAGER,
-                            scenario.equals("scope_project") ? "other" : "principal");
+                            scenario.equals("scope_recipes") ? new Object() : MANAGER);
             var excluded = project(owner);
             assert excluded.getAsJsonArray("lots").isEmpty();
             assert !excluded.getAsJsonArray("limites").isEmpty();
             assert owner.actifs().size() == 1;
         } else if (scenario.equals("extension_scope")) {
-            scope = portee(TREE, CONNECTION, MANAGER, "other");
+            scope = portee(new Object(), CONNECTION, MANAGER);
             assert owner.completer(id, recipe, 1);
             assert project(owner).getAsJsonArray("lots").isEmpty();
         } else if (scenario.equals("unattributed")) {
@@ -423,7 +397,7 @@ public final class ProjectionLotsEmiTest {
             assert owner.actifs().get(0).suivi().totalRecu() == 0;
         } else if (scenario.equals("foreign_native_scope")) {
             for (String key : List.of("monde_actif", "session_monde", "dimension_monde")) {
-                var context = context("principal");
+                var context = context();
                 context.addProperty(
                         key,
                         key.equals("monde_actif")
@@ -437,9 +411,10 @@ public final class ProjectionLotsEmiTest {
                 assert result.getAsJsonArray("lots").isEmpty();
             }
         } else if (scenario.equals("foreign_context")) {
+            // Une demande sans identité de monde n'est jamais rattachée au propriétaire courant.
             var result =
                     ProjectionLotsEmi.lire(
-                            owner, scope, inventory, true, context("other"), catalogue());
+                            owner, scope, inventory, true, new JsonObject(), catalogue());
             assert !result.get("disponible").getAsBoolean();
             assert result.getAsJsonArray("lots").isEmpty();
         } else throw new IllegalArgumentException(scenario);

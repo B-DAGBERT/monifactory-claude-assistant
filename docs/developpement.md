@@ -3,21 +3,24 @@
 ## Repères
 
 - `monifactory_assistant/app.py` assemble les composants, branche les raccourcis et supervise le processus.
-- `application/projects.py` gère les projets, leur pause, la progression et la préparation des objectifs.
 - `application/game.py` suit les relevés du monde, les quêtes, le journal et les actions de jeu.
 - `application/conversation.py` traite les questions, les fiches et les événements vocaux.
 - `application/interface.py` gère les fenêtres locales, les réglages et les demandes du menu Minecraft.
-- `game/bridge.py`, `recipes.py`, `world.py`, `context.py` et `objectives.py` isolent les échanges et calculs du jeu.
-- `ui/views.py` construit les données du HUD et des menus ; `audio.py` contient la chaîne micro, transcription et voix.
+- `game/bridge.py`, `recipes.py`, `world.py` et `context.py` isolent les échanges et calculs du jeu.
+- `ui/views.py` construit la vue écrite pour le mod (réglage du panneau, bulle, guidage, tableau de bord) ; `audio.py` contient la chaîne micro, transcription et voix.
 - `platform/capture.py` et `hooks.py` isolent la capture, le focus et le choix des raccourcis natifs.
 - `settings.py` conserve les constantes et chemins historiques ; `prompts.py` contient les instructions IA.
 - `providers/` isole les deux moteurs : le choix de l’un ne charge pas l’autre.
 - `commands/` contient les commandes exécutées par les lanceurs Mac et Windows.
 - `paths.py` définit la racine des données et celle du code. Ne pas déduire le dossier des sauvegardes depuis l’emplacement d’un module.
 - `ui/discussion.py` sert uniquement le suivi en lecture seule ; ses fichiers sont dans `ui/web/`.
-- `game/` contient les projets, la mémoire des stockages, les relevés d’inventaire, les échanges EMI et les imports de filons. Le journal GregTech du client reste la source des filons.
-- `mod/src/main/java/fr/assistantia/` contient les écrans et fonctions Forge.
-- `jeu/` contient le script KubeJS client d’origine. `serveur/` contient le script de relevé avec couverture des chunks.
+- `game/` contient la mémoire des stockages, les relevés d’inventaire, la recherche EMI dans les coffres et la lecture des filons. Le journal GregTech du client reste la source des filons ; Python lit le résumé `filons_mod.json` du mod.
+- `mod/src/main/java/fr/assistantia/` contient les écrans et fonctions Forge ; `compat/emi/` regroupe l’intégration EMI.
+- `Theme`, `BoutonTheme`, `ChampTheme` et `BarreDefilement` donnent le style commun de toutes les interfaces ; `tests/stubs_theme.py` fournit leurs stubs aux harnais d’écrans.
+- `OngletRecette` et `VueRecette` affichent l’onglet Recette, calculé par `compat/emi/AnalyseRecette` avec `ArbreRecette`, `ChaineRecette`, `ComparaisonAlternatives`, `FabricationFacile`, `PossessionsRecette`, `RangsRecette`, `ReperesRecette` et `MatieresArbreEmi`. `CoffresConnus` lit la mémoire des coffres pour ce calcul.
+- `Filons`, `OngletFilons`, `FilonMemoire`, `ScanFilon`, `VolumeFilon`, `VerificationFilons`, `GregTechFilons`, `CouleursFilons`, `StyleFilons`, `FormatFilons`, `InstantaneFilons`, `SauvegardeFilons` et `TableLong` portent les filons.
+- `Ecritures` écrit les fichiers d’échange sur un fil dédié ; `EchangesKubeJS` est le point d’entrée du script client.
+- `jeu/` contient le script KubeJS client d’origine : il exporte l’état du jeu et la mémoire des coffres, sans dessiner de panneau. `serveur/` contient le script de relevé avec couverture des chunks.
 
 ## Compatibilité
 
@@ -25,9 +28,10 @@ Les lanceurs et les points d’entrée `assistant_mc.py`, `codex_setup.py`, `cho
 `update_assistant.py` restent à la racine. Ils délèguent au paquet Python et permettent aux
 installations existantes de continuer à se lancer et à se mettre à jour.
 
-Les configurations, sessions, plans, coffres et journaux personnels conservent leur emplacement
+Les configurations, sessions, coffres et journaux personnels conservent leur emplacement
 historique à la racine, en dehors du code et ignorés par Git. Les données ne sont pas migrées
-pendant un simple rangement des sources. Les objectifs en pause restent en pause.
+pendant un simple rangement des sources. L’ancien `plan_ia.json` des projets et objectifs n’est
+plus lu ni écrit ; il reste en place avec ses copies.
 
 ## Formatage et tests
 
@@ -70,16 +74,36 @@ Travailler sur une branche de fonctionnalité issue de `main`, tester, puis fusi
 La commande **Mettre à jour** récupère uniquement `origin/main` et refuse d’écraser des modifications
 locales ou des commits non publiés. Ne pas utiliser de reset forcé pour contourner ces protections.
 
+## Thème commun des interfaces
+
+Toute interface nouvelle ou modifiée passe par `Theme`, `BoutonTheme` et `ChampTheme`, sans couleur
+ni taille écrite à la main. `Theme` fixe les couleurs (fonds, cartes, bordures, doré pour l’accent et
+la sélection, vert, jaune, rouge, bleu, cyan), les tailles et les dessins communs : panneaux, cartes,
+séparateurs, cases d’objet, barres de progression et de défilement (`BarreDefilement`), infobulles
+et `Theme.Fenetre` pour les écrans secondaires. Boutons, onglets et champs ont une seule hauteur,
+`Theme.BOUTON` (16).
+
+`BoutonTheme` reste un `Button` vanilla : clic, son, focus clavier, narration et infobulles sont
+natifs. Son genre (`NORMAL`, `PRINCIPAL` en vert, `DANGER`, `ONGLET`) fixe sa couleur et
+`choisi(true)` dore un onglet ouvert ou une option active, qui reste cliquable. `ChampTheme` habille
+`EditBox`. Un texte visible se coupe avec `Theme.couper` ou `Theme.texte` (« … » et texte complet au
+survol), jamais avec `plainSubstrByWidth`. Si une primitive manque, l’ajouter dans `Theme` de façon
+générique.
+
+Les harnais qui compilent de vrais écrans contre des stubs Minecraft ajoutent les sources du thème
+et les stubs de `tests/stubs_theme.py` (police, bouton protégé, infobulles, `GuiGraphics`).
+`test_theme_panels.py` vérifie que les panneaux EMI, coffres, machines et établi n’ont pas d’autre
+source de style et gardent une seule hauteur de bouton.
+
 ## Collecte et machines EMI
 
 - `RechercheEmi` possède la sélection globale du scan et ses quantités. `AideCoffre` et `RecuperationEmi` passent par cette sélection ; aucun retrait ne doit reconstruire un arbre depuis le seul coffre ouvert.
 - `MemoireCollecte` conserve les ingrédients acquis ; `PlanArbre` réserve les composants avant leurs enfants. `RetraitCoffre.planRecherche` applique les quotas aux cases réelles, sans déduire deux fois l’inventaire.
-- `SuiviFabrication` conserve les acquisitions finales et déduit les retours d’objets déjà sortis. `OrigineFabrication` rapproche les gains réels des événements de craft et des sorties natives ; ne jamais compter l’aperçu de résultat. `CycleArbreEmi` exporte les totaux absolus dans `fabrication_emi.json`, rattachés au projet et à la version du plan. Python les applique par maximum, sans rejouer une hausse à chaque lecture.
+- `SuiviFabrication` conserve les acquisitions finales et déduit les retours d’objets déjà sortis. `OrigineFabrication` rapproche les gains réels des événements de craft et des sorties natives ; ne jamais compter l’aperçu de résultat. `CycleArbreEmi` suit la durée de vie du craft et retire l’arbre d’EMI quand ses cibles finales sont obtenues ; il n’exporte plus `fabrication_emi.json`.
 - `LotFabrication` distingue réservation et récupération réelle. `ReceptionSortie` rapproche les notifications séparées des cuves et des contenants. `MachinesEmi` garde seulement les sorties encore attendues dans son stock réservé. `SuiviEmiEcran` regroupe les états, le recalcul et l’annulation ; annuler ne déplace aucun objet.
 - Les allocations de `MachinesEmi` sont invalidées par une modification de l’arbre, des stocks ou des lots. Le cache des compatibilités machine est également vidé lors d’un changement de contexte, toutes les 100 ticks et sur recalcul explicite.
 - `ConfigurationCircuit` lit les ingrédients natifs GregTech, y compris un `SizedIngredient`. Le réglage est contrôlé via `getCircuitInventory`, sans setter ni repli vers un circuit physique. `ComparaisonEmi.circuitVirtuel` ne retire que les catalyseurs circuits des recettes GT, jamais une cible racine ni un circuit consommé. Pour le stock natif EMI, les outils `IGTTool` conservent la comparaison par défaut ; leur matériau et leur type sont portés par l’Item. Les comparaisons explicites EMI restent inchangées.
 - `SequenceEnvoi` attend une confirmation stable avant l’action suivante. `EnvoiMachine` valide l’interface, les sources, les entrées et les cuves ; il n’effectue aucun nouvel essai automatique après un refus.
-- `game/emi.py` exporte l’avancement conservé uniquement lors d’un import explicite. Ne pas reprendre un objectif en pause.
 
 Les tests `test_emi.py`, `test_chest_transfers.py` et `test_machine_inputs.py` rejouent les allocations et les interactions client dans des conteneurs déterministes. Ils couvrent notamment les composants répartis entre coffres, les transformations partielles et en chaîne, les retours du même objet, les lots finaux rangés séparément, les outils partagés, les réceptions et annulations partielles, les circuits à NBT factice, les cases verrouillées, les doubles clics et les fluides. Ils ne remplacent pas une validation visuelle dans Minecraft ni les réponses d’un serveur réel.
 
@@ -89,7 +113,7 @@ Les tests `test_emi.py`, `test_chest_transfers.py` et `test_machine_inputs.py` r
 
 Une seule requête par sac reste en vol. Le relevé est lié à la révision des quantités personnelles ; une réponse précédant un déplacement ne peut pas valider le nouvel inventaire. Le cache est effacé à la déconnexion et limité aux sacs encore portés. `InventaireArbreEmi` raccorde cette vue aux deux calculs natifs d’EMI (Recipe Tree et favoris de fabrication) via des mixins optionnels. Il reconstruit le stock personnel avec les vraies grilles de craft, garde les fluides natifs et ne modifie jamais les inventaires des remplisseurs. Le relevé doit appartenir à la connexion actuelle. La liste est rafraîchie quand le stock change, sans réinitialiser la disposition des panneaux.
 
-Le fichier `inventaire_joueur.json` exporte une vue complète ; `game/inventory.py` la substitue au relevé KubeJS seulement si elle est synchronisée, récente et correspond au joueur et à la dimension. Ne jamais ajouter ces quantités à un autre relevé : cela compterait deux fois les poches.
+Le fichier `inventaire_joueur.json` exporte une vue complète ; `game/inventory.py` la substitue au relevé KubeJS seulement si elle est synchronisée, récente et correspond au joueur et à la dimension. Ne jamais ajouter ces quantités à un autre relevé : cela compterait deux fois les poches. `InventaireJoueur` compare les cases à chaque tick sans copie, réécrit le fichier seulement à un changement (au plus deux fois par seconde) et confirme un relevé inchangé toutes les 2 s ; Python le juge récent pendant 5 s.
 
 `test_backpack_inventory.py` rejoue la lecture native, Curios, les grosses piles, les sacs imbriqués, les déplacements, les réponses retardées, le retrait d’un sac et le remplacement des relevés Python. Les transferts restent limités aux cases du menu natif ; les tests ne prétendent pas simuler un serveur Minecraft complet.
 
@@ -160,31 +184,23 @@ les fabrications successives prouvées et les preuves tardives sans double attri
 Le sous-écran **Modèles IA…** utilise un canal séparé, `configuration_ia.json`, afin qu’un réglage
 ne remplace pas une question dans `demande_mod.json`. La demande contient un numéro unique, le
 moteur actif, la révision du formulaire et les quatre valeurs `model_question`, `effort_question`,
-`model_plan`, `effort_plan`. L’accusé dans `ecran.configuration_ia.reponse` doit correspondre au
-numéro envoyé ; écrire le fichier n’est pas une confirmation de sauvegarde.
+`model_plan`, `effort_plan`. Seul le profil **Discussion et fiches** est affiché : les deux valeurs
+`plan`, qui servaient aux anciens projets et objectifs, sont renvoyées telles quelles pour garder le
+protocole. L’accusé dans `ecran.configuration_ia.reponse` doit correspondre au numéro envoyé ;
+écrire le fichier n’est pas une confirmation de sauvegarde.
 
 La sauvegarde est locale et atomique, sans essai IA. Le service refuse une demande périmée, un
 formulaire obsolète, un changement de moteur ou un changement pendant un travail. Les fichiers
 modifiés par un autre outil ne sont pas écrasés. Le chargement ne publie que les noms de modèles,
 les efforts et les états du formulaire ; aucune autre clé de configuration n’est exportée au jeu.
 
-Les appels de plan et de fiche relisent leurs réglages à chaque nouvelle demande. La conversation
+Les questions et les fiches relisent leurs réglages à chaque nouvelle demande. La conversation
 Codex conserve son thread et passe explicitement le modèle et l’effort à chaque `turn/start`,
 conformément à la [documentation officielle OpenAI](https://learn.chatgpt.com/docs/app-server).
 Claude conserve son identifiant de session et renouvelle son processus au prochain appel lorsque
-ses paramètres ont changé. Les objectifs, leur pause et les crédits de fabrication ne sont pas
-concernés par ce canal.
+ses paramètres ont changé. Les crédits de fabrication ne sont pas concernés par ce canal.
 
-## Projets et catalogue des modèles (shared.30)
-
-`ProjectStore.delete` exige l’identifiant et la confirmation du nom affiché. Les écritures restent
-atomiques ; un échec restaure le catalogue et l’objectif actifs. La suppression d’un projet secondaire
-ne réinitialise ni les compteurs ni la pause du projet ouvert. Le dernier projet supprimé est remplacé
-par un brouillon dont l’identifiant est neuf, pour qu’une ancienne requête ne puisse pas le supprimer.
-`EcranProjets` conserve la demande en attente même après fermeture ; les actions sont désactivées
-jusqu’à l’accusé exact. Renommer et supprimer restent dans la liste, ouvrir et créer reviennent au
-panneau parent. Les champs `plan` et `model_plan` restent compatibles avec les anciennes sauvegardes ;
-seuls leurs libellés visibles deviennent « Projet ».
+## Catalogue des modèles (shared.30)
 
 `providers/catalog.py` lit uniquement les métadonnées publiques du cache local Codex : identifiant,
 nom affiché et efforts supportés. Il conserve l’ordre, exclut les modèles masqués et ne transmet ni
@@ -194,23 +210,23 @@ proviennent de la [configuration officielle Claude Code](https://code.claude.com
 La liste ne vérifie pas les droits d’accès et ne lance aucune inférence. `CatalogueModeles` et
 `EcranChoixModele` présentent ce catalogue et ajustent uniquement le brouillon sur choix explicite.
 
-Les tests couvrent suppression active/secondaire/dernière, conservation de la pause, reprise après
-échec disque, requêtes répétées, cache absent/corrompu/remplacé, données privées exclues, ainsi que les
-écrans réels via contrats Minecraft : sélection, confirmation, Échap, attente conservée, recherche,
+Les tests couvrent cache absent/corrompu/remplacé, données privées exclues, ainsi que les écrans
+réels via contrats Minecraft : sélection, confirmation, Échap, attente conservée, recherche,
 redimensionnement et limites en 320 × 240. Les contrôles en jeu restent à effectuer après redémarrage.
+Les projets, leur catalogue et `EcranProjets` ont été retirés avec les objectifs.
 
 ## Découpage de l’application
 
-`App` compose quatre contrôleurs par héritage explicite. Ils partagent le même état et la même
-boucle d’événements Tk : les déplacements n’ajoutent ni service, ni copie de l’inventaire, ni
-seconde source de progression. Chaque méthode reste définie dans un seul contrôleur. Les
-contrôleurs s’appellent par `self`, et ne s’importent pas entre eux. Aucun module de domaine ne
-réimporte `app.py`.
+`App` compose trois contrôleurs par héritage explicite : jeu, conversation et interface. Ils
+partagent le même état et la même boucle d’événements Tk : les déplacements n’ajoutent ni service,
+ni copie de l’inventaire, ni seconde source de progression. Chaque méthode reste définie dans un
+seul contrôleur. Les contrôleurs s’appellent par `self`, et ne s’importent pas entre eux. Aucun
+module de domaine ne réimporte `app.py`.
 
-Les calculs des besoins et des étapes sont dans `game/objectives.py` ; les vues JSON restent dans
-`ui/views.py`. Les réponses structurées et la session commune aux deux moteurs sont isolées dans
-`providers/responses.py` et `providers/session.py`. La reconnaissance vocale conserve ses imports
-lourds différés. Les modules de jeu peuvent être importés sans Tk, capture, micro ou moteur IA.
+Les vues JSON restent dans `ui/views.py`. Les réponses structurées et la session commune aux deux
+moteurs sont isolées dans `providers/responses.py` et `providers/session.py`. La reconnaissance
+vocale conserve ses imports lourds différés. Les modules de jeu peuvent être importés sans Tk,
+capture, micro ou moteur IA.
 Les constantes de données utilisent toujours `paths.ROOT`, même après déplacement d’un module.
 
 Pour modifier une fonctionnalité, commencer par son contrôleur puis son calcul de domaine ;
@@ -220,9 +236,10 @@ noms de commandes, formats JSON, chemins, modèles et réglages sont conservés.
 Les tests ciblés qui injectent un environnement sans interface lisent les définitions de production
 avec `tests/app_source.py`. Ce lecteur rassemble les méthodes réellement héritées par `App` ; il
 ne contient aucune copie de leur logique. `test_application_modules.py` vérifie aussi les imports
-sans dépendances de bureau, l’absence de méthodes masquées entre contrôleurs et le chargement réel
-d’un projet en pause après changement de projet et redémarrage. La vérification de parité historique
-continue à comparer le comportement conservé malgré le déplacement des définitions.
+sans dépendances de bureau, l’absence de méthodes masquées entre contrôleurs, l’absence de toute
+préparation d’objectif à la connexion et l’abandon sans effet des demandes de projet ou d’objectif
+d’un ancien mod. La vérification de parité historique continue à comparer le comportement conservé
+malgré le déplacement des définitions.
 
 ## File durable, sauvegardes et rendu (shared.31)
 
@@ -237,23 +254,22 @@ sert de clé de déduplication quand l’UUID est absent. Un client qui renvoie 
 version 2 retrouve le même reçu.
 
 Avant chaque exécution, une réservation est écrite dans `reponses_demandes.json`. La confirmation
-et les accusés de question/projet sont enregistrés avant suppression du fichier de demande.
+et les accusés de question sont enregistrés avant suppression du fichier de demande.
 Un résultat durable est restitué lors d’un renvoi, sans refaire l’action. Une réservation laissée
 par un arrêt devient « interrompue » ; le résultat peut avoir été appliqué et ne doit jamais être
 rejoué automatiquement. Un historique illisible bloque la file plutôt que d’effacer la preuve.
-Les commandes périmées et les contextes projet/dimension différents sont refusés. Les accusés anciens ne remplacent pas ceux d’une demande plus récente. Ce protocole
+Les commandes périmées et les contextes connexion/dimension différents sont refusés. Les accusés anciens ne remplacent pas ceux d’une demande plus récente. Ce protocole
 privilégie l’absence de double exécution ; il ne promet pas de terminer une action après un crash.
 
 `persistence.py` partage les écritures de sauvegarde : fichier temporaire unique dans le même
 dossier, conservation des permissions, flush/fsync, remplacement atomique, nettoyage et copie
 précédente `.bak` lorsqu’elle contient un JSON valide. Une copie corrompue ne remplace pas un backup
-sain. Les lectures peuvent récupérer la copie ; les projets refusent toute perte silencieuse
-lorsqu’aucune copie n’est lisible. Les chemins restent identiques. Le catalogue des projets et le statut de pause/reprise ne sont publiés en mémoire qu’après sauvegarde réussie. Le canal de réglages IA conserve
+sain. Les lectures peuvent récupérer la copie. Les chemins restent identiques. Le canal de réglages IA conserve
 ses vérifications supplémentaires de révision, sauvegarde son ancienne configuration et revalide
 la révision juste avant son écriture atomique dédiée.
 
-Le rendu utilise une horloge monotone distincte de la dernière écriture du plan. `game/snapshots.py`
-partage inventaire, progression, totaux des coffres et machines uniquement pendant un cycle.
+Le rendu utilise une horloge monotone. `game/snapshots.py` partage inventaire, progression,
+totaux des coffres et machines uniquement pendant un cycle.
 Le contexte est isolé par thread et supprimé en sortie, y compris en cas d’erreur. Aucun cache de
 quantités ne survit au cycle suivant. `diagnostics.py` exporte des données locales limitées ; le
 menu affiche aussi l’état natif du client et le temps du dernier calcul de vue.
@@ -282,22 +298,24 @@ continue d’écarter les simples déplacements et reprises de stock déjà comp
 Après un envoi limité, `DeclarerFabricationEcran` présente la quantité réellement envoyée et le
 lot complet. `LotFabrication.ajouter` étend la même ligne sans effacer ses réceptions. La confirmation
 revalide l’identité de l’arbre et les besoins encore déclarables ; un double clic ne crée pas un
-second lot. L’arrêt de l’arbre hors pause et le changement de monde/connexion conservent les règles
+second lot. L’arrêt de l’arbre et le changement de monde/connexion conservent les règles
 de nettoyage précédentes. Les tests Java couvrent lot envoyé/complet, quantité devenue invalide,
 ancien arbre, retrait sur plusieurs coffres, réception partielle, sac, annulation et absence de double
 attribution entre lots identiques. Les interactions finales sont à confirmer dans le jeu réel.
 
 ## Filons et repérage du backpack (shared.33 et shared.34)
 
-`StyleFilons` porte le budget de contours (1 à 4 096, défaut 192) et l’intensité. `AffichageFilons`
+`StyleFilons` porte le budget de contours (1 à 4 096, défaut 512 depuis la refonte des filons) et
+l’intensité, rejoints depuis par l’épaisseur et le remplissage. `AffichageFilons`
 les enregistre dans `config/assistantia-filons-visuel.json` par remplacement atomique quand le système
 le permet. Un enregistrement refusé conserve le style courant et le brouillon ouvert. Le budget
 ne modifie pas `FilonMemoire` : tri par distance et filtrage précèdent la limite de rendu.
 
 `Filons` utilise un buffer dédié, des lignes fines et deux passes : discrète sans profondeur, puis
 plus lisible avec profondeur. Le bloc visé est exclu. Le rendu ne vide pas le buffer global du jeu.
-`OngletFilons` expose deux boutons cycliques : Surface/Total et budget de contours. Surface ne
-lance que la passe avec profondeur ; Total ajoute une passe traversante atténuée. Les anciennes
+`OngletFilons` expose les boutons cycliques Surface/Total et budget de contours, puis Épaisseur,
+Intensité et Remplissage. Surface ne lance que la passe avec profondeur ; Total ajoute une passe
+traversante atténuée. Les anciennes
 configurations sans champ `surface` démarrent en Surface. Le budget et l’intensité sont conservés
 lors du changement de mode. Les anciens écrans d’affichage et d’entretien ont été retirés,
 ainsi que les boutons globaux de masquage, de vidage et d’arrêt de scan.
@@ -309,9 +327,10 @@ quantités par objet et NBT, sans modifier les piles sources. Les quantités non
 masquées. La recherche et le regroupement sont mis en cache entre deux rafraîchissements.
 `BarreOutilsEmi` utilise les largeurs mesurées avec la police du jeu. Les boutons ne sont ni tassés
 ni empilés sur les contrôles voisins. Si la rangée complète manque de place, un accès **Aide…**
-ouvre le menu des trois actions. `BoutonOutilEmi` conserve le clic, le focus clavier, les infobulles
-et la narration natifs avec un rendu sobre et un soulignement d’état. Toutes les zones visibles,
-y compris le bouton compact, sont exclues d’EMI et interceptent le clic avant sa liste d’objets.
+ouvre le menu des trois actions. `BoutonTheme`, qui remplace `BoutonOutilEmi`, conserve le clic, le
+focus clavier, les infobulles et la narration natifs ; le scan actif s’affiche en doré (`choisi`),
+sans soulignement d’état. Toutes les zones visibles, y compris le bouton compact, sont exclues
+d’EMI et interceptent le clic avant sa liste d’objets.
 
 `test_mining_ui.py` définit les scénarios des limites, modes Surface/Total, budgets cycliques,
 défilement, repli des boutons EMI, grosses piles, identités NBT, filtre, retour au parent,
@@ -343,7 +362,7 @@ la vérification visuelle dans Minecraft après redémarrage.
 
 Le scan choisi reste lié à la connexion, au monde et à l’arbre actifs. `RechercheEmi` renouvelle son
 bail de dix minutes avant expiration et reprend une réponse manquante après 8, 16 puis 30 secondes,
-sans répéter de transfert. Une pause, un arrêt explicite ou un changement de contexte ne relance rien.
+sans répéter de transfert. Un arrêt explicite ou un changement de contexte ne relance rien.
 Le contrôleur utilise une horloge remplaçable dans les tests pour rejouer les délais immédiatement.
 
 `World.merged` arbitre d’abord toutes les observations d’une position selon leur date, avant de
@@ -426,7 +445,7 @@ Une question de recette garde les ingrédients des variantes connues sur deux ni
 machines. Une recherche dans les coffres garde les quantités, dimensions, positions et dates
 utiles. Un réglage simple reçoit un contexte plus court. Les questions ambiguës, les diagnostics
 machine et la planification conservent le contexte étendu. Ajouter « contexte complet » à la
-question force ce dernier pour ce tour. Les positions multijoueurs et la pause restent dans
+question force ce dernier pour ce tour. Les positions multijoueurs restent dans
 le prompt. La sélection utilise le catalogue local et la question suit le même appel unique.
 
 `python -m tests.benchmarks.question_context` mesure sept prompts synthétiques sans IA. Pour
@@ -471,3 +490,124 @@ Les 600 observations et leurs dates sont relues à l'identique. Le test de refus
 vérifie la reprise sans état partiel, puis la restauration après fichier principal incomplet.
 Les tests de stock couvrent aussi le changement de source, le déplacement d'objets, l'ajout
 et le retrait de coffres, et les relevés incomplets. Les temps sont ceux du scénario local.
+
+## Onglet Recette
+
+`compat/emi/AnalyseRecette` lit l’arbre consulté dans Recipe Tree pendant le tick client, par tâches
+bornées à environ 1 ms et 96 développements par tick : lecture de l’arbre et ordre du plan à chaque
+changement, puis alternatives recette par recette, jamais sur un tick de relecture ou de plan. Il
+publie une `VueRecette` immuable ; l’onglet, le panneau du HUD (`Hud.source`) et les repères ne font
+que la dessiner. Un plan qui coûte plus de 1,5 ms attend 40 ticks, plus de 5 ms 100 ticks. Un plan
+impossible à calculer garde un état distinct (« Plan non calculé » et sa raison). Les accès
+réflexifs aux recettes GregTech sont mis en cache par classe (`GregTechRecette`).
+
+La clé de l’arbre suit l’arbre réel (objet, recette et enfants du but, lots, résolutions, gestionnaire
+de recettes). Le mixin de `MaterialNode.defineRecipe` passe par `ArbreReel` : seul le but de
+`BoM.tree` déclenche `arbreModifie` et `CatalogueProduction.rechargement`, une fois par recalcul
+réel. Les arbres temporaires qu’EMI construit pour l’infobulle de coût (`RecipeCostTooltipComponent`,
+à chaque image) n’invalident plus ni la Recette, ni le Suivi, ni les captures Production.
+
+`ArbreRecette` lit l’arbre EMI par réflexion et n’écrit que ses résolutions locales
+(`addResolution`), jamais `BoM.addRecipe`, la sauvegarde EMI ni les favoris. **Appliquer** revérifie
+l’arbre, sa révision, le choix actuel et la recette avant d’écrire, et refuse pendant un transfert.
+**Annuler** garde huit choix et se vide quand l’arbre change d’objet. Le nœud racine est analysé
+comme les autres ; pour lui, `resoudreRacine` remet la quantité par lot et les lots d’avant, car le
+chemin natif remet `goal.amount` à 1, et `restaurerRacine` rétablit exactement l’état précédent.
+
+`ChaineRecette` évalue le coût d’une sous-chaîne par unité produite en suivant les choix de l’arbre,
+puis les défauts EMI ; `ComparaisonAlternatives` applique les règles « strictement meilleure » et
+rédige le gain. Les candidats sont les producteurs à sortie garantie, 32 au plus et les moins coûteux
+au premier niveau d’abord, hors recyclage, recettes désactivées et recettes qui consomment leur
+produit. `PossessionsRecette` relève les postes posés (rayon de 48 blocs, une rangée de chunks par
+tick, relevé serveur de la Base et blocs déjà ouverts), portés ou rangés (inventaire, sac, coffres
+connus lus hors du rendu par `CoffresConnus`) et les sorties attendues des lots. Les outils
+réutilisables nouveaux (moules, lentilles, formes) doivent aussi être possédés. `DecisionTension`
+applique la décision du joueur : une machine du bon type mais trop faible donne « Tension
+insuffisante (… possédé) », le poste affiché reste la machine possédée et aucune machine au-delà de
+la plus forte tension possédée n’est nommée ni proposée. `FabricationFacile` limite « facile » à une
+recette d’établi couverte par le stock, avec au plus un niveau de sous-craft ; ses caches sont vidés
+quand le gestionnaire de recettes EMI change.
+`MatieresArbreEmi` fournit les matières premières de l’arbre au **Tri : recette** des filons.
+
+`test_recipe_tab.py` (écran à 320 × 240 contre des stubs) et `RecetteMoteurTest` (chaînes,
+comparaison, rangs, repères, « facile ») couvrent le moteur pur ; l’écriture réelle dans l’arbre EMI
+reste à vérifier en jeu. L’ordre du plan et les rangs des machines sont décrits dans
+[l’ordonnancement](ordonnancement-machines.md#onglet-recette-et-repères-dans-le-monde).
+
+## Filons : scan complet, compte en direct et sauvegarde v2
+
+`GregTechFilons` lit les paramètres natifs des générateurs GTCEu ; `VolumeFilon` en déduit la boîte
+où chacun peut placer ses minerais (couches, veine, dyke, cuboïde, classique, standard, géode), ou
+un cube avec une marge pour un générateur inconnu. `ScanFilon` parcourt ce volume colonne de chunk
+par colonne, saute les sections sans minerai de la composition et garde en attente les colonnes non
+chargées, sauvegardées avec le filon. Dans la marge, seuls les minerais reliés au filon par des trous
+de 2 blocs au plus sont retenus ; un minerai déjà rattaché à un autre gisement ne lui est jamais pris.
+`VerificationFilons` relit à tour de rôle les minerais connus des chunks chargés (192 par tick) et les
+64 plus proches du filon surligné à chaque tick ; un minerai disparu devient un compteur « miné ».
+`FilonMemoire` garde les minerais présents dans des tableaux primitifs indexés par `TableLong`, au
+plus 400 000 par monde. Le travail d’un tick reste sous 1 ms.
+
+La mémoire d’un monde est enregistrée dans `kubejs/assistant/filons_gregtech/<monde>.json` au format
+v2 : une table des types de blocs, puis par gisement ses métadonnées, son volume, l’avancement du scan
+et ses colonnes en attente, ses compteurs de minerais minés et ses minerais présents en entiers
+relatifs à l’ancre (`[dx, dy, dz, type, …]`). Le format v1, un objet par bloc, reste lisible ; avant
+la première écriture v2, l’ancien fichier est copié une seule fois en `.v1.bak`. Chaque écriture
+garde la dernière version saine en `.bak` ; un fichier illisible est copié à part avant la reprise de
+cette copie. Le thread client ne copie que les tableaux (`InstantaneFilons`) ; `FormatFilons` produit
+le texte en flux sur l’exécuteur d’écriture de `SauvegardeFilons`, au plus toutes les 10 s hors action
+explicite. Sur une vraie mémoire, 20,8 Mo deviennent 519 Ko et le jeu n’y consacre plus que 0,14 ms
+au lieu de 0,5 s.
+
+Le résumé `filons_mod.json` donne à Python les gisements et leurs comptes par type, sans aucune
+position ; `game/veins.py` ne le relit que si sa date ou sa taille change. Avec le mod, le script
+KubeJS n’écrit plus `filons.json`, gardé comme secours sans le mod. `AffichageFilons` enregistre vue,
+budget, épaisseur, intensité et remplissage (version 2) ; un réglage absent ou illisible reprend sa
+valeur par défaut sans effacer les autres. `CouleursFilons` donne à chaque matériau une couleur tirée
+de GregTech, contrastée selon le fond de la dimension, et le rendu coupe le brouillard le temps des
+contours. `FilonMemoireTest`, `SauvegardeFilonsTest`, `test_filons.py` et `test_vein_tab.py` (onglet
+et écran des blocs à 320 × 240 contre des stubs) couvrent scan, compte, format et affichage, sans GPU.
+
+## Écritures au changement et fil d’écriture
+
+`Ecritures` remplace atomiquement les fichiers d’échange sur un fil dédié : le thread client ne dort
+jamais et n’attend pas le disque. Pour un même fichier, seul le dernier contenu compte et un contenu
+plus ancien ne passe jamais après lui. Quand Windows refuse le remplacement parce que l’assistant lit
+encore le fichier, le fil réessaie tant que la demande reste valable (45 s). Les demandes du menu
+tentent une écriture immédiate puis passent par ce fil. `inventaire_joueur.json`, l’identité du monde
+et les raccourcis Mac (signal toutes les 500 ms) l’utilisent aussi.
+
+`EchangesKubeJS` est le point d’entrée du script client : `etat.json` et `quetes.json` passent par le
+fil d’écriture, le relevé du serveur (`monde.json`) y est assemblé et vérifié, et la progression des
+quêtes FTB se compare par empreinte. Le script réécrit `etat.json` seulement s’il change, avec une
+confirmation toutes les 2 s, et `quetes.json` quand une quête change (vérifié toutes les 10 s), au
+plus toutes les 30 s pour une simple progression de tâche ; un relevé abandonné (`perdu`) est
+republié au contrôle suivant. Les nombres entiers sont réécrits en entiers (le `JSON.stringify` de
+Rhino écrit des doubles). La mémoire des coffres (`stockage.json`) est écrite au premier changement
+d’un écran ouvert, puis au plus toutes les 2 s, à la fermeture et quand le joueur disparaît (expulsion,
+redémarrage du serveur).
+
+Les mémoires KubeJS (`MemoireMondeKubeJS` : `stockage.json`, et `filons.json` sans le suivi natif)
+passent aussi par ce fil : le script n’attend jamais le disque et relit depuis la mémoire une écriture
+encore en file. Ce sont des données du joueur, jamais abandonnées : une erreur disque est retentée au
+plus une fois par seconde jusqu’à réussite, avec fsync seulement pour une partition isolée ; une
+partition refusée par ses contrôles est abandonnée aussitôt. Chaque erreur est rendue une seule fois
+au script, sans bloquer le changement de monde. Toute erreur, `Error` comprise, libère ou replanifie
+la tâche. Les temporaires s’appellent `.ecriture-<nom>-<n>.tmp`, hors des motifs de la migration et
+de la sauvegarde. `IdentiteMonde` ne garde qu’une référence faible au serveur solo.
+
+Sans le mod, le script écrit directement comme avant. Il ne dessine plus de panneau et l’assistant
+n’écrit plus `plan.json` ; `fabrication_emi.json` a aussi disparu. `VERSION_SCRIPT` vaut 13 :
+l’assistant demande F3 + T si le jeu exécute un script plus ancien.
+
+`RelachementSouris` empêche qu’un clic sur la barre EMI ou un panneau de l’assistant (bouton grisé
+compris), ou un retour vers le coffre ou la machine, laisse le relâchement atteindre le conteneur :
+`AbstractContainerScreen.mouseReleased` jetterait l’objet tenu au curseur. Il suit un appui à la fois.
+
+Côté assistant, `interface.unsupported_request` refuse explicitement les demandes d’un ancien mod :
+boutons retirés (« Fonction retirée : relance Minecraft… ») et demandes inconnues. Pour une version,
+le contexte Production publie encore `projet` et `revision_projet` constants (à retirer ensuite).
+`vue_mod.json` ignore `rendu_ms` et `inventaire_t` pour décider d’une réécriture : il change sur un
+vrai changement ou au battement « vie » de 5 s.
+
+`EcrituresTest`, `test_change_only_exports.py` et `test_kubejs_exports.py` rejouent l’écrivain,
+l’export d’inventaire et le script client tick par tick sous Node.js, avec ou sans le mod.

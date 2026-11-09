@@ -92,10 +92,7 @@ def fixture():
     ]
     world.last_t, world.live_dimension = START, "minecraft:overworld"
     app.world = world
-    app.objective_paused = True
-    app.objectives = [{"titre": "Passer en LV", "etat": "en_cours"}]
-    app.plan_title = "Progression préservée"
-    app.plan = app.guide = None
+    app.guide = None
     app.removed_chests = []
     app.veins = []
     app.places = {"Base": {"x": 1, "y": 64, "z": 9, "dimension": "minecraft:overworld"}}
@@ -138,7 +135,6 @@ def measure():
                     "prepare_median_ms": statistics.median(timings),
                     "prepare_p95_ms": sorted(timings)[47],
                     "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
-                    "pause": "EN PAUSE" in context,
                     "all_player_positions": all(
                         fragment in context
                         for fragment in ("Camille en 14 68 15", "Alex en 20 70 -20")
