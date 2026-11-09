@@ -3,13 +3,27 @@ package fr.assistantia;
 import java.util.*;
 import java.util.function.Predicate;
 
-/** Modèle local sans dépendance Minecraft : groupes approximatifs, stables après minage. */
+/**
+ * Modèle local sans dépendance Minecraft : gisements GregTech et minerais repérés.
+ *
+ * <p>Chaque gisement garde ses minerais encore présents dans des tableaux primitifs (position
+ * compactée façon {@code BlockPos.asLong}, type de bloc) avec un index position → case. Les blocs
+ * minés ne sont plus mémorisés un par un : ils deviennent des compteurs par type, ce qui garde le
+ * total trouvé (restants + minés) sans grossir la mémoire ni la sauvegarde.
+ */
 public final class FilonMemoire {
-    public static final int MAX_BLOCS = 100000, RAYON_GROUPE = 24, LOT_ROTATION = 8192;
+    /** Minerais présents mémorisés au plus, tous gisements confondus. */
+    public static final int MAX_BLOCS = 400_000;
 
+    /** Proposition « Épuisé » : il reste au plus 10 % des minerais trouvés. */
+    public static final int POURCENT_PRESQUE_EPUISE = 10, MINIMUM_PRESQUE_EPUISE = 16;
+
+    public static final int RAYON_TP = 8;
+
+    /** Position lisible, réservée aux interfaces et à la téléportation (jamais par bloc scanné). */
     public record Position(String dimension, int x, int y, int z) {
-        public String cle() {
-            return dimension + "|" + x + "|" + y + "|" + z;
+        public long longue() {
+            return pos(x, y, z);
         }
 
         public double distance2(Position p) {
@@ -20,31 +34,112 @@ public final class FilonMemoire {
         }
     }
 
-    public static final class Bloc {
-        public final Position position;
-        public final String filon;
-        public String id;
-        public boolean retire;
-        public long vu;
+    // ---------- Positions compactées (même codage que BlockPos.asLong) ----------
 
-        Bloc(Position p, String f, String id, boolean retire, long vu) {
-            this.position = p;
-            this.filon = f;
-            this.id = id;
-            this.retire = retire;
-            this.vu = vu;
-        }
+    public static long pos(int x, int y, int z) {
+        return ((long) (x & 0x3FFFFFF) << 38) | ((long) (z & 0x3FFFFFF) << 12) | (y & 0xFFF);
     }
+
+    public static int x(long p) {
+        return (int) (p >> 38);
+    }
+
+    public static int y(long p) {
+        return (int) (p << 52 >> 52);
+    }
+
+    public static int z(long p) {
+        return (int) (p << 26 >> 38);
+    }
+
+    /** Section de 16³ blocs contenant la position. */
+    static long section(int x, int y, int z) {
+        return pos(x >> 4, y >> 4, z >> 4);
+    }
+
+    static double distance2(long p, int x, int y, int z) {
+        double dx = x(p) - x, dy = y(p) - y, dz = z(p) - z;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    // ---------- Types de blocs ----------
+
+    private final List<String> types = new ArrayList<>();
+    private final Map<String, Integer> indexTypes = new HashMap<>();
+
+    /** Indice du type, créé s'il est nouveau. */
+    public int type(String id) {
+        Integer t = indexTypes.get(id);
+        if (t != null) return t;
+        types.add(id);
+        indexTypes.put(id, types.size() - 1);
+        return types.size() - 1;
+    }
+
+    /** Indice d'un type déjà connu, -1 sinon. */
+    public int typeConnu(String id) {
+        Integer t = indexTypes.get(id);
+        return t == null ? -1 : t;
+    }
+
+    public String typeId(int t) {
+        return t >= 0 && t < types.size() ? types.get(t) : "";
+    }
+
+    public int typesConnus() {
+        return types.size();
+    }
+
+    // ---------- Gisements ----------
 
     public static final class Filon {
         public final String id;
         public final Position ancre;
-        public final List<Bloc> blocs = new ArrayList<>();
+        final FilonMemoire memoire;
         public String definition = "", nom = "";
         public Set<String> composition = Set.of();
+        private long[] typesComposition = new long[1];
         Object definitionNative; // disponible uniquement après lecture du journal de la connexion
         public boolean epuise; // état du journal GregTech
         private boolean epuiseManuel;
+        private Set<String> typesChoisis; // null : aucun choix validé, tous cochés par défaut
+
+        /** Copies triées et immuables, partagées par les instantanés de sauvegarde. */
+        String[] compositionTriee = new String[0], choixTries;
+
+        // Minerais présents.
+        long[] positions = new long[16];
+        int[] typesBlocs = new int[16];
+        int presents;
+        final TableLong index = new TableLong();
+        final TableLong sections = new TableLong();
+        // Minerais minés : compteurs par type.
+        int[] minesTypes = new int[4], minesNombres = new int[4];
+        int minesTypesNombre, mines;
+
+        /** Dernière vérification d'au moins une partie du gisement (ms), 0 si inconnue. */
+        long verification;
+
+        /** Change à chaque modification : invalide les caches de l'interface et du rendu. */
+        long revision;
+
+        /** Boîte du générateur, persistée pour reprendre un scan sans le journal GregTech. */
+        VolumeFilon volume;
+
+        /** Colonnes de chunks encore à parcourir pour finir le dernier scan demandé. */
+        long[] colonnesRestantes = new long[0];
+
+        /** Positions du volume parcourues et à parcourir pour le dernier scan demandé. */
+        long scanFait, scanTotal;
+
+        /** Le volume entier a été parcouru depuis le dernier « Scanner ». */
+        boolean scanComplet;
+
+        Filon(FilonMemoire memoire, String id, Position ancre) {
+            this.memoire = memoire;
+            this.id = id;
+            this.ancre = ancre;
+        }
 
         public boolean epuiseManuel() {
             return epuiseManuel;
@@ -57,6 +152,7 @@ public final class FilonMemoire {
         public boolean marquerEpuise(boolean valeur) {
             if (epuiseManuel == valeur) return false;
             epuiseManuel = valeur;
+            revision++;
             return true;
         }
 
@@ -65,22 +161,107 @@ public final class FilonMemoire {
         }
 
         public boolean visible() {
-            return !estEpuise() && (gregtech() || restants() > 0);
+            return !estEpuise() && (gregtech() || presents > 0);
+        }
+
+        public String dimension() {
+            return ancre.dimension();
+        }
+
+        // ----- Compteurs -----
+
+        public int restants() {
+            return presents;
+        }
+
+        public int mines() {
+            return mines;
+        }
+
+        /** Minerais trouvés depuis le premier relevé : restants + minés. */
+        public int trouves() {
+            return presents + mines;
+        }
+
+        /** Part restante en pour cent (100 si rien n'a encore été trouvé). */
+        public int pourcentRestant() {
+            int total = trouves();
+            return total == 0 ? 100 : (int) Math.round(presents * 100.0 / total);
+        }
+
+        public boolean scanEnAttente() {
+            return colonnesRestantes.length > 0;
+        }
+
+        public boolean scanComplet() {
+            return scanComplet;
+        }
+
+        /** Avancement du dernier scan demandé (0 à 100), 100 sans scan en cours. */
+        public int avancementScan() {
+            if (scanTotal <= 0) return colonnesRestantes.length > 0 ? 0 : 100;
+            return (int) Math.min(100, scanFait * 100 / scanTotal);
+        }
+
+        /**
+         * Peu de minerai restant par rapport au total trouvé : proposer « Épuisé » (jamais de
+         * marquage automatique). Pas de proposition pendant un scan inachevé : le reste du volume
+         * est inconnu.
+         */
+        public boolean presqueEpuise() {
+            int total = trouves();
+            return !estEpuise()
+                    && !scanEnAttente()
+                    && total >= MINIMUM_PRESQUE_EPUISE
+                    && presents * 100L <= (long) total * POURCENT_PRESQUE_EPUISE;
         }
 
         public String quantite() {
             if (epuiseManuel) return "Épuisé (marquage personnel)";
-            if (!gregtech()) return restants() + " repérés";
+            if (!gregtech()) return presents + " repérés";
             if (epuise) return "Épuisé (GregTech)";
-            return restants() > 0
-                    ? restants() + " blocs repérés · total inconnu"
-                    : "Aucun bloc repéré · total inconnu";
+            if (trouves() == 0)
+                return scanEnAttente()
+                        ? "Scan en attente · rien trouvé encore"
+                        : "Pas encore scanné";
+            return presents
+                    + " restants sur "
+                    + trouves()
+                    + " trouvés ("
+                    + pourcentRestant()
+                    + " %)"
+                    + (scanEnAttente()
+                            ? " · scan partiel"
+                            : scanComplet ? "" : " · zone partielle");
         }
 
-        private Set<String> typesChoisis; // null : aucun choix validé, tous cochés par défaut
+        // ----- Composition et choix d'affichage -----
+
+        public boolean dansComposition(int type) {
+            return type >= 0
+                    && (type >> 6) < typesComposition.length
+                    && (typesComposition[type >> 6] & (1L << (type & 63))) != 0;
+        }
+
+        void definirComposition(Set<String> ids) {
+            composition = Set.copyOf(ids);
+            compositionTriee = composition.toArray(String[]::new);
+            Arrays.sort(compositionTriee);
+            long[] bits = new long[Math.max(1, (memoire.types.size() + ids.size() + 63) / 64 + 1)];
+            for (String id : ids) {
+                int t = memoire.type(id);
+                if ((t >> 6) >= bits.length) bits = Arrays.copyOf(bits, (t >> 6) + 1);
+                bits[t >> 6] |= 1L << (t & 63);
+            }
+            typesComposition = bits;
+        }
 
         public boolean typeAffiche(String type) {
             return typesChoisis == null || typesChoisis.contains(type);
+        }
+
+        boolean typeAffiche(int type) {
+            return typesChoisis == null || typesChoisis.contains(memoire.typeId(type));
         }
 
         public Set<String> typesChoisis() {
@@ -89,50 +270,47 @@ public final class FilonMemoire {
 
         public void choisirTypes(Collection<String> types) {
             typesChoisis = Set.copyOf(types);
+            choixTries = typesChoisis.toArray(String[]::new);
+            Arrays.sort(choixTries);
+            revision++;
         }
 
-        public List<Bloc> contours(Position joueur) {
-            return contours(joueur, 768);
+        /** Composition GT avec les minerais présents (0 pour les types jamais vus). */
+        public Map<String, Integer> types() {
+            Map<String, Integer> resultat = new TreeMap<>();
+            for (String type : composition) resultat.put(type, 0);
+            resultat.putAll(typesReperes());
+            return resultat;
         }
 
-        public List<Bloc> contours(Position joueur, int maximum) {
-            return blocs.stream()
-                    .filter(
-                            b ->
-                                    !b.retire
-                                            && typeAffiche(b.id)
-                                            && b.position.distance2(joueur) <= 64 * 64)
-                    .sorted(Comparator.comparingDouble(b -> b.position.distance2(joueur)))
-                    .limit(Math.max(1, Math.min(4096, maximum)))
-                    .toList();
+        /** Uniquement les minerais observés encore présents, par type de bloc. */
+        public Map<String, Integer> typesReperes() {
+            int[] compte = new int[memoire.types.size()];
+            for (int i = 0; i < presents; i++) compte[typesBlocs[i]]++;
+            Map<String, Integer> resultat = new TreeMap<>();
+            for (int t = 0; t < compte.length; t++)
+                if (compte[t] > 0) resultat.put(memoire.typeId(t), compte[t]);
+            return resultat;
         }
 
-        Filon(String id, Position p) {
-            this.id = id;
-            this.ancre = p;
+        /** Minerais minés par type de bloc. */
+        public Map<String, Integer> typesMines() {
+            Map<String, Integer> resultat = new TreeMap<>();
+            for (int i = 0; i < minesTypesNombre; i++)
+                if (minesNombres[i] > 0)
+                    resultat.merge(memoire.typeId(minesTypes[i]), minesNombres[i], Integer::sum);
+            return resultat;
         }
 
-        public int restants() {
-            return (int) blocs.stream().filter(b -> !b.retire).count();
-        }
+        // ----- Fraîcheur -----
 
-        public long derniereVue() {
-            return blocs.stream().mapToLong(b -> b.vu).max().orElse(0);
-        }
-
-        // Le bloc le moins récemment contrôlé borne la fraîcheur du compteur restant.
         public long verificationAncienne() {
-            return blocs.stream()
-                    .filter(b -> !b.retire)
-                    .mapToLong(b -> b.vu)
-                    .min()
-                    .orElseGet(() -> blocs.stream().mapToLong(b -> b.vu).min().orElse(0));
+            return verification;
         }
 
         public String ageReleve(long maintenant) {
-            long date = verificationAncienne();
-            if (date <= 0) return "date inconnue";
-            long minutes = Math.max(0, maintenant - date) / 60000;
+            if (verification <= 0) return "date inconnue";
+            long minutes = Math.max(0, maintenant - verification) / 60000;
             if (minutes == 0) return "moins de 1 min";
             if (minutes < 60) return minutes + " min";
             if (minutes < 1440) return (minutes / 60) + " h";
@@ -140,49 +318,198 @@ public final class FilonMemoire {
         }
 
         public boolean releveAncien(long maintenant) {
-            return verificationAncienne() <= 0 || maintenant - verificationAncienne() >= 600000;
+            return verification <= 0 || maintenant - verification >= 600000;
         }
 
-        public boolean arrive(Position joueur) {
-            return blocs.stream().anyMatch(b -> !b.retire && b.position.distance2(joueur) <= 9);
-        }
+        // ----- Accès aux minerais présents -----
 
-        public Map<String, Integer> types() {
-            Map<String, Integer> types = new TreeMap<>();
-            for (String type : composition) types.put(type, 0);
-            for (Bloc b : blocs) types.merge(b.id, b.retire ? 0 : 1, Integer::sum);
-            return types;
-        }
-
-        /**
-         * Uniquement les blocs observés encore présents ; la composition GT sert au repérage, pas
-         * aux compteurs.
-         */
-        public Map<String, Integer> typesReperes() {
-            Map<String, Integer> presents = new TreeMap<>();
-            for (Bloc b : blocs) if (!b.retire) presents.merge(b.id, 1, Integer::sum);
+        public int nombre() {
             return presents;
         }
 
+        public long position(int i) {
+            return positions[i];
+        }
+
+        public int typeBloc(int i) {
+            return typesBlocs[i];
+        }
+
+        public boolean present(long p) {
+            return index.contient(p);
+        }
+
+        /** Minerai présent le plus proche, ou l'ancre. */
         public Position destination(Position depuis) {
-            return blocs.stream()
-                    .filter(b -> !b.retire)
-                    .min(Comparator.comparingDouble(b -> b.position.distance2(depuis)))
-                    .map(b -> b.position)
-                    .orElse(ancre);
+            if (presents == 0 || !depuis.dimension().equals(ancre.dimension())) return ancre;
+            int meilleur = 0;
+            double d = Double.MAX_VALUE;
+            for (int i = 0; i < presents; i++) {
+                double e = distance2(positions[i], depuis.x(), depuis.y(), depuis.z());
+                if (e < d) {
+                    d = e;
+                    meilleur = i;
+                }
+            }
+            long p = positions[meilleur];
+            return new Position(ancre.dimension(), x(p), y(p), z(p));
+        }
+
+        /** Le joueur est à trois blocs d'un minerai restant. */
+        public boolean arrive(Position joueur) {
+            if (!joueur.dimension().equals(ancre.dimension())) return false;
+            for (int i = 0; i < presents; i++)
+                if (distance2(positions[i], joueur.x(), joueur.y(), joueur.z()) <= 9) return true;
+            return false;
+        }
+
+        /**
+         * Minerais présents dans la section : un scan ne saute jamais une section qui en contient.
+         */
+        public boolean sectionConnue(long section) {
+            return sections.contient(section);
+        }
+
+        /**
+         * Indices des minerais à surligner : types choisis, à moins de {@code rayon} blocs, les
+         * plus proches d'abord, au plus {@code maximum}.
+         */
+        public int[] contours(int px, int py, int pz, int rayon, int maximum) {
+            int limite = Math.max(1, Math.min(4096, maximum));
+            double r2 = (double) rayon * rayon;
+            long[] cles = new long[presents];
+            int n = 0;
+            boolean tous = typesChoisis == null;
+            boolean[] affiches = tous ? null : new boolean[memoire.types.size()];
+            if (!tous)
+                for (String t : typesChoisis) {
+                    int i = memoire.typeConnu(t);
+                    if (i >= 0) affiches[i] = true;
+                }
+            for (int i = 0; i < presents; i++) {
+                if (!tous && !affiches[typesBlocs[i]]) continue;
+                double d = distance2(positions[i], px, py, pz);
+                if (d > r2) continue;
+                cles[n++] = (Math.min(Integer.MAX_VALUE, (long) d) << 32) | i;
+            }
+            if (n > limite) selectionner(cles, n, limite);
+            int m = Math.min(n, limite);
+            Arrays.sort(cles, 0, m);
+            int[] resultat = new int[m];
+            for (int i = 0; i < m; i++) resultat[i] = (int) cles[i];
+            return resultat;
+        }
+
+        /** Place les {@code k} plus petites clés en tête (sélection rapide, O(n) en moyenne). */
+        private static void selectionner(long[] a, int n, int k) {
+            int gauche = 0, droite = n - 1;
+            var hasard = new Random(n * 31L + k);
+            while (gauche < droite) {
+                long pivot = a[gauche + hasard.nextInt(droite - gauche + 1)];
+                int i = gauche, j = droite;
+                while (i <= j) {
+                    while (a[i] < pivot) i++;
+                    while (a[j] > pivot) j--;
+                    if (i <= j) {
+                        long t = a[i];
+                        a[i] = a[j];
+                        a[j] = t;
+                        i++;
+                        j--;
+                    }
+                }
+                if (k - 1 <= j) droite = j;
+                else if (k - 1 >= i) gauche = i;
+                else return;
+            }
+        }
+
+        // ----- Modifications (via la mémoire, qui tient le plafond) -----
+
+        private void ajouterPresent(long p, int type) {
+            if (presents == positions.length) {
+                int n = Math.max(16, presents * 2);
+                positions = Arrays.copyOf(positions, n);
+                typesBlocs = Arrays.copyOf(typesBlocs, n);
+            }
+            positions[presents] = p;
+            typesBlocs[presents] = type;
+            index.ecrire(p, presents);
+            sections.ajouter(section(x(p), y(p), z(p)), 1);
+            presents++;
+            revision++;
+        }
+
+        private int retirerPresent(long p) {
+            int i = index.retirer(p);
+            if (i == TableLong.ABSENT) return -1;
+            int type = typesBlocs[i];
+            int dernier = presents - 1;
+            if (i != dernier) {
+                positions[i] = positions[dernier];
+                typesBlocs[i] = typesBlocs[dernier];
+                index.ecrire(positions[i], i);
+            }
+            presents--;
+            sections.ajouter(section(x(p), y(p), z(p)), -1);
+            revision++;
+            return type;
+        }
+
+        void compterMine(int type, int nombre) {
+            if (nombre <= 0) return;
+            mines += nombre;
+            for (int i = 0; i < minesTypesNombre; i++)
+                if (minesTypes[i] == type) {
+                    minesNombres[i] += nombre;
+                    return;
+                }
+            if (minesTypesNombre == minesTypes.length) {
+                minesTypes = Arrays.copyOf(minesTypes, minesTypesNombre * 2);
+                minesNombres = Arrays.copyOf(minesNombres, minesTypesNombre * 2);
+            }
+            minesTypes[minesTypesNombre] = type;
+            minesNombres[minesTypesNombre++] = nombre;
         }
     }
 
-    private final boolean gregtechSeulement;
+    private final Map<String, Filon> filons = new LinkedHashMap<>();
+    private int presents;
+    private long revision;
+    private int refus;
 
-    public FilonMemoire() {
-        this(false);
+    public Collection<Filon> filons() {
+        return Collections.unmodifiableCollection(filons.values());
     }
 
-    public FilonMemoire(boolean gregtechSeulement) {
-        this.gregtechSeulement = gregtechSeulement;
+    public Filon filon(String id) {
+        return id == null ? null : filons.get(id);
     }
 
+    public List<Filon> filonsDans(String dimension) {
+        if (dimension == null || dimension.isEmpty()) return List.of();
+        return filons.values().stream().filter(f -> f.ancre.dimension().equals(dimension)).toList();
+    }
+
+    /** Minerais présents mémorisés, tous gisements confondus. */
+    public int presents() {
+        return presents;
+    }
+
+    public boolean plein() {
+        return presents >= MAX_BLOCS;
+    }
+
+    /** Minerais trouvés mais non mémorisés faute de place. */
+    public int refus() {
+        return refus;
+    }
+
+    public long revision() {
+        return revision;
+    }
+
+    /** Ajoute ou actualise un gisement du journal GregTech. */
     public boolean gisement(
             String id,
             Position centre,
@@ -192,7 +519,7 @@ public final class FilonMemoire {
             boolean epuise) {
         Filon f = filons.get(id);
         if (f == null) {
-            f = new Filon(id, centre);
+            f = new Filon(this, id, centre);
             filons.put(id, f);
         } else if (f.definition.equals(definition)
                 && f.nom.equals(nom)
@@ -200,323 +527,77 @@ public final class FilonMemoire {
                 && f.epuise == epuise) return false;
         f.definition = definition;
         f.nom = nom;
-        f.composition = Set.copyOf(composition);
+        f.definirComposition(composition);
         f.epuise = epuise;
+        f.revision++;
+        revision++;
         return true;
     }
 
-    public int viderReleves() {
-        int nombre = blocs.size();
-        blocs.clear();
-        for (var f : filons.values()) f.blocs.clear();
-        filons.values().removeIf(f -> !f.gregtech());
-        return nombre;
+    /** Gisement dont la boîte contient la position et qui mémorise déjà ce minerai. */
+    public Filon proprietaire(String dimension, long p) {
+        for (Filon f : filons.values())
+            if (f.presents > 0 && f.ancre.dimension().equals(dimension) && f.index.contient(p))
+                return f;
+        return null;
     }
 
-    public void restaurerReleve(Position p, String id, boolean retire, long vu, String filon) {
-        var f = filons.get(filon);
-        if (f == null
-                || !f.ancre.dimension.equals(p.dimension)
-                || plein()
-                || blocs.containsKey(p.cle())) return;
-        var b = new Bloc(p, filon, id, retire, vu);
-        blocs.put(p.cle(), b);
-        f.blocs.add(b);
-    }
-
-    // Les accès d'observation placent les blocs revus en fin de liste (LRU).
-    private final Map<String, Bloc> blocs = new LinkedHashMap<>(16, .75f, true);
-    private Position zoneScan;
-    private VolumeScan volumeProtege;
-    private long remplaces;
-
-    public void protegerScan(Position centre) {
-        protegerScan(centre, null);
-    }
-
-    public void protegerScan(Position centre, VolumeScan volume) {
-        zoneScan = centre;
-        volumeProtege = volume;
-    }
-
-    public long remplaces() {
-        return remplaces;
-    }
-
-    private static boolean dansZone(Position p, Position centre) {
-        return p.dimension.equals(centre.dimension)
-                && Math.abs(p.x - centre.x) <= Scan.RAYON
-                && Math.abs(p.y - centre.y) <= Scan.RAYON
-                && Math.abs(p.z - centre.z) <= Scan.RAYON;
-    }
-
-    /** Rotation par lots, seulement à saturation : minés d'abord, puis anciens hors zone. */
-    private int rotation() {
-        if (zoneScan == null || !plein()) return 0;
-        Set<Bloc> retires = new HashSet<>();
-        for (int passe = 0; passe < 2 && retires.size() < LOT_ROTATION; passe++) {
-            var it = blocs.values().iterator();
-            while (it.hasNext() && retires.size() < LOT_ROTATION) {
-                Bloc b = it.next();
-                boolean protege =
-                        volumeProtege == null
-                                ? dansZone(b.position, zoneScan)
-                                : volumeProtege.contient(b.position);
-                if (passe == 0 ? b.retire : !protege) {
-                    retires.add(b);
-                    it.remove();
-                }
-            }
-        }
-        // Un seul passage par groupe, pas de retrait quadratique dans les listes.
-        if (!retires.isEmpty()) for (Filon f : filons.values()) f.blocs.removeIf(retires::contains);
-        remplaces += retires.size();
-        return retires.size();
-    }
-
-    private final Map<String, Filon> filons = new LinkedHashMap<>();
-
-    public Collection<Bloc> blocs() {
-        return Collections.unmodifiableCollection(blocs.values());
-    }
-
-    public Collection<Filon> filons() {
-        return Collections.unmodifiableCollection(filons.values());
-    }
-
-    public Filon filon(String id) {
-        return filons.get(id);
-    }
-
-    public List<Filon> filonsDans(String dimension) {
-        if (dimension == null || dimension.isEmpty()) return List.of();
-        return filons.values().stream().filter(f -> f.ancre.dimension().equals(dimension)).toList();
-    }
-
-    public boolean plein() {
-        return blocs.size() >= MAX_BLOCS;
-    }
-
-    /**
-     * Ne jamais appeler sur une position non chargée : l'air d'un chunk absent n'est pas du minage.
-     */
-    public boolean observer(Position p, String id, boolean minerai, long maintenant) {
-        Bloc b = blocs.get(p.cle());
-        if (b != null) {
-            if (gregtechSeulement && minerai && !filons.get(b.filon).composition.contains(id))
-                minerai = false;
-            boolean change = b.retire == minerai || (minerai && !b.id.equals(id));
-            if (!change && maintenant - b.vu < 60000) return false;
-            b.retire = !minerai;
-            if (minerai) b.id = id;
-            b.vu = maintenant;
+    /** Nouveau minerai présent ; refusé quand la mémoire est pleine. */
+    public boolean ajouter(Filon f, long p, int type) {
+        if (f.index.contient(p)) {
+            int i = f.index.lire(p);
+            if (f.typesBlocs[i] == type) return false;
+            f.typesBlocs[i] = type;
+            f.revision++;
+            revision++;
             return true;
         }
-        if (!minerai) return false;
-        // Relevé de proximité, pas une preuve d'appartenance géologique au gisement.
-        Filon f =
-                filons.values().stream()
-                        .filter(
-                                v ->
-                                        gregtechSeulement
-                                                ? v.gregtech()
-                                                        && v.composition.contains(id)
-                                                        && v.ancre.distance2(p) <= 64 * 64
-                                                : v.ancre.distance2(p)
-                                                        <= RAYON_GROUPE * RAYON_GROUPE)
-                        .min(
-                                Comparator.<Filon>comparingDouble(v -> v.ancre.distance2(p))
-                                        .thenComparing(v -> v.id))
-                        .orElse(null);
-        if (f == null && gregtechSeulement) return false;
-        if (plein() && rotation() == 0) return false;
-        if (f == null) {
-            f = new Filon(p.cle(), p);
-            filons.put(f.id, f);
+        if (plein()) {
+            refus++;
+            return false;
         }
-        b = new Bloc(p, f.id, id, false, maintenant);
-        blocs.put(p.cle(), b);
-        f.blocs.add(b);
+        f.ajouterPresent(p, type);
+        presents++;
+        revision++;
         return true;
     }
 
-    /** Import explicite : pas de doublon et jamais de retour à une observation plus ancienne. */
-    public boolean importer(Position p, String id, boolean retire, long vu) {
-        Bloc connu = blocs.get(p.cle());
-        if (connu != null) {
-            if (connu.vu >= vu) return false;
-            connu.id = id;
-            connu.retire = retire;
-            connu.vu = vu;
-            return true;
-        }
-        if (!observer(p, id, true, vu)) return false;
-        blocs.get(p.cle()).retire = retire;
+    /** Un minerai connu a disparu : il devient un compteur « miné » de son gisement. */
+    public boolean miner(Filon f, long p) {
+        int type = f.retirerPresent(p);
+        if (type < 0) return false;
+        f.compterMine(type, 1);
+        presents--;
+        revision++;
         return true;
     }
 
-    public void restaurer(Position p, String id, boolean retire, long vu, Position ancre) {
-        if (plein() || blocs.containsKey(p.cle()) || !p.dimension.equals(ancre.dimension)) return;
-        Filon f = filons.computeIfAbsent(ancre.cle(), k -> new Filon(k, ancre));
-        Bloc b = new Bloc(p, f.id, id, retire, vu);
-        blocs.put(p.cle(), b);
-        f.blocs.add(b);
+    /** Relevé restauré : présent ou miné, sans dépasser le plafond. */
+    public void restaurer(Filon f, long p, int type, boolean mine) {
+        if (mine) {
+            f.compterMine(type, 1);
+        } else if (!f.index.contient(p) && !plein()) {
+            f.ajouterPresent(p, type);
+            presents++;
+        }
+        revision++;
     }
 
-    /** Enveloppe des positions possibles du générateur cuboïde GTCEu 7.5. */
-    public record VolumeScan(Position minimum, int largeur, int hauteur) {
-        static VolumeScan cuboide(Position ancre, int taille, int minY, int maxY, int couches) {
-            if (taille < 2
-                    || taille > 128
-                    || minY < -4095
-                    || maxY > 4095
-                    || (long) maxY - minY <= 5
-                    || couches < 1
-                    || couches > 128) return null;
-            int marge = taille / 2 - 1;
-            int largeur = 16 + 2 * marge;
-            // GT tire le bas dans [minY - 1, maxY - 7], puis parcourt 0 à couches inclus.
-            int hauteur = maxY - 7 + couches - (minY - 1) + 1;
-            if ((long) largeur * largeur * hauteur > 500_000) return null;
-            return new VolumeScan(
-                    new Position(ancre.dimension, ancre.x - marge, minY - 1, ancre.z - marge),
-                    largeur,
-                    hauteur);
-        }
-
-        int total() {
-            return largeur * largeur * hauteur;
-        }
-
-        Position position(int index) {
-            return new Position(
-                    minimum.dimension,
-                    minimum.x + index % largeur,
-                    minimum.y + index / (largeur * largeur),
-                    minimum.z + index / largeur % largeur);
-        }
-
-        boolean contient(Position position) {
-            return minimum.dimension.equals(position.dimension)
-                    && position.x >= minimum.x
-                    && position.x < minimum.x + largeur
-                    && position.y >= minimum.y
-                    && position.y < minimum.y + hauteur
-                    && position.z >= minimum.z
-                    && position.z < minimum.z + largeur;
-        }
+    /** Oublie les minerais présents d'un gisement (les compteurs minés restent). */
+    public void oublierPresents(Filon f) {
+        presents -= f.presents;
+        f.presents = 0;
+        f.index.vider();
+        f.sections.vider();
+        f.revision++;
+        revision++;
     }
 
-    /** Cube parcouru de façon incrémentale, pas de scan complet par image. */
-    public static final class Scan {
-        public static final int RAYON = 16, COTE = 2 * RAYON + 1, TOTAL = COTE * COTE * COTE;
-        private static final int[] ORDRE = ordre();
-
-        private static int[] ordre() {
-            int[] codes = new int[TOTAL];
-            int n = 0;
-            for (int r = 0; r <= RAYON; r++)
-                for (int x = -r; x <= r; x++)
-                    for (int y = -r; y <= r; y++)
-                        for (int z = -r; z <= r; z++)
-                            if (Math.max(Math.abs(x), Math.max(Math.abs(y), Math.abs(z))) == r)
-                                codes[n++] =
-                                        x + RAYON + (z + RAYON) * COTE + (y + RAYON) * COTE * COTE;
-            return codes;
-        }
-
-        private Position centre;
-        private VolumeScan volume;
-        private int index;
-        private boolean actif = true, ponctuel, termine;
-
-        public boolean actif() {
-            return actif;
-        }
-
-        public boolean ponctuel() {
-            return ponctuel;
-        }
-
-        public boolean termine() {
-            return termine;
-        }
-
-        public void reprendrePonctuel() {
-            if (ponctuel) index = 0;
-        }
-
-        public void lancerPonctuel(Position joueur) {
-            lancerPonctuel(joueur, null);
-        }
-
-        public void lancerPonctuel(Position joueur, VolumeScan volume) {
-            centre = joueur;
-            this.volume = volume;
-            index = 0;
-            actif = ponctuel = true;
-            termine = false;
-        }
-
-        public boolean activer(boolean valeur) {
-            if (actif == valeur) return false;
-            actif = valeur;
-            ponctuel = termine = false;
-            if (volume != null || index == TOTAL) index = 0;
-            volume = null;
-            return true;
-        }
-
-        public Position centre() {
-            return centre;
-        }
-
-        public VolumeScan volume() {
-            return volume;
-        }
-
-        private int total() {
-            return volume == null ? TOTAL : volume.total();
-        }
-
-        public Position suivant(Position joueur) {
-            if (!actif) return null; // aucune position visitée, curseur conservé
-            if (ponctuel && !centre.dimension.equals(joueur.dimension)) {
-                activer(false);
-                return null;
-            }
-            if (centre == null || (!ponctuel && centre.distance2(joueur) > 64)) {
-                centre = joueur;
-                index = 0;
-            }
-            Position resultat;
-            if (volume != null) {
-                resultat = volume.position(index++);
-            } else {
-                int i = ORDRE[index++];
-                resultat =
-                        new Position(
-                                centre.dimension,
-                                centre.x + i % COTE - RAYON,
-                                centre.y + i / (COTE * COTE) - RAYON,
-                                centre.z + i / COTE % COTE - RAYON);
-            }
-            if (index == total()) {
-                if (ponctuel) {
-                    actif = ponctuel = false;
-                    termine = true;
-                } else {
-                    index = 0;
-                    centre = joueur;
-                }
-            }
-            return resultat;
-        }
-
-        public int pourcentage() {
-            return index * 100 / total();
-        }
+    public void toucher() {
+        revision++;
     }
+
+    // ---------- Téléportation ----------
 
     /**
      * Première position sûre strictement au-dessus du centre, sans déplacement horizontal. maxY est
@@ -530,8 +611,6 @@ public final class FilonMemoire {
         }
         return null;
     }
-
-    public static final int RAYON_TP = 8;
 
     /** Point sûr le plus proche dans les colonnes voisines, toujours au-dessus du filon. */
     public static Position destinationProche(

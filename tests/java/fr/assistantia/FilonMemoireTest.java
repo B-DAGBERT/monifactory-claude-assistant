@@ -2,78 +2,719 @@ package fr.assistantia;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
-/** Executable headless regression tests: java -ea ... FilonMemoireTest. */
+/** Executable headless regression tests: java -ea ... FilonMemoireTest (ASCII output only). */
 public final class FilonMemoireTest {
+    static final String OW = "minecraft:overworld";
+
     static FilonMemoire.Position p(int x, int y, int z) {
-        return new FilonMemoire.Position("minecraft:overworld", x, y, z);
+        return new FilonMemoire.Position(OW, x, y, z);
     }
 
     static void verifier(boolean condition, String raison) {
         if (!condition) throw new AssertionError(raison);
     }
 
-    public static void main(String[] args) {
-        suivi();
-        groupes();
-        restauration();
-        scan();
-        securite();
-        limite();
-        importHistorique();
-        pauseScan();
-        scanPonctuel();
-        scanCuboideUraninite();
-        fraicheur();
-        arrivee();
-        mondeActif();
-        choixAffichage();
-        gisementsGregtech();
-        disposition();
-        epuisementManuel();
-        destinationProche();
-        teleportationDirecte();
-        rotationCache();
-        System.out.println(
-                "19 scénarios filons validés : suivi, groupes, restauration, scan, destination, limite.");
+    /** Monde synthétique : blocs par position, chunks chargés à la demande, horloge contrôlée. */
+    static final class MondeTest implements ScanFilon.Monde {
+        final FilonMemoire memoire;
+        final Map<Long, String> blocs = new HashMap<>();
+        final Set<Long> decharges = new HashSet<>();
+        int lectures;
+        boolean palette = true;
+
+        MondeTest(FilonMemoire memoire) {
+            this.memoire = memoire;
+        }
+
+        void poser(int x, int y, int z, String id) {
+            blocs.put(FilonMemoire.pos(x, y, z), id);
+        }
+
+        void retirer(int x, int y, int z) {
+            blocs.remove(FilonMemoire.pos(x, y, z));
+        }
+
+        void decharger(int cx, int cz) {
+            decharges.add(VolumeFilon.colonne(cx, cz));
+        }
+
+        void charger(int cx, int cz) {
+            decharges.remove(VolumeFilon.colonne(cx, cz));
+        }
+
+        @Override
+        public int minY() {
+            return -64;
+        }
+
+        @Override
+        public int maxY() {
+            return 319;
+        }
+
+        @Override
+        public boolean charge(int cx, int cz) {
+            return !decharges.contains(VolumeFilon.colonne(cx, cz));
+        }
+
+        @Override
+        public boolean sansMinerai(int cx, int sy, int cz, FilonMemoire.Filon filon) {
+            if (!palette) return false;
+            for (var e : blocs.entrySet()) {
+                long q = e.getKey();
+                if (FilonMemoire.x(q) >> 4 == cx
+                        && FilonMemoire.y(q) >> 4 == sy
+                        && FilonMemoire.z(q) >> 4 == cz
+                        && filon.dansComposition(memoire.typeConnu(e.getValue()))) return false;
+            }
+            return true;
+        }
+
+        @Override
+        public int type(int x, int y, int z) {
+            lectures++;
+            String id = blocs.get(FilonMemoire.pos(x, y, z));
+            return id == null ? -1 : memoire.typeConnu(id);
+        }
     }
 
-    static void disposition() {
-        for (int largeur : new int[] {300, 440, 460, 620, 1000})
-            for (int hauteur : new int[] {164, 200, 300, 500})
-                for (boolean outils : new boolean[] {false, true}) {
-                    int x = 10, y = 36, bas = y + hauteur;
-                    var d = DispositionFilons.calculer(x, y, largeur, bas, outils);
-                    verifier(
-                            d.lignes() >= 1,
-                            "Une ligne reste accessible, même en petite fenêtre avec Outils ouvert");
-                    verifier(
-                            d.listeY() + d.lignes() * DispositionFilons.LIGNE <= d.listeBas(),
-                            "Pas de ligne coupée ni de clic hors liste");
-                    verifier(
-                            d.detailX() >= x && d.detailX() + d.detailLargeur() <= x + largeur,
-                            "Fiche dans la fenêtre");
-                    verifier(
-                            d.actionsY() + 18 < d.statutY() && d.statutY() + 9 <= bas,
-                            "Actions et statut sans chevauchement");
-                    verifier(
-                            d.detailY() + 24 <= d.actionsY(),
-                            "Titre et coordonnées toujours visibles");
-                    if (d.colonnes())
-                        verifier(x + d.listeLargeur() < d.detailX(), "Colonnes séparées");
-                    else
-                        verifier(
-                                d.listeBas() < d.detailY(),
-                                "Fiche sous la liste en petite fenêtre");
+    static int balayer(ScanFilon scan, MondeTest monde) {
+        int tours = 0;
+        while (!scan.termine() && tours < 10_000) {
+            scan.avancer(monde, () -> 0L, Long.MAX_VALUE, 1000);
+            tours++;
+            if (scan.attente()) break;
+        }
+        return tours;
+    }
+
+    public static void main(String[] args) throws Exception {
+        tableLong();
+        positions();
+        volumes();
+        scanComplet();
+        budgetEtReprise();
+        colonnesNonChargees();
+        proprieteVoisins();
+        remplissageMarge();
+        comptesDirects();
+        presqueEpuise();
+        sauvegardeCompacte();
+        ancienFormat();
+        couleurs();
+        gisementsGregtech();
+        epuisementManuel();
+        choixAffichage();
+        mondeActif();
+        disposition();
+        destinationProche();
+        teleportationDirecte();
+        securite();
+        System.out.println(
+                "21 scenarios filons valides : volume, remplissage, propriete, comptes, sauvegarde,"
+                        + " ancien format, couleurs, destination.");
+    }
+
+    static void tableLong() {
+        var t = new TableLong();
+        var reference = new HashMap<Long, Integer>();
+        var hasard = new Random(7);
+        for (int i = 0; i < 200_000; i++) {
+            long cle =
+                    FilonMemoire.pos(
+                            hasard.nextInt(64) - 32, hasard.nextInt(64) - 32, hasard.nextInt(64));
+            int op = hasard.nextInt(3);
+            if (op == 0) {
+                t.ecrire(cle, i);
+                reference.put(cle, i);
+            } else if (op == 1) {
+                Integer attendu = reference.remove(cle);
+                verifier(
+                        t.retirer(cle) == (attendu == null ? TableLong.ABSENT : attendu),
+                        "Retrait");
+            } else
+                verifier(
+                        t.lire(cle) == reference.getOrDefault(cle, TableLong.ABSENT),
+                        "Lecture après retraits par décalage");
+        }
+        verifier(t.taille() == reference.size(), "Taille exacte");
+        AtomicInteger vus = new AtomicInteger();
+        t.parcourir(
+                (k, v) -> verifier(reference.get(k) == v && vus.incrementAndGet() > 0, "Parcours"));
+        verifier(vus.get() == reference.size(), "Parcours complet");
+        verifier(
+                t.ajouter(1, 2) == 2 && t.ajouter(1, -2) == 0 && !t.contient(1),
+                "Compteur à zéro retiré");
+    }
+
+    static void positions() {
+        for (int[] c :
+                new int[][] {
+                    {0, 0, 0},
+                    {-1, -64, -1},
+                    {29_999_999, 2047, -29_999_999},
+                    {-30_000_000, -2048, 30_000_000},
+                    {123, -5, -456}
+                }) {
+            long q = FilonMemoire.pos(c[0], c[1], c[2]);
+            verifier(
+                    FilonMemoire.x(q) == c[0]
+                            && FilonMemoire.y(q) == c[1]
+                            && FilonMemoire.z(q) == c[2],
+                    "Codage BlockPos.asLong réversible");
+            verifier(q != TableLong.VIDE, "Jamais la clé vide");
+        }
+    }
+
+    static void volumes() {
+        // Couches GTCEu (cluster 44) : sphère de rayon 22 autour du centre, pas le cube de 16.
+        var couches = VolumeFilon.couches(100, 40, -100, 44);
+        verifier(
+                couches.minX() == 78
+                        && couches.maxX() == 122
+                        && couches.minY() == 18
+                        && couches.maxY() == 62,
+                "Couches : centre ± ceil(taille/2)");
+        verifier(
+                VolumeFilon.couches(0, 0, 0, 45).maxX() == 23, "Taille impaire arrondie au-dessus");
+        var veine = VolumeFilon.veine(0, 30, 0, 52);
+        verifier(veine.minX() == -26 && veine.maxY() == 56, "Veine : cube ± 26");
+        // Dyke (cluster 50) : colonne de rayon floor(sqrt(2*25)) = 7 dans le chunk du centre.
+        var dyke = VolumeFilon.dyke(37, 40, 50, 25, 100);
+        verifier(
+                dyke.minX() == 32 - 7
+                        && dyke.maxX() == 47 + 7
+                        && dyke.minZ() == 32 - 7
+                        && dyke.maxZ() == 47 + 7,
+                "Dyke : chunk du centre ± rayon horizontal");
+        verifier(dyke.minY() == 25 && dyke.maxY() == 100, "Dyke : hauteurs du générateur");
+        verifier(VolumeFilon.dyke(-1, -17, 50, 0, 10).minX() == -16 - 7, "Dyke : chunk négatif");
+        // Cuboïde de l'uraninite (bornes du commit 5bb14a1 conservées).
+        var cuboide = VolumeFilon.cuboide(100, 40, -100, 30, 10, 40, 7);
+        verifier(
+                cuboide.positions() == 44L * 44 * 32,
+                "Bornes du générateur cuboïde de l'uraninite");
+        verifier(
+                cuboide.contient(86, 9, -114) && cuboide.contient(129, 40, -71), "Bornes incluses");
+        verifier(!cuboide.contient(130, 40, -71) && !cuboide.contient(86, 8, -114), "Bords exclus");
+        var classique = VolumeFilon.classique(0, 0, 0, 25, 3);
+        verifier(
+                classique.maxX() == 12 && classique.maxY() == 3,
+                "Classique : ± taille/2, ± yRadius");
+        var standard = VolumeFilon.standard(0, 0, 0, 16);
+        verifier(
+                standard.maxX() == 2 + 2 && standard.maxY() == 4 && standard.minY() == -4,
+                "Standard : boîte de doPlace");
+        var geode = VolumeFilon.geode(0, 0, 0, -16, 16);
+        verifier(geode.minX() == -17 && geode.maxX() == 17, "Géode : décalages plus une couche");
+        var inconnu = VolumeFilon.inconnu(0, 0, 0, 16, 16);
+        verifier(
+                inconnu.bordMaxX() == 32
+                        && inconnu.maxX() == 16
+                        && inconnu.parcourt(31, 0, 0)
+                        && !inconnu.contient(31, 0, 0),
+                "Inconnu : noyau et marge");
+        verifier(veine.colonnes().length == 4 * 4, "Colonnes de chunks couvertes");
+        verifier(
+                couches.profondeur(100, 40, -100) == 0
+                        && Math.abs(couches.profondeur(122, 40, -100) - 1) < 1e-9,
+                "Profondeur 0 au centre, 1 sur une face");
+        verifier(
+                !VolumeFilon.cuboide(0, 0, 0, 128, 0, 4095, 7).acceptable(),
+                "Volume trop coûteux refusé");
+        var relu = VolumeFilon.lire(couches.valeurs());
+        verifier(
+                couches.equals(relu) && VolumeFilon.lire(new int[] {99, 0, 0, 0, 1, 1, 1}) == null,
+                "Volume sauvegardé relu");
+    }
+
+    static FilonMemoire.Filon gisement(
+            FilonMemoire m, String id, int x, int y, int z, String... composition) {
+        m.gisement(id, p(x, y, z), "gtceu:test_vein", "Test " + id, Set.of(composition), false);
+        return m.filon(id);
+    }
+
+    static void scanComplet() {
+        var m = new FilonMemoire();
+        var f = gisement(m, "a", 8, 40, 8, "gtceu:coal_ore", "gtceu:deepslate_coal_ore");
+        var monde = new MondeTest(m);
+        // Filon de 22 de rayon : des minerais bien au-delà du cube historique de 16 blocs.
+        int poses = 0;
+        for (int x = -14; x <= 30; x++)
+            for (int y = 18; y <= 62; y++)
+                for (int z = -14; z <= 30; z++) {
+                    double d =
+                            Math.sqrt(
+                                    Math.pow(x - 8, 2) + Math.pow(y - 40, 2) + Math.pow(z - 8, 2));
+                    if (d <= 22 && (x + y + z) % 3 == 0) {
+                        monde.poser(
+                                x, y, z, y < 30 ? "gtceu:deepslate_coal_ore" : "gtceu:coal_ore");
+                        poses++;
+                    }
                 }
+        monde.poser(8, 70, 8, "gtceu:coal_ore"); // hors des bornes du générateur
+        monde.poser(9, 41, 8, "minecraft:stone");
+        m.type("minecraft:stone");
+        var volume = VolumeFilon.couches(8, 40, 8, 44);
+        var scan = ScanFilon.lancer(m, f, volume, m.filons(), -64, 319);
+        balayer(scan, monde);
+        verifier(scan.termine() && f.scanComplet() && !f.scanEnAttente(), "Scan terminé tout seul");
+        verifier(
+                f.restants() == poses && f.trouves() == poses,
+                "Tout le volume : " + f.restants() + " / " + poses);
+        verifier(f.avancementScan() == 100, "Avancement 100 %");
+        verifier(!f.present(FilonMemoire.pos(8, 70, 8)), "Hors des bornes du générateur : ignoré");
+        verifier(f.typesReperes().size() == 2, "Toutes les variantes de pierre");
+        verifier(f.verification == 1000, "Date de vérification");
+        // Rescan après minage : les minerais disparus deviennent des compteurs minés.
+        monde.retirer(8, 40, 8 + 1);
+        int mines = 0;
+        for (int i = 0; i < f.nombre() && mines < 10; i++) {
+            long q = f.position(i);
+            if (monde.blocs.remove(q) != null) mines++;
+        }
+        scan = ScanFilon.lancer(m, f, volume, m.filons(), -64, 319);
+        balayer(scan, monde);
+        verifier(
+                f.mines() == 11 && f.restants() == poses - 11 && f.trouves() == poses,
+                "Total trouvé conservé, minés comptés (" + f.mines() + ")");
+        // Sections sans minerai sautées : bien moins de lectures que de positions.
+        var autre = new FilonMemoire();
+        var g = gisement(autre, "b", 8, 40, 8, "gtceu:coal_ore");
+        var vide = new MondeTest(autre);
+        vide.poser(8, 40, 8, "gtceu:coal_ore");
+        var s2 =
+                ScanFilon.lancer(
+                        autre, g, VolumeFilon.couches(8, 40, 8, 44), autre.filons(), -64, 319);
+        balayer(s2, vide);
+        verifier(
+                g.restants() == 1 && vide.lectures <= 16 * 16 * 16,
+                "Palette : sections vides sautées (" + vide.lectures + " lectures)");
+    }
+
+    static void budgetEtReprise() {
+        var m = new FilonMemoire();
+        var f = gisement(m, "a", 0, 0, 0, "gtceu:tin_ore");
+        var monde = new MondeTest(m);
+        monde.palette = false;
+        for (int i = -10; i <= 10; i += 2) monde.poser(i, i, i, "gtceu:tin_ore");
+        var scan = ScanFilon.lancer(m, f, VolumeFilon.veine(0, 0, 0, 22), m.filons(), -64, 319);
+        // Horloge simulée : 1 unité par lecture, budget de 300 par tick.
+        AtomicLong temps = new AtomicLong();
+        int ticks = 0;
+        while (!scan.termine() && ticks < 10_000) {
+            long limite = temps.get() + 300;
+            scan.avancer(monde, () -> temps.addAndGet(50), limite, ticks);
+            ticks++;
+        }
+        long total = 23L * 23 * 23;
+        verifier(ticks >= 10 && scan.termine(), "Scan réparti sur plusieurs ticks (" + ticks + ")");
+        verifier(f.restants() == 11 && scan.lus() == total, "Chaque position lue une seule fois");
+    }
+
+    static void colonnesNonChargees() {
+        var m = new FilonMemoire();
+        var f = gisement(m, "a", 8, 10, 8, "gtceu:iron_ore");
+        var monde = new MondeTest(m);
+        monde.poser(8, 10, 8, "gtceu:iron_ore");
+        monde.poser(-10, 10, 8, "gtceu:iron_ore"); // chunk -1, non chargé au départ
+        monde.decharger(-1, 0);
+        var scan = ScanFilon.lancer(m, f, VolumeFilon.veine(8, 10, 8, 40), m.filons(), -64, 319);
+        balayer(scan, monde);
+        verifier(
+                !scan.termine() && f.scanEnAttente() && scan.attente(),
+                "Colonne non chargée en attente");
+        verifier(
+                f.restants() == 1 && !f.presqueEpuise(),
+                "Rien d'inventé ; pas de proposition pendant l'attente");
+        verifier(f.avancementScan() < 100, "Avancement partiel");
+        verifier(!scan.colonnePrete(monde, 5000), "Rien à faire tant que le chunk est absent");
+        monde.charger(-1, 0);
+        verifier(scan.colonnePrete(monde, 6000), "Chunk chargé : reprise");
+        balayer(scan, monde);
+        verifier(
+                scan.termine() && f.restants() == 2 && f.scanComplet(),
+                "Le scan finit vraiment après chargement");
+        // Reprise après reconnexion : colonnes restantes persistées.
+        var g = gisement(m, "b", 200, 10, 200, "gtceu:iron_ore");
+        monde.decharger(12, 12);
+        var s2 = ScanFilon.lancer(m, g, VolumeFilon.veine(200, 10, 200, 10), m.filons(), -64, 319);
+        balayer(s2, monde);
+        verifier(g.scanEnAttente(), "Colonnes restantes");
+        var repris = ScanFilon.reprendre(m, g, m.filons());
+        monde.charger(12, 12);
+        balayer(repris, monde);
+        verifier(repris.termine() && g.scanComplet(), "Reprise d'un scan sauvegardé");
+    }
+
+    static void proprieteVoisins() {
+        var m = new FilonMemoire();
+        var a = gisement(m, "a", 0, 40, 0, "gtceu:copper_ore");
+        var b = gisement(m, "b", 30, 40, 0, "gtceu:copper_ore");
+        var c = gisement(m, "c", 15, 40, 0, "gtceu:gold_ore");
+        a.volume = VolumeFilon.veine(0, 40, 0, 52);
+        b.volume = VolumeFilon.veine(30, 40, 0, 52);
+        c.volume = VolumeFilon.veine(15, 40, 0, 52);
+        var monde = new MondeTest(m);
+        for (int x = -20; x <= 50; x++) monde.poser(x, 40, 0, "gtceu:copper_ore");
+        monde.poser(15, 41, 0, "gtceu:gold_ore");
+        // b a déjà relevé un minerai que la boîte de a contient aussi : jamais repris.
+        m.ajouter(b, FilonMemoire.pos(5, 40, 0), m.typeConnu("gtceu:copper_ore"));
+        balayer(ScanFilon.lancer(m, a, a.volume, m.filons(), -64, 319), monde);
+        verifier(
+                !a.present(FilonMemoire.pos(5, 40, 0)) && b.present(FilonMemoire.pos(5, 40, 0)),
+                "Jamais repris à un autre gisement");
+        verifier(
+                a.present(FilonMemoire.pos(14, 40, 0)) && !a.present(FilonMemoire.pos(16, 40, 0)),
+                "Chevauchement : au gisement le plus au centre");
+        verifier(!a.present(FilonMemoire.pos(15, 41, 0)), "Autre composition jamais comptée");
+        balayer(ScanFilon.lancer(m, b, b.volume, m.filons(), -64, 319), monde);
+        verifier(
+                b.present(FilonMemoire.pos(16, 40, 0)) && !b.present(FilonMemoire.pos(14, 40, 0)),
+                "Partage symétrique");
+        verifier(
+                a.present(FilonMemoire.pos(15, 40, 0)) != b.present(FilonMemoire.pos(15, 40, 0)),
+                "Égalité départagée une seule fois");
+        int total = 0;
+        for (int x = -20; x <= 50; x++) {
+            long q = FilonMemoire.pos(x, 40, 0);
+            int proprietaires = (a.present(q) ? 1 : 0) + (b.present(q) ? 1 : 0);
+            verifier(proprietaires <= 1, "Un minerai, un seul gisement");
+            total += proprietaires;
+        }
+        verifier(total == 71, "Aucun minerai perdu entre deux gisements voisins (" + total + ")");
+    }
+
+    static void remplissageMarge() {
+        var m = new FilonMemoire();
+        var f = gisement(m, "a", 0, 40, 0, "gtceu:salt_ore");
+        var voisin = gisement(m, "v", 60, 40, 0, "gtceu:salt_ore");
+        voisin.volume = VolumeFilon.veine(60, 40, 0, 20);
+        var monde = new MondeTest(m);
+        // Générateur inconnu : noyau ± 8, marge de 16 suivie de proche en proche.
+        for (int x = 0; x <= 8; x++) monde.poser(x, 40, 0, "gtceu:salt_ore");
+        for (int x = 11; x <= 20; x += 3) monde.poser(x, 40, 0, "gtceu:salt_ore"); // trous de 2
+        monde.poser(24, 40, 0, "gtceu:salt_ore"); // trou de 3 : détaché
+        monde.poser(0, 40, 14, "gtceu:salt_ore"); // marge, sans lien
+        monde.poser(
+                10,
+                49,
+                0,
+                "gtceu:salt_ore"); // diagonale de Chebyshev 3 depuis (8,40,0)? non : 9 en y
+        var volume = VolumeFilon.inconnu(0, 40, 0, 8, 16);
+        balayer(ScanFilon.lancer(m, f, volume, m.filons(), -64, 319), monde);
+        for (int x = 0; x <= 8; x++)
+            verifier(f.present(FilonMemoire.pos(x, 40, 0)), "Noyau complet");
+        for (int x = 11; x <= 20; x += 3)
+            verifier(f.present(FilonMemoire.pos(x, 40, 0)), "Trous de 2 blocs tolérés : " + x);
+        verifier(!f.present(FilonMemoire.pos(24, 40, 0)), "Trou de 3 blocs : pas relié");
+        verifier(
+                !f.present(FilonMemoire.pos(0, 40, 14)) && !f.present(FilonMemoire.pos(10, 49, 0)),
+                "Minerais isolés de la marge ignorés");
+        verifier(f.restants() == 9 + 4, "Filon relié uniquement (" + f.restants() + ")");
+    }
+
+    static void comptesDirects() {
+        var m = new FilonMemoire();
+        var f = gisement(m, "a", 0, 10, 0, "gtceu:redstone_ore", "gtceu:deepslate_redstone_ore");
+        var g = gisement(m, "b", 100, 10, 0, "gtceu:redstone_ore");
+        var monde = new MondeTest(m);
+        int t = m.typeConnu("gtceu:redstone_ore"), td = m.typeConnu("gtceu:deepslate_redstone_ore");
+        for (int i = 0; i < 20; i++) {
+            m.ajouter(f, FilonMemoire.pos(i, 10, 0), t);
+            monde.poser(i, 10, 0, "gtceu:redstone_ore");
+        }
+        m.ajouter(g, FilonMemoire.pos(100, 10, 0), t);
+        monde.poser(100, 10, 0, "gtceu:redstone_ore");
+        verifier(f.trouves() == 20 && f.restants() == 20, "Départ");
+        // Le joueur mine trois blocs, un bloc change de pierre, un chunk se décharge.
+        monde.retirer(0, 10, 0);
+        monde.retirer(1, 10, 0);
+        monde.retirer(2, 10, 0);
+        monde.poser(3, 10, 0, "gtceu:deepslate_redstone_ore");
+        monde.retirer(100, 10, 0);
+        monde.decharger(6, 0);
+        var v = new VerificationFilons();
+        int mines = 0;
+        for (int i = 0; i < 10; i++) mines += v.tour(m, OW, monde, 8, 5000);
+        verifier(
+                mines == 3 && f.restants() == 17 && f.mines() == 3,
+                "Compte restant tenu sans rescan");
+        verifier(f.trouves() == 20, "Total trouvé conservé pour le ratio");
+        verifier(
+                f.typesReperes().get("gtceu:deepslate_redstone_ore") == 1,
+                "Type actualisé, pas miné");
+        verifier(g.restants() == 1, "Chunk non chargé : jamais compté miné");
+        verifier(f.verification == 5000, "Passe complète datée");
+        // Filon surligné : les plus proches du joueur relus à chaque tick.
+        monde.retirer(5, 10, 0);
+        long[] proches = {
+            FilonMemoire.pos(5, 10, 0), FilonMemoire.pos(4, 10, 0), FilonMemoire.pos(0, 10, 0)
+        };
+        verifier(
+                VerificationFilons.proches(m, f, proches, 64, monde) == 1 && f.restants() == 16,
+                "Minage du filon surligné vu au tick");
+        verifier(VerificationFilons.proches(m, f, proches, 64, monde) == 0, "Pas de double compte");
+        verifier(td >= 0, "Types de la composition déclarés");
+    }
+
+    static void presqueEpuise() {
+        var m = new FilonMemoire();
+        var f = gisement(m, "a", 0, 10, 0, "minecraft:redstone_ore");
+        int t = m.typeConnu("minecraft:redstone_ore");
+        for (int i = 0; i < 1500; i++)
+            m.ajouter(f, FilonMemoire.pos(i % 40, 10 + i / 1600, i / 40), t);
+        verifier(!f.presqueEpuise() && f.pourcentRestant() == 100, "Filon plein");
+        for (int i = 0; i < 1300; i++) m.miner(f, f.position(0));
+        verifier(f.restants() == 200 && !f.presqueEpuise(), "200 / 1500 (13 %) : pas encore");
+        for (int i = 0; i < 100; i++) m.miner(f, f.position(0));
+        verifier(
+                f.restants() == 100 && f.trouves() == 1500 && f.presqueEpuise(),
+                "1500 trouvés, 100 restants : proposer Épuisé");
+        verifier(f.quantite().contains("100 restants sur 1500"), "Ratio affiché");
+        verifier(f.visible() && !f.estEpuise(), "Jamais de marquage automatique");
+        f.colonnesRestantes = new long[] {VolumeFilon.colonne(0, 0)};
+        verifier(!f.presqueEpuise(), "Scan inachevé : pas de proposition");
+        f.colonnesRestantes = new long[0];
+        f.marquerEpuise(true);
+        verifier(!f.presqueEpuise() && !f.visible(), "Déjà épuisé : plus de proposition");
+        f.marquerEpuise(false);
+        verifier(f.presqueEpuise(), "Rétablir garde la proposition");
+        var petit = gisement(m, "b", 50, 10, 0, "minecraft:redstone_ore");
+        for (int i = 0; i < 10; i++) m.ajouter(petit, FilonMemoire.pos(50 + i, 10, 0), t);
+        for (int i = 0; i < 10; i++) m.miner(petit, petit.position(0));
+        verifier(!petit.presqueEpuise(), "Trop peu trouvé pour conclure");
+    }
+
+    static FilonMemoire exemple() {
+        var m = new FilonMemoire();
+        var a = gisement(m, "gt|a", 631, 42, 106, "gtceu:coal_ore", "gtceu:deepslate_coal_ore");
+        m.gisement(
+                "gt|n",
+                new FilonMemoire.Position("minecraft:the_nether", -40, 30, 25),
+                "gtceu:sulfur_vein",
+                "Sulfur Vein",
+                Set.of("gtceu:netherrack_sulfur_ore"),
+                false);
+        var nether = m.filon("gt|n");
+        int coal = m.typeConnu("gtceu:coal_ore"), deep = m.typeConnu("gtceu:deepslate_coal_ore");
+        for (int i = 0; i < 500; i++)
+            m.ajouter(
+                    a,
+                    FilonMemoire.pos(610 + i % 40, 30 + i / 400, 90 + i / 40 % 10),
+                    i % 3 == 0 ? deep : coal);
+        for (int i = 0; i < 120; i++) m.miner(a, a.position(i));
+        a.choisirTypes(Set.of("gtceu:coal_ore"));
+        a.marquerEpuise(true);
+        a.volume = VolumeFilon.couches(631, 42, 106, 40);
+        a.colonnesRestantes = new long[] {VolumeFilon.colonne(39, 6), VolumeFilon.colonne(-2, -3)};
+        a.scanFait = 1234;
+        a.scanTotal = 5678;
+        a.verification = 1_794_000_000_000L;
+        m.ajouter(
+                nether, FilonMemoire.pos(-41, 29, 24), m.typeConnu("gtceu:netherrack_sulfur_ore"));
+        verifier(nether.dimension().equals("minecraft:the_nether"), "Gisement du Nether");
+        return m;
+    }
+
+    static void sauvegardeCompacte() throws Exception {
+        var m = exemple();
+        var s = InstantaneFilons.de(m, "6f74389bbf483840c8e47a9d", 42);
+        String texte = FormatFilons.natif(s);
+        var relu = FormatFilons.lire(texte, "6f74389bbf483840c8e47a9d");
+        for (var f : m.filons()) {
+            var g = relu.filon(f.id);
+            verifier(
+                    g != null
+                            && g.ancre.equals(f.ancre)
+                            && g.nom.equals(f.nom)
+                            && g.definition.equals(f.definition),
+                    "Gisement relu " + f.id);
+            verifier(
+                    g.restants() == f.restants()
+                            && g.mines() == f.mines()
+                            && g.trouves() == f.trouves(),
+                    "Comptes relus");
+            verifier(
+                    g.typesReperes().equals(f.typesReperes())
+                            && g.typesMines().equals(f.typesMines()),
+                    "Types relus");
+            for (int i = 0; i < f.nombre(); i++)
+                verifier(g.present(f.position(i)), "Position relue");
+            verifier(
+                    Objects.equals(g.typesChoisis(), f.typesChoisis())
+                            && g.epuiseManuel() == f.epuiseManuel(),
+                    "Choix et marquage relus");
+            verifier(
+                    Objects.equals(g.volume, f.volume)
+                            && Arrays.equals(g.colonnesRestantes, f.colonnesRestantes),
+                    "Scan à reprendre relu");
+            verifier(
+                    g.scanFait == f.scanFait
+                            && g.scanTotal == f.scanTotal
+                            && g.verification == f.verification,
+                    "Avancement relu");
+            verifier(g.composition.equals(f.composition), "Composition relue");
+        }
+        verifier(
+                texte.length() < 500 * 14 + 2000,
+                "Format compact : " + texte.length() + " caractères pour 380 minerais");
+        verifier(
+                !texte.contains("\"cle\"") && !texte.contains("\"ancre\""),
+                "Aucune chaîne répétée par bloc");
+        // Instantané repris directement lors d'une reconnexion rapide.
+        var direct = s.memoire();
+        verifier(
+                direct.filon("gt|a").restants() == m.filon("gt|a").restants()
+                        && direct.filon("gt|a").mines() == 120,
+                "Instantané sans relecture");
+        // Résumé pour l'application : comptes, pas de positions.
+        var contexte = new com.google.gson.JsonObject();
+        contexte.addProperty("session_monde", "0123");
+        String resume = FormatFilons.resume(s, contexte);
+        var j = com.google.gson.JsonParser.parseString(resume).getAsJsonObject();
+        verifier(
+                j.get("v").getAsInt() == 2
+                        && j.get("source").getAsString().equals("gregtech")
+                        && j.get("session_monde").getAsString().equals("0123"),
+                "Résumé versionné avec son contexte");
+        var g = j.getAsJsonArray("gisements").get(0).getAsJsonObject();
+        verifier(
+                g.get("restants").getAsInt() == 380
+                        && g.get("mines").getAsInt() == 120
+                        && g.get("trouves").getAsInt() == 500,
+                "Comptes du résumé");
+        verifier(
+                g.get("scan").getAsString().equals("partiel")
+                        && g.get("epuise_manuel").getAsBoolean(),
+                "État du résumé");
+        verifier(
+                g.getAsJsonObject("minerais").getAsJsonArray("gtceu:coal_ore").get(0).getAsInt()
+                                + g.getAsJsonObject("minerais")
+                                        .getAsJsonArray("gtceu:deepslate_coal_ore")
+                                        .get(0)
+                                        .getAsInt()
+                        == 380,
+                "Comptes par type");
+        verifier(!resume.contains("\"blocs\""), "Aucun bloc dans le résumé");
+        verifier(resume.length() < 4000, "Résumé léger : " + resume.length());
+        boolean refuse = false;
+        try {
+            FormatFilons.lire(texte, "autre-monde");
+        } catch (java.io.IOException e) {
+            refuse = true;
+        }
+        verifier(refuse, "Sauvegarde d'un autre monde refusée");
+    }
+
+    static void ancienFormat() throws Exception {
+        String ancre = "{\"dimension\":\"minecraft:overworld\",\"x\":10,\"y\":20,\"z\":30}";
+        String v1 =
+                "{\"v\":1,\"monde\":\"m\",\"scan_actif\":false,\"gisements\":[{\"dimension\":\"minecraft:overworld\",\"x\":10,\"y\":20,\"z\":30,"
+                        + "\"id\":\"gt|a\",\"definition\":\"gtceu:iron_vein\",\"nom\":\"Iron Vein\",\"epuise\":false,\"epuise_manuel\":true,"
+                        + "\"composition\":[\"gtceu:iron_ore\",\"gtceu:deepslate_iron_ore\"]}],\"source\":\"gregtech\",\"capacite_blocs\":100000,"
+                        + "\"types_affiches_par_filon\":{\"gt|a\":[\"gtceu:iron_ore\"]},\"blocs\":["
+                        + "{\"dimension\":\"minecraft:overworld\",\"x\":11,\"y\":20,\"z\":30,\"bloc\":\"gtceu:iron_ore\",\"filon\":\"gt|a\",\"mine\":false,\"t\":500,\"cle\":\"x\",\"ancre\":"
+                        + ancre
+                        + "},"
+                        + "{\"dimension\":\"minecraft:overworld\",\"x\":12,\"y\":20,\"z\":30,\"bloc\":\"gtceu:iron_ore\",\"filon\":\"gt|a\",\"mine\":true,\"t\":900,\"cle\":\"y\",\"ancre\":"
+                        + ancre
+                        + "},"
+                        + "{\"dimension\":\"minecraft:overworld\",\"x\":13,\"y\":20,\"z\":30,\"bloc\":\"gtceu:deepslate_iron_ore\",\"filon\":\"gt|a\",\"mine\":false,\"t\":700},"
+                        + "{\"dimension\":\"minecraft:the_nether\",\"x\":13,\"y\":20,\"z\":30,\"bloc\":\"gtceu:iron_ore\",\"filon\":\"gt|a\",\"mine\":false,\"t\":700},"
+                        + "{\"dimension\":\"minecraft:overworld\",\"x\":14,\"y\":20,\"z\":30,\"bloc\":\"gtceu:iron_ore\",\"filon\":\"absent\",\"mine\":false,\"t\":700}"
+                        + "]}";
+        var m = FormatFilons.lire(v1, "m");
+        var f = m.filon("gt|a");
+        verifier(
+                f != null && f.restants() == 2 && f.mines() == 1 && f.trouves() == 3,
+                "Ancien format : présents gardés, minés en compteurs");
+        verifier(
+                f.epuiseManuel() && f.typesChoisis().equals(Set.of("gtceu:iron_ore")),
+                "Marquage et choix relus");
+        verifier(f.verification == 500, "Date : plus ancien minerai présent");
+        verifier(
+                m.filons().size() == 1 && m.presents() == 2,
+                "Relevés orphelins ou d'une autre dimension ignorés");
+        // L'ordre des champs ne compte pas (blocs avant les gisements).
+        String inverse =
+                "{\"blocs\":[{\"dimension\":\"minecraft:overworld\",\"x\":11,\"y\":20,\"z\":30,\"bloc\":\"gtceu:iron_ore\",\"filon\":\"gt|a\",\"mine\":false,\"t\":5}],"
+                        + "\"v\":1,\"monde\":\"m\",\"gisements\":[{\"dimension\":\"minecraft:overworld\",\"x\":10,\"y\":20,\"z\":30,\"id\":\"gt|a\",\"definition\":\"d\",\"nom\":\"n\",\"composition\":[\"gtceu:iron_ore\"]}]}";
+        verifier(
+                FormatFilons.lire(inverse, "m").filon("gt|a").restants() == 1,
+                "Ordre des champs libre");
+        for (String mauvais :
+                new String[] {
+                    v1.replace("\"x\":11", "\"x\":40000000"),
+                    v1.replace("minecraft:overworld\",\"x\":11", "Mauvaise Dimension\",\"x\":11"),
+                    "{broken",
+                    v1.replace("\"v\":1", "\"v\":9")
+                }) {
+            boolean refuse = false;
+            try {
+                FormatFilons.lire(mauvais, "m");
+            } catch (java.io.IOException e) {
+                refuse = true;
+            }
+            verifier(
+                    refuse,
+                    "Relevé invalide refusé : "
+                            + mauvais.substring(0, Math.min(30, mauvais.length())));
+        }
+    }
+
+    static void couleurs() {
+        String[] dimensions = {
+            "minecraft:overworld", "minecraft:the_nether", "minecraft:the_end", "ad_astra:moon"
+        };
+        var hasard = new Random(3);
+        for (int i = 0; i < 400; i++) {
+            int rgb = i < 20 ? (i * 0x0C0C0C) & 0xFFFFFF : hasard.nextInt(0x1000000);
+            String cle = "mat" + i;
+            for (String d : dimensions) {
+                int c = CouleursFilons.couleur(cle, rgb, d) & 0xFFFFFF;
+                double l = CouleursFilons.luminance(c);
+                if (d.endsWith("the_end"))
+                    verifier(
+                            l <= CouleursFilons.LUMINANCE_MAX + 1e-9,
+                            "Contraste sur la pierre de l'End");
+                else
+                    verifier(
+                            l >= CouleursFilons.LUMINANCE_MIN - 0.01,
+                            "Contraste sur pierre, deepslate, netherrack");
+                verifier(CouleursFilons.hsv(c)[1] > 0.2 || l > 0.85, "Couleur franche, pas grise");
+            }
+        }
+        // Une couleur par matériau : la pierre autour ne la change pas.
+        verifier(
+                CouleursFilons.cleBloc("gtceu:netherrack_sulfur_ore").equals("sulfur")
+                        && CouleursFilons.cleBloc("gtceu:basalt_sulfur_ore").equals("sulfur"),
+                "Clé par matériau");
+        int deepslate = 0x4D4D50, pierre = 0x7D7D7D, netherrack = 0x6F3535, end = 0xDBDEA3;
+        int soufre = CouleursFilons.couleur("sulfur", 0xC8C800, "minecraft:overworld") & 0xFFFFFF;
+        verifier(
+                CouleursFilons.contraste(soufre, deepslate) > 3
+                        && CouleursFilons.contraste(soufre, pierre) > 1.8,
+                "Soufre lisible sur pierre et deepslate");
+        int soufreNether =
+                CouleursFilons.couleur("sulfur", 0xC8C800, "minecraft:the_nether") & 0xFFFFFF;
+        verifier(
+                CouleursFilons.contraste(soufreNether, netherrack) > 3,
+                "Soufre lisible sur netherrack");
+        int endCouleur =
+                CouleursFilons.couleur("magnesite", 0xFAFAB4, "minecraft:the_end") & 0xFFFFFF;
+        verifier(CouleursFilons.contraste(endCouleur, end) > 2.5, "Lisible sur la pierre de l'End");
+        verifier(
+                CouleursFilons.couleur("iron", 0xC8C8C8, "minecraft:overworld")
+                        == CouleursFilons.couleur("iron", 0xC8C8C8, "minecraft:overworld"),
+                "Stable");
     }
 
     static void gisementsGregtech() {
-        var m = new FilonMemoire(true);
+        var m = new FilonMemoire();
         var centre = p(0, 20, 0);
-        verifier(
-                !m.observer(centre, "minecraft:iron_ore", true, 1) && m.filons().isEmpty(),
-                "Un bloc isolé ne crée jamais un faux gisement GT");
         verifier(
                 m.gisement(
                         "gt:a",
@@ -88,7 +729,7 @@ public final class FilonMemoireTest {
                 f.visible() && f.restants() == 0 && f.types().containsKey("minecraft:iron_ore"),
                 "Gisement visible sans scan, composition native disponible");
         verifier(
-                f.typesReperes().isEmpty() && !f.quantite().contains("0 "),
+                f.typesReperes().isEmpty() && f.quantite().contains("Pas encore scanné"),
                 "Composition théorique sans faux compteurs à zéro");
         verifier(
                 !m.gisement(
@@ -100,21 +741,9 @@ public final class FilonMemoireTest {
                         false),
                 "Lecture répétée sans doublon ni écriture inutile");
         verifier(
-                !m.observer(centre, "minecraft:gold_ore", true, 2),
-                "Une composition incompatible n'est pas attribuée au gisement");
-        verifier(
-                !m.observer(p(100, 20, 0), "minecraft:iron_ore", true, 2),
-                "Pas de relevé arbitrairement distant");
-        verifier(
-                m.observer(centre, "minecraft:iron_ore", true, 2), "Relevé compatible à proximité");
-        verifier(
-                f.typesReperes().equals(Map.of("minecraft:iron_ore", 1)),
-                "Afficher seulement le minerai réellement observé");
-        m.observer(centre, "minecraft:air", false, 3);
-        verifier(
-                f.typesReperes().isEmpty(),
-                "Un minerai retiré ne reste pas sous forme de ligne à zéro");
-        verifier(f.visible() && !f.epuise, "Zéro observé n'épuise pas le gisement GT");
+                f.dansComposition(m.typeConnu("minecraft:iron_ore"))
+                        && !f.dansComposition(m.type("minecraft:gold_ore")),
+                "Composition par type");
         m.gisement(
                 "gt:b",
                 p(1, 20, 0),
@@ -123,34 +752,21 @@ public final class FilonMemoireTest {
                 Set.of("minecraft:gold_ore"),
                 false);
         verifier(m.filons().size() == 2, "Deux gisements GT proches ne fusionnent jamais");
-        f.choisirTypes(Set.of("minecraft:iron_ore"));
-        verifier(
-                m.viderReleves() == 1
-                        && m.blocs().isEmpty()
-                        && m.filons().size() == 2
-                        && f.typeAffiche("minecraft:iron_ore"),
-                "Flush du cache conserve gisements et choix");
-        verifier(m.viderReleves() == 0, "Flush répété sans effet");
         m.gisement(
                 "gt:a", centre, "gtceu:iron_vein", "Iron vein", Set.of("minecraft:iron_ore"), true);
-        verifier(!f.visible(), "Seul l'indicateur GT peut masquer le gisement comme épuisé");
-        m.restaurerReleve(centre, "minecraft:iron_ore", false, 100, "gt:a");
         verifier(
-                m.blocs().iterator().next().filon.equals("gt:a"),
-                "Restauration conserve l'identité native");
-        m.restaurerReleve(p(2, 20, 0), "minecraft:iron_ore", false, 100, "absent");
-        verifier(m.blocs().size() == 1, "Pas de restauration d'un relevé orphelin");
-        var autre = new FilonMemoire(true);
-        verifier(autre.filons().isEmpty(), "Aucun gisement hérité d'un autre monde");
+                !f.visible() && f.quantite().contains("GregTech"),
+                "Seul l'indicateur GT peut masquer le gisement comme épuisé");
+        verifier(new FilonMemoire().filons().isEmpty(), "Aucun gisement hérité d'un autre monde");
     }
 
     static void epuisementManuel() {
-        var m = new FilonMemoire(true);
+        var m = new FilonMemoire();
         var centre = p(0, 20, 0);
         var types = Set.of("minecraft:iron_ore");
         m.gisement("gt:a", centre, "gtceu:iron_vein", "Iron vein", types, false);
-        m.observer(centre, "minecraft:iron_ore", true, 1);
         var f = m.filon("gt:a");
+        m.ajouter(f, centre.longue(), m.typeConnu("minecraft:iron_ore"));
         verifier(f.marquerEpuise(true), "Marquage personnel accepté");
         verifier(
                 !f.visible() && f.estEpuise() && !f.epuise && f.epuiseManuel(),
@@ -166,23 +782,121 @@ public final class FilonMemoireTest {
         verifier(
                 f.marquerEpuise(false) && f.visible() && f.restants() == 1,
                 "Annuler retrouve le filon et ses relevés");
-        f.marquerEpuise(true);
-        m.viderReleves();
-        verifier(f.epuiseManuel() && !f.visible(), "Vider les relevés conserve le marquage");
-        var autreMonde = new FilonMemoire(true);
-        autreMonde.gisement("gt:a", centre, "gtceu:iron_vein", "Iron vein", types, false);
-        verifier(
-                autreMonde.filon("gt:a").visible(),
-                "Même identifiant dans un autre monde : aucun marquage hérité");
-        autreMonde.filon("gt:a").marquerEpuise(f.epuiseManuel());
-        verifier(
-                !autreMonde.filon("gt:a").visible(),
-                "Restaurer le champ sauvegardé rétablit le marquage");
         m.gisement("gt:a", centre, "gtceu:iron_vein", "Iron vein", types, true);
         f.marquerEpuise(false);
         verifier(
                 !f.visible() && f.epuise && !f.epuiseManuel(),
                 "Annuler le marquage n'efface jamais l'épuisement GregTech");
+    }
+
+    static void choixAffichage() {
+        var m = new FilonMemoire();
+        var f = gisement(m, "a", 0, 20, 0, "minecraft:iron_ore", "minecraft:gold_ore");
+        int fer = m.typeConnu("minecraft:iron_ore"), or = m.typeConnu("minecraft:gold_ore");
+        m.ajouter(f, FilonMemoire.pos(0, 20, 0), fer);
+        m.ajouter(f, FilonMemoire.pos(1, 20, 0), or);
+        verifier(
+                f.contours(0, 20, 0, 96, 768).length == 2 && f.typesChoisis() == null,
+                "Sans filtre enregistré, tous les minerais sont proposés");
+        Set<String> brouillon = new HashSet<>(Set.of("minecraft:gold_ore"));
+        f.choisirTypes(brouillon);
+        brouillon.clear();
+        int[] c = f.contours(0, 20, 0, 96, 768);
+        verifier(
+                c.length == 1 && f.typeBloc(c[0]) == or,
+                "Seulement les blocs sélectionnés, copie indépendante du brouillon");
+        verifier(f.contours(1000, 20, 0, 96, 768).length == 0, "Portée respectée");
+        m.miner(f, FilonMemoire.pos(1, 20, 0));
+        verifier(
+                f.contours(0, 20, 0, 96, 768).length == 0,
+                "Les blocs sélectionnés mais minés ne sont plus affichés");
+        var dense = new FilonMemoire();
+        var d = gisement(dense, "d", 0, 20, 0, "minecraft:iron_ore", "minecraft:gold_ore");
+        int t = dense.typeConnu("minecraft:iron_ore");
+        for (int i = 0; i < 800; i++)
+            dense.ajouter(d, FilonMemoire.pos(i % 10, 20 + i / 100, i / 10 % 10), t);
+        dense.ajouter(d, FilonMemoire.pos(15, 20, 0), dense.typeConnu("minecraft:gold_ore"));
+        verifier(d.contours(0, 20, 0, 96, 768).length == 768, "Budget de rendu conservé");
+        verifier(d.contours(0, 20, 0, 96, 64).length == 64, "Budget personnalisé respecté");
+        verifier(d.contours(0, 20, 0, 96, 0).length == 1, "Budget nul borné à un bloc");
+        verifier(
+                d.contours(0, 20, 0, 96, 4096).length == 801,
+                "Tous les blocs disponibles dans le budget");
+        int[] proches = d.contours(0, 20, 0, 96, 64);
+        verifier(
+                FilonMemoire.distance2(d.position(proches[0]), 0, 20, 0) == 0,
+                "Plus proches en premier");
+        for (int i = 1; i < proches.length; i++)
+            verifier(
+                    FilonMemoire.distance2(d.position(proches[i - 1]), 0, 20, 0)
+                            <= FilonMemoire.distance2(d.position(proches[i]), 0, 20, 0),
+                    "Tri par distance");
+        verifier(d.restants() == 801, "Le budget de rendu ne supprime aucun relevé");
+        d.choisirTypes(Set.of("minecraft:gold_ore"));
+        verifier(
+                d.contours(0, 20, 0, 96, 768).length == 1,
+                "Filtrer avant de limiter : les minerais masqués ne consomment pas le budget");
+    }
+
+    static void mondeActif() {
+        var m = new FilonMemoire();
+        m.gisement("o", p(0, 20, 0), "d", "o", Set.of("minecraft:iron_ore"), false);
+        m.gisement(
+                "n",
+                new FilonMemoire.Position("minecraft:the_nether", 0, 20, 0),
+                "d",
+                "n",
+                Set.of("minecraft:nether_gold_ore"),
+                false);
+        verifier(
+                m.filonsDans(OW).size() == 1 && m.filonsDans(OW).get(0).id.equals("o"),
+                "Overworld seul");
+        verifier(
+                m.filonsDans("minecraft:the_nether").size() == 1,
+                "Le portail affiche uniquement le Nether");
+        verifier(
+                m.filonsDans("minecraft:the_end").isEmpty()
+                        && m.filonsDans("").isEmpty()
+                        && m.filonsDans(null).isEmpty(),
+                "Dimension vide ou hors partie");
+        verifier(
+                Double.isInfinite(
+                        p(0, 0, 0).distance2(new FilonMemoire.Position("autre", 0, 0, 0))),
+                "Distance interdimension");
+    }
+
+    static void disposition() {
+        for (int largeur : new int[] {300, 440, 460, 620, 1000})
+            for (int hauteur : new int[] {130, 166, 200, 300, 500}) {
+                int x = 10, y = 36, bas = y + hauteur;
+                var d = DispositionFilons.calculer(x, y, largeur, bas);
+                String cas = largeur + "x" + hauteur;
+                verifier(d.lignes() >= 1, "Une ligne de liste toujours visible " + cas);
+                verifier(
+                        d.listeY() >= d.outils2Y() + DispositionFilons.BOUTON,
+                        "Liste sous les outils " + cas);
+                verifier(
+                        d.detailX() >= x && d.detailX() + d.detailLargeur() <= x + largeur,
+                        "Fiche dans la fenêtre " + cas);
+                verifier(
+                        d.actionsY() + DispositionFilons.BOUTON < d.statutY()
+                                && d.statutY() + 9 <= bas,
+                        "Actions et statut sans chevauchement " + cas);
+                verifier(
+                        d.detailY() + 2 * DispositionFilons.TEXTE <= d.actionsY(),
+                        "Titre et compte de la fiche visibles " + cas);
+                verifier(d.detailBas() <= d.actionsY(), "Fiche au-dessus des actions " + cas);
+                if (d.colonnes())
+                    verifier(x + d.listeLargeur() < d.detailX(), "Colonnes séparées " + cas);
+                else
+                    verifier(
+                            d.listeBas() <= d.detailY(),
+                            "Fiche sous la liste en petite fenêtre " + cas);
+            }
+        var petit = DispositionFilons.calculer(10, 36, 300, 202);
+        verifier(
+                petit.lignes() >= 2 && !petit.colonnes(),
+                "320 x 240 : deux lignes de liste et la fiche");
     }
 
     static void destinationProche() {
@@ -204,7 +918,7 @@ public final class FilonMemoireTest {
                 FilonMemoire.destinationProche(
                                 centre, -64, 320, q -> q.equals(pres) || q.equals(loin))
                         .equals(pres),
-                "Comparer les distances réelles, pas seulement la première colonne visitée");
+                "Comparer les distances réelles");
         verifier(
                 FilonMemoire.destinationProche(
                                 centre,
@@ -235,7 +949,7 @@ public final class FilonMemoireTest {
         verifier(
                 FilonMemoire.destinationDirecte(p(10000, 10, -20000), -64, 320)
                         .equals(p(10000, 11, -20000)),
-                "Zone non chargée ou pleine : destination directe juste au-dessus, sans scan obligatoire");
+                "Destination directe juste au-dessus");
         verifier(
                 FilonMemoire.destinationDirecte(p(0, 400, 0), -64, 320).equals(p(0, 318, 0)),
                 "Repli borné au plafond avec place pour la tête");
@@ -253,375 +967,6 @@ public final class FilonMemoireTest {
                 "Refuser un monde sans hauteur utilisable");
     }
 
-    static void choixAffichage() {
-        var m = new FilonMemoire();
-        var origine = p(0, 20, 0);
-        m.observer(origine, "minecraft:iron_ore", true, 100);
-        m.observer(p(1, 20, 0), "minecraft:gold_ore", true, 100);
-        var f = m.filons().iterator().next();
-        verifier(
-                f.contours(origine).size() == 2 && f.typesChoisis() == null,
-                "Sans filtre enregistré, tous les minerais sont proposés");
-        Set<String> brouillon = new HashSet<>(Set.of("minecraft:gold_ore"));
-        f.choisirTypes(brouillon);
-        brouillon.clear();
-        verifier(
-                f.contours(origine).size() == 1
-                        && f.contours(origine).get(0).id.equals("minecraft:gold_ore"),
-                "Seulement les blocs sélectionnés, copie indépendante du brouillon");
-        m.observer(p(2, 20, 0), "minecraft:diamond_ore", true, 100);
-        verifier(
-                !f.typeAffiche("minecraft:diamond_ore"),
-                "Une nouvelle découverte ne contourne pas la sélection validée");
-        verifier(
-                f.contours(new FilonMemoire.Position("minecraft:the_nether", 0, 20, 0)).isEmpty()
-                        && f.contours(p(1000, 20, 0)).isEmpty(),
-                "Dimension et portée respectées après filtrage");
-        var apres = new FilonMemoire();
-        for (var b : m.blocs()) apres.restaurer(b.position, b.id, b.retire, b.vu, f.ancre);
-        apres.filon(f.id).choisirTypes(f.typesChoisis());
-        verifier(
-                apres.filon(f.id).contours(origine).size() == 1,
-                "Choix restauré avec la mémoire du filon");
-        m.observer(p(1, 20, 0), "minecraft:air", false, 200);
-        verifier(
-                f.contours(origine).isEmpty(),
-                "Les blocs sélectionnés mais minés ne sont plus affichés");
-        f.choisirTypes(Set.of());
-        verifier(f.contours(origine).isEmpty(), "Sélection vide : aucun contour");
-        verifier(new FilonMemoire().filons().isEmpty(), "Aucun choix partagé avec un autre monde");
-        var dense = new FilonMemoire();
-        for (int i = 0; i < 800; i++)
-            dense.restaurer(
-                    p(i % 10, 20 + i / 100, i / 10 % 10),
-                    "minecraft:iron_ore",
-                    false,
-                    100,
-                    origine);
-        dense.restaurer(p(15, 20, 0), "minecraft:gold_ore", false, 100, origine);
-        var df = dense.filon(origine.cle());
-        verifier(df.contours(origine).size() == 768, "Budget de rendu conservé");
-        verifier(df.contours(origine, 64).size() == 64, "Budget personnalisé respecté");
-        verifier(df.contours(origine, 0).size() == 1, "Budget nul borné à un bloc");
-        verifier(
-                df.contours(origine, 4096).size() == 801,
-                "Tous les blocs disponibles dans le budget");
-        var proches = df.contours(origine, 64);
-        verifier(proches.get(0).position.distance2(origine) == 0, "Plus proches en premier");
-        verifier(dense.blocs().size() == 801, "Le budget de rendu ne supprime aucun relevé");
-        df.choisirTypes(Set.of("minecraft:gold_ore"));
-        verifier(
-                df.contours(origine).size() == 1,
-                "Filtrer avant de limiter : les minerais masqués ne consomment pas le budget");
-    }
-
-    static void mondeActif() {
-        var partieA = new FilonMemoire();
-        var partieB = new FilonMemoire();
-        var nether = new FilonMemoire.Position("minecraft:the_nether", 0, 20, 0);
-        partieA.observer(p(0, 20, 0), "minecraft:iron_ore", true, 100);
-        partieA.observer(nether, "minecraft:nether_gold_ore", true, 100);
-        verifier(
-                partieA.filonsDans("minecraft:overworld").size() == 1
-                        && partieA.filonsDans("minecraft:overworld")
-                                .get(0)
-                                .ancre
-                                .equals(p(0, 20, 0)),
-                "Overworld seul");
-        verifier(
-                partieA.filonsDans("minecraft:the_nether").size() == 1
-                        && partieA.filonsDans("minecraft:the_nether").get(0).ancre.equals(nether),
-                "Le portail affiche uniquement le Nether");
-        verifier(
-                partieA.filonsDans("minecraft:the_end").isEmpty(),
-                "Une dimension non explorée reste vide");
-        verifier(
-                partieA.filonsDans("").isEmpty() && partieA.filonsDans(null).isEmpty(),
-                "Hors partie : aucune donnée visible");
-        verifier(
-                partieB.filonsDans("minecraft:overworld").isEmpty(),
-                "Autre partie, mêmes coordonnées : aucun filon hérité");
-        verifier(
-                partieA.filonsDans("minecraft:overworld").size() == 1
-                        && partieA.filons().size() == 2,
-                "Retour à la première dimension sans effacer les autres filons");
-    }
-
-    static void scanPonctuel() {
-        var scan = new FilonMemoire.Scan();
-        var centre = p(0, 20, 0);
-        scan.lancerPonctuel(centre);
-        Set<String> visites = new HashSet<>();
-        for (int i = 0; i < FilonMemoire.Scan.TOTAL; i++) {
-            var position = scan.suivant(p(1000, 20, 0));
-            verifier(
-                    position != null && Math.abs(position.x()) <= 16,
-                    "Le scan ponctuel garde son point de départ malgré le déplacement");
-            visites.add(position.cle());
-        }
-        verifier(
-                visites.size() == FilonMemoire.Scan.TOTAL,
-                "Un passage exact, sans doublon ni boucle");
-        verifier(
-                !scan.actif() && scan.termine() && scan.pourcentage() == 100,
-                "Arrêt automatique à 100 %");
-        verifier(scan.suivant(centre) == null, "Aucune lecture après la fin");
-        scan.lancerPonctuel(p(100, -59, -86));
-        verifier(
-                scan.suivant(p(100, 42, -86)).equals(p(100, -59, -86)),
-                "Un scan ciblé commence au filon à 101 blocs sous le joueur, pas à ses pieds");
-        scan.lancerPonctuel(p(50, 20, 0));
-        verifier(scan.suivant(centre).equals(p(50, 20, 0)), "Relancer commence au nouveau centre");
-        scan.activer(false);
-        verifier(
-                !scan.termine() && scan.suivant(centre) == null,
-                "Annuler ne prétend pas avoir terminé");
-        scan.lancerPonctuel(centre);
-        verifier(
-                scan.suivant(new FilonMemoire.Position("minecraft:the_nether", 0, 20, 0)) == null
-                        && !scan.actif()
-                        && !scan.termine(),
-                "Changement de dimension : annulation sûre");
-        scan.activer(true);
-        verifier(
-                scan.suivant(centre) != null && !scan.ponctuel(),
-                "Reprise du mode automatique après annulation");
-        scan.lancerPonctuel(centre);
-        for (int i = 0; i < FilonMemoire.Scan.TOTAL; i++) scan.suivant(centre);
-        scan.activer(true);
-        verifier(
-                scan.suivant(centre) != null && !scan.termine(),
-                "Reprise automatique après 100 % sans dépassement du curseur");
-    }
-
-    static void scanCuboideUraninite() {
-        var centre = p(100, 40, -100);
-        var minerai = p(125, 15, -100);
-        var scan = new FilonMemoire.Scan();
-        scan.lancerPonctuel(centre);
-        boolean atteint = false;
-        for (FilonMemoire.Position bloc; (bloc = scan.suivant(centre)) != null; )
-            atteint |= bloc.equals(minerai);
-        verifier(!atteint, "Le cube historique manque le minerai bas et décalé");
-
-        var volume = FilonMemoire.VolumeScan.cuboide(centre, 30, 10, 40, 7);
-        verifier(
-                volume != null && volume.total() == 44 * 44 * 32,
-                "Bornes du générateur cuboïde de l’uraninite");
-        verifier(
-                volume.contient(p(86, 9, -114)) && volume.contient(p(129, 40, -71)),
-                "Bornes basses et hautes incluses");
-        verifier(
-                !volume.contient(p(130, 40, -71)) && !volume.contient(p(86, 8, -114)),
-                "Bords exclus");
-        scan.lancerPonctuel(centre, volume);
-        Set<FilonMemoire.Position> visites = new HashSet<>();
-        for (FilonMemoire.Position bloc; (bloc = scan.suivant(p(0, 60, -200))) != null; ) {
-            verifier(
-                    volume.contient(bloc) && visites.add(bloc),
-                    "Une seule visite par position du volume");
-        }
-        verifier(
-                visites.contains(minerai) && visites.size() == volume.total(),
-                "Le parcours atteint le minerai et couvre tout le volume");
-        verifier(scan.termine() && scan.pourcentage() == 100, "Fin automatique à 100 %");
-        scan.activer(true);
-        verifier(scan.volume() == null && scan.suivant(centre).equals(centre), "Reprise standard");
-        verifier(
-                FilonMemoire.VolumeScan.cuboide(centre, 128, 0, 320, 7) == null,
-                "Volume trop coûteux refusé");
-    }
-
-    static void fraicheur() {
-        var memoire = new FilonMemoire();
-        long maintenant = 3600000;
-        memoire.observer(p(0, 20, 0), "minecraft:iron_ore", true, maintenant - 1200000);
-        memoire.observer(p(1, 20, 0), "minecraft:iron_ore", true, maintenant);
-        var filon = memoire.filons().iterator().next();
-        verifier(
-                filon.ageReleve(maintenant).equals("20 min") && filon.releveAncien(maintenant),
-                "Un bloc récent ne rajeunit pas les autres blocs du compteur");
-        memoire.observer(p(0, 20, 0), "minecraft:air", false, maintenant);
-        verifier(
-                filon.ageReleve(maintenant).equals("moins de 1 min")
-                        && !filon.releveAncien(maintenant),
-                "Un bloc retiré ne rend pas périmé le compteur restant");
-        verifier(
-                filon.ageReleve(1).equals("moins de 1 min"),
-                "Décalage d'horloge : jamais d'âge négatif");
-        memoire.observer(p(1, 20, 0), "minecraft:air", false, maintenant);
-        verifier(
-                filon.verificationAncienne() == maintenant,
-                "Historique consultable même pour un filon vide");
-        memoire.importer(p(2, 20, 0), "minecraft:iron_ore", false, 0);
-        verifier(
-                filon.ageReleve(maintenant).equals("date inconnue")
-                        && filon.releveAncien(maintenant),
-                "Date manquante signalée");
-    }
-
-    static void arrivee() {
-        var memoire = new FilonMemoire();
-        memoire.observer(p(0, 20, 0), "minecraft:iron_ore", true, 100);
-        var filon = memoire.filons().iterator().next();
-        verifier(filon.arrive(p(3, 20, 0)), "Arrivée à trois blocs du minerai");
-        verifier(
-                !filon.arrive(p(4, 20, 0)) && !filon.arrive(p(0, 24, 0)),
-                "Pas d'arrivée trop loin ou à un autre étage");
-        verifier(
-                !filon.arrive(new FilonMemoire.Position("minecraft:the_nether", 0, 20, 0)),
-                "Pas d'arrivée dans une autre dimension");
-        memoire.observer(p(0, 20, 0), "minecraft:air", false, 200);
-        verifier(!filon.arrive(p(0, 20, 0)), "Pas d'arrivée sur un ancien bloc disparu");
-        memoire.observer(p(20, 20, 0), "minecraft:iron_ore", true, 200);
-        verifier(
-                filon.arrive(p(20, 20, 0)),
-                "L'arrivée vise le minerai restant, pas l'ancre historique");
-    }
-
-    static void importHistorique() {
-        FilonMemoire m = new FilonMemoire();
-        var ancien = p(0, 20, 0);
-        var dejaMine = p(1, 20, 0);
-        verifier(m.importer(ancien, "minecraft:iron_ore", false, 100), "Ancien minerai récupéré");
-        verifier(
-                m.importer(dejaMine, "minecraft:iron_ore", true, 100),
-                "Ancien historique miné récupéré");
-        verifier(m.filons().iterator().next().restants() == 1, "Anciennes quantités conservées");
-        verifier(
-                !m.importer(ancien, "minecraft:iron_ore", false, 100),
-                "Import répété sans doublon");
-        m.observer(ancien, "minecraft:air", false, 200);
-        verifier(
-                !m.importer(ancien, "minecraft:iron_ore", false, 100),
-                "Ne pas ressusciter un minerai récemment cassé");
-        verifier(
-                m.filons().iterator().next().restants() == 0,
-                "Le nouveau relevé reste prioritaire");
-        verifier(
-                m.importer(ancien, "minecraft:gold_ore", false, 300),
-                "Une observation importée réellement plus récente prévaut");
-        verifier(m.blocs().size() == 2, "Mêmes coordonnées, aucun nouveau bloc");
-    }
-
-    static void pauseScan() {
-        FilonMemoire.Scan scan = new FilonMemoire.Scan();
-        FilonMemoire.Scan reference = new FilonMemoire.Scan();
-        var joueur = p(2, 30, 4);
-        for (int i = 0; i < 1000; i++) {
-            verifier(
-                    scan.suivant(joueur).equals(reference.suivant(joueur)),
-                    "Même parcours avant la pause");
-        }
-        int progression = scan.pourcentage();
-        verifier(scan.activer(false), "Mise en pause");
-        verifier(!scan.activer(false), "Commande répétée sans inversion de l'état");
-        for (int i = 0; i < 1000; i++)
-            verifier(scan.suivant(joueur) == null, "Aucune position lue en pause");
-        verifier(scan.pourcentage() == progression, "Le curseur ne bouge pas en pause");
-        verifier(scan.activer(true), "Reprise");
-        verifier(
-                scan.suivant(joueur).equals(reference.suivant(joueur)),
-                "Reprendre à la position suivante");
-        FilonMemoire.Scan recharge = new FilonMemoire.Scan();
-        recharge.activer(false);
-        verifier(
-                recharge.suivant(joueur) == null,
-                "Un scan chargé désactivé ne commence pas le parcours");
-    }
-
-    static void suivi() {
-        FilonMemoire m = new FilonMemoire();
-        var p = p(1, 20, 2);
-        verifier(!m.observer(p, "minecraft:stone", false, 1), "Ne pas mémoriser toute la pierre");
-        verifier(m.observer(p, "minecraft:iron_ore", true, 2), "Découverte");
-        String id = m.filons().iterator().next().id;
-        verifier(
-                !m.observer(p, "minecraft:iron_ore", true, 3),
-                "Observation répétée sans double compte");
-        verifier(m.filon(id).restants() == 1, "Un bloc = une quantité");
-        m.observer(p, "minecraft:air", false, 4);
-        verifier(
-                m.filon(id).restants() == 0 && m.filon(id).blocs.size() == 1,
-                "Bloc cassé par n'importe quel joueur");
-        verifier(m.filon(id).id.equals(id), "Filon vidé conserve son identité");
-        m.observer(p, "minecraft:gold_ore", true, 5);
-        verifier(
-                m.filon(id).restants() == 1 && m.filon(id).types().get("minecraft:gold_ore") == 1,
-                "Bloc remplacé réapparaît");
-        verifier(m.filon(id).destination(p(0, 0, 0)).equals(p), "Destination = un bloc restant");
-    }
-
-    static void groupes() {
-        FilonMemoire m = new FilonMemoire();
-        m.observer(p(0, 20, 0), "gtceu:tin_ore", true, 1);
-        m.observer(p(2, 20, 0), "gtceu:cassiterite_ore", true, 1);
-        verifier(m.filons().size() == 1, "Plusieurs minerais voisins dans un filon");
-        m.observer(p(80, 20, 0), "gtceu:tin_ore", true, 1);
-        m.observer(
-                new FilonMemoire.Position("minecraft:the_nether", 0, 20, 0),
-                "gtceu:tin_ore",
-                true,
-                1);
-        verifier(m.filons().size() == 3, "Filons éloignés et dimensions séparés");
-        verifier(
-                Double.isInfinite(
-                        p(0, 0, 0).distance2(new FilonMemoire.Position("autre", 0, 0, 0))),
-                "Distance interdimension");
-    }
-
-    static void restauration() {
-        FilonMemoire avant = new FilonMemoire();
-        avant.observer(p(-5, 8, 2), "minecraft:diamond_ore", true, 100);
-        avant.observer(p(-4, 8, 2), "minecraft:diamond_ore", true, 100);
-        avant.observer(p(-5, 8, 2), "minecraft:air", false, 200);
-        FilonMemoire apres = new FilonMemoire();
-        for (var b : avant.blocs())
-            apres.restaurer(b.position, b.id, b.retire, b.vu, avant.filon(b.filon).ancre);
-        var f = apres.filons().iterator().next();
-        verifier(
-                f.restants() == 1 && f.blocs.size() == 2,
-                "Quantités restaurées sans perdre l'historique");
-        verifier(
-                f.id.equals(avant.filons().iterator().next().id),
-                "Identifiant stable après reprise");
-        apres.restaurer(p(-4, 8, 2), "minecraft:diamond_ore", false, 100, f.ancre);
-        verifier(f.restants() == 1, "Pas de doublon au chargement");
-        apres.restaurer(
-                p(1, 2, 3),
-                "minecraft:iron_ore",
-                false,
-                1,
-                new FilonMemoire.Position("autre", 1, 2, 3));
-        verifier(apres.blocs().size() == 2, "Rejeter une ancre de mauvaise dimension");
-    }
-
-    static void scan() {
-        verifier(
-                new FilonMemoire.Scan().suivant(p(5, 8, 9)).equals(p(5, 8, 9)),
-                "Scanner près du joueur en premier");
-        FilonMemoire.Scan s = new FilonMemoire.Scan();
-        var centre = p(-50, -10, 60);
-        Set<String> vus = new HashSet<>();
-        for (int i = 0; i < FilonMemoire.Scan.TOTAL; i++) {
-            var q = s.suivant(centre);
-            vus.add(q.cle());
-            verifier(
-                    Math.abs(q.x() - centre.x()) <= 16
-                            && Math.abs(q.y() - centre.y()) <= 16
-                            && Math.abs(q.z() - centre.z()) <= 16,
-                    "Scan borné");
-        }
-        verifier(
-                vus.size() == FilonMemoire.Scan.TOTAL,
-                "Tous les blocs parcourus une fois par cycle");
-        verifier(s.pourcentage() == 0, "Nouveau cycle");
-        var loin = p(1000, 80, 1000);
-        verifier(s.suivant(loin).distance2(loin) <= 3 * 16 * 16, "Déplacement recentre le scan");
-        var autre = new FilonMemoire.Position("minecraft:the_end", 0, 40, 0);
-        verifier(s.suivant(autre).dimension().equals(autre.dimension()), "Dimension recentrée");
-    }
-
     static void securite() {
         var cible = p(0, 10, 0);
         AtomicInteger appels = new AtomicInteger();
@@ -637,10 +982,14 @@ public final class FilonMemoireTest {
         verifier(
                 aucun == null && appels.get() == 308,
                 "Refuser sans position sûre, recherche bornée par le plafond");
-        var proche =
+        verifier(
                 FilonMemoire.destinationAuDessus(
-                        cible, -64, 320, q -> q.equals(p(0, 12, 0)) || q.equals(p(0, 80, 0)));
-        verifier(proche.equals(p(0, 12, 0)), "Première cavité sûre au-dessus, avant la surface");
+                                cible,
+                                -64,
+                                320,
+                                q -> q.equals(p(0, 12, 0)) || q.equals(p(0, 80, 0)))
+                        .equals(p(0, 12, 0)),
+                "Première cavité sûre au-dessus, avant la surface");
         verifier(
                 FilonMemoire.destinationAuDessus(cible, -64, 320, q -> q.equals(p(0, 80, 0)))
                         .equals(p(0, 80, 0)),
@@ -658,87 +1007,9 @@ public final class FilonMemoireTest {
                 FilonMemoire.destinationAuDessus(p(0, 318, 0), -64, 320, q -> true) == null,
                 "Respecter le plafond");
         var nether = new FilonMemoire.Position("minecraft:the_nether", 5, -100, 7);
-        var bas = FilonMemoire.destinationAuDessus(nether, 0, 256, q -> true);
         verifier(
-                bas.equals(new FilonMemoire.Position("minecraft:the_nether", 5, 1, 7)),
+                FilonMemoire.destinationAuDessus(nether, 0, 256, q -> true)
+                        .equals(new FilonMemoire.Position("minecraft:the_nether", 5, 1, 7)),
                 "Respecter le plancher, la dimension et les coordonnées du centre");
-    }
-
-    static void rotationCache() {
-        var m = new FilonMemoire(true);
-        var centre = p(0, 20, 0);
-        var types = Set.of("gtceu:garnet_sand_ore");
-        m.gisement("ancien", p(1000, 20, 0), "gtceu:garnet_tin_vein", "Ancien", types, false);
-        m.gisement("nouveau", centre, "gtceu:garnet_tin_vein", "Nouveau", types, false);
-        m.filon("ancien").marquerEpuise(true);
-        m.filon("ancien").choisirTypes(types);
-        m.restaurerReleve(centre, "gtceu:garnet_sand_ore", false, 1, "nouveau");
-        for (int i = 0; i < FilonMemoire.MAX_BLOCS - 1; i++)
-            m.restaurerReleve(
-                    p(1000 + i, 20, 0),
-                    "gtceu:garnet_sand_ore",
-                    i == FilonMemoire.MAX_BLOCS - 2,
-                    i + 2,
-                    "ancien");
-        verifier(
-                m.plein() && m.blocs().size() == 100000, "Capacité réelle de 100 000 observations");
-        m.protegerScan(centre);
-        m.observer(p(1000, 20, 0), "gtceu:garnet_sand_ore", true, 1000000);
-        long debut = System.nanoTime();
-        verifier(
-                m.observer(p(1, 20, 0), "gtceu:garnet_sand_ore", true, 1000001),
-                "Cache saturé : le nouveau filon est quand même détecté");
-        long ms = (System.nanoTime() - debut) / 1000000;
-        verifier(
-                m.remplaces() == FilonMemoire.LOT_ROTATION
-                        && m.blocs().size()
-                                == FilonMemoire.MAX_BLOCS - FilonMemoire.LOT_ROTATION + 1,
-                "Rotation par lot sans dépasser le plafond");
-        var restants = new HashSet<FilonMemoire.Position>();
-        for (var b : m.blocs()) restants.add(b.position);
-        verifier(
-                restants.contains(centre) && restants.contains(p(1, 20, 0)),
-                "Conserver les blocs encore présents dans la zone scannée");
-        verifier(
-                restants.contains(p(1000, 20, 0)) && !restants.contains(p(1001, 20, 0)),
-                "Conserver le relevé revu récemment, retirer le plus ancien hors zone");
-        verifier(
-                !restants.contains(p(1000 + FilonMemoire.MAX_BLOCS - 2, 20, 0)),
-                "Retirer en priorité le bloc miné, même récent");
-        verifier(
-                m.filon("ancien").epuiseManuel()
-                        && m.filon("ancien").typesChoisis().equals(types)
-                        && m.filons().size() == 2,
-                "Conserver gisements, marquages et filtres");
-        verifier(
-                m.filons().stream().mapToInt(f -> f.blocs.size()).sum() == m.blocs().size(),
-                "Aucune référence de bloc évincé dans les filons");
-        var recharge = new FilonMemoire(true);
-        recharge.gisement(
-                "ancien", p(1000, 20, 0), "gtceu:garnet_tin_vein", "Ancien", types, false);
-        recharge.gisement("nouveau", centre, "gtceu:garnet_tin_vein", "Nouveau", types, false);
-        for (var b : m.blocs()) recharge.restaurerReleve(b.position, b.id, b.retire, b.vu, b.filon);
-        verifier(
-                recharge.blocs().size() == m.blocs().size() && recharge.blocs().size() > 20000,
-                "Restaurer un cache dépassant l'ancienne limite sans le tronquer");
-        long evinces = m.remplaces();
-        verifier(
-                m.observer(p(2, 20, 0), "gtceu:garnet_sand_ore", true, 1000002)
-                        && m.remplaces() == evinces,
-                "Pas de parcours de rotation tant qu'il reste de la place");
-        System.out.println("Rotation d'un cache de 100 000 blocs : " + ms + " ms");
-    }
-
-    static void limite() {
-        FilonMemoire m = new FilonMemoire();
-        for (int i = 0; i < FilonMemoire.MAX_BLOCS + 20; i++)
-            m.observer(p(i % 30, i / 900, i / 30 % 30), "minecraft:iron_ore", true, i);
-        verifier(
-                m.blocs().size() == FilonMemoire.MAX_BLOCS && m.plein(),
-                "Mémoire bornée sans éviction silencieuse");
-        m.observer(p(0, 0, 0), "minecraft:air", false, 30000);
-        verifier(
-                m.blocs().stream().anyMatch(b -> b.position.equals(p(0, 0, 0)) && b.retire),
-                "Continuer à corriger les blocs connus quand la mémoire est pleine");
     }
 }

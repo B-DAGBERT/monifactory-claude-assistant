@@ -234,6 +234,8 @@ class ParityTests(unittest.TestCase):
             "chargerStockage",
             "chargerMinerais",
             "ecrireMinerais",
+            # The mod tracks GregTech veins itself: no KubeJS ore relevé nor filons.json write then.
+            "suivreMinerais",
             "suivreConteneur",
             "lirePlan",
             "lireCommande",
