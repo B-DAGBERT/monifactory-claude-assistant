@@ -47,7 +47,8 @@ import net.minecraft.client.Minecraft;
 public class BridgeWorldScopeTest {
  static Path root;
  static JsonObject json(String s){return JsonParser.parseString(s).getAsJsonObject();}
- static JsonObject read(String s)throws Exception{return json(Files.readString(root.resolve(s)));}
+ // Periodic exports are written on the mod's writer thread: wait for them before reading.
+ static JsonObject read(String s)throws Exception{assert Ecritures.attendre(5000);return json(Files.readString(root.resolve(s)));}
  static void context(String world,String session,String dimension){
   IdentiteMonde.isole=true;IdentiteMonde.monde=world;IdentiteMonde.session=session;
   Minecraft.getInstance().level=new Minecraft.Level();Minecraft.getInstance().level.dim=dimension;
@@ -190,6 +191,7 @@ class BridgeWorldScopeTests(unittest.TestCase):
                 *map(str, sources),
                 str(ROOT / "mod/src/main/java/fr/assistantia/Pont.java"),
                 str(ROOT / "mod/src/main/java/fr/assistantia/FileDemandes.java"),
+                str(ROOT / "mod/src/main/java/fr/assistantia/Ecritures.java"),
                 str(harness),
             ],
             capture_output=True,

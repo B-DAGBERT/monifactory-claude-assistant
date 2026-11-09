@@ -3,18 +3,13 @@ package fr.assistantia;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mojang.blaze3d.platform.InputConstants;
-import com.mojang.logging.LogUtils;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.fml.loading.FMLPaths;
 import org.lwjgl.glfw.GLFW;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -31,9 +26,11 @@ public final class TouchesMac {
     private static final Path PATH =
             FMLPaths.GAMEDIR.get().resolve("kubejs/assistant/codex_touches.json");
     private static final String SESSION = UUID.randomUUID().toString();
+    private static final long HEARTBEAT_MS = 500;
     private static final ArrayDeque<JsonObject> EVENTS = new ArrayDeque<>();
     private static Set<String> previous = Set.of();
-    private static long sequence, lastWrite, lastError;
+    private static long sequence, lastWrite;
+    private static boolean changed = true;
 
     private TouchesMac() {}
 
@@ -86,29 +83,19 @@ public final class TouchesMac {
             EVENTS.add(event);
             while (EVENTS.size() > 64) EVENTS.removeFirst();
             previous = pressed;
+            changed = true;
         }
-        if (now - lastWrite < 100) return;
+        // A transition is written within 100 ms; otherwise a heartbeat keeps the frame within
+        // the reader's two-second freshness window.
+        if (now - lastWrite < 100 || !changed && now - lastWrite < HEARTBEAT_MS) return;
         lastWrite = now;
+        changed = false;
         JsonObject state = new JsonObject();
         state.addProperty("session", SESSION);
         state.addProperty("t", now);
         JsonArray events = new JsonArray();
         EVENTS.forEach(events::add);
         state.add("events", events);
-        try {
-            Files.createDirectories(PATH.getParent());
-            Path temporary = PATH.resolveSibling("codex_touches.json.tmp");
-            Files.writeString(temporary, state.toString(), StandardCharsets.UTF_8);
-            Files.move(
-                    temporary,
-                    PATH,
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException e) {
-            if (now - lastError > 30_000) {
-                lastError = now;
-                LogUtils.getLogger().warn("Assistant Codex : raccourcis Mac non transmis", e);
-            }
-        }
+        Ecritures.publier(PATH, Ecritures.texte(state.toString()));
     }
 }
