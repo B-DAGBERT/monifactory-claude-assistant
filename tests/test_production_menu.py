@@ -172,6 +172,10 @@ public class ProductionMenuTest {
   assert Pont.last.get("capture").equals(Pont.inventory.get("capture"));
   view.add("resultat",response(1000));tick(s);assert !button(s,"Chargement…").active:"Wrong receipt accepted";
   view.add("resultat",response(1001));tick(s);assert button(s,"Suivant").active;button(s,"Suivant").press();s.render(new GuiGraphics(),0,0,0);bounds(s);
+  if(args[0].equals("unpublished")){
+   view.add("contexte",new JsonObject());tick(s);
+   assert !button(s,"Suivant").active:"Report kept although the service no longer publishes its context";return;
+  }
   if(args[0].equals("revocation")){
    var error=response(1001);error.addProperty("etat","erreur");error.add("lignes",new JsonArray());view.add("resultat",error);tick(s);
    assert !button(s,"Suivant").active:"Server revocation did not remove displayed success";
@@ -262,6 +266,7 @@ class ProductionMenuTests(unittest.TestCase):
             "capture-failed",
             "backpack-pending",
             "result",
+            "unpublished",
             "revocation",
         ):
             with self.subTest(case=case):

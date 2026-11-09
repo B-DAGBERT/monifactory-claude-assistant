@@ -107,6 +107,14 @@ final class InventaireProduction {
         if (production == null || !production.isJsonObject()) return false;
         var courant = production.getAsJsonObject().get("contexte");
         if (courant == null || !courant.isJsonObject()) return false;
+        // La capture appartient au contexte que l'assistant publie encore (monde, connexion,
+        // dimension) : un service devenu indisponible ou une autre connexion la périment.
+        var publie = courant.getAsJsonObject();
+        if (!capture.contexte.equals(
+                new EtatProduction.Contexte(
+                        Pont.texte(publie, "monde_actif"),
+                        Pont.texte(publie, "session_monde"),
+                        Pont.texte(publie, "dimension_monde")))) return false;
         if (capture.lots.isEmpty()) return true;
         try {
             return capture.revisionLots
