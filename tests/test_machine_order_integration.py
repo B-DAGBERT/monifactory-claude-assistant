@@ -16,6 +16,7 @@ from test_machine_inputs import STUBS as MACHINE_STUBS
 
 ROOT = Path(__file__).resolve().parents[1]
 KEEP = (
+    "net.minecraft.world.item.Item",
     "net.minecraft.world.item.ItemStack",
     "net.minecraft.world.inventory.AbstractContainerMenu",
     "net.minecraft.world.inventory.Slot",

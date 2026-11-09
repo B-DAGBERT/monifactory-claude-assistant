@@ -406,6 +406,47 @@ public final class RecetteMoteurTest {
         var deux = fr.assistantia.TraitsReperes.dessiner("11");
         assert deux.traits().stream().anyMatch(t -> presque(t.x1(), 0.6 + 0.25 + 0.6));
         assert fr.assistantia.TraitsReperes.dessiner("").traits().isEmpty();
+        // Quantités à sortir : sur les drawers seulement, jamais sur les coffres (bouton Prendre).
+        for (String tiroir :
+                List.of(
+                        "functionalstorage:oak_1",
+                        "functionalstorage:spruce_4",
+                        "functionalstorage:compacting_drawer",
+                        "storagedrawers:oak_full_drawers_2",
+                        "thermaldrawers:hardened_drawer"))
+            assert fr.assistantia.TraitsReperes.tiroir(tiroir) : tiroir;
+        for (String autre :
+                List.of(
+                        "minecraft:chest",
+                        "sophisticatedstorage:gold_barrel",
+                        "functionalstorage:storage_controller",
+                        "functionalstorage:controller_extension",
+                        "storagedrawers:controller"))
+            assert !fr.assistantia.TraitsReperes.tiroir(autre) : autre;
+        assert !fr.assistantia.TraitsReperes.tiroir(null);
+        assert fr.assistantia.TraitsReperes.machineOutils("ae2:inscriber");
+        assert fr.assistantia.TraitsReperes.machineOutils("extendedae:ex_inscriber");
+        assert !fr.assistantia.TraitsReperes.machineOutils("minecraft:chest");
+        assert !fr.assistantia.TraitsReperes.machineOutils("functionalstorage:oak_1");
+        assert !fr.assistantia.TraitsReperes.machineOutils(null);
+        // Moules et presses de l'arbre : surlignés dans les coffres ouverts tant qu'ils manquent.
+        var lingot =
+                new fr.assistantia.ArbreCollecte.Noeud(
+                        Set.of("gtceu:iron_ingot"), 1, 1, false, List.of());
+        var moule =
+                new fr.assistantia.ArbreCollecte.Noeud(
+                        Set.of("gtceu:ingot_casting_mold"), 1, 1, true, List.of());
+        var presse =
+                new fr.assistantia.ArbreCollecte.Noeud(
+                        Set.of("ae2:silicon_press"), 1, 1, true, List.of());
+        var plaque =
+                new fr.assistantia.ArbreCollecte.Noeud(
+                        Set.of("gtceu:iron_plate"), 1, 1, false, List.of(lingot, moule));
+        var racine =
+                new fr.assistantia.ArbreCollecte.Noeud(
+                        Set.of("ae2:printed_silicon"), 1, 1, false, List.of(plaque, presse));
+        var outils = new fr.assistantia.MemoireCollecte(racine, 1).outils();
+        assert outils.equals(Set.of("gtceu:ingot_casting_mold", "ae2:silicon_press")) : outils;
     }
 
     /** Une chaîne de 300 ingrédients est bornée et déclarée incomplète. */

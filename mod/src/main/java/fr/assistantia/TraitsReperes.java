@@ -31,6 +31,32 @@ public final class TraitsReperes {
         "abcdef", "bc", "abged", "abgcd", "fgbc", "afgcd", "afgedc", "abc", "abcdefg", "abcdfg"
     };
 
+    /**
+     * Un drawer (Functional Storage et autres mods de tiroirs), d'après l'identifiant de son bloc :
+     * on y affiche le nombre d'objets à sortir, faute de bouton qui les prend tout seul comme dans
+     * un coffre. Jamais un contrôleur ni une extension, qui ne contiennent rien eux-mêmes.
+     */
+    public static boolean tiroir(String idBloc) {
+        if (idBloc == null) return false;
+        int deuxPoints = idBloc.indexOf(':');
+        String espace = deuxPoints < 0 ? "" : idBloc.substring(0, deuxPoints);
+        String nom = idBloc.substring(deuxPoints + 1);
+        if (nom.contains("controller") || nom.contains("extension")) return false;
+        if (nom.contains("drawer")) return true;
+        return espace.equals("functionalstorage")
+                && (nom.endsWith("_1") || nom.endsWith("_2") || nom.endsWith("_4"));
+    }
+
+    /**
+     * Une machine qui garde ses outils installés (inscriber d'AE2 et ses presses), d'après
+     * l'identifiant de son bloc : son contenu est déjà en place, jamais un coffre où aller
+     * chercher.
+     */
+    public static boolean machineOutils(String idBloc) {
+        if (idBloc == null) return false;
+        return idBloc.substring(idBloc.indexOf(':') + 1).contains("inscriber");
+    }
+
     /** « ★ 3 · prêt » devient « ★3✓ », « 3 · en cours » devient « 3… ». */
     public static String symboles(String texte) {
         StringBuilder sortie = new StringBuilder();

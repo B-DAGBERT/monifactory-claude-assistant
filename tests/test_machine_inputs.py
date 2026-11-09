@@ -11,6 +11,9 @@ from test_chest_transfers import STUBS as CHEST_STUBS
 
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = dict(CHEST_STUBS)
+STUBS["net.minecraft.world.item.Item"] = (
+    "public class Item {public boolean canBeDepleted(){return false;}}"
+)
 STUBS["net.minecraft.world.item.ItemStack"] = """
 public class ItemStack {
     public static final ItemStack EMPTY=new ItemStack("",0);
@@ -102,7 +105,7 @@ public class EmiStack implements EmiIngredient {
     public EmiStack copy(){var s=new EmiStack(key instanceof ItemStack i?i.copy():key,amount);s.chance=chance;return s;}
     public EmiStack comparison(java.util.function.Function<Comparison,Comparison> f){f.apply(Comparison.DEFAULT_COMPARISON);return this;}
     public EmiStack getRemainder(){return EmiStack.of(ItemStack.EMPTY);}
-    public Object getNbt(){return key instanceof ItemStack s?s.getTag():null;} public Object getKey(){return key;} public Object getId(){return key instanceof ItemStack s?s.id:((Fluid)key).id();}
+    public Object getNbt(){return key instanceof ItemStack s?s.getTag():null;} public Object getKey(){return key instanceof ItemStack s?s.getItem():key;} public Object getId(){return key instanceof ItemStack s?s.id:((Fluid)key).id();}
     public net.minecraft.network.chat.Component getName(){return net.minecraft.network.chat.Component.literal(getId().toString());}
     public boolean isEqual(EmiStack b){return key instanceof ItemStack s&&b.key instanceof ItemStack t?ItemStack.isSameItemSameTags(s,t):key.equals(b.key);}
     public java.util.List<EmiStack> getEmiStacks(){return java.util.List.of(this);}public long getAmount(){return amount;}

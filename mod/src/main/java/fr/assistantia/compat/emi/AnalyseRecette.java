@@ -808,6 +808,8 @@ public final class AnalyseRecette {
                         + "|"
                         + CoffresConnus.zone()
                         + "|"
+                        + lotsEnMarche()
+                        + "|"
                         + InventaireJoueur.disponible();
         if (signature.equals(clePlan)) return false;
         clePlan = signature;
@@ -867,7 +869,19 @@ public final class AnalyseRecette {
                         InventaireJoueur.disponible()
                                 ? OrdonnancementEmi.stocks(visibles, null)
                                 : List.of());
-        if (InventaireJoueur.disponible()) sources.addAll(coffres(visibles));
+        if (InventaireJoueur.disponible()) {
+            sources.addAll(coffres(visibles));
+            // Moules, presses, lentilles déjà installés dans une machine : présents, rien à
+            // chercher (machine GregTech déjà ouverte, inscriber d'AE2 relevé par le serveur).
+            for (var outil : MachinesEmi.outilsInstalles())
+                sources.add(
+                        new OrdreMachines.StockSource<>(
+                                new PlanRetrait.Stock<>(
+                                        new OrdonnancementEmi.Objet(outil.objet(), false),
+                                        outil.quantite(),
+                                        true),
+                                OrdreMachines.Origine.MACHINE));
+        }
         var ordre =
                 OrdreMachines.calculer(
                         vue.machines(),
@@ -886,7 +900,9 @@ public final class AnalyseRecette {
                             lot.id(),
                             lot.recette(),
                             lot.fois(),
-                            etat == LotFabrication.Etat.A_RECUPERER));
+                            // Premières sorties arrivées mais machine encore au travail : le lot
+                            // reste « en cours » (…), pas prêt (✓), jusqu'à la fin de sa recette.
+                            etat == LotFabrication.Etat.A_RECUPERER && !enMarche(lot)));
         }
         // L'étape en cours garde la tête du plan tant qu'elle n'est pas faite : ramasser la matière
         // d'une autre étape ne la fait plus passer devant.
@@ -991,6 +1007,24 @@ public final class AnalyseRecette {
         return poste instanceof PossessionsRecette.PosteGT gt
                 && PossessionsRecette.possession(gt) == PossessionsRecette.Possession.AUCUNE
                 && (PossessionsRecette.sousTier(gt) || PossessionsRecette.atelier(gt) == null);
+    }
+
+    /** La machine d'un lot travaille encore (lot envoyé dans une machine chargée). */
+    private static boolean enMarche(LotMachine lot) {
+        var mc = Minecraft.getInstance();
+        var pos = lot.emplacement().orElse(null);
+        if (pos == null || mc.level == null || !mc.level.hasChunkAt(pos)) return false;
+        return GregTechMachines.enMarche(GregTechMachines.machine(mc.level.getBlockEntity(pos)));
+    }
+
+    /** Lots dont la machine travaille, pour refaire le plan quand l'une s'arrête. */
+    private static String lotsEnMarche() {
+        if (MachinesEmi.arbreSuivi() == null) return "";
+        StringBuilder cle = new StringBuilder();
+        for (var lot : MachinesEmi.lotsSuivis())
+            if (lot.suivi().etat() == LotFabrication.Etat.A_RECUPERER && enMarche(lot))
+                cle.append(lot.id()).append(',');
+        return cle.toString();
     }
 
     /** Un lot en cours dont une sortie attendue est un ingrédient de cette recette. */
