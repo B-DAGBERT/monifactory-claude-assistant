@@ -312,6 +312,35 @@ public final class FilonMemoireTest {
         long total = 23L * 23 * 23;
         verifier(ticks >= 10 && scan.termine(), "Scan réparti sur plusieurs ticks (" + ticks + ")");
         verifier(f.restants() == 11 && scan.lus() == total, "Chaque position lue une seule fois");
+        verifier(f.scanComplet() && f.avancementScan() == 100, "Scan marqué complet");
+        // Budget épuisé juste après la dernière colonne : le scan est quand même complet.
+        var g = gisement(m, "b", 8, 64, 8, "gtceu:tin_ore");
+        var court = ScanFilon.lancer(m, g, VolumeFilon.couches(8, 64, 8, 1), m.filons(), -64, 319);
+        AtomicLong horloge = new AtomicLong();
+        court.avancer(monde, horloge::incrementAndGet, 1, 0);
+        verifier(
+                court.termine() && g.scanComplet(),
+                "Dernière colonne finie au bord du budget : complet");
+        // Composition modifiée ou illisible : un bloc inchangé n'est jamais compté miné.
+        int etain = m.typeConnu("gtceu:tin_ore");
+        m.gisement("a", f.ancre, "gtceu:test_vein", "Test a", Set.of(), false);
+        verifier(
+                f.dansComposition(etain),
+                "Une composition vide ne remplace pas la composition connue");
+        m.gisement(
+                "a", f.ancre, "gtceu:test_vein", "Test a", Set.of("gtceu:cassiterite_ore"), false);
+        verifier(!f.dansComposition(etain), "Une nouvelle composition non vide est prise");
+        var rescan = ScanFilon.lancer(m, f, VolumeFilon.veine(0, 0, 0, 22), m.filons(), -64, 319);
+        balayer(rescan, monde);
+        verifier(
+                f.restants() == 11 && f.mines() == 0,
+                "Blocs inchangés gardés malgré la composition");
+        monde.retirer(0, 0, 0);
+        balayer(
+                ScanFilon.lancer(m, f, VolumeFilon.veine(0, 0, 0, 22), m.filons(), -64, 319),
+                monde);
+        verifier(
+                f.restants() == 10 && f.mines() == 1, "Un bloc vraiment disparu reste compté miné");
     }
 
     static void colonnesNonChargees() {
@@ -467,6 +496,7 @@ public final class FilonMemoireTest {
         for (int i = 0; i < 1500; i++)
             m.ajouter(f, FilonMemoire.pos(i % 40, 10 + i / 1600, i / 40), t);
         verifier(!f.presqueEpuise() && f.pourcentRestant() == 100, "Filon plein");
+        f.scanComplet = true; // volume entier parcouru : le total trouvé est connu
         for (int i = 0; i < 1300; i++) m.miner(f, f.position(0));
         verifier(f.restants() == 200 && !f.presqueEpuise(), "200 / 1500 (13 %) : pas encore");
         for (int i = 0; i < 100; i++) m.miner(f, f.position(0));
@@ -486,6 +516,32 @@ public final class FilonMemoireTest {
         for (int i = 0; i < 10; i++) m.ajouter(petit, FilonMemoire.pos(50 + i, 10, 0), t);
         for (int i = 0; i < 10; i++) m.miner(petit, petit.position(0));
         verifier(!petit.presqueEpuise(), "Trop peu trouvé pour conclure");
+        // Zone vue en partie (ancien scan de 16 blocs, scan arrêté) : jamais « presque épuisé ».
+        f.scanComplet = false;
+        verifier(
+                !f.presqueEpuise() && f.presqueEpuiseAConfirmer(),
+                "Zone partielle : proposer de scanner pour confirmer, pas Épuisé");
+        var resume =
+                com.google.gson.JsonParser.parseString(
+                                FormatFilons.resume(InstantaneFilons.de(m, "m", 1), null))
+                        .getAsJsonObject()
+                        .getAsJsonArray("gisements")
+                        .get(0)
+                        .getAsJsonObject();
+        verifier(
+                !resume.get("presque_epuise").getAsBoolean()
+                        && resume.get("scan").getAsString().equals("zone"),
+                "Résumé : pas de presque épuisé sans scan complet");
+        f.scanComplet = true;
+        resume =
+                com.google.gson.JsonParser.parseString(
+                                FormatFilons.resume(InstantaneFilons.de(m, "m", 1), null))
+                        .getAsJsonObject()
+                        .getAsJsonArray("gisements")
+                        .get(0)
+                        .getAsJsonObject();
+        verifier(resume.get("presque_epuise").getAsBoolean(), "Résumé : scan complet confirmé");
+        verifier(!f.presqueEpuiseAConfirmer(), "Scan complet : plus rien à confirmer");
     }
 
     static FilonMemoire exemple() {

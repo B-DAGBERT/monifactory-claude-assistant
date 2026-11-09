@@ -25,9 +25,40 @@ public final class SauvegardeFilonsTest {
         refusExecuteur(dossier);
         departSansPublication(dossier);
         contenuParesseux(dossier);
+        copieVersion1(dossier);
         System.out.println(
                 "Publication filons : reconnexion, reprise, ordre, acquittements et texte calcule"
                         + " sur le thread IO valides");
+    }
+
+    /** Copie v1 : complète ou absente, faite une seule fois, retentée après un échec. */
+    static void copieVersion1(Path dossier) throws Exception {
+        Path v1 = dossier.resolve("monde-v1.json"), copie = dossier.resolve("monde-v1.json.v1.bak");
+        String ancien = "{\"v\":1,\"monde\":\"m\",\"blocs\":[]}";
+        Files.writeString(v1, ancien);
+        // Échec simulé : le nom temporaire est occupé par un dossier non vide.
+        Path tmp = dossier.resolve("monde-v1.json.v1.bak.tmp");
+        Files.createDirectories(tmp.resolve("occupe"));
+        boolean echec = false;
+        try {
+            SauvegardeFilons.conserverVersion1(v1);
+        } catch (java.io.IOException e) {
+            echec = true;
+        }
+        assert echec && !Files.exists(copie) : "Échec : aucune copie partielle sous le nom final";
+        Files.delete(tmp.resolve("occupe"));
+        Files.delete(tmp);
+        SauvegardeFilons.conserverVersion1(v1);
+        assert Files.readString(copie).equals(ancien) && !Files.exists(tmp)
+                : "Copie complète, sans temporaire restant";
+        Files.writeString(v1, "{\"v\":2,\"monde\":\"m\"}");
+        SauvegardeFilons.conserverVersion1(v1);
+        assert Files.readString(copie).equals(ancien) : "La copie v1 n'est jamais remplacée";
+        Path v2 = dossier.resolve("monde-v2.json");
+        Files.writeString(v2, "{\"v\":2}");
+        SauvegardeFilons.conserverVersion1(v2);
+        assert !Files.exists(dossier.resolve("monde-v2.json.v1.bak"))
+                : "Pas de copie d'un fichier v2";
     }
 
     /** Le texte se calcule une seule fois, sur l'exécuteur IO, jamais au moment d'enregistrer. */

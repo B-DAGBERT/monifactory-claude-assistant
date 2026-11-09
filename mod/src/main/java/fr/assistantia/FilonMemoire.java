@@ -209,9 +209,22 @@ public final class FilonMemoire {
          * est inconnu.
          */
         public boolean presqueEpuise() {
+            // Seul un scan complet du volume connaît le total : une zone vue en partie ne suffit
+            // pas.
+            return scanComplet && !scanEnAttente() && peuRestant();
+        }
+
+        /**
+         * Peu de minerai dans une zone vue en partie (ancien scan de 16 blocs, scan arrêté) :
+         * proposer de scanner pour confirmer, jamais « Épuisé ».
+         */
+        public boolean presqueEpuiseAConfirmer() {
+            return !scanComplet && !scanEnAttente() && peuRestant();
+        }
+
+        private boolean peuRestant() {
             int total = trouves();
             return !estEpuise()
-                    && !scanEnAttente()
                     && total >= MINIMUM_PRESQUE_EPUISE
                     && presents * 100L <= (long) total * POURCENT_PRESQUE_EPUISE;
         }
@@ -518,6 +531,9 @@ public final class FilonMemoire {
             Set<String> composition,
             boolean epuise) {
         Filon f = filons.get(id);
+        // Une définition illisible donne une composition vide : garder la composition connue.
+        if (f != null && composition.isEmpty() && !f.composition.isEmpty())
+            composition = f.composition;
         if (f == null) {
             f = new Filon(this, id, centre);
             filons.put(id, f);

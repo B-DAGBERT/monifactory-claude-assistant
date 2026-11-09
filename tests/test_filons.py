@@ -250,6 +250,83 @@ class FilonsTests(unittest.TestCase):
             self.assertNotEqual(written, self.stamp(bridge))
         self.assertIsNone(self.stamp(SimpleNamespace(read=lambda name: None)))
 
+    def test_same_world_scope_after_a_loss_rereads_the_vein_summary(self):
+        """A freeze or F3+T loses then restores the same scope: veins must come back unchanged."""
+        from unittest import mock
+
+        import monifactory_assistant.application.game as game
+        from monifactory_assistant.game.world_scope import WorldScope
+
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "filons_mod.json").write_text("{}")
+            (folder / "filons.json").write_text("{}")
+            reads = []
+            scope = WorldScope("m1_" + "a" * 64, "1" * 32, "minecraft:overworld")
+            bridge = SimpleNamespace(
+                isolated=True,
+                scope=scope,
+                data_path=lambda name, create=False: folder / name,
+                scope_valid=lambda s: True,
+                write_text=lambda *args: None,
+            )
+            storage = SimpleNamespace(
+                containers=[], machines=[], export_key=lambda: 1, as_text=lambda: ""
+            )
+
+            class World:
+                def __init__(self, *args, **kwargs):
+                    self.errors = []
+
+                def invalidate_live(self):
+                    pass
+
+                def poll(self, *args):
+                    return False
+
+            class Controller(game.GameController):
+                def check_quests(self):
+                    pass
+
+                def check_new_machines(self, storage):
+                    pass
+
+                def journal(self, *args):
+                    pass
+
+                def coach(self, *args, **kwargs):
+                    pass
+
+            def find(bridge):
+                reads.append(1)
+                return [{"minerai": "redstone", "x": 0, "y": 0, "z": 0}]
+
+            monitor = SimpleNamespace(refresh=lambda bridge, world: storage)
+            with (
+                mock.patch.object(game, "find_veins", find),
+                mock.patch.object(game, "scope_folder", lambda *a, **k: folder),
+                mock.patch.object(game, "World", World),
+                mock.patch.object(game, "Storage", lambda containers: storage),
+                mock.patch.object(game, "StorageMonitor", lambda: monitor),
+            ):
+                app = Controller.__new__(Controller)
+                app.bridge, app.world, app.veins, app.veins_read = bridge, World(), [], 0
+                app.guide, app.known_veins, app.logged_errors = None, None, set()
+                app.storage, app.storage_monitor = storage, monitor
+                app.storage_export_key, app.storage_text = 1, ""
+                state = {"dimension": "minecraft:overworld", "x": 0, "z": 0}
+                app.apply_world_scope(scope)
+                app.check_game(state)
+                self.assertEqual((len(app.veins), len(reads)), (1, 1))
+                app.apply_world_scope(None)  # frozen identity, F3+T or a short dimension trip
+                app.apply_world_scope(scope)  # the very same world, session and dimension
+                app.check_game(state)
+                self.assertEqual(len(app.veins), 1, "veins must be read again for the same scope")
+                self.assertEqual(len(reads), 2)
+                app.veins_read = 0
+                app.check_game(state)
+                self.assertEqual(len(reads), 2, "an unchanged file is still not parsed twice")
+
     def test_java_scanner_model_and_safe_destination(self):
         java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
         if not (java_home / "bin/javac").exists():
