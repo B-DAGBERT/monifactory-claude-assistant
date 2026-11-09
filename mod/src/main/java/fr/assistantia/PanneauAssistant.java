@@ -1,13 +1,14 @@
 package fr.assistantia;
 
+import fr.assistantia.DispositionCoffre.Libelles;
 import fr.assistantia.DispositionCoffre.Zone;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.components.AbstractWidget;
-import java.util.ArrayList;
-import java.util.List;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.layouts.LayoutElement;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -16,59 +17,148 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.inventory.Slot;
 
 /**
- * Habillage commun des panneaux posés à côté d'une interface (coffres, machines) : celui du HUD,
- * avec les boutons des réglages. Les dispositions viennent de DispositionCoffre.
+ * Habillage commun des panneaux posés à côté d'une interface (coffres, machines, établi), dessiné
+ * avec le {@link Theme}. Les dispositions viennent de DispositionCoffre.
+ *
+ * <p>Ces panneaux sont dessinés après l'écran : leurs infobulles passent par {@code
+ * renderComponentTooltip} à la fin du panneau, jamais par l'infobulle différée du thème, que le
+ * rendu suivant recouvrirait.
  */
 public final class PanneauAssistant {
-    /** Texte secondaire (quantités, infobulles), visible hors du paquet. */
-    public static final int GRIS = Hud.GRIS;
+    /** Couleur RGB du texte secondaire des infobulles (quantités, aide au clic). */
+    public static final int GRIS = Theme.TEXTE_SECONDAIRE & 0xFFFFFF;
+
+    /** Couleur RGB d'une indication d'action dans une infobulle. */
+    public static final int BLEU = Theme.BLEU & 0xFFFFFF;
+
+    /** Espace entre le texte d'un bouton de panneau et chacun de ses bords. */
+    private static final int MARGE_BOUTON = 4;
 
     private PanneauAssistant() {}
 
-    /** Fond sombre et barre dorée à gauche, comme le panneau du HUD. */
+    /** Fond sombre, contour discret et barre dorée à gauche. */
     public static void fond(GuiGraphics g, Zone c) {
-        g.fill(c.x(), c.y(), c.droite(), c.bas(), 0xC80D1013);
-        g.fill(c.x(), c.y(), c.x() + DispositionCoffre.BARRE, c.bas(), 0xFFFFC94A);
-    }
-
-    /** Nom doré et détail gris : sur deux lignes dans un bandeau, à la suite sur le côté. */
-    public static void titre(GuiGraphics g, Font font, Zone z, String nom, String detail) {
-        if (z.hauteur() >= 18) {
-            g.drawString(
-                    font, font.plainSubstrByWidth(nom, z.largeur()), z.x(), z.y(), Hud.OR, false);
-            g.drawString(
-                    font,
-                    font.plainSubstrByWidth(detail, z.largeur()),
-                    z.x(),
-                    z.y() + 10,
-                    Hud.GRIS,
-                    false);
-            return;
-        }
-        int y = z.y() + (z.hauteur() - 8) / 2;
-        String suite = font.plainSubstrByWidth(" · " + detail, z.largeur());
-        String debut = font.plainSubstrByWidth(nom, Math.max(0, z.largeur() - font.width(suite)));
-        g.drawString(font, debut, z.x(), y, Hud.OR, false);
-        g.drawString(font, suite, z.x() + font.width(debut), y, Hud.GRIS, false);
-    }
-
-    /** Case d'une icône, dorée quand elle est choisie. */
-    public static void caseIcone(GuiGraphics g, Zone z, boolean choisie) {
-        g.fill(z.x(), z.y(), z.droite(), z.bas(), choisie ? 0x90FFC94A : 0x30FFFFFF);
-    }
-
-    /** Nombre en bas à droite d'une icône, à la place de la quantité d'une pile. */
-    public static void nombre(GuiGraphics g, Font font, Zone z, int n) {
-        String texte = n < 1000 ? String.valueOf(n) : n / 1000 + "k";
-        g.pose().pushPose();
-        g.pose().translate(0, 0, 200);
-        g.drawString(font, texte, z.x() + 18 - font.width(texte), z.y() + 10, 0xFFFFFF, true);
-        g.pose().popPose();
+        Theme.panneau(g, c.x(), c.y(), c.largeur(), c.hauteur(), Theme.FOND_PANNEAU);
     }
 
     /**
-     * Boutons des réglages : vert pour l'action principale, gris sinon, contour blanc au survol.
+     * Largeurs à réserver, mesurées avec la police du jeu : la plus longue ligne de titre et le
+     * plus long libellé possible de chaque bouton, pour une disposition stable quand l'état change.
      */
+    public static Libelles libelles(
+            Font font,
+            List<String> titres,
+            List<String> gauche,
+            List<String> droite,
+            boolean entiers) {
+        return new Libelles(
+                plusLarge(font, titres),
+                plusLarge(font, gauche) + 2 * MARGE_BOUTON,
+                plusLarge(font, droite) + 2 * MARGE_BOUTON,
+                entiers);
+    }
+
+    private static int plusLarge(Font font, List<String> textes) {
+        int largeur = 0;
+        for (String texte : textes) largeur = Math.max(largeur, font.width(texte));
+        return largeur;
+    }
+
+    /**
+     * Nom doré sur la première ligne, détail gris sur les suivantes, avec passage à la ligne entre
+     * les mots ; un texte trop long finit par « … ». Sur une seule ligne : « nom · détail ».
+     *
+     * @return vrai si une partie du texte est coupée : le panneau la montre alors en infobulle
+     */
+    public static boolean titre(GuiGraphics g, Font font, Zone z, String nom, String detail) {
+        int pas = DispositionCoffre.LIGNE, largeur = z.largeur();
+        int lignes = Math.max(1, (z.hauteur() + 1) / pas);
+        if (lignes == 1) {
+            int y = z.y() + (z.hauteur() - 8) / 2;
+            String suite = detail.isEmpty() ? "" : " · " + detail;
+            boolean coupe = Theme.coupe(font, nom + suite, largeur);
+            int place = coupe ? Math.max(largeur / 2, largeur - font.width(suite)) : largeur;
+            int l = Theme.texte(g, font, nom, z.x(), y, place, Theme.ACCENT);
+            Theme.texte(g, font, suite, z.x() + l, y, largeur - l, Theme.TEXTE_SECONDAIRE);
+            return coupe;
+        }
+        int y = z.y() + Math.max(0, (z.hauteur() - (lignes * pas - 1)) / 2);
+        boolean coupe = Theme.coupe(font, nom, largeur);
+        Theme.texte(g, font, nom, z.x(), y, largeur, Theme.ACCENT);
+        String reste = detail;
+        for (int i = 1; i < lignes && !reste.isEmpty(); i++) {
+            y += pas;
+            String ligne = i == lignes - 1 ? reste : debut(font, reste, largeur);
+            if (ligne.isEmpty()) ligne = reste; // un seul mot trop long : coupé ici
+            coupe |= Theme.coupe(font, ligne, largeur);
+            Theme.texte(g, font, ligne, z.x(), y, largeur, Theme.TEXTE_SECONDAIRE);
+            reste = reste.substring(ligne.length()).stripLeading();
+        }
+        return coupe;
+    }
+
+    /** Les premiers mots de {@code texte} qui tiennent dans {@code largeur}, sans couper un mot. */
+    static String debut(Font font, String texte, int largeur) {
+        if (font.width(texte) <= largeur) return texte;
+        int coupure = -1;
+        for (int i = texte.indexOf(' '); i > 0; i = texte.indexOf(' ', i + 1)) {
+            if (font.width(texte.substring(0, i)) > largeur) break;
+            coupure = i;
+        }
+        return coupure > 0 ? texte.substring(0, coupure) : "";
+    }
+
+    /** Case d'une icône d'objet, dorée quand elle est choisie. */
+    public static void caseIcone(GuiGraphics g, Zone z, boolean choisie) {
+        Theme.caseObjet(g, z.x(), z.y(), z.largeur(), choisie);
+    }
+
+    /** Nombre court en bas à droite d'une icône, à la place de la quantité d'une pile. */
+    public static void nombre(GuiGraphics g, Font font, Zone z, long n) {
+        String texte = Theme.nombre(n);
+        g.pose().pushPose();
+        g.pose().translate(0, 0, 200);
+        g.drawString(font, texte, z.x() + 18 - font.width(texte), z.y() + 10, Theme.TEXTE, true);
+        g.pose().popPose();
+    }
+
+    /** Fin d'une case d'icône soulignée par la couleur de son état. */
+    public static void etat(GuiGraphics g, Zone z, int couleur) {
+        g.fill(z.x(), z.bas() - 2, z.droite(), z.bas(), couleur);
+    }
+
+    /**
+     * Bouton du thème dessiné dans un panneau : même rendu que {@link BoutonTheme}, libellé coupé
+     * par « … » s'il ne tient pas.
+     *
+     * @return vrai s'il est survolé : le panneau affiche alors son infobulle
+     */
+    public static boolean bouton(
+            GuiGraphics g,
+            Font font,
+            Zone z,
+            String texte,
+            Theme.Genre genre,
+            boolean actif,
+            int mx,
+            int my) {
+        boolean survol = z.contient(mx, my);
+        Theme.bouton(
+                g,
+                font,
+                z.x(),
+                z.y(),
+                z.largeur(),
+                z.hauteur(),
+                texte,
+                genre,
+                actif,
+                survol,
+                false);
+        return survol;
+    }
+
+    /** Variante historique : action principale en vert, ordinaire sinon. */
     public static void bouton(
             GuiGraphics g,
             Font font,
@@ -78,28 +168,15 @@ public final class PanneauAssistant {
             boolean principal,
             int mx,
             int my) {
-        boolean survol = actif && z.contient(mx, my);
-        int fond =
-                !actif
-                        ? 0xFF2A2A2A
-                        : principal
-                                ? (survol ? 0xFF3FA845 : 0xFF2E8B36)
-                                : (survol ? 0xFF5A5A5A : 0xFF3C3C3C);
-        g.fill(z.x(), z.y(), z.droite(), z.bas(), fond);
-        g.renderOutline(
-                z.x(),
-                z.y(),
-                z.largeur(),
-                z.hauteur(),
-                survol ? 0xFFFFFFFF : actif ? 0x60FFFFFF : 0x30FFFFFF);
-        String t = font.plainSubstrByWidth(texte, z.largeur() - 4);
-        g.drawString(
+        bouton(
+                g,
                 font,
-                t,
-                z.x() + (z.largeur() - font.width(t)) / 2,
-                z.y() + (z.hauteur() - 8) / 2 + 1,
-                actif ? 0xFFFFFF : 0x808080,
-                false);
+                z,
+                texte,
+                principal ? Theme.Genre.PRINCIPAL : Theme.Genre.NORMAL,
+                actif,
+                mx,
+                my);
     }
 
     public static void son() {

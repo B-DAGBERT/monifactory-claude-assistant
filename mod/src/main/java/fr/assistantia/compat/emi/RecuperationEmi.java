@@ -4,6 +4,7 @@ import dev.emi.emi.api.EmiApi;
 import dev.emi.emi.api.widget.Bounds;
 import dev.emi.emi.api.widget.Widget;
 import fr.assistantia.RetraitCoffre;
+import fr.assistantia.Theme;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -18,8 +19,19 @@ public final class RecuperationEmi {
         return CoffresArbreEmi.planTransfert(screen);
     }
 
-    /** Remplace le + de craft uniquement lorsque la recette a été ouverte depuis un coffre. */
+    /**
+     * Remplace le + de craft uniquement lorsque la recette a été ouverte depuis un coffre. Même
+     * rendu que le bouton « Tout » du panneau Collecte, dont il partage l'action ; il reste à la
+     * taille du bouton d'EMI qu'il remplace.
+     */
     public static final class Bouton extends Widget {
+        /**
+         * Total à prendre, relu au plus deux fois par seconde : le plan n'est pas calculé par
+         * image.
+         */
+        private static long releve;
+
+        private static int total;
         private final Bounds bounds;
         private final Widget original;
 
@@ -37,27 +49,37 @@ public final class RecuperationEmi {
             return bounds;
         }
 
+        private static int total() {
+            long maintenant = System.currentTimeMillis();
+            if (maintenant - releve > 500) {
+                total = planArbre(EmiApi.getHandledScreen()).total();
+                releve = maintenant;
+            }
+            return total;
+        }
+
         @Override
         public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
             if (!fr.assistantia.RechercheEmi.actif()) return;
-            g.fill(
+            // Grisé pendant un retrait ou sans objet du scan ici, comme le bouton du panneau.
+            Theme.bouton(
+                    g,
+                    Minecraft.getInstance().font,
                     bounds.x(),
                     bounds.y(),
-                    bounds.right(),
-                    bounds.bottom(),
-                    bounds.contains(mouseX, mouseY) ? 0xFF417486 : 0xFF293C44);
-            g.renderOutline(bounds.x(), bounds.y(), bounds.width(), bounds.height(), 0xFF40E0FF);
-            g.drawCenteredString(
-                    Minecraft.getInstance().font,
-                    RetraitCoffre.occupe() ? "…" : "↓",
-                    bounds.x() + bounds.width() / 2,
-                    bounds.y() + 2,
-                    0xFFFFFFFF);
+                    bounds.width(),
+                    bounds.height(),
+                    "↓",
+                    Theme.Genre.PRINCIPAL,
+                    !RetraitCoffre.occupe() && total() > 0,
+                    bounds.contains(mouseX, mouseY),
+                    false);
         }
 
         @Override
         public List<ClientTooltipComponent> getTooltip(int x, int y) {
             if (!fr.assistantia.RechercheEmi.actif()) return List.of();
+            if (RetraitCoffre.occupe()) return List.of(texte("Retrait en cours…"));
             var p = planArbre(EmiApi.getHandledScreen());
             return List.of(
                     texte(
@@ -76,6 +98,7 @@ public final class RecuperationEmi {
             if (!fr.assistantia.RechercheEmi.actif()) return true;
             var screen = EmiApi.getHandledScreen();
             var plan = planArbre(screen);
+            releve = 0;
             if (screen != null && plan.total() > 0 && RetraitCoffre.lancer(screen, plan))
                 Minecraft.getInstance().setScreen(screen);
             return true;

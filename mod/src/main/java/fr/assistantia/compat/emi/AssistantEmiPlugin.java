@@ -37,6 +37,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
                                 new Bounds(suivi.x(), suivi.y(), suivi.largeur(), suivi.hauteur()));
                     var zone = AideCoffre.zoneEmi(screen);
                     if (zone == null) zone = MachinesEmi.zoneEmi(screen);
+                    if (zone == null) zone = fr.assistantia.AideEcran.zoneEmi(screen);
                     if (zone != null)
                         zones.accept(
                                 new Bounds(zone.x(), zone.y(), zone.largeur(), zone.hauteur()));
