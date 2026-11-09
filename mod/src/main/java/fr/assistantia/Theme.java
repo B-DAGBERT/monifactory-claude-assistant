@@ -364,6 +364,18 @@ public final class Theme {
                     Math.max(0, (ecranLargeur - l) / 2), Math.max(0, (ecranHauteur - h) / 2), l, h);
         }
 
+        /**
+         * Boîte de dialogue : comme {@link #centree(int, int, int)}, mais haute de {@code
+         * hauteurMax} pixels au plus, centrée verticalement.
+         */
+        public static Fenetre centree(
+                int ecranLargeur, int ecranHauteur, int largeurMax, int hauteurMax) {
+            Fenetre pleine = centree(ecranLargeur, ecranHauteur, largeurMax);
+            int h = Math.max(80, Math.min(hauteurMax, pleine.hauteur()));
+            return new Fenetre(
+                    pleine.x(), Math.max(0, (ecranHauteur - h) / 2), pleine.largeur(), h);
+        }
+
         public int contenuX() {
             return x + BARRE + MARGE;
         }
