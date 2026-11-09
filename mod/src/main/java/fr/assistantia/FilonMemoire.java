@@ -104,6 +104,9 @@ public final class FilonMemoire {
         private boolean epuiseManuel;
         private Set<String> typesChoisis; // null : aucun choix validé, tous cochés par défaut
 
+        /** Copies triées et immuables, partagées par les instantanés de sauvegarde. */
+        String[] compositionTriee = new String[0], choixTries;
+
         // Minerais présents.
         long[] positions = new long[16];
         int[] typesBlocs = new int[16];
@@ -242,6 +245,8 @@ public final class FilonMemoire {
 
         void definirComposition(Set<String> ids) {
             composition = Set.copyOf(ids);
+            compositionTriee = composition.toArray(String[]::new);
+            Arrays.sort(compositionTriee);
             long[] bits = new long[Math.max(1, (memoire.types.size() + ids.size() + 63) / 64 + 1)];
             for (String id : ids) {
                 int t = memoire.type(id);
@@ -265,6 +270,8 @@ public final class FilonMemoire {
 
         public void choisirTypes(Collection<String> types) {
             typesChoisis = Set.copyOf(types);
+            choixTries = typesChoisis.toArray(String[]::new);
+            Arrays.sort(choixTries);
             revision++;
         }
 

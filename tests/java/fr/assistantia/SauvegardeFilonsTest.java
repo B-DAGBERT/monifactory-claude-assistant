@@ -36,7 +36,8 @@ public final class SauvegardeFilonsTest {
         var calculs = new AtomicInteger();
         var threads = new java.util.ArrayList<String>();
         Object source = new Object();
-        Path a = dossier.resolve("paresseux.json"), export = dossier.resolve("export-paresseux.json");
+        Path a = dossier.resolve("paresseux.json"),
+                export = dossier.resolve("export-paresseux.json");
         var sauvegarde = new SauvegardeFilons(file::add, Files::writeString, () -> 0);
         var natif =
                 new SauvegardeFilons.Contenu(

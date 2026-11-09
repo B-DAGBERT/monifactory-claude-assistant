@@ -454,14 +454,21 @@ public final class OngletFilons {
             if (visibleIci) g.fill(x + 1, ly + 1, x + 3, ly + hauteur - 1, Theme.ACCENT);
             if (!r.item().isEmpty()) g.renderItem(Pont.objet(r.item()), x + 5, ly + 4);
             int texteX = x + 25, texteL = contenuLargeur - 25 - boutonL - 2 * Theme.ECART;
-            // Pastilles à droite de la première ligne : presque épuisé, utile à la recette.
-            int pastilles = 0;
-            if (r.presque())
-                pastilles += pastille(g, "presque épuisé", Theme.JAUNE, texteX + texteL, ly + 3);
-            if (r.utile())
-                pastilles +=
-                        pastille(g, "recette", Theme.CYAN, texteX + texteL - pastilles, ly + 3);
-            Theme.texte(g, font, titre(f), texteX, ly + 4, texteL - pastilles, Theme.TEXTE, sx, sy);
+            // Pastille « presque épuisé » à droite ; ★ cyan devant un filon utile à la recette.
+            int pastilles =
+                    r.presque()
+                            ? pastille(g, "presque épuisé", Theme.JAUNE, texteX + texteL, ly + 3)
+                            : 0;
+            Theme.texte(
+                    g,
+                    font,
+                    (r.utile() ? "★ " : "") + titre(f),
+                    texteX,
+                    ly + 4,
+                    texteL - pastilles,
+                    r.utile() ? Theme.CYAN : Theme.TEXTE,
+                    sx,
+                    sy);
             Theme.texte(
                     g,
                     font,
@@ -531,22 +538,25 @@ public final class OngletFilons {
         return l + Theme.ECART;
     }
 
+    /** Deuxième ligne d'un filon, courte pour tenir à 320 pixels : distance et restants/trouvés. */
     private String ligneInfo(FilonMemoire.Filon f, Resume r) {
-        String etat;
-        if (f.estEpuise()) etat = "épuisé";
-        else if (r.trouves() == 0) etat = Filons.scanDuFilon(f.id) ? "scan en cours" : "à scanner";
-        else
-            etat =
-                    Theme.nombre(r.restants())
-                            + " / "
-                            + Theme.nombre(r.trouves())
-                            + " restants ("
-                            + f.pourcentRestant()
-                            + " %)";
-        String scan = Filons.scanDuFilon(f.id) ? " · scan " + f.avancementScan() + " %" : "";
-        String ancien =
-                r.trouves() > 0 && r.ancien() && !Filons.scanDuFilon(f.id) ? " · ancien" : "";
-        return distance(f) + " · " + etat + scan + ancien;
+        String debut = distance(f) + " · ";
+        if (f.estEpuise()) return debut + "épuisé";
+        if (Filons.scanDuFilon(f.id))
+            return debut
+                    + "scan "
+                    + f.avancementScan()
+                    + " %"
+                    + (r.trouves() > 0 ? " · " + Theme.nombre(r.trouves()) + " trouvés" : "");
+        if (r.trouves() == 0) return debut + "à scanner";
+        return debut
+                + Theme.nombre(r.restants())
+                + "/"
+                + Theme.nombre(r.trouves())
+                + " ("
+                + f.pourcentRestant()
+                + " %)"
+                + (r.ancien() ? " · ancien" : "");
     }
 
     private void fiche(GuiGraphics g, FilonMemoire.Filon f, int sx, int sy) {
@@ -608,10 +618,7 @@ public final class OngletFilons {
             String ligne;
             int c3 = Theme.TEXTE_SECONDAIRE;
             if (r.presque()) {
-                ligne =
-                        "Presque épuisé : il ne reste que "
-                                + f.pourcentRestant()
-                                + " % du minerai trouvé. Marque-le Épuisé pour ne plus y retourner.";
+                ligne = "Presque épuisé, il reste " + f.pourcentRestant() + " % : clique Épuisé.";
                 c3 = Theme.JAUNE;
             } else if (Filons.scanDuFilon(f.id)) {
                 ligne = Filons.etatScan(f);

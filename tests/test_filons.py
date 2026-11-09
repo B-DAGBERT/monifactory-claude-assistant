@@ -203,6 +203,20 @@ class FilonsTests(unittest.TestCase):
         self.assertIn("100 blocs restants sur 1500 trouvés", description)
         self.assertIn("presque épuisé", description)
 
+    def test_planet_stone_variants_are_one_material(self):
+        data = self.summary(
+            composition=[
+                "gtceu:moon_asbestos_ore",
+                "gtceu:glacio_asbestos_ore",
+                "gtceu:asbestos_ore",
+            ],
+            minerais={"gtceu:moon_asbestos_ore": [3, 1], "gtceu:asbestos_ore": [2, 0]},
+        )
+        veins = self.find(SimpleNamespace(read=lambda n: data if n == "filons_mod.json" else None))
+        self.assertEqual(
+            [(v["minerai"], v["vus"], v["mines"]) for v in veins], [("asbestos", 5, 1)]
+        )
+
     def test_compact_summary_partial_scan_and_manual_exhaustion(self):
         data = self.summary(scan="partiel", presque_epuise=False, epuise_manuel=True)
         bridge = SimpleNamespace(read=lambda n: data if n == "filons_mod.json" else None)

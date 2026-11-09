@@ -106,6 +106,12 @@ STONE_PREFIXES = (
     "blackstone_",
     "calcite_",
     "stone_",
+    # Pierres des planètes d'Ad Astra (Monifactory) : « gtceu:moon_asbestos_ore » -> « asbestos ».
+    "moon_",
+    "mars_",
+    "venus_",
+    "mercury_",
+    "glacio_",
 )
 
 

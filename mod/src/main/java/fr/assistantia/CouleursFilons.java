@@ -68,7 +68,8 @@ final class CouleursFilons {
                 new String[] {
                     "deepslate_", "tuff_", "andesite_", "diorite_", "granite_", "red_granite_",
                     "marble_", "basalt_", "netherrack_", "endstone_", "end_stone_", "sand_",
-                    "red_sand_", "gravel_", "blackstone_", "calcite_", "stone_", "nether_"
+                    "red_sand_", "gravel_", "blackstone_", "calcite_", "stone_", "nether_",
+                    "moon_", "mars_", "venus_", "mercury_", "glacio_"
                 }) if (nom.startsWith(pierre)) nom = nom.substring(pierre.length());
         return nom;
     }

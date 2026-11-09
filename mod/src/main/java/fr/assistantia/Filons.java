@@ -304,7 +304,7 @@ public final class Filons {
                 + f.avancementScan()
                 + " %"
                 + (scan.attente()
-                        ? " · " + scan.restantes() + " zones non chargées : reprise à l'approche"
+                        ? " · " + scan.restantes() + " zones à charger : approche-toi"
                         : "");
     }
 

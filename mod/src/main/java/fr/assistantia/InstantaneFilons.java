@@ -48,11 +48,8 @@ record InstantaneFilons(String monde, long date, String[] types, List<Gisement> 
         for (int t = 0; t < types.length; t++) types[t] = memoire.typeId(t);
         List<Gisement> gisements = new ArrayList<>(memoire.filons().size());
         for (var f : memoire.filons()) {
-            String[] composition = f.composition.toArray(String[]::new);
-            Arrays.sort(composition);
-            var choisis = f.typesChoisis();
-            String[] choix = choisis == null ? null : choisis.toArray(String[]::new);
-            if (choix != null) Arrays.sort(choix);
+            // Tableaux triés immuables tenus par le gisement : rien à trier sur le thread client.
+            String[] composition = f.compositionTriee, choix = f.choixTries;
             gisements.add(
                     new Gisement(
                             f.id,
