@@ -212,6 +212,36 @@ public final class Theme {
         return Math.max(BOUTON, Math.min(maximum, font.width(texte) + 14));
     }
 
+    /**
+     * Largeurs d'une rangée de boutons (des onglets par exemple) qui se partagent {@code place}
+     * pixels, {@code ecart} entre deux : chacun garde tout son texte, la marge autour se resserre
+     * d'abord si la place manque. En dernier recours, la place se partage au prorata des textes et
+     * les boutons coupent le leur par « … » (texte complet au survol).
+     */
+    public static int[] largeursRangee(
+            Font font, java.util.List<String> textes, int place, int ecart) {
+        int n = textes.size();
+        int[] largeurs = new int[n];
+        if (n == 0) return largeurs;
+        int disponible = Math.max(n, place - ecart * (n - 1)), total = 0;
+        for (String texte : textes) total += font.width(texte);
+        // Le bouton coupe son texte à sa largeur moins 6 : 6 est la marge la plus serrée.
+        for (int marge = 14; marge >= 6; marge -= 2) {
+            if (total + marge * n > disponible) continue;
+            for (int i = 0; i < n; i++) largeurs[i] = font.width(textes.get(i)) + marge;
+            return largeurs;
+        }
+        for (int i = 0; i < n; i++)
+            largeurs[i] =
+                    Math.max(
+                            1,
+                            (int)
+                                    ((long) disponible
+                                            * (font.width(textes.get(i)) + 6)
+                                            / (total + 6L * n)));
+        return largeurs;
+    }
+
     // ---------- Défilement ----------
 
     /** Barre de défilement commune : rail discret, curseur doré au survol ou pendant le glisser. */
