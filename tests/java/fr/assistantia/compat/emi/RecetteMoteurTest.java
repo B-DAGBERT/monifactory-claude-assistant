@@ -406,6 +406,24 @@ public final class RecetteMoteurTest {
         var deux = fr.assistantia.TraitsReperes.dessiner("11");
         assert deux.traits().stream().anyMatch(t -> presque(t.x1(), 0.6 + 0.25 + 0.6));
         assert fr.assistantia.TraitsReperes.dessiner("").traits().isEmpty();
+        // Quantités à sortir : sur les drawers seulement, jamais sur les coffres (bouton Prendre).
+        for (String tiroir :
+                List.of(
+                        "functionalstorage:oak_1",
+                        "functionalstorage:spruce_4",
+                        "functionalstorage:compacting_drawer",
+                        "storagedrawers:oak_full_drawers_2",
+                        "thermaldrawers:hardened_drawer"))
+            assert fr.assistantia.TraitsReperes.tiroir(tiroir) : tiroir;
+        for (String autre :
+                List.of(
+                        "minecraft:chest",
+                        "sophisticatedstorage:gold_barrel",
+                        "functionalstorage:storage_controller",
+                        "functionalstorage:controller_extension",
+                        "storagedrawers:controller"))
+            assert !fr.assistantia.TraitsReperes.tiroir(autre) : autre;
+        assert !fr.assistantia.TraitsReperes.tiroir(null);
     }
 
     /** Une chaîne de 300 ingrédients est bornée et déclarée incomplète. */

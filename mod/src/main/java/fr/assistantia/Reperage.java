@@ -13,6 +13,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 /**
@@ -51,13 +52,31 @@ public final class Reperage {
                 float bleu = resultat ? 0.15F : 1F;
                 BlockPos pos = new BlockPos(r.x(), r.y(), r.z());
                 List<AABB> formes = List.of(new AABB(pos));
+                boolean tiroir = false;
                 if (mc.level.hasChunkAt(pos)) {
                     var state = mc.level.getBlockState(pos);
                     if (state.isAir()) continue; // Coffre cassé depuis le dernier relevé.
                     var shape = state.getShape(mc.level, pos);
                     if (!shape.isEmpty())
                         formes = shape.toAabbs().stream().map(box -> box.move(pos)).toList();
+                    var id = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+                    tiroir = id != null && TraitsReperes.tiroir(id.toString());
                 }
+                // Un drawer n'a pas de bouton qui prend tout seul : il affiche combien en sortir,
+                // tracé comme les rangs des machines. Un coffre garde « Prendre ».
+                int aSortir = tiroir && RechercheEmi.actif() ? RechercheEmi.aSortir(r) : 0;
+                if (aSortir > 0)
+                    TraceReperes.tracer(
+                            lignes,
+                            pose.last().pose(),
+                            pose.last().normal(),
+                            event.getCamera(),
+                            pos,
+                            String.valueOf(aSortir),
+                            0xFF000000
+                                    | (int) (rouge * 255) << 16
+                                    | (int) (vert * 255) << 8
+                                    | (int) (bleu * 255));
                 for (AABB forme : formes) {
                     AABB boite = forme.move(-camera.x, -camera.y, -camera.z);
                     LevelRenderer.renderLineBox(

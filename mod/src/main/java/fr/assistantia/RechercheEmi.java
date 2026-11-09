@@ -31,7 +31,15 @@ public final class RechercheEmi {
     private static JsonObject derniereVue;
     private static Map<String, Integer> quantites = Map.of(), fabricationsPrecedentes = Map.of();
 
+    /** Nombre d'objets à sortir de chaque conteneur surligné (position du premier bloc). */
+    private static Map<String, Integer> aSortir = Map.of();
+
     private RechercheEmi() {}
+
+    /** Nombre d'objets à sortir de ce conteneur pour la recherche en cours, 0 sinon. */
+    public static int aSortir(Pont.Repere repere) {
+        return actif() && InventaireJoueur.synchronise() ? aSortir.getOrDefault(cle(repere), 0) : 0;
+    }
 
     private static boolean contexteValide() {
         Minecraft mc = Minecraft.getInstance();
@@ -189,6 +197,7 @@ public final class RechercheEmi {
         // Invalider aussi les quotas tant que le nouveau relevé n'est pas arrivé.
         objets = Set.of();
         quantites = Map.of();
+        aSortir = Map.of();
         reperes = List.of();
         resultatsPrets = Set.of();
         derniereVue = null;
@@ -234,6 +243,7 @@ public final class RechercheEmi {
         resultatsPrets = Set.of();
         objets = Set.of();
         quantites = Map.of();
+        aSortir = Map.of();
         derniereVue = null;
         JsonObject demande = new JsonObject();
         demande.addProperty("n", numero);
@@ -269,6 +279,7 @@ public final class RechercheEmi {
         attente = inventaireEnAttente = false;
         objets = demandes = Set.of();
         quantites = Map.of();
+        aSortir = Map.of();
         reperes = List.of();
         resultatsPrets = Set.of();
         derniereVue = null;
@@ -355,10 +366,11 @@ public final class RechercheEmi {
         }
         Set<String> utiles = new java.util.LinkedHashSet<>(),
                 visibles = new java.util.LinkedHashSet<>();
-        Map<String, Integer> selection = new HashMap<>();
+        Map<String, Integer> selection = new HashMap<>(), parGroupe = new HashMap<>();
         Set<String> groupesPrets = new java.util.LinkedHashSet<>();
         for (var prise : collecte.dansCoffres(stocks)) {
             selection.merge(stocks.get(prise.index()).objet(), prise.quantite(), Integer::sum);
+            parGroupe.merge(groupes.get(prise.index()), prise.quantite(), Integer::sum);
             utiles.add(stocks.get(prise.index()).objet());
             visibles.add(groupes.get(prise.index()));
             if (collecte.enFabrication(stocks.get(prise.index()).objet()))
@@ -369,6 +381,15 @@ public final class RechercheEmi {
         objets = Set.copyOf(utiles);
         quantites = Map.copyOf(selection);
         reperes = List.copyOf(coffres);
+        // Le total à sortir de chaque conteneur, sur son premier bloc (un seul nombre par stock).
+        Map<String, Integer> parPosition = new HashMap<>();
+        parGroupe.forEach(
+                (groupe, n) -> {
+                    var blocs = positions.get(groupe);
+                    if (blocs != null && !blocs.isEmpty() && n > 0)
+                        parPosition.put(cle(blocs.get(0)), n);
+                });
+        aSortir = Map.copyOf(parPosition);
         Set<String> prets = new java.util.LinkedHashSet<>();
         for (String groupe : groupesPrets) for (var r : positions.get(groupe)) prets.add(cle(r));
         resultatsPrets = Set.copyOf(prets);
