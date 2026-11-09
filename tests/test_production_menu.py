@@ -135,7 +135,9 @@ public class ProductionMenuTest {
  static Button button(EcranProduction s,String name){return (Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals(name)).findFirst().orElseThrow(()->new AssertionError(name));}
  static EditBox input(EcranProduction s){return (EditBox)s.widgets.stream().filter(w->w instanceof EditBox).findFirst().orElseThrow();}
  static void tick(EcranProduction s)throws Exception{var field=EcranProduction.class.getDeclaredField("derniereLecture");field.setAccessible(true);field.setLong(s,0);s.tick();}
- static JsonObject context(){var c=new JsonObject();c.addProperty("monde_actif",IdentiteMonde.world);c.addProperty("session_monde",IdentiteMonde.session);c.addProperty("dimension_monde","minecraft:overworld");return c;}
+ static JsonObject context(){var c=new JsonObject();c.addProperty("monde_actif",IdentiteMonde.world);c.addProperty("session_monde",IdentiteMonde.session);c.addProperty("dimension_monde","minecraft:overworld");
+  // Constants still published for an older mod: this mod must ignore them.
+  c.addProperty("projet","");c.addProperty("revision_projet","sans-projet");return c;}
  static void bounds(EcranProduction s){for(Object w:s.widgets){int x,y,l,h;if(w instanceof Button b){if(!b.visible)continue;x=b.x;y=b.y;l=b.w;h=b.h;assert b instanceof BoutonTheme&&h==Theme.BOUTON:"theme button "+b.title.getString();}else if(w instanceof EditBox e){if(!e.visible)continue;assert e instanceof ChampTheme;x=e.x-1;y=e.y-1;l=e.w+2;h=e.h+2;assert h==Theme.BOUTON:"field outline as high as the buttons";}else continue;assert x>=0&&y>=0&&l>0&&h>0&&x+l<=s.width&&y+h<=s.height:"Invalid bounds";}}
  /** Renders once and tells whether a line containing this text is drawn. */
  static boolean shows(EcranProduction s,String text){GuiGraphics.TEXTES.clear();s.render(new GuiGraphics(),0,0,0);return GuiGraphics.TEXTES.stream().anyMatch(t->t.contains(text));}

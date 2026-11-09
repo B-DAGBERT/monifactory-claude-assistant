@@ -25,6 +25,16 @@ from monifactory_assistant.production.recipes import Amount, Resource
 
 # Une consultation appartient à un monde, une connexion et une dimension ; rien d'autre.
 _CONTEXT = ("monde_actif", "session_monde", "dimension_monde")
+# Compatibilité d'une version : un mod antérieur au retrait des projets exige encore ces deux
+# champs, constants, dans le contexte publié et dans ses résultats. Ils ne lient rien : le
+# nouveau mod les ignore et aucune demande n'est comparée sur eux. À retirer ensuite.
+_LEGACY_CONTEXT = {"projet": "", "revision_projet": "sans-projet"}
+# Seule une question qui vise explicitement le calcul Production peut être refusée faute de
+# résultat courant ; « cette recette », « cette machine » ou « diagnostic » restent libres.
+_EXPLICIT = re.compile(
+    r"\b(v2|plan de production|diagnostic de production|calcul de production"
+    r"|(?:écran|ecran|onglet|menu|lecture) (?:de )?production)\b"
+)
 _RESOURCE = re.compile(r"[a-z0-9_.-]+:[a-z0-9_./-]+")
 _MAX_AGE = 45_000
 _RESULT_MAX_AGE = 180_000
@@ -201,7 +211,7 @@ class ProductionService:
     def poll(self, app):
         """Small main-loop maintenance only; no catalogue, stock or planning read here."""
         scope = active_scope(self.bridge, int(self.clock() * 1000))
-        context = scope.fields() if scope is not None else {}
+        context = {**scope.fields(), **_LEGACY_CONTEXT} if scope is not None else {}
         changed = False
         with self._lock:
             self._updated = self.clock()
@@ -264,16 +274,15 @@ class ProductionService:
                 is None
             ):
                 return None
+            explicit = _EXPLICIT.search(question.casefold()) is not None
             if (
                 not self._context
                 or self.clock() - self._updated >= 4
                 or not self._result
                 or self._result.get("etat") != "pret"
             ):
-                if require_current and (
-                    self._result is not None
-                    or re.search(r"\b(v2|plan de production)\b", question.casefold())
-                ):
+                # Un ancien résultat ne bloque pas les autres questions de la discussion.
+                if require_current and explicit:
                     raise ValueError(
                         "Ouvre Production dans Minecraft pour obtenir un calcul actuel."
                     )
@@ -291,7 +300,7 @@ class ProductionService:
             )
         if self.context_valid(proof):
             return text, proof
-        if require_current:
+        if require_current and explicit:
             raise ValueError(
                 "Le calcul de production n’est plus vérifiable. Relance-le dans Minecraft."
             )
@@ -416,7 +425,9 @@ class ProductionService:
                 operation = request.get("operation")
                 if operation == "memoire":
                     # Onglet Projet d'un ancien mod : les projets n'existent plus.
-                    raise ValueError("Les projets ont été retirés : cette lecture n’existe plus.")
+                    raise ValueError(
+                        "Fonction retirée : relance Minecraft pour charger la nouvelle version du mod."
+                    )
                 if operation not in {"plan", "diagnostic"}:
                     raise ValueError("Consultation inconnue.")
                 if not isinstance(request.get("capture"), str) or not re.fullmatch(
@@ -533,6 +544,7 @@ class ProductionService:
         result = {
             "n": request["n"],
             **{key: request[key] for key in _CONTEXT},
+            **_LEGACY_CONTEXT,
             "alternatives": [],
             "limites": [],
         }
