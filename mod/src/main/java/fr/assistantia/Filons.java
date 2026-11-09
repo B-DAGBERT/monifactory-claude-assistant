@@ -276,6 +276,10 @@ public final class Filons {
 
     private static boolean finirScan(ScanFilon scan) {
         var f = scan.filon;
+        if (f.colonnesRestantes.length == 0 && !f.scanComplet) {
+            f.scanComplet = true; // filet de sécurité : ScanFilon le pose à la dernière colonne
+            f.scanFait = f.scanTotal;
+        }
         if (f.id.equals(prioritaire)) {
             message =
                     "Scan terminé : "
@@ -559,16 +563,9 @@ public final class Filons {
 
     /** Avant la première sauvegarde v2, l'ancien fichier v1 est gardé une fois pour toutes. */
     private static void conserverAncienFormat(Path p) throws java.io.IOException {
-        if (!VERSIONS_VERIFIEES.add(p)) return;
-        byte[] debut = new byte[16];
-        int n;
-        try (var entree = Files.newInputStream(p)) {
-            n = entree.read(debut);
-        }
-        String tete =
-                n <= 0 ? "" : new String(debut, 0, n, StandardCharsets.UTF_8).replace(" ", "");
-        Path ancien = p.resolveSibling(p.getFileName() + ".v1.bak");
-        if (tete.startsWith("{\"v\":1") && !Files.exists(ancien)) Files.copy(p, ancien);
+        if (VERSIONS_VERIFIEES.contains(p)) return;
+        SauvegardeFilons.conserverVersion1(p);
+        VERSIONS_VERIFIEES.add(p); // seulement après une copie réussie : sinon retentée
     }
 
     // ---------- Tick ----------

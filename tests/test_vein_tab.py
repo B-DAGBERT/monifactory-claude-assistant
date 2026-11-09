@@ -164,6 +164,7 @@ public class VeinTabTest {
   for(int i=0;i<l.size();i++)for(int j=i+1;j<l.size();j++){var a=l.get(i);var c=l.get(j);
    boolean separes=a.getX()+a.getWidth()<=c.getX()||c.getX()+c.getWidth()<=a.getX()||a.getY()+a.getHeight()<=c.getY()||c.getY()+c.getHeight()<=a.getY();
    assert separes:"chevauchement : "+a.getMessage().getString()+" / "+c.getMessage().getString();}}
+ static int[] position(String debut){for(int i=GuiGraphics.textes.size()-1;i>=0;i--)if(GuiGraphics.textes.get(i).startsWith(debut))return GuiGraphics.positions.get(i);return null;}
  static FilonMemoire.Filon filon(FilonMemoire m,String id,String nom,int x,int presents,int mines){
   m.gisement(id,new FilonMemoire.Position("minecraft:overworld",x,40,0),"gtceu:"+id,nom,Set.of("gtceu:redstone_ore","gtceu:deepslate_redstone_ore"),false);
   var f=m.filon(id);int t=m.typeConnu("gtceu:redstone_ore");
@@ -172,27 +173,31 @@ public class VeinTabTest {
  public static void main(String[] a)throws Exception{
   var mc=Minecraft.getInstance();var m=Filons.memoire;
   filon(m,"presque","Redstone Vein",10,100,1400);
-  filon(m,"scan","Garnet Tin Vein With A Long Name",60,40,0);
+  filon(m,"scan","Garnet Tin Vein With A Very Long Name For Tests",60,40,0);
+  filon(m,"partiel","Salts Vein With A Very Long Name For Tests",120,5,200);
   filon(m,"neuf","Coal Vein",200,0,0);
   for(int i=0;i<12;i++)filon(m,"autre"+i,"Iron Vein "+i,300+i*50,5,0);
   Filons.scans.add("scan");Filons.utiles.add("presque");
+  m.filon("presque").scanComplet=true; // seul un scan complet permet « presque épuisé »
   m.filon("scan").scanTotal=100;m.filon("scan").scanFait=63;m.filon("scan").colonnesRestantes=new long[]{1,2,3};
   String c=a[0];
   if(c.equals("tab")){
-   for(int[] taille:new int[][]{{320,240},{427,240},{640,360},{960,540}}){
+   for(int[] taille:new int[][]{{960,540},{640,360},{427,240},{320,240}}){
     var h=new Hote();mc.screen=h;h.init(mc,taille[0],taille[1]);
     int x=10,y=36,l=taille[0]-20,b=taille[1]-38;
     var g=new GuiGraphics();GuiGraphics.textes.clear();
     h.onglet.render(g,x,y,l,b,0,0);h.render(g,0,0,0);
     dans(h,x,y,x+l,b);
+    for(Object w:h.widgets)if(w instanceof ChampTheme champ)
+     assert champ.getX()-1==x&&champ.getY()-1==y&&champ.getHeight()+2==Theme.BOUTON:"champ aligné sur les boutons de 16 px";
     String tout=String.join("\n",GuiGraphics.textes);
-    assert tout.contains("★ Redstone Vein")&&tout.contains("presque épuisé"):"pastille et étoile de recette";
+    assert tout.contains("★ Redstone Vein")&&tout.contains("presque épuisé"):"pastille et étoile de recette : "+tout;
     assert tout.contains("100 restants sur 1500 trouvés (7 %)"):"compte restant et total : "+tout;
     assert tout.contains("Presque épuisé"):"conseil Épuisé";
     var epuise=exact(h,"Épuisé");assert epuise.genre()==Theme.Genre.PRINCIPAL:"Épuisé proposé en action principale";
     assert exact(h,"Scanner").genre()==Theme.Genre.NORMAL;
     assert boutons(h).stream().filter(w->w.getMessage().getString().equals("Afficher")).count()>=2:"au moins deux lignes à "+taille[0];
-    for(String t:GuiGraphics.textes)assert !t.endsWith("…")||t.equals("Affichage…")||t.startsWith("Garnet"):"texte coupé inattendu : "+t;
+    for(String t:GuiGraphics.textes)assert !t.endsWith("…")||t.equals("Affichage…")||t.startsWith("Garnet")||t.startsWith("Salts"):"texte coupé inattendu : "+t;
     if(taille[0]==320){
      var menu=bouton(h,"Affichage");assert !boutons(h).stream().anyMatch(w->w.getMessage().getString().startsWith("Intensité")):"réglages repliés à 320";
      assert h.onglet.cliquer(menu.getX()+1,menu.getY()+1,0)==false;menu.onPress();
@@ -211,6 +216,37 @@ public class VeinTabTest {
      String titres=String.join("\n",GuiGraphics.textes);assert titres.contains("Iron Vein 11"):"glisser jusqu'en bas de la liste";
     }else if(taille[0]>=960){assert boutons(h).stream().anyMatch(w->w.getMessage().getString().startsWith("Intensité")):"réglages en ligne quand ils tiennent";}
    }
+  }else if(c.equals("confirmer")){
+   int x=10,y=36,l=300,b=202;var g=new GuiGraphics();
+   var h=new Hote();mc.screen=h;h.init(mc,320,240);h.onglet.render(g,x,y,l,b,0,0);
+   var d=DispositionFilons.calculer(x,y,l,b);
+   int[] ligne=position("Salts Vein");assert ligne!=null:"ligne du filon partiel";
+   if(ligne[1]>=d.listeBas()){h.onglet.defiler(x+20,d.listeY()+5,-1);h.onglet.render(g,x,y,l,b,0,0);ligne=position("Salts Vein");}
+   assert h.onglet.cliquer(x+40,ligne[1]+2,0):"sélection du filon partiel";
+   GuiGraphics.textes.clear();GuiGraphics.positions.clear();h.onglet.render(g,x,y,l,b,0,0);
+   String tout=String.join("|",GuiGraphics.textes);
+   assert tout.contains("scanne pour confirmer")&&!tout.contains("presque épuisé"):"zone partielle à confirmer : "+tout;
+   assert exact(h,"Épuisé").genre()==Theme.Genre.NORMAL&&exact(h,"Scanner").genre()==Theme.Genre.PRINCIPAL:"Scanner proposé, pas Épuisé";
+  }else if(c.equals("persistance")){
+   int x=10,y=36,l=300,b=202;var g=new GuiGraphics();
+   var h=new Hote();mc.screen=h;h.init(mc,320,240);h.onglet.render(g,x,y,l,b,0,0);
+   var d=DispositionFilons.calculer(x,y,l,b);
+   int[] visible=position("Garnet");assert visible!=null&&visible[1]>=d.listeY():"titre coupé visible";
+   Screen.infobulles=0;h.onglet.render(g,x,y,l,b,visible[0]+5,visible[1]+2);
+   assert Screen.infobulles>0:"infobulle d'un titre coupé visible (contrôle)";
+   int[] dessous=position("Salts");assert dessous!=null&&dessous[1]>=d.listeBas():"ligne coupée sous la liste";
+   Screen.infobulles=0;h.onglet.render(g,x,y,l,b,dessous[0]+5,dessous[1]+2);
+   assert Screen.infobulles==0:"pas d'infobulle pour une ligne cachée sous la liste";
+   assert h.onglet.defiler(x+20,d.listeY()+5,-1)&&h.onglet.defiler(x+20,d.listeY()+5,-1);
+   GuiGraphics.textes.clear();GuiGraphics.positions.clear();h.onglet.render(g,x,y,l,b,0,0);
+   int[] cache=position("Salts");assert cache!=null&&cache[1]<d.listeY():"ligne défilée au-dessus de la liste";
+   Screen.infobulles=0;h.onglet.render(g,x,y,l,b,cache[0]+5,cache[1]+1);
+   assert Screen.infobulles==0:"pas d'infobulle pour une ligne cachée par le découpage";
+   // Retour d'EcranBlocsFilon, redimensionnement ou réouverture : nouvel init(), même position.
+   var h2=new Hote();mc.screen=h2;h2.init(mc,320,240);
+   GuiGraphics.textes.clear();GuiGraphics.positions.clear();h2.onglet.render(g,x,y,l,b,0,0);
+   int[] apres=position("Salts");assert apres!=null&&apres[1]==cache[1]:"défilement gardé après init() : "+(apres==null?"absent":apres[1])+" / "+cache[1];
+   h2.onglet.render(g,x,y,l,b,0,0);int[] encore=position("Salts");assert encore[1]==cache[1]:"position stable";
   }else if(c.equals("screen")){
    var parent=new Hote();parent.init(mc,320,240);var s=new EcranBlocsFilon(parent,"presque");mc.screen=s;s.init(mc,320,240);
    var g=new GuiGraphics();s.render(g,0,0,0);dans(s,10,10,310,230);
@@ -304,6 +340,12 @@ class VeinTabTests(unittest.TestCase):
 
     def test_tab_fits_from_320x240_with_badges_counts_menu_and_scrollbar(self):
         self.run_case("tab")
+
+    def test_partial_zone_asks_for_a_scan_instead_of_exhausted(self):
+        self.run_case("confirmer")
+
+    def test_scroll_kept_across_init_and_no_tooltip_for_hidden_rows(self):
+        self.run_case("persistance")
 
     def test_block_screen_themed_window_toggles_and_applies(self):
         self.run_case("screen")

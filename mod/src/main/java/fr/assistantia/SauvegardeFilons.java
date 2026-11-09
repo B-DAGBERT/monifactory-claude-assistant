@@ -55,6 +55,31 @@ final class SauvegardeFilons {
 
     private static final long DELAI_REPRISE = 10_000;
 
+    /**
+     * Avant la première réécriture d'une sauvegarde v1, en garde une copie {@code .v1.bak} une fois
+     * pour toutes. Copie complète sous un nom temporaire puis renommage : jamais de copie tronquée
+     * prise pour bonne ; une erreur remonte pour que l'écriture soit retentée.
+     */
+    static void conserverVersion1(Path fichier) throws IOException {
+        if (!Files.exists(fichier)) return;
+        byte[] debut = new byte[16];
+        int n;
+        try (var entree = Files.newInputStream(fichier)) {
+            n = entree.read(debut);
+        }
+        String tete =
+                n <= 0 ? "" : new String(debut, 0, n, StandardCharsets.UTF_8).replace(" ", "");
+        Path ancien = fichier.resolveSibling(fichier.getFileName() + ".v1.bak");
+        if (!tete.startsWith("{\"v\":1") || Files.exists(ancien)) return;
+        Path tmp = fichier.resolveSibling(fichier.getFileName() + ".v1.bak.tmp");
+        java.nio.file.Files.copy(fichier, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        try {
+            Files.move(tmp, ancien, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, ancien);
+        }
+    }
+
     private static final class Instantane {
         final Path destination, export;
         final Contenu contenu, contenuExport;

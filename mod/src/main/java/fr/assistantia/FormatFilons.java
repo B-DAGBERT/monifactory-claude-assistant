@@ -152,6 +152,7 @@ final class FormatFilons {
                         .value(
                                 !g.epuise()
                                         && !g.epuiseManuel()
+                                        && g.scanComplet()
                                         && g.colonnesRestantes().length == 0
                                         && trouves >= FilonMemoire.MINIMUM_PRESQUE_EPUISE
                                         && restants * 100L

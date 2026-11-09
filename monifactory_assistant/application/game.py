@@ -62,7 +62,8 @@ class GameController:
         self.last_mod_view = None
         self.quest_titles = self.known_machines = self.known_veins = None
         self.veins_read = self.quests_read = 0
-        self.veins = []
+        # Même portée retrouvée après une perte : relire les filons même si le fichier n'a pas changé.
+        self.veins, self.veins_stamp = [], None
         self.coach_queue = []
         self.storage_text = self.storage_export_key = None
         self.removed_chests = []

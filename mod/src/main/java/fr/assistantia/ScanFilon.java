@@ -166,12 +166,7 @@ final class ScanFilon {
             finirColonne(maintenant);
             if (horloge.getAsLong() >= limite) return true;
         }
-        if (filon.colonnesRestantes.length == 0 && !filon.scanComplet) {
-            filon.scanComplet = true;
-            filon.scanFait = filon.scanTotal;
-            filon.revision++;
-            memoire.toucher();
-        }
+        completer();
         if (aRelier || lienEnCours) travail |= relier(horloge, limite);
         return travail;
     }
@@ -230,8 +225,13 @@ final class ScanFilon {
             lus++;
             if (t >= 0 && filon.dansComposition(t)) minerai(x, y, z, t);
             else if (sectionConnue) {
+                // Un minerai connu devenu autre chose est miné ; un bloc inchangé reste, même si la
+                // composition ne contient plus son type (définition GregTech illisible ou
+                // modifiée).
                 long p = FilonMemoire.pos(x, y, z);
-                if (filon.present(p) && memoire.miner(filon, p)) disparus++;
+                int i = filon.index.lire(p);
+                if (i != TableLong.ABSENT && filon.typeBloc(i) != t && memoire.miner(filon, p))
+                    disparus++;
             }
             if (++x > bx) {
                 x = ax;
@@ -303,8 +303,21 @@ final class ScanFilon {
                 System.arraycopy(restantes, 0, suite, 0, i);
                 System.arraycopy(restantes, i + 1, suite, i, restantes.length - i - 1);
                 filon.colonnesRestantes = suite;
+                completer();
                 return;
             }
+    }
+
+    /**
+     * Dès la dernière colonne lue, le volume est entièrement parcouru : marqué ici et non après la
+     * boucle, que le budget du tick peut interrompre juste avant.
+     */
+    private void completer() {
+        if (filon.colonnesRestantes.length > 0 || filon.scanComplet) return;
+        filon.scanComplet = true;
+        filon.scanFait = filon.scanTotal;
+        filon.revision++;
+        memoire.toucher();
     }
 
     // ---------- Remplissage de proche en proche dans la marge ----------

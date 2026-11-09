@@ -18,6 +18,14 @@ public final class OngletFilons {
     private static String selection = "", recherche = "", monde = "", dimension = "";
     private static boolean masquerVides = true;
     private static int tri;
+
+    /**
+     * Défilements gardés d'un init() de l'écran à l'autre (retour d'EcranBlocsFilon, changement de
+     * taille, réouverture) ; rendus après le premier réglage de la barre avec le vrai contenu.
+     */
+    private static int positionListe, positionMinerais;
+
+    private static String fichePrecedente = "";
     private static final String[] TRIS = {"distance", "recette", "nom"};
 
     private final List<AbstractWidget> widgets = new ArrayList<>();
@@ -35,6 +43,7 @@ public final class OngletFilons {
             String age,
             boolean ancien,
             boolean presque,
+            boolean confirmer,
             boolean utile) {}
 
     private final Map<String, Resume> resumes = new HashMap<>();
@@ -56,7 +65,7 @@ public final class OngletFilons {
     private long listeDate, optionsDepuis, reglageDepuis;
     private String erreurAffichage = "";
     private boolean actif;
-    private String fichePrecedente = "";
+    private boolean listeRestauree, mineraisRestaures;
     private DispositionFilons disposition;
 
     private <T extends AbstractWidget> T ajouter(T w, Consumer<AbstractWidget> ajout) {
@@ -68,7 +77,7 @@ public final class OngletFilons {
     public void init(Consumer<AbstractWidget> ajout, int hauteur) {
         filtre =
                 ajouter(
-                        new ChampTheme(
+                        ChampTheme.dans(
                                 mc.font, 0, 0, 100, Component.literal("Chercher un minerai")),
                         ajout);
         filtre.setMaxLength(100);
@@ -222,6 +231,7 @@ public final class OngletFilons {
                             f.ageReleve(maintenant),
                             f.releveAncien(maintenant),
                             f.presqueEpuise(),
+                            f.presqueEpuiseAConfirmer(),
                             Filons.utilePourRecette(f));
                 });
     }
@@ -237,6 +247,7 @@ public final class OngletFilons {
             liste = List.of();
             resumes.clear();
             barre.defiler(1e6);
+            positionListe = positionMinerais = 0;
         }
         if (!connecte || Filons.chargement()) {
             liste = List.of();
@@ -317,9 +328,7 @@ public final class OngletFilons {
     private void outils() {
         var font = mc.font;
         int triLargeur = Theme.largeurBouton(font, "Tri : distance", 120);
-        filtre.setX(x + 1);
-        filtre.setY(y);
-        filtre.setWidth(Math.max(40, largeur - triLargeur - Theme.ECART - 2));
+        filtre.zone(x, y, Math.max(40, largeur - triLargeur - Theme.ECART));
         trier.zone(x + largeur - triLargeur, y, triLargeur);
         boolean options = System.currentTimeMillis() - optionsDepuis >= 650;
         trier.active = vides.active = options;
@@ -413,6 +422,15 @@ public final class OngletFilons {
         }
     }
 
+    /** La souris est sur le menu « Affichage… » ouvert : rien dessous ne réagit au survol. */
+    private boolean dansMenu(int sx, int sy) {
+        return menuOuvert
+                && sx >= menuX
+                && sx < menuX + menuLargeur
+                && sy >= menuY
+                && sy < menuY + menuHauteur;
+    }
+
     private boolean sousMenu(int bx, int by, int bl, int bh) {
         return menuOuvert
                 && bx < menuX + menuLargeur
@@ -429,7 +447,16 @@ public final class OngletFilons {
                 listeY,
                 listeBas - listeY,
                 liste.size() * DispositionFilons.LIGNE);
+        // Position d'avant le dernier init(), rendue une fois la liste réelle connue.
+        if (!listeRestauree && !liste.isEmpty()) {
+            barre.aller(positionListe);
+            listeRestauree = true;
+        }
+        if (listeRestauree) positionListe = barre.position();
         contenuLargeur = disposition.listeLargeur() - (barre.visible() ? Theme.DEFILEMENT + 3 : 0);
+        // Une ligne cachée par le découpage ou par le menu n'ouvre jamais d'infobulle.
+        boolean survolable = sy >= listeY && sy < listeBas && !dansMenu(sx, sy);
+        int tx = survolable ? sx : Integer.MIN_VALUE, ty = survolable ? sy : Integer.MIN_VALUE;
         int premier = premiereLigne(), decalage = barre.position() % DispositionFilons.LIGNE;
         String affiche = Filons.affiche();
         g.enableScissor(x, listeY, x + contenuLargeur, listeBas);
@@ -467,8 +494,8 @@ public final class OngletFilons {
                     ly + 4,
                     texteL - pastilles,
                     r.utile() ? Theme.CYAN : Theme.TEXTE,
-                    sx,
-                    sy);
+                    tx,
+                    ty);
             Theme.texte(
                     g,
                     font,
@@ -477,8 +504,8 @@ public final class OngletFilons {
                     ly + 14,
                     texteL,
                     Theme.TEXTE_SECONDAIRE,
-                    sx,
-                    sy);
+                    tx,
+                    ty);
             boolean entiere = ly >= listeY && ly + hauteur <= listeBas;
             int by = ly + (hauteur - Theme.BOUTON) / 2;
             int bx = x + contenuLargeur - boutonL - Theme.ECART;
@@ -565,11 +592,15 @@ public final class OngletFilons {
         if (!selection.equals(fichePrecedente)) {
             fichePrecedente = selection;
             barreMinerais.defiler(1e6);
+            positionMinerais = 0;
         }
         if (f == null) return;
         var d = disposition;
         var r = resume(f);
         int dx = d.detailX(), dy = d.detailY(), dl = d.detailLargeur();
+        // Sous le menu « Affichage… » ouvert, la fiche ne réagit pas au survol.
+        int tx = dansMenu(sx, sy) ? Integer.MIN_VALUE : sx,
+                ty = dansMenu(sx, sy) ? Integer.MIN_VALUE : sy;
         if (d.colonnes()) g.fill(dx - 5, dy, dx - 4, d.detailBas(), Theme.BORDURE);
         // Ligne 1 : nom du gisement, distance à droite ; la fiche complète au survol.
         String loin = distance(f);
@@ -602,7 +633,7 @@ public final class OngletFilons {
             couleur = r.presque() ? Theme.JAUNE : Theme.VERT;
         }
         int barreL = r.trouves() > 0 && !f.estEpuise() ? Math.min(60, dl / 5) : 0;
-        Theme.texte(g, font, compte, dx, y2, dl - (barreL > 0 ? barreL + 6 : 0), couleur, sx, sy);
+        Theme.texte(g, font, compte, dx, y2, dl - (barreL > 0 ? barreL + 6 : 0), couleur, tx, ty);
         if (barreL > 0)
             Theme.progression(
                     g,
@@ -620,6 +651,10 @@ public final class OngletFilons {
             if (r.presque()) {
                 ligne = "Presque épuisé, il reste " + f.pourcentRestant() + " % : clique Épuisé.";
                 c3 = Theme.JAUNE;
+            } else if (r.confirmer() && !Filons.scanDuFilon(f.id)) {
+                // Zone vue en partie (ancien scan de 16 blocs, scan arrêté) : total inconnu.
+                ligne = "Peu de minerai vu : scanne pour confirmer.";
+                c3 = Theme.JAUNE;
             } else if (Filons.scanDuFilon(f.id)) {
                 ligne = Filons.etatScan(f);
                 c3 = Filons.scanEnAttente(f.id) ? Theme.JAUNE : Theme.VERT;
@@ -634,7 +669,7 @@ public final class OngletFilons {
                                 + " · "
                                 + Filons.etatScan(f)
                                 + (r.trouves() > 0 ? " · relevé " + r.age() : "");
-            Theme.texte(g, font, ligne, dx, y3, dl, c3, sx, sy);
+            Theme.texte(g, font, ligne, dx, y3, dl, c3, tx, ty);
         }
         // Minerais présents par type, avec défilement si la place manque.
         int capacite =
@@ -653,6 +688,14 @@ public final class OngletFilons {
                     haut,
                     hauteur,
                     types.size() * DispositionFilons.MINERAI);
+            if (!mineraisRestaures) {
+                barreMinerais.aller(positionMinerais);
+                mineraisRestaures = true;
+            }
+            positionMinerais = barreMinerais.position();
+            // Lignes découpées hors de la zone visible : pas d'infobulle.
+            boolean survolable = ty >= haut && ty < haut + hauteur;
+            int mx = survolable ? tx : Integer.MIN_VALUE, my = survolable ? ty : Integer.MIN_VALUE;
             int place = dl - (barreMinerais.visible() ? Theme.DEFILEMENT + 3 : 0);
             g.enableScissor(dx, haut, dx + place, haut + hauteur);
             int premier = barreMinerais.position() / DispositionFilons.MINERAI;
@@ -671,8 +714,8 @@ public final class OngletFilons {
                         ly + 4,
                         place - 26 - font.width(nombre),
                         Theme.TEXTE,
-                        sx,
-                        sy);
+                        mx,
+                        my);
                 g.drawString(
                         font,
                         nombre,
@@ -695,10 +738,11 @@ public final class OngletFilons {
         boolean scanEnCours = Filons.scanDuFilon(selection);
         scanner.zone(d.detailX(), ay, l);
         scanner.texte(scanEnCours ? "Scan " + f.avancementScan() + " %" : "Scanner");
+        // Jamais scanné, ou peu de minerai vu dans une zone partielle : scanner est l'action utile.
         scanner.genre(
-                scanEnCours
-                        ? Theme.Genre.NORMAL
-                        : r.trouves() == 0 ? Theme.Genre.PRINCIPAL : Theme.Genre.NORMAL);
+                !scanEnCours && (r.trouves() == 0 || r.confirmer())
+                        ? Theme.Genre.PRINCIPAL
+                        : Theme.Genre.NORMAL);
         scanner.choisi(scanEnCours);
         scanner.active = Filons.boutonScanDisponible() && (scanEnCours || raisonScan.isEmpty());
         scanner.infobulle(
@@ -707,7 +751,10 @@ public final class OngletFilons {
                                 + ". Cliquer pour arrêter ; les minerais trouvés sont gardés."
                         : !raisonScan.isEmpty()
                                 ? raisonScan
-                                : "Parcourir tout le volume de génération du filon (bornes du générateur GregTech). Les zones non chargées se scannent dès que tu t'en approches.");
+                                : (r.confirmer()
+                                                ? "Seule une partie du filon a été vue : un scan complet dira s'il est vraiment presque épuisé. "
+                                                : "")
+                                        + "Parcourir tout le volume de génération du filon (bornes du générateur GregTech). Les zones non chargées se scannent dès que tu t'en approches.");
         teleporter.zone(d.detailX() + l + Theme.ECART, ay, l);
         teleporter.active = raisonTP.isEmpty();
         teleporter.texte(Filons.tpEnCours() ? "TP…" : "TP");
@@ -774,8 +821,8 @@ public final class OngletFilons {
                 disposition.statutY(),
                 largeur,
                 scans > 0 ? Theme.VERT : Theme.TEXTE_SECONDAIRE,
-                sx,
-                sy);
+                dansMenu(sx, sy) ? Integer.MIN_VALUE : sx,
+                dansMenu(sx, sy) ? Integer.MIN_VALUE : sy);
     }
 
     private String details(FilonMemoire.Filon f) {
