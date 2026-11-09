@@ -95,6 +95,77 @@ public class EchangesKubeJSTest {
 """
 
 
+MEMORY_TEST = r"""
+package fr.assistantia;
+import com.google.gson.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.*;
+public class MemoireMondeKubeJSTest {
+ static final String W="m1_"+"c".repeat(64),W2="m1_"+"d".repeat(64);
+ static void check(boolean ok,String m){if(!ok)throw new AssertionError(m);}
+ static JsonObject coffres(int n){var j=new JsonObject();var a=new JsonArray();var c=new JsonObject();
+  c.addProperty("v",2);c.addProperty("cle","k");c.addProperty("n",n);a.add(c);j.add("conteneurs",a);j.add("machines",new JsonArray());return j;}
+ static int n(Map<?,?> m){return ((Number)((Map<?,?>)((List<?>)m.get("conteneurs")).get(0)).get("n")).intValue();}
+ // Holds the single writer thread, so that the following writes stay queued.
+ static CountDownLatch bloquer(Path ailleurs)throws Exception{
+  var latch=new CountDownLatch(1);var entre=new CountDownLatch(1);
+  Ecritures.publier(ailleurs,new Ecritures.Contenu(){protected byte[] produire()throws java.io.IOException{
+   entre.countDown();try{latch.await(10,TimeUnit.SECONDS);}catch(InterruptedException e){throw new java.io.IOException(e);}return "{}".getBytes();}});
+  check(entre.await(5,TimeUnit.SECONDS),"writer thread held");return latch;}
+ interface Appel{void run()throws Exception;}
+ static void erreur(Appel a,String m)throws Exception{try{a.run();}catch(java.io.IOException attendu){return;}throw new AssertionError(m);}
+ public static void main(String[] args)throws Exception{
+  Path racine=Path.of(System.getProperty("test.game"),"kubejs","assistant");
+  Path partition=racine.resolve("mondes").resolve(W),stockage=partition.resolve("stockage.json");
+  var latch=bloquer(racine.resolve("bloquant.json"));
+  long debut=System.nanoTime();
+  MemoireMondeKubeJS.ecrire(W,"stockage.json",coffres(1));
+  MemoireMondeKubeJS.ecrire(W,"stockage.json",coffres(2));
+  check((System.nanoTime()-debut)/1_000_000<1000,"the script never waits for the busy writer");
+  check(!Files.exists(stockage),"the call returned before any disk work");
+  check(n(MemoireMondeKubeJS.lire(W,"stockage.json"))==2,"a read in the same tick sees the queued content");
+  check(Ecritures.enAttente(stockage).estDurable(),"isolated memory is forced to disk");
+  latch.countDown();
+  check(Ecritures.attendre(5000),"flushed");
+  check(Files.isDirectory(partition),"partition prepared by the writer thread");
+  String ecrit=Files.readString(stockage);
+  check(ecrit.equals(coffres(2).toString()),"latest content, compact as before: "+ecrit);
+  check(n(MemoireMondeKubeJS.lire(W,"stockage.json"))==2,"read back from disk");
+  latch=bloquer(racine.resolve("bloquant.json"));
+  MemoireMondeKubeJS.ecrireHistorique("stockage.json",coffres(3));
+  check(!Ecritures.enAttente(racine.resolve("stockage.json")).estDurable(),"legacy memory not forced, like JsonIO.write");
+  check(n(MemoireMondeKubeJS.lireHistorique("stockage.json"))==3,"legacy same-tick read");
+  latch.countDown();
+  check(Ecritures.attendre(5000),"flushed");
+  check(Files.readString(racine.resolve("stockage.json")).equals(Ecritures.serialiser(coffres(3),true)),"KubeJS tab layout kept");
+  check(n(MemoireMondeKubeJS.lireHistorique("stockage.json"))==3,"legacy read from disk");
+  check(MemoireMondeKubeJS.lireHistorique("filons.json")==null,"absent legacy memory is null, like JsonIO.read");
+  Files.writeString(racine.resolve("filons.json"),"[]");
+  check(MemoireMondeKubeJS.lireHistorique("filons.json")==null,"non-object legacy memory is null");
+  for(String nom:new String[]{"etat.json","../stockage.json",null})
+   erreur(()->MemoireMondeKubeJS.ecrire(W,nom,coffres(1)),"name refused at once: "+nom);
+  erreur(()->MemoireMondeKubeJS.ecrire("m1_bad","stockage.json",coffres(1)),"world id refused at once");
+  erreur(()->MemoireMondeKubeJS.ecrireHistorique("quetes.json",coffres(1)),"legacy name refused at once");
+  check(Ecritures.attendre(1000),"nothing queued for refused names");
+  Path faux=racine.resolve("mondes").resolve(W2);Files.writeString(faux,"not a folder");
+  MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(7));
+  Thread.sleep(300);
+  try{MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(8));throw new AssertionError("previous failure not reported");}
+  catch(java.io.IOException attendu){check(attendu.getMessage().contains("stockage.json"),attendu.getMessage());}
+  check(Files.readString(faux).equals("not a folder"),"never written through an invalid partition");
+  Files.delete(faux);
+  check(Ecritures.attendre(5000),"retried until the partition is valid");
+  check(n(MemoireMondeKubeJS.lire(W2,"stockage.json"))==8,"newest data written after recovery");
+  MemoireMondeKubeJS.ecrire(W2,"stockage.json",coffres(9));
+  check(Ecritures.attendre(5000)&&n(MemoireMondeKubeJS.lire(W2,"stockage.json"))==9,"no error once recovered");
+  try(var f=Files.walk(racine)){check(f.noneMatch(p->p.toString().endsWith(".tmp")),"no temporary file left");}
+  System.out.println("MemoireMondeKubeJS OK");
+ }
+}
+"""
+
+
 class KubeJSExchangeTests(JavaContract):
     def test_kubejs_exchanges_fingerprint_quests_and_relay_server_frames_off_thread(self):
         output = self.compile_and_run(
@@ -105,6 +176,15 @@ class KubeJSExchangeTests(JavaContract):
         )
         self.assertIn("EchangesKubeJS OK", output)
 
+    def test_kubejs_memories_are_queued_forced_in_isolation_and_read_back_from_memory(self):
+        output = self.compile_and_run(
+            EXCHANGE_STUBS,
+            [str(JAVA / "Ecritures.java"), str(JAVA / "MemoireMondeKubeJS.java")],
+            "fr.assistantia.MemoireMondeKubeJSTest",
+            extra=[("fr/assistantia/MemoireMondeKubeJSTest.java", MEMORY_TEST)],
+        )
+        self.assertIn("MemoireMondeKubeJS OK", output)
+
 
 # ---------- KubeJS client script, replayed tick by tick ----------
 
@@ -114,7 +194,14 @@ Date.now = () => horloge;
 var sansMod = SANS_MOD, publies = [], ecritures = [], transmis = [], erreursConsole = [];
 var empreinte = 'Q1', progresEmpreinte = 'P1', recuMs = 0, erreurServeur = '';
 var appels = {chapitres: 0}, termine = {A: true}, progres = 3;
-var runTick = null, recevoir = null;
+var runTick = null, recevoir = null, memoires = [];
+var memoireStub = {lire: () => null, ecrire: () => {}};
+if (MEMOIRE_DIFFEREE) {
+  memoireStub.lireHistorique = nom => { memoires.push(['lire', nom]); return null; };
+  memoireStub.ecrireHistorique = (nom, json) => {
+    memoires.push(['ecrire', nom, JSON.parse(JSON.stringify(json))]);
+  };
+}
 var EchangesStub = {
   publier: (nom, texte) => { publies.push([nom, JSON.parse(texte)]); return true; },
   empreinteQuetes: (f, e) => empreinte, progresQuetes: e => progresEmpreinte,
@@ -136,7 +223,7 @@ var Java = {loadClass: function (name) {
   if (name === 'fr.assistantia.EchangesKubeJS') { if (sansMod) throw Error('absent'); return EchangesStub; }
   if (name === 'dev.ftb.mods.ftbquests.client.ClientQuestFile') return QuestFileStub;
   if (name === 'fr.assistantia.IdentiteMonde') return {isolation: () => false, monde: () => '', session: () => ''};
-  if (name === 'fr.assistantia.MemoireMondeKubeJS') return {lire: () => null, ecrire: () => {}};
+  if (name === 'fr.assistantia.MemoireMondeKubeJS') return memoireStub;
   if (name.indexOf('dev.emi') === 0) throw Error('no EMI');
   return function () {};
 }};
@@ -173,13 +260,15 @@ var r = {};
 """
 
 
-def run_script(test, scenario, *, without_mod=False, console_errors=()):
+def run_script(test, scenario, *, without_mod=False, console_errors=(), deferred_memory=False):
     node = shutil.which("node")
     if not node:
         test.skipTest("Node.js requis")
     client = (ROOT / "jeu/assistant_ia.js").read_text(encoding="utf-8")
     source = (
-        SCRIPT_PREFIX.replace("SANS_MOD", "true" if without_mod else "false")
+        SCRIPT_PREFIX.replace("SANS_MOD", "true" if without_mod else "false").replace(
+            "MEMOIRE_DIFFEREE", "true" if deferred_memory else "false"
+        )
         + client
         + SCRIPT_SUFFIX
         + scenario
@@ -303,6 +392,28 @@ class KubeJSChangeOnlyTests(unittest.TestCase):
         self.assertGreaterEqual(r["pendant"], 2)
         self.assertEqual(r["total"], r["pendant"] + 1, "closing the chest writes at once")
         self.assertEqual(r["contenu"], [{"item": "minecraft:coal", "n": 99}])
+
+    def test_chest_memory_is_handed_to_the_mod_writer_without_any_direct_write(self):
+        r = run_script(
+            self,
+            r"""
+        tick(20);
+        r.lectures = memoires.filter(m => m[0] === 'lire').map(m => m[1]);
+        Client.screen = {getTitle: () => composant('Chest')};
+        visee = {block: {id: 'minecraft:chest', x: 1, y: 64, z: 2}};
+        coffre[0] = pile('minecraft:coal', 4); tick(5);
+        Client.screen = null; tick(5);
+        var ecrits = memoires.filter(m => m[0] === 'ecrire');
+        r.ecrits = ecrits.map(m => m[1]);
+        r.objets = ecrits[ecrits.length - 1][2].conteneurs[0].objets;
+        r.directes = ecritures.filter(e => e[0].indexOf('stockage.json') >= 0).length;
+        """,
+            deferred_memory=True,
+        )
+        self.assertEqual(r["lectures"], ["stockage.json", "filons.json"])
+        self.assertEqual(r["ecrits"], ["stockage.json"])
+        self.assertEqual(r["objets"], [{"item": "minecraft:coal", "n": 4}])
+        self.assertEqual(r["directes"], 0, "the game thread never writes the chest memory")
 
     def test_server_frame_is_handed_to_the_mod_and_errors_still_reported(self):
         r = run_script(
