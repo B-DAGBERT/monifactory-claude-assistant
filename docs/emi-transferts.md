@@ -26,10 +26,10 @@ Le client demande périodiquement le contenu via le protocole natif du mod. Le m
 
 Les objets du sac comptent dans **l’arbre natif EMI et sa liste latérale**, même après fermeture, ainsi que pour l’avancement et les retraits dans les coffres. L’arbre se rafraîchit à la réception du relevé ; ses calculs ne modifient pas les sources de transfert. Les cases réelles de la grille de craft restent comptées, et le curseur ainsi qu’un sac ouvert ne sont comptés qu’une fois. Pour un envoi machine, **À sortir du sac** signifie qu’il faut d’abord déplacer les ingrédients dans les poches. Le remplissage natif d’EMI et le bouton **Envoyer** ne prélèvent pas automatiquement dans un sac fermé. Un sac posé au sol reste un stockage du monde, et non un inventaire personnel.
 
-Le bouton **Sac N** à côté du suivi ouvre une liste en lecture seule : une carte par objet, avec
-son nom et sa quantité, et une recherche. La liste conserve les identités NBT distinctes et n’affiche
-aucun ancien stock pendant la synchronisation. Elle n’extrait pas d’ingrédient et ne modifie pas l’arbre.
-Échap et **Retour à EMI** retrouvent l’écran précédent.
+Dans EMI, **Dans ton backpack × N** apparaît au survol d’une variante présente dans les sacs portés.
+Avec une recette suivie, les cases utiles du backpack ouvert sont encadrées en doré. Leur infobulle
+indique la quantité **À sortir** pour une fabrication après déduction des objets dans les poches.
+Les cases des poches, filtres et upgrades gardent leur affichage natif.
 
 ## Remplir l’établi
 

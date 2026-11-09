@@ -89,21 +89,15 @@ Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur u
 
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 
-La barre près de Recipe Tree propose **Coffres OFF / ON**, **Suivi** et **Sac N**.
-**Coffres ON** s’affiche en doré pendant le scan ; **Sac N** compte les types d’objets du sac.
-Les boutons restent sur une seule ligne, avec une largeur calculée sur leur texte.
-Si la place manque à côté de la recherche EMI, **Aide…** ouvre les trois actions.
-Échap ou **Retour à EMI** retrouve l’écran précédent. Les infobulles précisent l’action
-et la raison d’un bouton désactivé. Un clic sur cette barre ou sur un panneau de l’assistant,
-même sur un bouton grisé, ne fait jamais tomber ni poser l’objet tenu au curseur ; revenir de
-**Suivi**, **Sac** ou d’un menu non plus.
+Dans EMI, survole l’objet pour voir **Dans ton backpack × N** si ton sac contient cette variante.
+Lorsque tu suis une recette, ouvre ton backpack pour retrouver les cases encadrées en doré. Le survol
+d’une case indique **À sortir × N**. Ce nombre couvre une fabrication en tenant compte de tes poches.
+Pour changer la recette suivie, sélectionne-la dans **Suivi** ou dans le panneau d’une machine.
 
-Le bouton **Sac N**, près de **Coffres** et **Suivi** dans EMI, ouvre la liste des
-objets présents dans tes backpacks portés, chacun sur une carte avec sa quantité, et une
-recherche par nom. Le sous-titre rappelle qu’ils sont déjà sur toi et comptés dans EMI. `N` est
-le nombre de types d’objets ; les grandes valeurs sont abrégées. **Retour à EMI** ou Échap ramène
-au même écran.
-Pendant la synchronisation, la liste attend les données du sac sans afficher l’ancien stock.
+La barre près de Recipe Tree regroupe **Coffres OFF / ON** et **Suivi**. Si la place manque à côté de
+la recherche EMI, **Aide…** ouvre ces deux actions. **Coffres ON** s’affiche en doré pendant le scan.
+Échap ou **Retour à EMI** retrouve l’écran précédent. Les clics sur la barre et les panneaux
+préservent l’objet tenu au curseur.
 
 Cette option concerne le **comptage**. **Envoyer** continue à utiliser les cases accessibles de l’inventaire : le suivi indique **À sortir du sac** lorsque les ingrédients nécessaires sont dans le backpack. Le mod ne les extrait pas automatiquement.
 

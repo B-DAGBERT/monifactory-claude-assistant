@@ -54,7 +54,7 @@ STUBS.update(
         "fr.assistantia.compat.emi.MachinesEmi": """import java.util.*;import dev.emi.emi.api.recipe.EmiRecipe;
  public class MachinesEmi {public record Ligne(int lot,EmiRecipe recette,int fois,String etat,boolean annulable,String detail,int groupe){}
  public static List<Ligne> rows=List.of();public static int reads,cancelled=-1,max=10;public static String problem="",context="project-A";public static String contexteSelection(){return context;}
- public static List<Ligne> lignes(){reads++;return rows;}public static String problemeOrdre(){return problem;}
+ public static void choisirSac(dev.emi.emi.api.recipe.EmiRecipe r){}public static List<Ligne> lignes(){reads++;return rows;}public static String problemeOrdre(){return problem;}
  public static void recalculer(){} public static void annulerLot(int id){cancelled=id;}public static int declarables(EmiRecipe r){return max;}
  public static boolean dernierTermine(){return false;}}
 """,

@@ -53,6 +53,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
             MinecraftForge.EVENT_BUS.register(OrigineFabrication.class);
             MinecraftForge.EVENT_BUS.register(AideCoffre.class);
             MinecraftForge.EVENT_BUS.register(MachinesEmi.class);
+            MinecraftForge.EVENT_BUS.register(IngredientsSac.class);
             MinecraftForge.EVENT_BUS.register(SuiviEmiEcran.class);
             MinecraftForge.EVENT_BUS.register(EnvoiMachine.class);
             branche = true;

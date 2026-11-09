@@ -109,6 +109,19 @@ public class OrderIntegrationTest {
     assert r.lignes().stream().filter(OrdreMachines.Ligne::conflit).count()==1;assert mc.player.inventory.items.get(0).count==4;
     assert calculate(null,a,b).equals(r):"stable repeated projection";
    }
+   case "bag_exact_selected_recipe" -> {
+    var copper=new ItemStack("test:copper",3);mc.player.inventory.items.add(copper);
+    var r=recipe(item("test:copper",6),item("test:tin",2));
+    var bag=List.of(new ItemStack("test:copper",10),new ItemStack("test:tin",5));
+    var q=OrdonnancementEmi.besoinsSac(r,bag);assert q.equals(Map.of(0,3,1,2)):q;
+    assert copper.getCount()==3&&bag.get(0).getCount()==10;
+    mc.player.inventory.items.add(new ItemStack("test:copper",3));mc.player.inventory.items.add(new ItemStack("test:tin",2));
+    assert OrdonnancementEmi.besoinsSac(r,bag).isEmpty();
+    mc.player.inventory.items.clear();
+    var split=List.of(new ItemStack("test:copper",2),new ItemStack("test:copper",10));
+    assert OrdonnancementEmi.besoinsSac(recipe(item("test:copper",3)),split).equals(Map.of(0,2,1,1));
+    InventaireJoueur.synced=false;assert OrdonnancementEmi.besoinsSac(r,bag).isEmpty();
+   }
    case "bag_and_cursor" -> {
     InventaireJoueur.bags=List.of(new ItemStack("test:iron",3));var a=recipe(item("test:iron",3));mode(calculate(null,a),a,OrdreMachines.Mode.PREPARER);
     InventaireJoueur.bags=List.of();mc.player.containerMenu.carried=new ItemStack("test:iron",3);mode(calculate(null,a),a,OrdreMachines.Mode.PREPARER);
@@ -256,6 +269,7 @@ class MachineOrderIntegrationTests(unittest.TestCase):
             for case in (
                 "pockets_and_conflict",
                 "bag_and_cursor",
+                "bag_exact_selected_recipe",
                 "chest_coherent_sources",
                 "inventory_unknown",
                 "fluid_units_and_no_double_container",

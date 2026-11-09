@@ -41,7 +41,7 @@ Les boutons de transfert utilisent les cases accessibles : sortir les ingrédien
 **Filons → Scanner** parcourt tout le volume du filon et le compte restant suit le minage.
 **Vue**, **Blocs**, **Épaisseur**, **Intensité** et **Remplissage** règlent la surbrillance, sans
 toucher aux relevés.
-Dans EMI, **Sac N** indique les objets déjà sur toi dans le backpack et permet de les retrouver.
+Survole un objet dans EMI pour voir **Dans ton backpack × N** lorsque le sac en contient.
 
 L’onglet Recette, le scan, les retraits, le suivi des machines et les filons ne font **aucun appel IA**.
 

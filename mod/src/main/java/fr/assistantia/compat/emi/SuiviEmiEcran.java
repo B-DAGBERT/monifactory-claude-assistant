@@ -499,6 +499,7 @@ public final class SuiviEmiEcran extends Screen {
                 } else {
                     actualiser(true);
                     selection = index(entree.ligne());
+                    if (selection >= 0) MachinesEmi.choisirSac(entree.ligne().recette());
                     if (selection < 0) message = "La liste a changé · sélectionne une fabrication.";
                 }
                 selectionRendue = null;

@@ -125,14 +125,14 @@ public class MiningUiTest {
    assert d.alphaFaces(0,true)==0&&d.remplissageInverse().alphaFaces(0,true)>0&&d.remplissageInverse().alphaFaces(0,true)<d.alpha(0,true);
    assert d.remplissageInverse().remplissageInverse().equals(d)&&d.nom().equals("Normale")&&d.nomEpaisseur().equals("Normale");
   }else if(c.equals("toolbar")){
-   for(int room=-10;room<1500;room++)for(var widths:List.of(new int[]{80,42,52,48},new int[]{120,65,83,60},new int[]{30,25,29,30})){
-    var b=BarreOutilsEmi.calculer(46,218,room,widths[0],widths[1],widths[2],widths[3]);
-    var zones=java.util.stream.Stream.of(b.scan(),b.suivi(),b.sac(),b.menu()).filter(Objects::nonNull).toList();
+   for(int room=-10;room<1500;room++)for(var widths:List.of(new int[]{80,42,48},new int[]{120,65,60},new int[]{30,25,30})){
+    var b=BarreOutilsEmi.calculer(46,218,room,widths[0],widths[1],widths[2]);
+    var zones=java.util.stream.Stream.of(b.scan(),b.suivi(),b.menu()).filter(Objects::nonNull).toList();
     if(room<20){assert zones.isEmpty();continue;}
-    boolean compact=room<widths[0]+widths[1]+widths[2]+8;
-    assert zones.size()==(compact?1:3);
+    boolean compact=room<widths[0]+widths[1]+4;
+    assert zones.size()==(compact?1:2);
     assert (b.menu()!=null)==compact;
-    if(!compact)assert b.scan().largeur()==widths[0]&&b.suivi().largeur()==widths[1]&&b.sac().largeur()==widths[2]:"never squeeze labels";
+    if(!compact)assert b.scan().largeur()==widths[0]&&b.suivi().largeur()==widths[1]:"never squeeze labels";
     for(var z:zones){assert z.x()>=46&&z.y()==218&&z.hauteur()==BarreOutilsEmi.HAUTEUR&&BarreOutilsEmi.HAUTEUR==16:"one row of theme-height buttons, never over other mod controls";assert z.x()+z.largeur()<=46+room;}
     for(int i=0;i<zones.size();i++)for(int j=i+1;j<zones.size();j++){var a=zones.get(i);var z=zones.get(j);assert a.x()+a.largeur()<=z.x()||z.x()+z.largeur()<=a.x();}
    }

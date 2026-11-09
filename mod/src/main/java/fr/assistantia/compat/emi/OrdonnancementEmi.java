@@ -102,6 +102,39 @@ final class OrdonnancementEmi {
         return resultat;
     }
 
+    /** Quantités d'une seule fabrication, poches déduites, sans mutation ni provenance inventée. */
+    static java.util.Map<Integer, Integer> besoinsSac(EmiRecipe recette, List<ItemStack> sac) {
+        if (!InventaireJoueur.disponible() || recette == null) return java.util.Map.of();
+        var mc = Minecraft.getInstance();
+        if (mc.player == null) return java.util.Map.of();
+        var stocks = new ArrayList<PlanRetrait.Stock<Objet>>();
+        for (var pile : mc.player.getInventory().items)
+            stocks.add(
+                    new PlanRetrait.Stock<>(
+                            new Objet(EmiStack.of(pile), false), pile.getCount(), true));
+        int debut = stocks.size();
+        for (var pile : sac)
+            stocks.add(
+                    new PlanRetrait.Stock<>(
+                            new Objet(EmiStack.of(pile), false), pile.getCount(), false));
+        var besoins = new ArrayList<PlanRetrait.Besoin<Objet>>();
+        var outils = new java.util.LinkedHashMap<Object, OrdreMachines.Regle<Objet>>();
+        for (var regle : regles(recette, null)) {
+            if (regle.reutilisable())
+                outils.merge(
+                        regle.partage(), regle, (a, b) -> a.quantite() >= b.quantite() ? a : b);
+            else besoins.add(new PlanRetrait.Besoin<>(regle.accepte(), regle.quantite()));
+        }
+        for (var outil : outils.values())
+            besoins.add(new PlanRetrait.Besoin<>(outil.accepte(), outil.quantite()));
+        if ((long) stocks.size() * besoins.size() > 25000) return java.util.Map.of();
+        var resultat = PlanRetrait.calculer(stocks, besoins);
+        var quantites = new java.util.LinkedHashMap<Integer, Integer>();
+        for (var prise : resultat.prises())
+            if (prise.index() >= debut) quantites.put(prise.index() - debut, prise.quantite());
+        return java.util.Map.copyOf(quantites);
+    }
+
     private static List<String> signatureStock(List<OrdreMachines.StockSource<Objet>> stocks) {
         var comptes = new java.util.TreeMap<String, Long>();
         for (var source : stocks) {

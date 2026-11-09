@@ -128,6 +128,31 @@ public final class MachinesEmi {
         actualiserArbre();
     }
 
+    private static EmiRecipe recetteSac;
+    private static Object arbreSac;
+    private static long revisionSac;
+
+    public static long revisionSac() {
+        return revisionSac;
+    }
+
+    public static void choisirSac(EmiRecipe recette) {
+        revisionSac++;
+        recetteSac = recette;
+        arbreSac = actif();
+    }
+
+    public static java.util.Map<Integer, Integer> besoinsSac(List<ItemStack> sac) {
+        if (actif() == null) return java.util.Map.of();
+        var lignes = lignes();
+        var candidats = lignes.stream().filter(l -> l.lot() < 0 && l.fois() > 0).toList();
+        EmiRecipe recette =
+                arbreSac == actif() && candidats.stream().anyMatch(l -> l.recette() == recetteSac)
+                        ? recetteSac
+                        : candidats.stream().findFirst().map(Ligne::recette).orElse(null);
+        return OrdonnancementEmi.besoinsSac(recette, sac);
+    }
+
     /** Identité de navigation, y compris lorsque le service Production n'est pas disponible. */
     public static String contexteSelection() {
         return fr.assistantia.Pont.cleContexte();
@@ -611,6 +636,8 @@ public final class MachinesEmi {
         Object current = actif();
         String dim = mc.level == null ? "" : mc.level.dimension().location().toString();
         if (current != arbre || connexion != mc.getConnection() || !dim.equals(dimension)) {
+            recetteSac = null;
+            arbreSac = null;
             OrdonnancementEmi.invalider();
             EnvoiMachine.arreter();
             if (current == null || connexion != mc.getConnection() || !dim.equals(dimension)) {
@@ -1009,6 +1036,7 @@ public final class MachinesEmi {
             if (locales.get(i).recette() == recette) {
                 choix = i;
                 choixExplicite = true;
+                choisirSac(recette);
                 var operation = locales.get(i);
                 plan =
                         operation.fois() > 0

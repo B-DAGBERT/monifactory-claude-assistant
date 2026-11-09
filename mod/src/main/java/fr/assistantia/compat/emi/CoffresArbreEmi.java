@@ -29,10 +29,7 @@ public final class CoffresArbreEmi {
     private static final String ID = "assistantia:coffres_arbre";
     private static final Map<Screen, BoutonTheme> boutons = new WeakHashMap<>();
     private static final Map<Screen, BoutonTheme> suivis = new WeakHashMap<>();
-    private static final Map<Screen, BoutonTheme> sacs = new WeakHashMap<>();
     private static final Map<Screen, BoutonTheme> menus = new WeakHashMap<>();
-    private static long lectureSacDate;
-    private static int typesSac;
     private static Field boutonArbre, barreRecherche;
     private static boolean charge;
     private static java.lang.reflect.Method desactive;
@@ -104,20 +101,14 @@ public final class CoffresArbreEmi {
         var suivi =
                 outil("Suivi", b -> ouvrirSuivi(screen))
                         .infobulle("Suivre les fabrications, recalculer ou annuler un lot");
-        var sac =
-                outil(
-                        "Sac",
-                        b ->
-                                Minecraft.getInstance()
-                                        .setScreen(new fr.assistantia.EcranSac(screen)));
         var menu =
                 outil("Aide…", b -> ouvrirDepuisCoffre(screen, new Menu(screen)))
-                        .infobulle("Outils EMI : recherche dans les coffres, suivi et backpack");
+                        .infobulle(
+                                "Outils EMI : recherche dans les coffres et suivi des fabrications");
         boutons.put(screen, scan);
         suivis.put(screen, suivi);
-        sacs.put(screen, sac);
         menus.put(screen, menu);
-        for (var bouton : List.of(scan, suivi, sac, menu)) event.addListener(bouton);
+        for (var bouton : List.of(scan, suivi, menu)) event.addListener(bouton);
     }
 
     /** Bouton de la barre : thème commun, infobulle après un court survol, caché jusqu'au rendu. */
@@ -129,7 +120,7 @@ public final class CoffresArbreEmi {
     }
 
     private static List<Map<Screen, BoutonTheme>> cartes() {
-        return List.of(boutons, suivis, sacs, menus);
+        return List.of(boutons, suivis, menus);
     }
 
     private static void ouvrirSuivi(Screen parent) {
@@ -148,24 +139,6 @@ public final class CoffresArbreEmi {
         }
     }
 
-    private static void actualiserSac() {
-        long maintenant = System.currentTimeMillis();
-        if (!fr.assistantia.InventaireJoueur.disponible()) {
-            typesSac = 0;
-            lectureSacDate = 0;
-        } else if (maintenant - lectureSacDate > 500) {
-            typesSac =
-                    fr.assistantia.ListeSac.lire(fr.assistantia.InventaireJoueur.sacs(), "").size();
-            lectureSacDate = maintenant;
-        }
-    }
-
-    private static String nomSac() {
-        return fr.assistantia.InventaireJoueur.disponible()
-                ? "Sac " + (typesSac > 99 ? "99+" : typesSac)
-                : "Sac…";
-    }
-
     private static void reglerScan(BoutonTheme bouton) throws ReflectiveOperationException {
         boolean selection = RechercheEmi.selectionnee(ID);
         boolean attend = selection && !fr.assistantia.InventaireJoueur.synchronise();
@@ -180,15 +153,6 @@ public final class CoffresArbreEmi {
                                         : bouton.active
                                                 ? "Chercher les ingrédients de l’arbre EMI dans les coffres"
                                                 : "Choisis d’abord une recette dans Recipe Tree");
-    }
-
-    private static void reglerSac(BoutonTheme bouton) {
-        bouton.texte(nomSac())
-                .infobulle(
-                        fr.assistantia.InventaireJoueur.disponible()
-                                ? typesSac
-                                        + " types d’objets dans tes backpacks · déjà sur toi et comptés dans EMI"
-                                : "Lecture du backpack en cours · ouvrir la liste des objets portés");
     }
 
     @SubscribeEvent
@@ -222,17 +186,13 @@ public final class CoffresArbreEmi {
                             place,
                             Math.max(largeur(font, "Coffres OFF"), largeur(font, "Coffres ON")),
                             largeur(font, "Suivi"),
-                            Math.max(largeur(font, "Sac 99+"), largeur(font, "Sac…")),
                             largeur(font, "Aide…"));
-            BoutonTheme suivi = suivis.get(screen), sac = sacs.get(screen);
+            BoutonTheme suivi = suivis.get(screen);
             BoutonTheme menu = menus.get(screen);
             placer(scan, disposition.scan());
             placer(suivi, disposition.suivi());
-            placer(sac, disposition.sac());
             placer(menu, disposition.menu());
-            actualiserSac();
             reglerScan(scan);
-            reglerSac(sac);
             suivi.active = ArbreEmi.actif() != null || MachinesEmi.dernierTermine();
             // Accès compact : doré tant que le scan des coffres, rangé dans le menu, est actif.
             menu.texte(menu.getWidth() >= largeur(font, "Aide…") ? "Aide…" : "…")
@@ -298,10 +258,10 @@ public final class CoffresArbreEmi {
 
     /** Repli unique : aucune rangée supplémentaire ne recouvre les contrôles des autres mods. */
     private static final class Menu extends Screen {
-        private static final String AIDE = "Coffres, fabrications et backpack";
+        private static final String AIDE = "Coffres et fabrications";
         private final Screen parent;
         private final Object connexionOuverture, mondeOuverture;
-        private BoutonTheme scan, suivi, sac;
+        private BoutonTheme scan, suivi;
         private Theme.Fenetre fenetre;
 
         Menu(Screen parent) {
@@ -319,7 +279,7 @@ public final class CoffresArbreEmi {
                     Theme.TITRE
                             + Theme.LIGNE
                             + Theme.ECART
-                            + 3 * pas
+                            + 2 * pas
                             + 2 * Theme.MARGE
                             + Theme.BOUTON;
             fenetre = Theme.Fenetre.centree(width, height, 300, hauteur);
@@ -338,14 +298,6 @@ public final class CoffresArbreEmi {
                     addRenderableWidget(
                             BoutonTheme.creer("Suivi des fabrications", b -> ouvrirSuivi(parent))
                                     .zone(x, y + pas, largeur));
-            sac =
-                    addRenderableWidget(
-                            BoutonTheme.creer(
-                                            "",
-                                            b ->
-                                                    minecraft.setScreen(
-                                                            new fr.assistantia.EcranSac(parent)))
-                                    .zone(x, y + 2 * pas, largeur));
             addRenderableWidget(
                     BoutonTheme.creer("Retour à EMI", b -> onClose())
                             .zone(x, fenetre.basBoutons(), largeur));
@@ -354,8 +306,6 @@ public final class CoffresArbreEmi {
 
         @Override
         public void tick() {
-            actualiserSac();
-            reglerSac(sac);
             try {
                 reglerScan(scan);
                 suivi.active = ArbreEmi.actif() != null || MachinesEmi.dernierTermine();
