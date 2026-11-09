@@ -42,10 +42,23 @@ final class ArbreRecette {
         }
     }
 
+    /**
+     * Racine telle qu'avant « Appliquer » : clé de résolution, recette du but, quantité par lot,
+     * nombre de lots et résolution locale éventuelle de cette clé. La quantité visée vaut lots ×
+     * quantité ({@code TreeCost.calculate}).
+     */
+    record EtatRacine(
+            EmiIngredient cle,
+            EmiRecipe recette,
+            long quantite,
+            long lots,
+            boolean avait,
+            EmiRecipe resolution) {}
+
     private static Class<?> classeNoeud;
     private static Field ingredient, recette, enfants, quantite, diviseur, catalyseur, chance;
     private static Field but, lotsArbre, resolutions;
-    private static Method getRecipe, recalculate, calculateCost, addResolution;
+    private static Method getRecipe, recalculate, calculateCost, addResolution, defineRecipe;
     private static Field desactivees;
 
     private ArbreRecette() {}
@@ -72,7 +85,69 @@ final class ArbreRecette {
         diviseur = type.getField("divisor");
         catalyseur = type.getField("catalyst");
         chance = type.getField("consumeChance");
+        defineRecipe = type.getMethod("defineRecipe", EmiRecipe.class);
         classeNoeud = type;
+    }
+
+    /** Recette actuelle du but (la racine ne passe pas par {@code getRecipe}). */
+    static EmiRecipe recetteRacine(Object arbre) throws ReflectiveOperationException {
+        charger(arbre);
+        Object goal = but.get(arbre);
+        if (goal == null) return null;
+        chargerNoeud(goal.getClass());
+        return (EmiRecipe) recette.get(goal);
+    }
+
+    static EtatRacine etatRacine(Object arbre) throws ReflectiveOperationException {
+        charger(arbre);
+        Object goal = but.get(arbre);
+        chargerNoeud(goal.getClass());
+        var cle = (EmiIngredient) ingredient.get(goal);
+        var locales = resolutions(arbre);
+        return new EtatRacine(
+                cle,
+                (EmiRecipe) recette.get(goal),
+                quantite.getLong(goal),
+                lotsArbre.getLong(arbre),
+                locales.containsKey(cle),
+                locales.get(cle));
+    }
+
+    /**
+     * Change la recette du but par le chemin natif d'EMI ({@code addResolution} sur la clé du but),
+     * puis rétablit la quantité visée : EMI remettrait la quantité par lot à celle de la clé (1).
+     * Seule la résolution locale de cet arbre change ; jamais les défauts ni les favoris EMI.
+     *
+     * @return l'état d'avant, pour « Annuler »
+     */
+    static EtatRacine resoudreRacine(Object arbre, EmiRecipe choisie)
+            throws ReflectiveOperationException {
+        var avant = etatRacine(arbre);
+        Object goal = but.get(arbre);
+        addResolution.invoke(arbre, avant.cle(), choisie);
+        quantite.setLong(goal, avant.quantite());
+        lotsArbre.setLong(arbre, avant.lots());
+        calculateCost.invoke(arbre);
+        rafraichir();
+        return avant;
+    }
+
+    /**
+     * Rétablit exactement la racine d'avant « Appliquer » : recette du but, quantité par lot et
+     * résolution locale de sa clé. Le nombre de lots choisi par le joueur n'est pas touché.
+     */
+    static void restaurerRacine(Object arbre, EtatRacine etat) throws ReflectiveOperationException {
+        charger(arbre);
+        Object goal = but.get(arbre);
+        chargerNoeud(goal.getClass());
+        var locales = resolutions(arbre);
+        if (etat.avait()) locales.put(etat.cle(), etat.resolution());
+        else locales.remove(etat.cle());
+        defineRecipe.invoke(goal, etat.recette());
+        quantite.setLong(goal, etat.quantite());
+        recalculate.invoke(arbre);
+        calculateCost.invoke(arbre);
+        rafraichir();
     }
 
     static Object racine(Object arbre) throws ReflectiveOperationException {
