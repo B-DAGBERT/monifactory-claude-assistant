@@ -488,14 +488,16 @@ public class CoffresConnusTest {
 
 
 class KnownChestMemoryTests(unittest.TestCase):
-    def test_known_chest_totals_and_opened_machines(self):
+    def run_harness(self, harness, name, expected):
         java, javac = jdk()
         gson = gson_jar()
         if not java or not javac or gson is None:
             self.skipTest("JDK 17 et Gson requis")
         with tempfile.TemporaryDirectory() as tmp:
-            harness = Path(tmp) / "CoffresConnusTest.java"
-            harness.write_text(MEMORY_HARNESS, encoding="utf-8")
+            if isinstance(harness, str):
+                source = Path(tmp) / f"{name}.java"
+                source.write_text(harness, encoding="utf-8")
+                harness = source
             compile_sources(
                 javac,
                 tmp,
@@ -504,19 +506,24 @@ class KnownChestMemoryTests(unittest.TestCase):
                 classpath=str(gson),
             )
             result = subprocess.run(
-                [
-                    java,
-                    "-ea",
-                    "-cp",
-                    tmp + os.pathsep + str(gson),
-                    "fr.assistantia.CoffresConnusTest",
-                ],
+                [java, "-ea", "-cp", tmp + os.pathsep + str(gson), f"fr.assistantia.{name}"],
                 capture_output=True,
                 text=True,
                 timeout=60,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("PASS memoire", result.stdout)
+            self.assertIn(expected, result.stdout)
+
+    def test_known_chest_totals_and_opened_machines(self):
+        self.run_harness(MEMORY_HARNESS, "CoffresConnusTest", "PASS memoire")
+
+    def test_server_observed_containers_merge_with_the_client_memory(self):
+        """coffres_connus.json (client + serveur) : le relevé le plus récent par position gagne."""
+        self.run_harness(
+            ROOT / "tests/java/fr/assistantia/CoffresConnusFusionTest.java",
+            "CoffresConnusFusionTest",
+            "PASS fusion coffres connus",
+        )
 
 
 # Le crochet natif (fin de MaterialNode.defineRecipe) appelle ArbreReel.defini : les stubs le

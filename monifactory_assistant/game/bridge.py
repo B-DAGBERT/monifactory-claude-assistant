@@ -12,6 +12,7 @@ from monifactory_assistant.paths import ROOT as HERE
 
 SCOPED_FILES = {
     "stockage.json",
+    "coffres_connus.json",
     "filons.json",
     "stockage.txt",
     "inventaire_details.txt",

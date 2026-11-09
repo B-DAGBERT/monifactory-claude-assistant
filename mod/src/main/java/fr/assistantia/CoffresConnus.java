@@ -10,8 +10,10 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,27 +27,37 @@ import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 /**
- * Lecture seule de la mémoire des coffres du script client ({@code stockage.json}) : totaux par
- * objet de tous les coffres connus du monde et blocs à interface déjà ouverts. Le fichier est lu
- * hors du thread de rendu, seulement quand sa date ou sa taille change ; les variantes NBT ne sont
- * pas distinguées, comme dans la mémoire elle-même.
+ * Lecture seule des coffres connus : la mémoire du script client ({@code stockage.json}, coffres
+ * ouverts par le joueur) et la fusion publiée par l'assistant avec le relevé du serveur ({@code
+ * coffres_connus.json}, tiroirs et coffres jamais ouverts compris). Pour une même position, le
+ * relevé le plus récent gagne ; à date égale, celui de l'assistant. Donne les totaux par objet et
+ * les blocs à interface connus. Les fichiers sont lus hors du thread de rendu, seulement quand la
+ * date ou la taille de l'un d'eux change ; les variantes NBT ne sont pas distinguées, comme dans
+ * les mémoires elles-mêmes.
  */
 public final class CoffresConnus {
     private static final Pattern MONDE = Pattern.compile("m1_[0-9a-f]{64}");
+    private static final String MEMOIRE = "stockage.json", FUSION = "coffres_connus.json";
     private static final int VERSION = 2, MAX_OBJETS = 32768;
     private static final long INTERVALLE_MS = 3000;
+    private static final int[][] VOISINS = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+
+    /** Date et taille d'un fichier ; {@link #ABSENT} quand il n'existe pas encore. */
+    public record Empreinte(long date, long taille) {}
+
+    private static final Empreinte ABSENT = new Empreinte(-1, -1);
 
     /** Totaux mémorisés ; {@code pret} faux tant que la première lecture n'a pas abouti. */
     public record Etat(
-            Path fichier,
-            long date,
-            long taille,
+            Path dossier,
+            Empreinte memoire,
+            Empreinte fusion,
             Map<String, Long> objets,
             Set<String> machines,
             long revision,
             boolean pret) {}
 
-    private static final Etat VIDE = new Etat(null, -1, -1, Map.of(), Set.of(), 0, false);
+    private static final Etat VIDE = new Etat(null, ABSENT, ABSENT, Map.of(), Set.of(), 0, false);
     private static final ExecutorService LECTEUR =
             Executors.newSingleThreadExecutor(
                     tache -> {
@@ -83,71 +95,78 @@ public final class CoffresConnus {
         long maintenant = System.currentTimeMillis();
         if (maintenant < prochaine || lecture != null && !lecture.isDone()) return;
         prochaine = maintenant + INTERVALLE_MS;
-        Path fichier = fichier();
-        if (fichier == null) return;
+        Path dossier = dossier();
+        if (dossier == null) return;
         var precedent = ETAT.get();
         try {
-            lecture = LECTEUR.submit(() -> lire(fichier, precedent));
+            lecture = LECTEUR.submit(() -> lire(dossier, precedent));
         } catch (RuntimeException refus) {
             lecture = null;
         }
     }
 
-    private static Path fichier() {
+    /** Dossier des deux fichiers, celui du monde quand l'isolation est active. */
+    private static Path dossier() {
         Path dossier = FMLPaths.GAMEDIR.get().resolve("kubejs").resolve("assistant");
-        if (!IdentiteMonde.isolation()) return dossier.resolve("stockage.json");
+        if (!IdentiteMonde.isolation()) return dossier;
         String monde = IdentiteMonde.monde();
         if (!MONDE.matcher(monde).matches()) return null;
-        return dossier.resolve("mondes").resolve(monde).resolve("stockage.json");
+        return dossier.resolve("mondes").resolve(monde);
     }
 
-    private static void lire(Path fichier, Etat precedent) {
+    static void lire(Path dossier, Etat precedent) {
         try {
-            if (!Files.isRegularFile(fichier, LinkOption.NOFOLLOW_LINKS)) {
-                // Aucune mémoire encore écrite : un seul état vide, sans nouvelle révision à chaque
-                // essai.
-                if (precedent.pret()
-                        && precedent.date() == -1
-                        && fichier.equals(precedent.fichier())) return;
-                publier(
-                        new Etat(
-                                fichier,
-                                -1,
-                                -1,
-                                Map.of(),
-                                Set.of(),
-                                REVISIONS.incrementAndGet(),
-                                true),
-                        precedent);
-                return;
-            }
-            long date = Files.getLastModifiedTime(fichier, LinkOption.NOFOLLOW_LINKS).toMillis();
-            long taille = Files.size(fichier);
+            Path memoire = dossier.resolve(MEMOIRE), fusion = dossier.resolve(FUSION);
+            var empreinteMemoire = empreinte(memoire);
+            var empreinteFusion = empreinte(fusion);
             if (precedent.pret()
-                    && fichier.equals(precedent.fichier())
-                    && date == precedent.date()
-                    && taille == precedent.taille()) return;
-            var json =
-                    JsonParser.parseString(Files.readString(fichier, StandardCharsets.UTF_8))
-                            .getAsJsonObject();
-            var lu = analyser(json);
+                    && dossier.equals(precedent.dossier())
+                    && empreinteMemoire.equals(precedent.memoire())
+                    && empreinteFusion.equals(precedent.fusion())) return;
+            // Un fichier absent vaut une mémoire vide (assistant arrêté : la mémoire seule, comme
+            // avant) ; un fichier illisible fait garder tout le dernier relevé valable.
+            var lu =
+                    analyser(
+                            ABSENT.equals(empreinteMemoire) ? null : json(memoire),
+                            ABSENT.equals(empreinteFusion) ? null : json(fusion));
+            // Contenu inchangé (dates d'observation rafraîchies seulement) : même révision, pour
+            // ne pas recalculer le plan de l'onglet Recette à chaque relevé du serveur.
+            long revision =
+                    precedent.pret()
+                                    && lu.objets().equals(precedent.objets())
+                                    && lu.machines().equals(precedent.machines())
+                            ? precedent.revision()
+                            : REVISIONS.incrementAndGet();
             publier(
                     new Etat(
-                            fichier,
-                            date,
-                            taille,
+                            dossier,
+                            empreinteMemoire,
+                            empreinteFusion,
                             lu.objets(),
                             lu.machines(),
-                            REVISIONS.incrementAndGet(),
+                            revision,
                             true),
                     precedent);
         } catch (IOException | RuntimeException illisible) {
-            // Fichier en cours d'écriture ou absent : garder le dernier relevé valable.
+            // Fichier en cours d'écriture ou disparu entre-temps : garder le dernier relevé
+            // valable.
             if (!erreurSignalee) {
                 LogUtils.getLogger().debug("Assistant : mémoire des coffres illisible", illisible);
                 erreurSignalee = true;
             }
         }
+    }
+
+    private static Empreinte empreinte(Path fichier) throws IOException {
+        if (!Files.isRegularFile(fichier, LinkOption.NOFOLLOW_LINKS)) return ABSENT;
+        return new Empreinte(
+                Files.getLastModifiedTime(fichier, LinkOption.NOFOLLOW_LINKS).toMillis(),
+                Files.size(fichier));
+    }
+
+    private static JsonObject json(Path fichier) throws IOException {
+        return JsonParser.parseString(Files.readString(fichier, StandardCharsets.UTF_8))
+                .getAsJsonObject();
     }
 
     private static void publier(Etat suivant, Etat precedent) {
@@ -157,47 +176,138 @@ public final class CoffresConnus {
 
     record Lecture(Map<String, Long> objets, Set<String> machines) {}
 
-    /** Analyse pure du fichier : grands coffres dédoublonnés comme le fait l'assistant. */
-    static Lecture analyser(JsonObject json) {
-        List<JsonObject> conteneurs = new ArrayList<>();
-        for (JsonElement e : tableau(json, "conteneurs"))
-            if (e.isJsonObject() && entier(e.getAsJsonObject(), "v") == VERSION)
-                conteneurs.add(e.getAsJsonObject());
-        Set<JsonObject> ignores = new HashSet<>();
-        for (int i = 0; i < conteneurs.size(); i++)
-            for (int j = i + 1; j < conteneurs.size(); j++) {
-                var a = conteneurs.get(i);
-                var b = conteneurs.get(j);
-                if (jumeaux(a, b)) ignores.add(entier(a, "t") >= entier(b, "t") ? b : a);
-            }
+    /** Un conteneur observé, avec sa position quand elle est complète ({@code cle} sinon nulle). */
+    private record Releve(
+            JsonObject json,
+            String cle,
+            String bloc,
+            String dimension,
+            long x,
+            long y,
+            long z,
+            long t,
+            boolean grand,
+            boolean fusion) {}
+
+    /** Analyse pure de la seule mémoire du client. */
+    static Lecture analyser(JsonObject memoire) {
+        return analyser(memoire, null);
+    }
+
+    /**
+     * Analyse pure des deux fichiers (l'un ou l'autre peut manquer) : un relevé par position, le
+     * plus récent, puis les deux moitiés d'un grand coffre comptées une seule fois.
+     */
+    static Lecture analyser(JsonObject memoire, JsonObject fusion) {
+        Map<String, Releve> parPosition = new LinkedHashMap<>();
+        List<Releve> releves = new ArrayList<>();
+        ajouter(memoire, false, parPosition, releves);
+        ajouter(fusion, true, parPosition, releves);
+        releves.addAll(sansJumeaux(new ArrayList<>(parPosition.values())));
         Map<String, Long> objets = new HashMap<>();
-        for (var c : conteneurs) {
-            if (ignores.contains(c)) continue;
-            for (JsonElement o : tableau(c, "objets")) {
+        for (var r : releves)
+            for (JsonElement o : tableau(r.json(), "objets")) {
                 if (!o.isJsonObject() || objets.size() >= MAX_OBJETS) continue;
                 String item = chaine(o.getAsJsonObject(), "item");
                 long n = entier(o.getAsJsonObject(), "n");
                 if (!item.isEmpty() && n > 0)
                     objets.merge(item, n, (x, y) -> Math.min(1_000_000_000L, x + y));
             }
-        }
         Set<String> machines = new HashSet<>();
-        for (JsonElement e : tableau(json, "machines"))
-            if (e.isJsonObject() && entier(e.getAsJsonObject(), "v") == VERSION) {
-                String bloc = chaine(e.getAsJsonObject(), "bloc");
-                if (!bloc.isEmpty()) machines.add(bloc);
-            }
+        for (var json : new JsonObject[] {memoire, fusion}) {
+            if (json == null) continue;
+            for (JsonElement e : tableau(json, "machines"))
+                if (e.isJsonObject() && entier(e.getAsJsonObject(), "v") == VERSION) {
+                    String bloc = chaine(e.getAsJsonObject(), "bloc");
+                    if (!bloc.isEmpty()) machines.add(bloc);
+                }
+        }
         return new Lecture(Map.copyOf(objets), Set.copyOf(machines));
     }
 
-    private static boolean jumeaux(JsonObject a, JsonObject b) {
-        return chaine(a, "nom").startsWith("Large")
-                && chaine(a, "bloc").equals(chaine(b, "bloc"))
-                && chaine(a, "dimension").equals(chaine(b, "dimension"))
-                && entier(a, "y") == entier(b, "y")
-                && Math.abs(entier(a, "x") - entier(b, "x"))
-                                + Math.abs(entier(a, "z") - entier(b, "z"))
-                        == 1;
+    /**
+     * Garde, pour chaque position, le relevé prioritaire ; une position incomplète reste à part.
+     */
+    private static void ajouter(
+            JsonObject json,
+            boolean fusion,
+            Map<String, Releve> parPosition,
+            List<Releve> sansPosition) {
+        if (json == null) return;
+        for (JsonElement e : tableau(json, "conteneurs")) {
+            if (!e.isJsonObject() || entier(e.getAsJsonObject(), "v") != VERSION) continue;
+            var r = releve(e.getAsJsonObject(), fusion);
+            if (r.cle() == null) {
+                sansPosition.add(r); // comptée telle quelle, sans fusion ni jumeau
+                continue;
+            }
+            var ancien = parPosition.get(r.cle());
+            if (ancien == null || prioritaire(r, ancien)) parPosition.put(r.cle(), r);
+        }
+    }
+
+    /** Plus récent, ou de même date mais venant de la fusion de l'assistant. */
+    private static boolean prioritaire(Releve r, Releve autre) {
+        return r.t() > autre.t() || r.t() == autre.t() && r.fusion() && !autre.fusion();
+    }
+
+    private static Releve releve(JsonObject json, boolean fusion) {
+        String dimension = chaine(json, "dimension"), bloc = chaine(json, "bloc");
+        boolean complete =
+                !dimension.isEmpty() && nombre(json, "x") && nombre(json, "y") && nombre(json, "z");
+        long x = entier(json, "x"), y = entier(json, "y"), z = entier(json, "z");
+        return new Releve(
+                json,
+                complete ? dimension + "|" + x + "|" + y + "|" + z : null,
+                bloc,
+                dimension,
+                x,
+                y,
+                z,
+                entier(json, "t"),
+                chaine(json, "nom").startsWith("Large"),
+                fusion);
+    }
+
+    /**
+     * Un grand coffre occupe deux blocs voisins, mémorisés selon le côté ouvert : nom « Large… »
+     * côté client, nom du bloc (ou aucun) côté serveur. Du plus récent au plus ancien, un relevé
+     * voisin d'un relevé gardé du même bloc et à la même hauteur est écarté quand l'un des deux
+     * porte un nom en « Large… », quel qu'il soit.
+     */
+    private static List<Releve> sansJumeaux(List<Releve> releves) {
+        releves.sort(
+                Comparator.comparingLong(Releve::t)
+                        .reversed()
+                        .thenComparing(r -> !r.fusion())); // tri stable : ordre des fichiers sinon
+        Map<String, Releve> gardes = new HashMap<>();
+        List<Releve> resultat = new ArrayList<>();
+        for (var r : releves) {
+            boolean jumeau = false;
+            for (int[] d : VOISINS) {
+                var voisin = gardes.get(cleBloc(r, d[0], d[1]));
+                if (voisin != null && (r.grand() || voisin.grand())) {
+                    jumeau = true;
+                    break;
+                }
+            }
+            if (jumeau) continue;
+            gardes.put(cleBloc(r, 0, 0), r);
+            resultat.add(r);
+        }
+        return resultat;
+    }
+
+    private static String cleBloc(Releve r, int dx, int dz) {
+        return r.bloc()
+                + "|"
+                + r.dimension()
+                + "|"
+                + (r.x() + dx)
+                + "|"
+                + r.y()
+                + "|"
+                + (r.z() + dz);
     }
 
     private static Iterable<JsonElement> tableau(JsonObject objet, String cle) {
@@ -208,6 +318,14 @@ public final class CoffresConnus {
     private static String chaine(JsonObject objet, String cle) {
         var valeur = objet.get(cle);
         return valeur != null && valeur.isJsonPrimitive() ? valeur.getAsString() : "";
+    }
+
+    private static boolean nombre(JsonObject objet, String cle) {
+        var valeur = objet.get(cle);
+        return valeur != null
+                && valeur.isJsonPrimitive()
+                && valeur.getAsJsonPrimitive().isNumber()
+                && Double.isFinite(valeur.getAsDouble());
     }
 
     private static long entier(JsonObject objet, String cle) {
