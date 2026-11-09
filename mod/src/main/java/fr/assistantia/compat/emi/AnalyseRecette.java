@@ -35,13 +35,13 @@ import net.minecraftforge.fluids.FluidUtil;
 /**
  * Analyse de l'arbre choisi dans EMI Recipe Tree pour l'onglet Recette, le HUD et les rangs des
  * machines. Tout se calcule pendant le tick client, par petites tâches bornées : lecture de l'arbre
- * et ordre du plan à chaque changement, puis alternatives recette par recette (au plus 1,5 ms par
+ * et ordre du plan à chaque changement, puis alternatives recette par recette (environ 1 ms par
  * tick). La vue publiée est immuable ; le rendu ne calcule rien.
  */
 public final class AnalyseRecette {
-    private static final long BUDGET_NS = 1_500_000L;
+    private static final long BUDGET_NS = 1_000_000L;
     static final int MAX_CANDIDATS = 32,
-            MAX_PRODUCTEURS = 4096,
+            MAX_PRODUCTEURS = 1024,
             MAX_NOEUDS_ANALYSES = 256,
             MAX_ALTERNATIVES = 12,
             MAX_INTROUVABLES = 24,
@@ -148,7 +148,7 @@ public final class AnalyseRecette {
                         .warn("Assistant : onglet Recette indisponible", e);
                 erreurSignalee = true;
             }
-            oublier();
+            oublier(true);
             pause = 100; // ne pas relire l'arbre à chaque tick après une erreur
             publierVide(
                     VueRecette.Etat.ERREUR,
@@ -161,7 +161,7 @@ public final class AnalyseRecette {
         var mc = Minecraft.getInstance();
         CoffresConnus.tick();
         if (mc.player == null || mc.level == null) {
-            if (cle != null) oublier();
+            if (cle != null) oublier(true);
             if (connecte) PossessionsRecette.vider();
             connecte = false;
             annulations.clear();
@@ -170,7 +170,7 @@ public final class AnalyseRecette {
         }
         connecte = true;
         if (!charge()) {
-            if (cle != null) oublier();
+            if (cle != null) oublier(true);
             publierVide(VueRecette.Etat.CHARGEMENT, "");
             return;
         }
@@ -182,7 +182,7 @@ public final class AnalyseRecette {
             throw new IllegalStateException("Arbre EMI illisible", e);
         }
         if (arbre == null) {
-            if (cle != null) oublier();
+            if (cle != null) oublier(true);
             publierVide(VueRecette.Etat.SANS_ARBRE, "");
             return;
         }
@@ -227,7 +227,11 @@ public final class AnalyseRecette {
         }
     }
 
-    private static void oublier() {
+    /**
+     * @param reperes vrai quand l'arbre disparaît : un simple changement d'arbre garde les anciens
+     *     rangs jusqu'au prochain calcul, sans clignotement dans le monde
+     */
+    private static void oublier(boolean reperes) {
         cle = null;
         lecture = null;
         instantane = null;
@@ -245,12 +249,12 @@ public final class AnalyseRecette {
         vueSuivante = null;
         vuesIntrouvables = List.of();
         NOMS.clear();
-        ReperesRecette.publier(Map.of());
+        if (reperes) ReperesRecette.publier(Map.of());
     }
 
     private static void nouvelArbre(Cle suivante) {
         var arbrePrecedent = cle == null ? null : cle.arbre();
-        oublier();
+        oublier(arbrePrecedent != suivante.arbre());
         cle = suivante;
         erreur = "";
         if (arbrePrecedent != suivante.arbre()) annulations.clear();
@@ -719,6 +723,7 @@ public final class AnalyseRecette {
         if (MachinesEmi.arbreSuivi() != cle.arbre())
             remarque =
                     "Numéros sur les machines : active le mode fabrication de Recipe Tree ou Coffres.";
+        else if (!MachinesEmi.problemeOrdre().isEmpty()) remarque = MachinesEmi.problemeOrdre();
         else if (!PossessionsRecette.complet())
             remarque = "Lecture du sac ou des coffres connus en cours…";
         String avancement =

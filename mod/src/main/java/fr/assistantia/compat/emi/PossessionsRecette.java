@@ -61,8 +61,8 @@ final class PossessionsRecette {
     private static final Map<String, DefinitionGT> DEFINITIONS = new HashMap<>();
     private static final Map<String, List<Atelier>> ATELIERS = new HashMap<>();
     private static final Map<Object, Possession> POSSESSIONS = new HashMap<>();
-    private static Object gestionAteliers;
-
+    private static final Map<EmiRecipe, Object> POSTES = new IdentityHashMap<>();
+    private static Object gestionAteliers, gestionPostes;
     private static Set<String> proches = Set.of(), base = Set.of(), posees = Set.of();
     private static final Set<String> releve = new HashSet<>();
     private static int ligne = -1, pause, centreX, centreZ;
@@ -255,8 +255,17 @@ final class PossessionsRecette {
         gtRangees = List.copyOf(b);
     }
 
-    /** Poste d'une recette pour l'analyse et l'ordre. */
+    /** Poste d'une recette pour l'analyse et l'ordre, lu une fois par génération de recettes. */
     static Object poste(EmiRecipe recette) {
+        var gestion = EmiApi.getRecipeManager();
+        if (gestion != gestionPostes || POSTES.size() > 16384) {
+            POSTES.clear();
+            gestionPostes = gestion;
+        }
+        return POSTES.computeIfAbsent(recette, PossessionsRecette::lirePoste);
+    }
+
+    private static Object lirePoste(EmiRecipe recette) {
         String categorie = recette.getCategory().getId().toString();
         try {
             Object gt = GregTechMachines.recette(recette);
