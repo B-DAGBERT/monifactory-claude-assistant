@@ -12,7 +12,6 @@ from monifactory_assistant.game.context import (
     describe_storage,
     question_context,
 )
-from monifactory_assistant.game.objectives import item_names, machine_label, needed_machines
 from monifactory_assistant.game.veins import describe_veins
 from monifactory_assistant.game.world import describe_machines, describe_world
 from monifactory_assistant.persistence import atomic_json
@@ -161,12 +160,6 @@ class ConversationController:
         bridge = getattr(self, "bridge", None)
         if getattr(bridge, "isolated", False) is True:
             parts.append(bridge.context_hint())
-        if self.objective_paused:
-            parts.append(
-                "L'objectif est EN PAUSE à la demande du joueur. Ne le relance pas, ne pousse pas "
-                "à progresser et ne le remplace pas sans demande explicite de reprise. "
-                "Tu peux toujours répondre aux autres questions."
-            )
         if self.game:
             parts.append(describe_state(self.game, items=selection.items))
         if with_storage:
@@ -188,58 +181,10 @@ class ConversationController:
                     "Ne conclus pas qu'un objet absent de cet extrait n'existe pas. "
                     "Ajoute « contexte complet » dans une question pour joindre le contexte étendu à ce tour."
                 )
-        if self.objectives and selection.profile != "reglage":
-            marks = {"fait": "✔ ", "en_cours": "▶ ", "a_faire": ""}
-            parts.append(
-                f"Plan (objectif principal) : {self.plan_title or 'sans titre'} ; ses objectifs dans "
-                "l'ordre (✔ fait, ▶ en cours) : "
-                + " ; ".join(
-                    f"{i + 1}. {marks.get(o['etat'], '')}{o['titre']}"
-                    for i, o in enumerate(self.objectives)
-                )
-            )
         if with_storage and not selection.focused:
             journal = self.describe_journal(25)
             if journal:
                 parts.append(journal)
-        if selection.profile == "reglage":
-            parts.append(
-                f"Plan conservé : {self.plan_title or 'sans titre'} ; objectif : "
-                + (self.plan["objectif"] if self.plan else "aucun")
-            )
-        if self.plan and selection.profile != "reglage":
-            progress = self.progress()
-            names = item_names(self.plan)
-            current = next(
-                (
-                    s["texte"]
-                    for s, done in zip(self.plan["etapes"], progress["etapes"])
-                    if not done
-                ),
-                None,
-            )
-            state = "terminé" if progress["termine"] else f"étape en cours : {current or 'aucune'}"
-            missing = ", ".join(f"{n}x {names.get(i, i)}" for i, n in progress["manque"].items())
-            steps = " ; ".join(
-                f"{i + 1}. {'✔ ' if done else ''}{s['texte']}"
-                for i, (s, done) in enumerate(zip(self.plan["etapes"], progress["etapes"]))
-            )
-            parts.append(
-                f"Objectif en cours : {self.plan['objectif']} ({state}) ; ses étapes : {steps} ; "
-                f"il me manque : {missing or 'rien'}"
-            )
-            machines = needed_machines(
-                self.plan, progress, self.recipe_index, self.have(), self.storage.placed()
-            )
-            if machines:
-                parts.append(
-                    "Machines dont l'objectif a besoin : "
-                    + " ; ".join(
-                        f"{machine_label(m['a'] or m['machines'][0])} pour {', '.join(m['pour'])} : "
-                        + ("je l'ai" if m["a"] else "JE NE L'AI PAS, il faut la fabriquer d'abord")
-                        for m in machines
-                    )
-                )
         if self.places and selection.profile != "reglage":
             parts.append(
                 "Lieux mémorisés : "
@@ -285,9 +230,7 @@ class ConversationController:
         timing = {"début": time.time()}  # pour le journal : où passe le temps
         try:
             if audio is not None:
-                text = self.transcriber.transcribe(
-                    audio, sorted(set(item_names(self.plan).values())) if self.plan else ()
-                )
+                text = self.transcriber.transcribe(audio, ())
                 timing["transcrite"] = time.time()
                 if not text:
                     raise RuntimeError(
@@ -445,12 +388,10 @@ class ConversationController:
             "effacer_surbrillance",
             "guider",
             "arreter_guidage",
-            "pause_objectif",
             "voix",
             "affichage",
             "reglage",
             "memoriser_lieu",
-            "ajouter_objectif",
         }
         rejected = not isinstance(actions, list)
         prepared, new_places = [], set()
@@ -479,18 +420,6 @@ class ConversationController:
                     continue
                 payload = {"type": kind, "nom": name.strip()}
                 new_places.add(name.strip().casefold())
-            elif kind == "ajouter_objectif":
-                title = action.get("titre") or action.get("demande")
-                if not isinstance(title, str) or not title.strip():
-                    rejected = True
-                    continue
-                # An addition may not forge an active/completed objective through `etat`.
-                payload = {"type": kind, "titre": title.strip(), "etat": "a_faire"}
-                if isinstance(action.get("demande"), str):
-                    payload["demande"] = action["demande"]
-                position = action.get("position")
-                if isinstance(position, int) and not isinstance(position, bool):
-                    payload["position"] = position
             elif kind in ("reglage", "voix", "affichage"):
                 key = (
                     action.get("cle")
@@ -501,14 +430,7 @@ class ConversationController:
                 )
                 field = "valeur" if kind == "reglage" else "active" if kind == "voix" else "visible"
                 value = action.get(field, True)
-                if (
-                    not isinstance(key, str)
-                    or key not in SETTINGS
-                    or not isinstance(value, bool)
-                    or key == "enchainer"
-                    and value
-                ):
-                    # Enabling auto-next could replace a completed plan indirectly.
+                if not isinstance(key, str) or key not in SETTINGS or not isinstance(value, bool):
                     rejected = True
                     continue
             handler = getattr(self, "action_" + kind, None)
@@ -517,7 +439,7 @@ class ConversationController:
                 continue
             prepared.append((handler, payload))
         # Validate the whole response before effects: an otherwise harmless addition must
-        # not mutate the project when it accompanies an unauthorized destructive action.
+        # not mutate local memory when it accompanies an unauthorized destructive action.
         if not rejected:
             for handler, payload in prepared:
                 try:
@@ -528,8 +450,7 @@ class ConversationController:
         if rejected:
             notice = (
                 "Certaines actions proposées n’ont pas été exécutées. La discussion ne peut pas "
-                "effacer, remplacer ou réinitialiser tes données. Les commandes du projet restent "
-                "disponibles dans le menu en jeu."
+                "effacer, remplacer ou réinitialiser tes données."
             )
             self.add_history("claude", notice)
             self.message = (previous_message + "\n\n" if previous_message else "") + notice

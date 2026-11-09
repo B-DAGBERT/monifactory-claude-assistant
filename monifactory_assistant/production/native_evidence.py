@@ -89,8 +89,6 @@ def _counts(values):
 class NativeContext:
     scope: WorldScope
     capture: str
-    project: str
-    project_revision: str
     catalogue_source: str
     catalogue_generation: int
     catalogue_sha256: str
@@ -181,10 +179,9 @@ def _context(data, scope, request, now_ms, received_at_ms):
         _integer(received_at_ms, "Date de réception")
         if not 0 <= now_ms - received_at_ms <= MAX_AGE_MS:
             raise ValueError("Réception native périmée ou datée dans le futur.")
+    # Le monde, la connexion et la dimension sont déjà vérifiés par la portée ci-dessus.
     fields = (
         "capture",
-        "projet",
-        "revision_projet",
         "catalogue_source",
         "catalogue_generation",
         "catalogue_sha256",
@@ -195,12 +192,10 @@ def _context(data, scope, request, now_ms, received_at_ms):
             or data[key] != request.get(key)
             or type(data[key]) is not type(request.get(key))
         ):
-            raise ValueError("La capture ne correspond plus au clic, au projet ou au catalogue.")
+            raise ValueError("La capture ne correspond plus au clic ou au catalogue.")
     capture = _text(data["capture"], "Identifiant de capture", maximum=128)
     if not _TOKEN.fullmatch(capture):
         raise ValueError("Identifiant de capture invalide.")
-    project = _text(data["projet"], "Projet", maximum=128, empty=True)
-    revision = _text(data["revision_projet"], "Révision de projet", maximum=128)
     source = _text(data["catalogue_source"], "Source du catalogue", maximum=512)
     digest = _text(data["catalogue_sha256"], "Empreinte du catalogue", maximum=64)
     if not source.startswith("emi/") or not _DIGEST.fullmatch(digest):
@@ -209,8 +204,6 @@ def _context(data, scope, request, now_ms, received_at_ms):
     return NativeContext(
         scope,
         capture,
-        project,
-        revision,
         source,
         generation,
         data["catalogue_sha256"],

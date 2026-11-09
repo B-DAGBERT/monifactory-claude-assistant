@@ -9,15 +9,18 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-/** Choix des modèles locaux : le moteur actif reste géré par l'assistant. */
+/**
+ * Choix du modèle local de la discussion et des fiches : le moteur actif reste géré par
+ * l'assistant. Les valeurs « plan » de la configuration sont renvoyées telles quelles.
+ */
 public final class EcranConfigurationIA extends Screen {
     private final Screen parent;
     // Même après fermeture de Y, conserver l'accusé attendu et le brouillon local.
     private static final EtatConfigurationIA etat = new EtatConfigurationIA();
-    private Button question, plan;
+    private Button question;
     private List<CatalogueModeles.Modele> modeles = List.of();
     private String sourceCatalogue = "";
-    private Button effortQuestion, effortPlan, appliquer, defauts, actualiser;
+    private Button effortQuestion, appliquer, defauts, actualiser;
     private int gauche, largeur;
 
     public EcranConfigurationIA(Screen parent) {
@@ -35,23 +38,9 @@ public final class EcranConfigurationIA extends Screen {
         largeur = Math.min(500, width - 24);
         gauche = (width - largeur) / 2;
         int reflexion = Math.min(124, largeur / 2 - 6);
-        question =
-                bouton("Choisir…", gauche, 64, largeur - reflexion - 6, b -> choisirModele(false));
-        plan = bouton("Choisir…", gauche, 116, largeur - reflexion - 6, b -> choisirModele(true));
+        question = bouton("Choisir…", gauche, 64, largeur - reflexion - 6, b -> choisirModele());
         effortQuestion =
-                bouton(
-                        "Réflexion",
-                        gauche + largeur - reflexion,
-                        64,
-                        reflexion,
-                        b -> cycler(false));
-        effortPlan =
-                bouton(
-                        "Réflexion",
-                        gauche + largeur - reflexion,
-                        116,
-                        reflexion,
-                        b -> cycler(true));
+                bouton("Réflexion", gauche + largeur - reflexion, 64, reflexion, b -> cycler());
         int tiers = (largeur - 12) / 3;
         appliquer = bouton("Appliquer", gauche, height - 28, tiers, b -> appliquer());
         defauts =
@@ -94,10 +83,10 @@ public final class EcranConfigurationIA extends Screen {
         actualiserBoutons();
     }
 
-    private void choisirModele(boolean projets) {
+    private void choisirModele() {
         if (!etat.disponible() || !etat.interaction(System.currentTimeMillis())) return;
         var v = etat.brouillon();
-        String actuel = projets ? v.modelPlan() : v.modelQuestion();
+        String actuel = v.modelQuestion();
         List<CatalogueModeles.Modele> choix = new ArrayList<>(modeles);
         if (choix.stream().noneMatch(m -> m.id().equals(actuel)))
             choix.add(
@@ -109,7 +98,7 @@ public final class EcranConfigurationIA extends Screen {
         minecraft.setScreen(
                 new EcranChoixModele(
                         this,
-                        projets ? "Modèle · Projets" : "Modèle · Discussion",
+                        "Modèle · Discussion",
                         choix,
                         actuel,
                         sourceCatalogue,
@@ -117,16 +106,15 @@ public final class EcranConfigurationIA extends Screen {
                             // Le catalogue peut évoluer sans modifier la configuration ; conserver
                             // le brouillon.
                             var courant = etat.brouillon();
-                            String effort =
-                                    projets ? courant.effortPlan() : courant.effortQuestion();
+                            String effort = courant.effortQuestion();
                             if (!m.efforts().isEmpty() && !m.efforts().contains(effort))
                                 effort = m.efforts().get(0);
                             etat.modifier(
                                     new EtatConfigurationIA.Valeurs(
-                                            projets ? courant.modelQuestion() : m.id(),
-                                            projets ? courant.effortQuestion() : effort,
-                                            projets ? m.id() : courant.modelPlan(),
-                                            projets ? effort : courant.effortPlan()));
+                                            m.id(),
+                                            effort,
+                                            courant.modelPlan(),
+                                            courant.effortPlan()));
                         }));
     }
 
@@ -203,23 +191,17 @@ public final class EcranConfigurationIA extends Screen {
         actualiserBoutons();
     }
 
-    private void cycler(boolean plans) {
+    private void cycler() {
         var conf = etat.configuration();
         if (conf == null
                 || conf.efforts().isEmpty()
                 || !etat.interaction(System.currentTimeMillis())) return;
         var v = etat.brouillon();
-        String ancien = plans ? v.effortPlan() : v.effortQuestion();
-        var efforts =
-                CatalogueModeles.efforts(
-                        modeles, plans ? v.modelPlan() : v.modelQuestion(), conf.efforts());
-        String suivant = efforts.get((efforts.indexOf(ancien) + 1) % efforts.size());
+        var efforts = CatalogueModeles.efforts(modeles, v.modelQuestion(), conf.efforts());
+        String suivant = efforts.get((efforts.indexOf(v.effortQuestion()) + 1) % efforts.size());
         etat.modifier(
                 new EtatConfigurationIA.Valeurs(
-                        v.modelQuestion(),
-                        plans ? v.effortQuestion() : suivant,
-                        v.modelPlan(),
-                        plans ? suivant : v.effortPlan()));
+                        v.modelQuestion(), suivant, v.modelPlan(), v.effortPlan()));
         actualiserBoutons();
     }
 
@@ -250,39 +232,32 @@ public final class EcranConfigurationIA extends Screen {
         long maintenant = System.currentTimeMillis();
         boolean edition = etat.disponible() && !etat.attente();
         question.active = edition;
-        plan.active = edition;
         var valeurs = etat.brouillon();
-        for (int i = 0; i < 2; i++) {
-            Button b = i == 0 ? question : plan;
-            String id =
-                    valeurs == null ? "" : i == 0 ? valeurs.modelQuestion() : valeurs.modelPlan();
-            String nom = CatalogueModeles.nom(modeles, id);
-            b.setMessage(Component.literal(font.plainSubstrByWidth(nom, b.getWidth() - 20) + " ▾"));
-            b.setTooltip(
-                    Tooltip.create(Component.literal("Choisir un modèle\n" + nom + "\n" + id)));
-        }
+        String id = valeurs == null ? "" : valeurs.modelQuestion();
+        String nom = CatalogueModeles.nom(modeles, id);
+        question.setMessage(
+                Component.literal(font.plainSubstrByWidth(nom, question.getWidth() - 20) + " ▾"));
+        question.setTooltip(
+                Tooltip.create(Component.literal("Choisir un modèle\n" + nom + "\n" + id)));
         appliquer.active = etat.peutAppliquer(Pont.assistantActif(), maintenant);
         appliquer.setMessage(Component.literal(etat.attente() ? "En cours…" : "Appliquer"));
         defauts.active = edition;
         actualiser.visible = etat.perimee();
         actualiser.active = edition && Pont.assistantActif() && etat.configuration().modifiable();
-        var v = etat.brouillon();
-        for (int i = 0; i < 2; i++) {
-            Button bouton = i == 0 ? effortQuestion : effortPlan;
-            String effort = v == null ? "" : i == 0 ? v.effortQuestion() : v.effortPlan();
-            String nom = EtatConfigurationIA.nomEffort(effort);
-            bouton.active = edition && !etat.configuration().efforts().isEmpty();
-            bouton.setMessage(
-                    Component.literal(font.plainSubstrByWidth(nom, bouton.getWidth() - 8)));
-            bouton.setTooltip(
-                    Tooltip.create(
-                            Component.literal(
-                                    "Réflexion : "
-                                            + nom
-                                            + " ("
-                                            + effort
-                                            + ") · cliquer pour changer")));
-        }
+        String effort = valeurs == null ? "" : valeurs.effortQuestion();
+        String reflexion = EtatConfigurationIA.nomEffort(effort);
+        effortQuestion.active = edition && !etat.configuration().efforts().isEmpty();
+        effortQuestion.setMessage(
+                Component.literal(
+                        font.plainSubstrByWidth(reflexion, effortQuestion.getWidth() - 8)));
+        effortQuestion.setTooltip(
+                Tooltip.create(
+                        Component.literal(
+                                "Réflexion : "
+                                        + reflexion
+                                        + " ("
+                                        + effort
+                                        + ") · cliquer pour changer")));
     }
 
     @Override
@@ -299,15 +274,11 @@ public final class EcranConfigurationIA extends Screen {
         String moteur = "Moteur actif : " + (conf == null ? "indisponible" : conf.nom());
         g.drawCenteredString(
                 font, font.plainSubstrByWidth(moteur, largeur), width / 2, 29, Hud.GRIS);
-        String[] titres = {"Discussion et fiches", "Projets et objectifs"};
-        for (int i = 0; i < 2; i++) {
-            int y = 50 + i * 52;
-            g.fill(gauche - 4, y - 5, gauche + largeur + 4, y + 40, 0xA0202730);
-            g.drawString(font, titres[i], gauche, y, Hud.BLANC, false);
-            g.drawString(font, "Réflexion", effortQuestion.getX(), y, Hud.GRIS, false);
-        }
+        g.fill(gauche - 4, 45, gauche + largeur + 4, 90, 0xA0202730);
+        g.drawString(font, "Discussion et fiches", gauche, 50, Hud.BLANC, false);
+        g.drawString(font, "Réflexion", effortQuestion.getX(), 50, Hud.GRIS, false);
         String statut = etat.message(Pont.assistantActif());
-        int y = 150, limite = height - 62;
+        int y = 98, limite = height - 62;
         for (var ligne : font.split(Component.literal(statut), largeur)) {
             if (y + 10 > limite) break;
             g.drawString(font, ligne, gauche, y, etat.attente() ? Hud.JAUNE : Hud.GRIS, false);
@@ -322,7 +293,7 @@ public final class EcranConfigurationIA extends Screen {
                     Hud.GRIS,
                     false);
         super.render(g, mx, my, delta);
-        if (mx >= gauche && mx < gauche + largeur && my >= 148 && my < limite)
+        if (mx >= gauche && mx < gauche + largeur && my >= 96 && my < limite)
             g.renderTooltip(
                     font, font.split(Component.literal(statut), Math.min(320, width - 24)), mx, my);
     }

@@ -108,10 +108,12 @@ public class BridgeWorldScopeTest {
    Minecraft.getInstance().level=null;empty();return;
   }
   if(args[0].equals("channels")){
-   assert Pont.envoyerInventaire(new JsonObject());assert Pont.envoyerProgresFabrication(new JsonObject());
+   assert Pont.envoyerInventaire(new JsonObject());
    assert Pont.envoyerConfigurationIa(new JsonObject());assert Pont.envoyerRechercheEmi(new JsonObject());
    assert Pont.envoyer(json("{\"type\":\"question\"}"));
-   for(String name:List.of("inventaire_joueur.json","fabrication_emi.json","configuration_ia.json","recherche_emi.json","demande_mod.json"))assert Pont.contexteValide(read(name)):name;
+   for(String name:List.of("inventaire_joueur.json","configuration_ia.json","recherche_emi.json","demande_mod.json"))assert Pont.contexteValide(read(name)):name;
+   assert !read("demande_mod.json").has("projet")&&read("demande_mod.json").has("dimension_envoi"):"no project binding, dimension kept";
+   assert Pont.envoyer(json("{\"type\":\"production_v2\"}"));assert !read("demande_mod.json").has("dimension_envoi"):"production keeps its own binding";
    publish(view("queue"),time);assert Pont.envoyer(json("{\"type\":\"question\"}"));
    try(var paths=Files.list(root.resolve("demandes"))){var files=paths.toList();assert files.size()==1;assert Pont.contexteValide(json(Files.readString(files.get(0))));}
    var late=read("demande_mod.json");var bytes=Files.readAllBytes(root.resolve("demande_mod.json"));context(b,s2,dim);

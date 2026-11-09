@@ -241,23 +241,3 @@ def describe_veins(veins, state, limit=25):
                 f"{v['minerai']} en {position}, {v['vus']} blocs encore là, {v['mines']} minés"
             )
     return "Filons repérés (les plus proches d'abord) : " + " ; ".join(parts)
-
-
-def nearest_vein(item, veins, state):
-    """Le filon connu le plus proche dont le minerai figure dans l'id de l'objet (galena -> raw_galena)."""
-    if not state:
-        return None
-    path = item.split(":")[-1]
-    candidates = [
-        v
-        for v in veins
-        if v["vus"]
-        and not v.get("epuise")  # épuisé selon GregTech ou marqué par le joueur, comme dans le mod
-        and v["minerai"] in path
-        and v["dimension"] == state["dimension"]
-    ]
-    return min(
-        candidates,
-        key=lambda v: math.dist((v["x"], v["z"]), (state["x"], state["z"])),
-        default=None,
-    )

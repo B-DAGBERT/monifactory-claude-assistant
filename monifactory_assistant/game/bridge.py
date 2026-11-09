@@ -23,10 +23,9 @@ SCOPED_INPUTS = {
     "quetes.json",
     "recherche_emi.json",
     "filons_mod.json",
-    "fabrication_emi.json",
     "inventaire_joueur.json",
 }
-SCOPED_OUTPUTS = {"commande.json", "plan.json", "vue_mod.json"}
+SCOPED_OUTPUTS = {"commande.json", "vue_mod.json"}
 
 
 class Bridge:

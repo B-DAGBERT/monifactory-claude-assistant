@@ -33,13 +33,10 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         app = InterfaceController()
         app.bridge = SimpleNamespace(dir=self.folder, isolated=False)
         app.request_queue = CommandQueue(self.folder, clock=lambda: self.now)
-        app.projects = SimpleNamespace(active="current")
         app.game = {"dimension": "minecraft:overworld"}
         app.root = SimpleNamespace(after=Mock())
         app.mod_request_n = app.mod_request_time = None
-        app.project_reply_n = None
         app.question_ack = {}
-        app.project_feedback = {}
         app.busy = False
         app.refresh, app.notify, app.start_question = Mock(), Mock(), Mock()
         app.on_voice = self.action
@@ -149,15 +146,18 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         restarted.start_question.assert_not_called()
         self.assertEqual(restarted.question_ack, {"n": 1_000_000, "etat": "refusee"})
 
-    def test_legacy_fallback_keeps_world_and_project_checks(self):
+    def test_legacy_fallback_keeps_world_checks_and_ignores_old_project_field(self):
+        # An older mod still names its project: the field no longer binds anything.
         self.write(projet="previous-project")
         app = self.app()
         app.check_mod_requests()
-        self.action.assert_not_called()
-        self.assertEqual(app.request_queue.last["etat"], "refusee")
+        self.action.assert_called_once()
+        self.assertEqual(app.request_queue.last["etat"], "traitee")
         self.write(n=1_000_001, dimension_envoi="minecraft:the_nether")
-        self.app().check_mod_requests()
-        self.action.assert_not_called()
+        app = self.app()
+        app.check_mod_requests()
+        self.action.assert_called_once()
+        self.assertEqual(app.request_queue.last["etat"], "refusee")
         self.write(n=1_000_002, session_monde="previous-session")
         isolated = self.app()
         isolated.bridge.isolated = True
@@ -165,7 +165,7 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         isolated.bridge.scope_valid = Mock(return_value=True)
         isolated.bridge.accepts = Mock(return_value=False)
         isolated.check_mod_requests()
-        self.action.assert_not_called()
+        self.action.assert_called_once()
 
     def test_expired_legacy_request_is_not_executed(self):
         self.write(n=900_000)
@@ -222,7 +222,7 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         app.check_mod_requests()
         self.action.assert_called_once()
 
-    def test_first_project_refusal_after_scope_reset_does_not_block_later_requests(self):
+    def test_old_project_request_is_refused_without_blocking_later_requests(self):
         app = self.app()
         inbox = self.folder / "demandes"
         inbox.mkdir()
@@ -240,8 +240,8 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
             app.request_queue.poll(app.dispatch_queued_request, app.restore_request_reply)
         )
         self.action.assert_called_once()
-        self.assertFalse(app.project_feedback["ok"])
-        self.assertEqual(app.project_feedback["token"], "old-token")
+        self.assertEqual(app.request_queue.rows["old-project"]["etat"], "refusee")
+        self.assertIn("retirés", app.request_queue.rows["old-project"]["message"])
         self.assertFalse(list(inbox.glob("*.json")))
 
     def test_extreme_durable_number_does_not_block_a_valid_request(self):

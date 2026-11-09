@@ -122,7 +122,7 @@ public class ProductionMenuTest {
  static Button button(EcranProduction s,String name){return (Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals(name)).findFirst().orElseThrow(()->new AssertionError(name));}
  static EditBox input(EcranProduction s){return (EditBox)s.widgets.stream().filter(w->w instanceof EditBox).findFirst().orElseThrow();}
  static void tick(EcranProduction s)throws Exception{var field=EcranProduction.class.getDeclaredField("derniereLecture");field.setAccessible(true);field.setLong(s,0);s.tick();}
- static JsonObject context(){var c=new JsonObject();c.addProperty("monde_actif",IdentiteMonde.world);c.addProperty("session_monde",IdentiteMonde.session);c.addProperty("dimension_monde","minecraft:overworld");c.addProperty("projet","project");c.addProperty("revision_projet","rev1");return c;}
+ static JsonObject context(){var c=new JsonObject();c.addProperty("monde_actif",IdentiteMonde.world);c.addProperty("session_monde",IdentiteMonde.session);c.addProperty("dimension_monde","minecraft:overworld");return c;}
  static void bounds(EcranProduction s){for(Object w:s.widgets){int x,y,l,h;if(w instanceof Button b){if(!b.visible)continue;x=b.x;y=b.y;l=b.w;h=b.h;}else if(w instanceof EditBox e){if(!e.visible)continue;x=e.x;y=e.y;l=e.w;h=e.h;}else continue;assert x>=0&&y>=0&&l>0&&h>0&&x+l<=s.width&&y+h<=s.height:"Invalid bounds";}}
  static void ready(){var c=context();c.addProperty("etat","pret");c.addProperty("source","native");c.addProperty("generation",1);c.addProperty("sha256","f".repeat(64));
  c.add("cible",JsonParser.parseString("{\"resource\":{\"kind\":\"item\",\"id\":\"gtceu:iron_plate\",\"unit\":\"item\",\"variant\":\"\"},\"quantity\":4}"));CatalogueProduction.state=c;}
@@ -130,17 +130,13 @@ public class ProductionMenuTest {
  public static void main(String[] args)throws Exception {
   var view=new JsonObject();view.addProperty("v",1);view.addProperty("preuves_natives",2);view.addProperty("disponible",true);view.add("contexte",context());Pont.ecran.add("production_v2",view);
   CatalogueProduction.state.addProperty("etat","chargement");
-  Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Objectif"));var s=new EcranProduction(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
+  Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Base"));var s=new EcranProduction(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
+  assert s.widgets.stream().noneMatch(w->w instanceof Button b&&(b.title.getString().equals("Projet")||b.title.getString().equals("Lire le projet"))):"No project tab";
   if(args[0].equals("idle")){
    int reads=Pont.reads;for(int i=0;i<20;i++)s.render(new GuiGraphics(),0,0,0);
    assert Pont.sends==0&&CatalogueProduction.calls==0&&Pont.exports==0&&Pont.reads==reads:"Render must not acquire or calculate";
    input(s).setValue("17");s.init(mc,640,480);bounds(s);assert input(s).getValue().equals("17");
    s.keyPressed(256,0,0);assert mc.screen==parent;return;
-  }
-  if(args[0].equals("memory")){
-   button(s,"Projet").press();bounds(s);button(s,"Lire le projet").press();
-   assert Pont.sends==1&&CatalogueProduction.calls==0&&Pont.exports==0;
-   assert Pont.last.get("operation").getAsString().equals("memoire");return;
   }
   if(args[0].equals("invalid")){
    input(s).setValue("0");tick(s);assert !button(s,"Calculer l’arbre").active;s.keyPressed(257,0,0);assert CatalogueProduction.calls==0;
@@ -153,7 +149,7 @@ public class ProductionMenuTest {
    ready();mc.screen=s;s.init(mc,320,240);tick(s);assert Pont.sends==0:"Closure must not start a delayed request";return;
   }
   if(args[0].equals("tab")){
-   button(s,"Projet").press();ready();tick(s);assert Pont.sends==0;return;
+   button(s,"Diagnostic").press();bounds(s);ready();tick(s);assert Pont.sends==0;return;
   }
   if(args[0].equals("foreign")){
    IdentiteMonde.session="b".repeat(32);ready();tick(s);assert Pont.sends==0&&Pont.exports==0;return;
@@ -176,13 +172,17 @@ public class ProductionMenuTest {
   assert Pont.last.get("capture").equals(Pont.inventory.get("capture"));
   view.add("resultat",response(1000));tick(s);assert !button(s,"Chargement…").active:"Wrong receipt accepted";
   view.add("resultat",response(1001));tick(s);assert button(s,"Suivant").active;button(s,"Suivant").press();s.render(new GuiGraphics(),0,0,0);bounds(s);
+  if(args[0].equals("unpublished")){
+   view.add("contexte",new JsonObject());tick(s);
+   assert !button(s,"Suivant").active:"Report kept although the service no longer publishes its context";return;
+  }
   if(args[0].equals("revocation")){
    var error=response(1001);error.addProperty("etat","erreur");error.add("lignes",new JsonArray());view.add("resultat",error);tick(s);
    assert !button(s,"Suivant").active:"Server revocation did not remove displayed success";
    view.add("resultat",response(1001));tick(s);assert !button(s,"Suivant").active:"Old success revived after revocation";return;
   }
-  view.getAsJsonObject("contexte").addProperty("revision_projet","rev2");tick(s);
-  assert !button(s,"Suivant").active:"Stale project report remains visible";
+  view.getAsJsonObject("contexte").addProperty("session_monde","b".repeat(32));tick(s);
+  assert !button(s,"Suivant").active:"Stale connection report remains visible";
   assert Pont.sends==1;
  }
 }
@@ -257,7 +257,6 @@ class ProductionMenuTests(unittest.TestCase):
     def test_real_screen_adapter_at_small_resolution(self):
         for case in (
             "idle",
-            "memory",
             "invalid",
             "closed",
             "removed",
@@ -267,6 +266,7 @@ class ProductionMenuTests(unittest.TestCase):
             "capture-failed",
             "backpack-pending",
             "result",
+            "unpublished",
             "revocation",
         ):
             with self.subTest(case=case):

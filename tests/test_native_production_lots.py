@@ -18,7 +18,6 @@ SCENARIOS = (
     "stock_changed",
     "recipe_reload",
     "scope_tree",
-    "scope_project",
     "scope_connection",
     "scope_recipes",
     "extension_scope",
@@ -41,7 +40,6 @@ SCENARIOS = (
     "correlated_fluids",
     "correlated_machine",
     "correlated_machine_independent",
-    "project_revision",
     "tree_revision",
     "tree_quantity",
 )

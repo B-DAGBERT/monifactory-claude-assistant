@@ -18,7 +18,7 @@ from monifactory_assistant.platform.capture import (
 )
 from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import BG, FG, FG_DIM, SETTINGS, SETTINGS_FILE
-from monifactory_assistant.ui.views import build_mod_view, build_view
+from monifactory_assistant.ui.views import build_mod_view
 
 
 class InterfaceController:
@@ -59,47 +59,6 @@ class InterfaceController:
             self.last_render_ms = (time.perf_counter() - started) * 1000
 
     def refresh_views(self):
-        now = time.time()
-        message = self.message if (not self.message_until or now < self.message_until) else ""
-        try:
-            lines = build_view(
-                None if self.objective_paused else self.plan,
-                None if self.objective_paused else self.progress(),
-                None if self.objective_paused else self.game,
-                self.storage,
-                self.have(),
-                self.status,
-                message,
-                self.guide,
-                self.bridge.script_outdated(self.game),
-                self.objectives,
-                self.veins,
-                (),
-                self.world.active,
-            )
-            if self.objective_paused and self.plan:
-                lines.insert(
-                    0,
-                    {
-                        "t": self.plan["objectif"] + " · En pause (Y pour reprendre)",
-                        "c": "jaune",
-                        "item": "",
-                        "dir": None,
-                        "indent": 0,
-                        "icones": [],
-                    },
-                )
-        except Exception:
-            log(traceback.format_exc())
-            return
-        view = {"version": self.plan_version, "visible": self.visible, "lignes": lines}
-        if view != self.last_view:
-            try:
-                self.bridge.write("plan.json", view)
-                self.last_view = view
-                self.last_write = now
-            except Exception:
-                log(traceback.format_exc())
         try:
             mod_view = build_mod_view(self)
             mod_view["ecran"]["diagnostic"] = diagnostic_view(self)
@@ -194,24 +153,12 @@ class InterfaceController:
             return
         if request.get("type") == "question" and n < self.question_ack.get("n", 0):
             return
-        if request.get("type") == "projet" and n < (getattr(self, "project_reply_n", 0) or 0):
-            return
-        if request.get("type") == "projet":
-            self.project_reply_n = n
         if "question" in result:
             self.question_ack = result["question"]
         elif request.get("type") == "question":
             self.question_ack = {
                 "n": request.get("n"),
                 "etat": "expiree" if result.get("etat") == "expiree" else "refusee",
-            }
-        if "projet" in result:
-            self.project_feedback = result["projet"]
-        elif request.get("type") == "projet":
-            self.project_feedback = {
-                "token": request.get("token"),
-                "ok": False,
-                "message": result.get("message", "Action interrompue."),
             }
 
     def dispatch_queued_request(self, request):
@@ -221,8 +168,9 @@ class InterfaceController:
             return {"etat": "refusee", "message": "Demande d’une autre connexion ou dimension."}
         self.mod_request_n = request.get("n")
         reason = ""
-        if request.get("projet") is not None and request["projet"] != self.projects.active:
-            reason = "Le projet a changé depuis ce clic ; renouvelle ton action."
+        if request.get("type") == "projet":
+            # Ancien menu Projets encore ouvert pendant une mise à jour : rien à modifier.
+            reason = "Les projets et objectifs ont été retirés de l’assistant."
         dimension = request.get("dimension_envoi")
         if dimension and dimension != (self.game or {}).get("dimension"):
             reason = "Le monde ou la dimension a changé ; renouvelle ton action."
@@ -241,14 +189,6 @@ class InterfaceController:
             result["question"] = dict(self.question_ack)
             if self.question_ack.get("etat") != "acceptee":
                 result.update(etat="refusee", message="Demande refusée : l’assistant est occupé.")
-        elif request.get("type") == "projet":
-            self.project_reply_n = request.get("n") or 0
-            result["projet"] = dict(self.project_feedback)
-            if not self.project_feedback.get("ok"):
-                result.update(
-                    etat="refusee",
-                    message=self.project_feedback.get("message", "Projet non modifié."),
-                )
         return result
 
     def handle_mod_request(self, request):
@@ -257,11 +197,8 @@ class InterfaceController:
         ) is True and not self.bridge.accepts(request):
             return
         kind = request.get("type")
-        if request.get("projet") is not None and request["projet"] != self.projects.active:
-            return  # action d'un ancien écran : ne pas la reporter sur le nouveau projet
-        if kind == "projet":
-            self.handle_project_request(request)
-        elif kind == "question" and request.get("texte"):
+        # Les demandes d'un ancien mod (projet, objectif, étape) sont ignorées sans erreur.
+        if kind == "question" and request.get("texte"):
             self.question_ack = {
                 "n": request.get("n"),
                 "etat": "refusee" if self.busy else "acceptee",
@@ -277,24 +214,7 @@ class InterfaceController:
             self.set_setting(str(request.get("cle")), bool(request.get("valeur")))
         elif kind == "action":
             action = request.get("action")
-            if action in ("pause_objectif", "reprendre_objectif"):
-                self.set_objective_paused(action == "pause_objectif", request.get("version"))
-            elif action == "objectif_suivant":
-                self.on_next_objective()
-            elif action in ("nouveau_plan", "plan"):
-                self.on_new_plan()
-            elif action == "refaire_objectif":
-                self.on_redo_objective()
-            elif action == "valider_etape":
-                self.set_step(None, True)
-            elif action == "etape" and isinstance(request.get("index"), int) and self.plan:
-                states = self.progress()["etapes"]
-                index = request["index"]
-                if 0 <= index < len(states):
-                    self.set_step(
-                        index + 1, not states[index]
-                    )  # clic sur une étape : la cocher ou la décocher
-            elif action == "affichage":
+            if action == "affichage":
                 self.on_hide()
             elif action == "voix":
                 self.on_voice()

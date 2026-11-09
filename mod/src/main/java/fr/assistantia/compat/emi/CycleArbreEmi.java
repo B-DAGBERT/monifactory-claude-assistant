@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.AideCoffre;
-import fr.assistantia.EmiObjectif;
 import fr.assistantia.PlanRetrait;
 import fr.assistantia.RechercheEmi;
 import fr.assistantia.RetraitCoffre;
@@ -17,20 +16,15 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-/** Durée de vie du craft EMI, indépendante de l'objectif IA et du bouton Scanner coffres. */
+/** Durée de vie du craft EMI, indépendante de la discussion et du bouton Scanner coffres. */
 public final class CycleArbreEmi {
     private static Object precedent, connexion;
     private static String signature = "", identite = "", dimension = "";
     private static SuiviFabrication<ItemStack> suivi;
     private static boolean erreurSignalee;
-    private static String dernierExport = "";
 
-    // objectif : arbre d'un objectif IA, dont les quantités incluent déjà ce que le joueur possède.
     private record Cibles(
-            String signature,
-            String identite,
-            List<PlanRetrait.Besoin<ItemStack>> besoins,
-            boolean objectif) {}
+            String signature, String identite, List<PlanRetrait.Besoin<ItemStack>> besoins) {}
 
     public static List<PlanRetrait.Stock<ItemStack>> credits() {
         return suivi == null || CoffresArbreEmi.arbreActif() != precedent
@@ -87,7 +81,7 @@ public final class CycleArbreEmi {
                     suivi =
                             new SuiviFabrication<>(
                                     cibles.besoins(),
-                                    !cibles.objectif(),
+                                    true,
                                     (a, b) ->
                                             a.getItem() == b.getItem()
                                                     && cibles.besoins().stream()
@@ -108,11 +102,10 @@ public final class CycleArbreEmi {
             OrigineFabrication.actualiser(stock);
             MachinesEmi.recevoir(OrigineFabrication.receptions());
             boolean fini = suivi.actualiser(stock, OrigineFabrication.receptions());
-            exporter(tree);
             if (fini && CoffresArbreEmi.arbreActif() == tree) {
                 MachinesEmi.termine();
                 nettoyer();
-                EmiObjectif.terminerArbre(tree);
+                retirerArbre();
                 precedent = null;
                 suivi = null;
                 signature = "";
@@ -126,41 +119,18 @@ public final class CycleArbreEmi {
         }
     }
 
-    private static void exporter(Object tree) throws ReflectiveOperationException {
-        var root = tree.getClass().getField("goal").get(tree);
-        var ingredient = (EmiIngredient) root.getClass().getField("ingredient").get(root);
-        for (var stack : ingredient.getEmiStacks()) {
-            var item = stack.getItemStack();
-            if (!item.hasTag() || !item.getTag().contains("assistantia_objectif")) continue;
-            var cible =
-                    com.google.gson.JsonParser.parseString(
-                                    item.getTag().getString("assistantia_objectif"))
-                            .getAsJsonObject();
-            // Le livre virtuel appartient à sa session d'import, jamais à la connexion suivante.
-            if (!fr.assistantia.Pont.contexteValide(cible)) continue;
-            var json = new com.google.gson.JsonObject();
-            if (!fr.assistantia.Pont.annoterContexte(json)) return;
-            json.add("projet", cible.get("projet"));
-            json.add("version", cible.get("version"));
-            var credits =
-                    cible.has("credits")
-                            ? cible.getAsJsonObject("credits").deepCopy()
-                            : new com.google.gson.JsonObject();
-            java.util.Map<String, Integer> totaux = new java.util.HashMap<>();
-            for (var s : suivi.obtenus()) {
-                var id =
-                        net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(
-                                s.objet().getItem());
-                if (id != null) totaux.merge(id.toString(), s.quantite(), Integer::sum);
-            }
-            totaux.forEach(
-                    (id, n) ->
-                            credits.addProperty(
-                                    id, n + (credits.has(id) ? credits.get(id).getAsInt() : 0)));
-            json.add("obtenus", credits);
-            String texte = json.toString();
-            if (!texte.equals(dernierExport) && fr.assistantia.Pont.envoyerProgresFabrication(json))
-                dernierExport = texte;
+    /** Fin de craft : l'arbre terminé quitte EMI, sans sélection à réactiver depuis un cache. */
+    private static void retirerArbre() {
+        try {
+            Class<?> bom = Class.forName("dev.emi.emi.bom.BoM");
+            var mc = Minecraft.getInstance();
+            if (mc.screen != null
+                    && mc.screen.getClass().getName().equals("dev.emi.emi.screen.BoMScreen"))
+                mc.screen.onClose(); // Ne pas laisser l'écran EMI lire un arbre devenu nul.
+            bom.getField("tree").set(null, null);
+            bom.getField("craftingMode").setBoolean(null, false);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            LogUtils.getLogger().warn("Assistant : arrêt de l’arbre EMI impossible", e);
         }
     }
 
@@ -172,51 +142,30 @@ public final class CycleArbreEmi {
         Object root = tree.getClass().getField("goal").get(tree);
         long batches = Math.max(1, tree.getClass().getField("batches").getLong(tree));
         var ingredient = (EmiIngredient) root.getClass().getField("ingredient").get(root);
-        boolean virtuelle =
+        var variantes =
                 ingredient.getEmiStacks().stream()
-                        .anyMatch(
-                                stack -> {
-                                    var item = stack.getItemStack();
-                                    return item.hasTag()
-                                            && item.getTag().contains("assistantia_objectif");
-                                });
-        List<?> nodes =
-                virtuelle
-                        ? (List<?>) root.getClass().getField("children").get(root)
-                        : List.of(root);
-        if (virtuelle) {
-            long quantite = multiplier(root.getClass().getField("amount").getLong(root), batches);
-            long production = Math.max(1, root.getClass().getField("divisor").getLong(root));
-            batches = quantite / production + (quantite % production == 0 ? 0 : 1);
-        }
+                        .filter(s -> !s.getItemStack().isEmpty())
+                        .map(EmiStack::copy)
+                        .toList();
+        // Une cible fluide ou inconnue ne peut pas être déclarée obtenue par l'inventaire.
+        if (variantes.isEmpty()) return new Cibles("non-objet", "non-objet", List.of());
+        int quantite = multiplier(root.getClass().getField("amount").getLong(root), batches);
+        if (quantite <= 0) return new Cibles("invalide", "invalide", List.of());
         StringBuilder key = new StringBuilder(), identite = new StringBuilder();
-        if (virtuelle)
-            for (var variante : ingredient.getEmiStacks()) identite.append(variante.getNbt());
-        List<PlanRetrait.Besoin<ItemStack>> besoins = new ArrayList<>();
-        for (Object node : nodes) {
-            var cible = (EmiIngredient) node.getClass().getField("ingredient").get(node);
-            var variantes =
-                    cible.getEmiStacks().stream()
-                            .filter(s -> !s.getItemStack().isEmpty())
-                            .map(EmiStack::copy)
-                            .toList();
-            // Une cible fluide ou inconnue ne peut pas être déclarée obtenue par l'inventaire.
-            if (variantes.isEmpty())
-                return new Cibles("non-objet", "non-objet", List.of(), virtuelle);
-            int quantite = multiplier(node.getClass().getField("amount").getLong(node), batches);
-            if (quantite <= 0) return new Cibles("invalide", "invalide", List.of(), virtuelle);
-            key.append(quantite).append(':');
-            for (var variante : variantes) {
-                key.append(variante.getId()).append(variante.getNbt()).append(';');
-                identite.append(variante.getId()).append(variante.getNbt()).append(';');
-            }
-            key.append('|');
-            besoins.add(
-                    new PlanRetrait.Besoin<>(
-                            item -> variantes.stream().anyMatch(v -> EmiStack.of(item).isEqual(v)),
-                            quantite));
+        key.append(quantite).append(':');
+        for (var variante : variantes) {
+            key.append(variante.getId()).append(variante.getNbt()).append(';');
+            identite.append(variante.getId()).append(variante.getNbt()).append(';');
         }
-        return new Cibles(identite + "|" + key, identite.toString(), besoins, virtuelle);
+        key.append('|');
+        List<PlanRetrait.Besoin<ItemStack>> besoins =
+                List.of(
+                        new PlanRetrait.Besoin<>(
+                                item ->
+                                        variantes.stream()
+                                                .anyMatch(v -> EmiStack.of(item).isEqual(v)),
+                                quantite));
+        return new Cibles(identite + "|" + key, identite.toString(), besoins);
     }
 
     private static int multiplier(long a, long b) {

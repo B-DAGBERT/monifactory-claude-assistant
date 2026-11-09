@@ -18,6 +18,14 @@ def block_name(block_id):
     return block_id.split(":")[-1].replace("_", " ").title()
 
 
+def machine_label(machine_id):
+    """« gtceu:lp_steam_compressor » -> « LP Steam Compressor »."""
+    words = block_name(machine_id).split(" ")
+    return " ".join(
+        w.upper() if w.lower() in ("lp", "hp", "lv", "mv", "hv", "ev", "iv") else w for w in words
+    )
+
+
 def _integers(values, length):
     return (
         isinstance(values, list)

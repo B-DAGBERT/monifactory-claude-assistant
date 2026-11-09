@@ -134,8 +134,6 @@ public record InstantaneArbreEmi(
             boolean outil = true;
             for (var pile : ingredient.getEmiStacks()) {
                 var item = pile.getItemStack();
-                // Le livre synthétique est une racine de plan, pas un ingrédient.
-                if (item.hasTag() && item.getTag().contains("assistantia_objectif")) continue;
                 var copie = pile.copy();
                 variantesMachine.add(copie);
                 if (item.isEmpty()) continue;
