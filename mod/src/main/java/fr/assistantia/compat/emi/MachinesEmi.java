@@ -177,20 +177,40 @@ public final class MachinesEmi {
         return revisionSac;
     }
 
+    /** Durée pendant laquelle un produit choisi dans le panneau d'une machine guide le backpack. */
+    static final long CHOIX_SAC_MS = 120_000;
+
+    private static long choixSac;
+
     public static void choisirSac(EmiRecipe recette) {
         revisionSac++;
         recetteSac = recette;
         arbreSac = actif();
+        choixSac = System.currentTimeMillis();
     }
 
+    /**
+     * Cases du backpack à sortir pour une fabrication : le produit choisi à l'instant dans le
+     * panneau d'une machine, sinon l'étape en cours (★) de l'onglet Recette et du panneau en jeu,
+     * sinon la première étape restante. Avant, c'était toujours la première ligne du suivi, qui
+     * n'était pas forcément l'étape en cours : ses outils n'étaient alors pas surlignés.
+     */
     public static java.util.Map<Integer, Integer> besoinsSac(List<ItemStack> sac) {
         if (actif() == null) return java.util.Map.of();
         var lignes = lignes();
         var candidats = lignes.stream().filter(l -> l.lot() < 0 && l.fois() > 0).toList();
-        EmiRecipe recette =
-                arbreSac == actif() && candidats.stream().anyMatch(l -> l.recette() == recetteSac)
-                        ? recetteSac
-                        : candidats.stream().findFirst().map(Ligne::recette).orElse(null);
+        EmiRecipe recette = null;
+        if (arbreSac == actif()
+                && System.currentTimeMillis() - choixSac < CHOIX_SAC_MS
+                && candidats.stream().anyMatch(l -> l.recette() == recetteSac))
+            recette = recetteSac;
+        if (recette == null) {
+            var enCours = AnalyseRecette.recetteEnCours();
+            if (enCours != null && candidats.stream().anyMatch(l -> l.recette() == enCours))
+                recette = enCours;
+        }
+        if (recette == null)
+            recette = candidats.stream().findFirst().map(Ligne::recette).orElse(null);
         return OrdonnancementEmi.besoinsSac(recette, sac);
     }
 

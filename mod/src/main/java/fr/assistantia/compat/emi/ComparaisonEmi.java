@@ -49,7 +49,22 @@ public final class ComparaisonEmi {
                 && ingredient.getEmiStacks().stream().allMatch(ComparaisonEmi::circuit);
     }
 
+    /**
+     * Le même objet qu'attendu. Un outil (outil GregTech, électrique compris, ou objet qui s'use)
+     * est reconnu par son objet seul, quelle que soit son usure ou sa charge, comme le fait la
+     * recette dans le jeu : avant, un outil entamé ou chargé n'était pas toujours surligné.
+     */
     public static boolean meme(EmiStack reel, EmiStack attendu) {
-        return circuit(attendu) ? circuit(reel) : reel.isEqual(attendu);
+        if (circuit(attendu)) return circuit(reel);
+        if (reel.isEqual(attendu)) return true;
+        var objet = attendu.getItemStack();
+        return !objet.isEmpty()
+                && outil(objet)
+                && !reel.getItemStack().isEmpty()
+                && reel.getItemStack().getItem() == objet.getItem();
+    }
+
+    private static boolean outil(net.minecraft.world.item.ItemStack objet) {
+        return objet.isDamageableItem() || OUTIL_GT != null && OUTIL_GT.isInstance(objet.getItem());
     }
 }

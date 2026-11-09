@@ -28,6 +28,14 @@ public final class OrdreMachines {
 
     private static final class LimiteAllocation extends RuntimeException {}
 
+    /** Raison générique d'une étape dont les ingrédients sont possédés mais pas dans les poches. */
+    public static final String A_RECUPERER = "À récupérer dans les poches";
+
+    /** Débuts des raisons précises, lus par l'onglet Recette pour son texte court. */
+    public static final String DU_SAC = "À sortir du backpack : ",
+            D_UN_COFFRE = "À prendre dans un coffre : ",
+            A_REPRENDRE = "À reprendre en main : ";
+
     public enum Origine {
         POCHES,
         MACHINE,
@@ -247,7 +255,9 @@ public final class OrdreMachines {
             if (essai.complet()) {
                 allocation.retenir(essai);
                 String raison = etats.get(recette).raison();
-                if (raison.isBlank()) raison = "À récupérer dans les poches";
+                // Dire où aller chercher : backpack, coffre ou objet à reprendre en main.
+                if (raison.isBlank() || raison.equals(A_RECUPERER))
+                    raison = allocation.provenance(demandes);
                 resultats.put(
                         recette,
                         ligne(parRecette.get(recette), graphe, Mode.PREPARER, raison, false));
@@ -493,6 +503,40 @@ public final class OrdreMachines {
                     remplacees,
                     new Composante(demandes, sources),
                     manquant);
+        }
+
+        /**
+         * Où prendre ce que les poches n'ont pas en quantité suffisante, ingrédient par ingrédient
+         * : le backpack d'abord (le plus simple), sinon un objet à reprendre (main secondaire,
+         * armure, curseur), sinon un coffre. Lit les correspondances déjà calculées.
+         */
+        String provenance(List<Regle<T>> regles) {
+            Set<String> sac = new LinkedHashSet<>(),
+                    ailleurs = new LinkedHashSet<>(),
+                    coffre = new LinkedHashSet<>();
+            for (var regle : regles) {
+                if (regle.quantite() == 0) continue;
+                var sources = correspondances.computeIfAbsent(regle, this::sources);
+                long direct = 0, enSac = 0, enCoffre = 0, autre = 0;
+                for (int i = sources.nextSetBit(0); i >= 0; i = sources.nextSetBit(i + 1)) {
+                    long q = Math.max(0, stock.get(i).stock().quantite());
+                    switch (stock.get(i).origine()) {
+                        case POCHES, MACHINE -> direct += q;
+                        case SAC -> enSac += q;
+                        case COFFRE -> enCoffre += q;
+                        case DEPLACER -> autre += q;
+                    }
+                }
+                if (direct >= regle.quantite()) continue;
+                if (enSac > 0) sac.add(regle.nom());
+                else if (autre > 0) ailleurs.add(regle.nom());
+                else if (enCoffre > 0) coffre.add(regle.nom());
+            }
+            List<String> parties = new ArrayList<>();
+            if (!sac.isEmpty()) parties.add(DU_SAC + String.join(", ", sac));
+            if (!ailleurs.isEmpty()) parties.add(A_REPRENDRE + String.join(", ", ailleurs));
+            if (!coffre.isEmpty()) parties.add(D_UN_COFFRE + String.join(", ", coffre));
+            return parties.isEmpty() ? A_RECUPERER : String.join(" · ", parties);
         }
 
         void retenir(Essai essai) {

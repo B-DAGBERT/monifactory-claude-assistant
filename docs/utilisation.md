@@ -105,6 +105,8 @@ choix.
 
 Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans l’arbre natif EMI et sa liste latérale, les besoins du scan, la planification des machines et l’onglet Recette. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
 
+Le plan dit où aller chercher ce qui manque aux poches : « À sortir du backpack : Iron Ingot, Hammer », « À prendre dans un coffre : Coal » ou « À reprendre en main : … » (main secondaire, armure, curseur). La carte de l’étape affiche « Dans ton backpack », « Dans un coffre » ou « Backpack + coffre », et le panneau en jeu la phrase complète. Backpack ouvert, les cases à sortir sont entourées en or pour l’étape en cours (★), ou pour le produit choisi à l’instant dans le panneau d’une machine (pendant deux minutes). Un outil est reconnu quelle que soit son usure ou sa charge ; un outil d’un autre matériau reste un autre objet, sauf si la recette accepte plusieurs matériaux.
+
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 
 Dans EMI, survole l’objet pour voir **Dans ton backpack × N** si ton sac contient cette variante.

@@ -81,6 +81,9 @@ Le bouton **Suivi** est placé à côté de **Coffres**, en bas d’EMI. Dans le
 | État                               | Signification                                                                                       |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------- |
 | Prêt                               | Une fabrication est recommandée ; consulter le panneau pour les quantités effectivement envoyables. |
+| À sortir du backpack : …           | Les ressources nommées sont dans ton backpack : les sortir dans les poches.                         |
+| À prendre dans un coffre : …       | Les ressources nommées sont dans un coffre connu à portée.                                          |
+| À reprendre en main : …            | Les ressources nommées sont en main secondaire, dans l’armure ou sur le curseur.                    |
 | À récupérer dans les poches        | Les ressources sont attestées, mais pas encore toutes utilisables directement.                      |
 | Circuit à régler                   | Corriger le réglage virtuel indiqué avant l’envoi.                                                  |
 | Déjà en machine                    | Les ingrédients sont déjà dans les entrées ; vérifier le lancement.                                 |

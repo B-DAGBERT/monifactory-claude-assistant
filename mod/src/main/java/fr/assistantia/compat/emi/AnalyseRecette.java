@@ -1280,6 +1280,25 @@ public final class AnalyseRecette {
         };
     }
 
+    /**
+     * Recette de l'étape en cours (★) de l'arbre suivi, ou null : le backpack surligne ce qu'il
+     * faut en sortir pour elle. Lecture d'un champ du thread client.
+     */
+    static EmiRecipe recetteEnCours() {
+        var actuelle = enCours;
+        if (actuelle == null
+                || actuelle.lot() != 0
+                || cle == null
+                || MachinesEmi.arbreSuivi() != cle.arbre()) return null;
+        return actuelle.recette();
+    }
+
+    private static boolean provenance(String raison) {
+        return raison.startsWith(OrdreMachines.DU_SAC)
+                || raison.startsWith(OrdreMachines.D_UN_COFFRE)
+                || raison.startsWith(OrdreMachines.A_REPRENDRE);
+    }
+
     /** Texte court pour la colonne d'état ; la raison complète reste au survol. */
     private static String court(String raison) {
         if (raison.startsWith("Manque : ")) return "Manque " + raison.substring(9);
@@ -1289,7 +1308,13 @@ public final class AnalyseRecette {
         if (raison.startsWith("Machine à poser")) return "Machine à poser";
         if (raison.startsWith("Poste à poser")) return "Poste à poser";
         if (raison.startsWith("Poste à vérifier")) return "Poste à vérifier";
-        if (raison.startsWith("À récupérer dans les poches")) return "À sortir (sac, coffre)";
+        if (raison.startsWith(OrdreMachines.DU_SAC))
+            return raison.contains(OrdreMachines.D_UN_COFFRE)
+                    ? "Backpack + coffre"
+                    : "Dans ton backpack";
+        if (raison.startsWith(OrdreMachines.A_REPRENDRE)) return "À reprendre en main";
+        if (raison.startsWith(OrdreMachines.D_UN_COFFRE)) return "Dans un coffre";
+        if (raison.startsWith(OrdreMachines.A_RECUPERER)) return "À sortir (sac, coffre)";
         if (raison.startsWith("Dépendance cyclique")) return "Cycle dans l’arbre";
         if (raison.startsWith("Recette absente")) return "Arbre modifié";
         if (raison.startsWith("Inventaire non synchronisé")) return "Lecture du sac…";
@@ -1344,9 +1369,12 @@ public final class AnalyseRecette {
         String detail =
                 switch (e.statut()) {
                     case PRETE -> vue.entrees().isEmpty() ? sortie : vue.entrees() + " → " + sortie;
-                    case A_PREPARER -> vue.entrees().isEmpty()
-                            ? vue.etat() + " · " + sortie
-                            : vue.etat() + " · " + vue.entrees();
+                        // La provenance en toutes lettres : « À sortir du backpack : Iron Ingot ».
+                    case A_PREPARER -> provenance(e.raison())
+                            ? e.raison() + " → " + sortie
+                            : vue.entrees().isEmpty()
+                                    ? vue.etat() + " · " + sortie
+                                    : vue.etat() + " · " + vue.entrees();
                     default -> sortie + " · " + vue.etat();
                 };
         return new VueRecette.EtapeSuivante(

@@ -158,6 +158,9 @@ class RecipeEngineTests(unittest.TestCase):
     def test_machine_labels_are_drawn_as_line_segments(self):
         self.run_case("traits")
 
+    def test_steps_say_whether_items_are_in_the_backpack_or_a_chest(self):
+        self.run_case("provenance")
+
 
 # Reproduction fidèle (javap d'emi-1.1.22) de MaterialTree/MaterialNode : addResolution sur la clé
 # du but appelle goal.defineRecipe puis remet goal.amount à la quantité de la clé (1) ; la quantité

@@ -144,6 +144,7 @@ public final class RecetteMoteurTest {
             case "stabiliser" -> stabiliser();
             case "etoile" -> etoile();
             case "traits" -> traits();
+            case "provenance" -> provenance();
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.println("PASS " + args[0]);
@@ -690,6 +691,72 @@ public final class RecetteMoteurTest {
                 RangsRecette.reperes(
                         etapes, List.of("bender"), (p, r) -> r.equals("bend"), Map.of(), 16);
         assert reperes.get("bender").attenue() && !reperes.get("bender").etoile();
+    }
+
+    /** Demande du joueur : dire explicitement si c'est dans le backpack ou dans un coffre. */
+    private static void provenance() {
+        PlanMachines.Noeud<String, String> plaque =
+                new PlanMachines.Noeud<>(s -> s.equals("plate"), 1, 1, false, "craft", List.of());
+        var operations = List.of(new PlanMachines.Operation<>("craft", 1));
+        List<OrdreMachines.Regle<String>> regles =
+                List.of(
+                        new OrdreMachines.Regle<>("ingot"::equals, 2, false, "Iron Ingot"),
+                        new OrdreMachines.Regle<>("hammer"::equals, 1, true, "Hammer"),
+                        new OrdreMachines.Regle<>("coal"::equals, 1, false, "Coal"),
+                        new OrdreMachines.Regle<>("stick"::equals, 1, false, "Stick"));
+        var stock =
+                List.of(
+                        source("ingot", 1, OrdreMachines.Origine.POCHES),
+                        source("ingot", 5, OrdreMachines.Origine.SAC),
+                        source("hammer", 1, OrdreMachines.Origine.SAC),
+                        source("coal", 9, OrdreMachines.Origine.COFFRE),
+                        source("stick", 4, OrdreMachines.Origine.POCHES));
+        var resultat =
+                OrdreMachines.calculer(
+                        plaque,
+                        operations,
+                        r -> regles,
+                        stock,
+                        r -> OrdreMachines.Condition.prete(),
+                        true);
+        var ligne = resultat.lignes().get(0);
+        assert ligne.mode() == OrdreMachines.Mode.PREPARER : ligne;
+        assert ligne.raison()
+                        .equals(
+                                "À sortir du backpack : Iron Ingot, Hammer · À prendre dans un"
+                                        + " coffre : Coal")
+                : ascii(ligne.raison());
+        // Une machine ouverte qui demande de collecter : même provenance précise.
+        var machine =
+                OrdreMachines.calculer(
+                        plaque,
+                        operations,
+                        r -> regles,
+                        stock,
+                        r -> OrdreMachines.Condition.preparer(OrdreMachines.A_RECUPERER),
+                        true);
+        assert machine.lignes().get(0).raison().startsWith(OrdreMachines.DU_SAC);
+        // Tout est dans les poches sauf une autre condition : sa raison est gardée.
+        var raisonPropre =
+                OrdreMachines.calculer(
+                        plaque,
+                        operations,
+                        r -> regles,
+                        stock,
+                        r -> OrdreMachines.Condition.preparer("Machine à poser : Bender"),
+                        true);
+        assert raisonPropre.lignes().get(0).raison().equals("Machine à poser : Bender");
+    }
+
+    private static OrdreMachines.StockSource<String> source(
+            String objet, int n, OrdreMachines.Origine origine) {
+        return new OrdreMachines.StockSource<>(
+                new PlanRetrait.Stock<>(
+                        objet,
+                        n,
+                        origine == OrdreMachines.Origine.POCHES
+                                || origine == OrdreMachines.Origine.MACHINE),
+                origine);
     }
 
     // ---------- Racine ----------
