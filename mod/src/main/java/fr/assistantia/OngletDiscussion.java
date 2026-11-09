@@ -217,7 +217,13 @@ final class OngletDiscussion {
         int lDerniers = Theme.largeurBouton(font, derniers.getMessage().getString(), largeur / 2);
         derniers.visible = visible && !etat.suitDerniers();
         derniers.zone(fin - lDerniers, basVue - Theme.BOUTON - Theme.ECART, lDerniers);
-        boolean dansVue = sourisX >= x && sourisX < fin && sourisY >= hautVue && sourisY < basVue;
+        // « Derniers messages » passe devant les cartes : rien de ce qu'il couvre ne réagit.
+        boolean dansVue =
+                sourisX >= x
+                        && sourisX < fin
+                        && sourisY >= hautVue
+                        && sourisY < basVue
+                        && !surDerniers(sourisX, sourisY);
         g.enableScissor(x, hautVue, x + largeur, basVue);
         try {
             if (cartes.isEmpty())
@@ -294,7 +300,9 @@ final class OngletDiscussion {
                 position + 5,
                 copiee ? Theme.VERT : survol ? Theme.ACCENT : Theme.TEXTE_SECONDAIRE,
                 false);
-        if (position + 2 >= hautVue && position + 15 <= basVue)
+        if (position + 2 >= hautVue
+                && position + 15 <= basVue
+                && !sousDerniers(bx - 3, position + 2, lLibelle + 6, 13))
             copies.add(new Copie(bx - 3, position + 2, lLibelle + 6, carte.texte));
         int premiere = Math.max(0, (hautVue - position - TEXTE_Y) / Theme.LIGNE);
         int derniere =
@@ -328,8 +336,27 @@ final class OngletDiscussion {
         return false;
     }
 
+    /** Le point est sur le bouton « Derniers messages » affiché. */
+    private boolean surDerniers(double x, double y) {
+        return derniers.visible
+                && x >= derniers.getX()
+                && x < derniers.getX() + derniers.getWidth()
+                && y >= derniers.getY()
+                && y < derniers.getY() + derniers.getHeight();
+    }
+
+    /** La zone touche le bouton « Derniers messages » affiché. */
+    private boolean sousDerniers(int x, int y, int largeur, int hauteur) {
+        return derniers.visible
+                && x < derniers.getX() + derniers.getWidth()
+                && x + largeur > derniers.getX()
+                && y < derniers.getY() + derniers.getHeight()
+                && y + hauteur > derniers.getY();
+    }
+
     boolean cliquer(double x, double y, int bouton) {
-        if (!visible) return false;
+        // Le clic sur « Derniers messages » revient au bouton, jamais à la carte dessous.
+        if (!visible || surDerniers(x, y)) return false;
         if (barre.cliquer(x, y, bouton)) {
             etat.position(barre.position());
             return true;
