@@ -10,11 +10,12 @@ Le code est sous la licence MIT d'origine ; les auteurs et la licence sont conse
 
 ## Ce qui est conservé
 
-Les écrans **Objectif, Plan, Base, Discussion, Filons, Réglages**, les fiches avec **I**, les étapes cochables,
-les plans et objectifs automatiques, le calcul des besoins, la mémoire des coffres et des lieux,
+Les écrans **Base, Discussion, Filons, Réglages**, les fiches avec **I**, la mémoire des coffres et des lieux,
 la recherche et la surbrillance des objets, le guidage, les annonces de progression, les recettes EMI,
 les boutons **Remplir / Tout**, les caractéristiques des outils et le script serveur facultatif.
-Les deux scripts KubeJS sont identiques à ceux de la révision d'origine indiquée ci-dessus.
+Au moment du portage, les deux scripts KubeJS étaient identiques à ceux de la révision d'origine
+indiquée ci-dessus. Les écrans Objectif et Plan, les étapes cochables et les objectifs automatiques
+ont depuis été retirés au profit de l'onglet **Recette**.
 
 Le fonctionnement et la disposition des écrans sont ceux de ce dépôt. Les personnalisations de
 l'ancien dossier `monifactory_mod` ne sont pas importées dans cette variante.
@@ -24,7 +25,7 @@ l'ancien dossier `monifactory_mod` ne sont pas importées dans cette variante.
 - Codex remplace Claude, avec le compte déjà connecté à Codex CLI. Pas de clé API à ajouter.
 - Un processus `codex app-server` reste ouvert ; le fil de discussion est sauvegardé dans `session.json`
   et repris au prochain démarrage. **Ctrl+F8** démarre une nouvelle conversation.
-  Les fiches, plans et interventions du coach utilisent des fils séparés.
+  Les fiches et les interventions du coach utilisent des fils séparés.
 - Les réponses apparaissent progressivement. Une erreur ne renvoie jamais automatiquement la demande.
 - Les données et recettes locales sont consultées en priorité. La recherche web reste disponible pour
   compléter une information absente, comme dans le dépôt d'origine.
@@ -34,9 +35,10 @@ l'ancien dossier `monifactory_mod` ne sont pas importées dans cette variante.
   sont exclus de Git.
 
 La conversation persistante ne signifie pas un abonnement supplémentaire ni des requêtes en continu :
-la connexion inactive ne lance aucune génération. Le coach automatique peut en déclencher quand il est
-activé, comme dans l'original. Les outils Codex sont en lecture seule ; les actions dans l'assistant
-passent par les mêmes actions JSON que dans l'original. Le compte doit disposer des modèles choisis.
+la connexion inactive ne lance aucune génération. Depuis le retrait des objectifs, aucune génération
+ne part plus automatiquement : les annonces du coach sont locales. Les outils Codex sont en lecture
+seule ; les actions dans l'assistant passent par les mêmes actions JSON que dans l'original. Le
+compte doit disposer des modèles choisis.
 
 ## Première installation sur Mac
 
@@ -62,12 +64,11 @@ L'instance est recherchée dans `~/Documents/curseforge/minecraft/Instances/Moni
 {
   "minecraft_dir": "/chemin/vers/Instances/Monifactory",
   "model_question": "gpt-5.6-sol",
-  "model_quick": "gpt-5.6-sol",
-  "model_plan": "gpt-6.1-sol"
+  "model_quick": "gpt-5.6-sol"
 }
 ```
 
-Les questions et fiches utilisent par défaut **5.6 Sol / low**, les plans **6.1 Sol / medium**.
+Les questions et fiches utilisent par défaut **5.6 Sol / low**.
 Ces modèles ont été vérifiés sur le compte du Mac de développement ; adapter la configuration si
 un autre compte ne les propose pas. Un modèle indisponible produit une erreur, sans substitution cachée.
 
@@ -79,13 +80,12 @@ Le `.jar` des Releases de la branche d'origine n'inclut pas les raccourcis Mac d
 
 | Commande          | Fonction                                                             |
 | ----------------- | -------------------------------------------------------------------- |
-| **Y**             | Tableau de bord : Objectif, Plan, Base, Discussion, Filons, Réglages |
+| **Y**             | Tableau de bord : Recette, Base, Discussion, Filons, Réglages        |
 | **I** / **Maj+I** | Fiche de l'objet survolé ou du bloc regardé / de l'objet en main     |
-| **F7**            | Objectif suivant                                                     |
 | **F8 maintenu**   | Parler ; relâcher pour envoyer                                       |
 | **Maj+F8**        | Saisie d'une question écrite                                         |
 | **Ctrl+F8**       | Nouvelle conversation                                                |
-| **F9**            | Afficher / masquer le panneau et arrêter la lecture                  |
+| **F9**            | Afficher / masquer le panneau en haut à gauche et arrêter la lecture |
 | **F10**           | Activer / désactiver la lecture à voix haute                         |
 
 Selon le réglage du clavier Mac, utiliser **Fn+F8**, ou modifier les touches dans
@@ -101,7 +101,7 @@ La voix neuronale utilise le service en ligne Edge ; la voix Mac sert de secours
 `main` est la branche commune Claude/Codex et la source de toutes les mises à jour.
 Suivre [le guide commun](installation.md#mises-à-jour-pour-les-deux-utilisateurs) pour migrer
 une ancienne installation puis lancer **Mettre à jour.command**. Le lanceur conserve les réglages,
-les fiches, la mémoire, les plans et les conversations locales ; il refuse les modifications
+les fiches, la mémoire et les conversations locales ; il refuse les modifications
 non enregistrées et les commits absents de main.
 
 ### Intégrer une nouveauté (mainteneur)
@@ -129,24 +129,10 @@ La compatibilité Windows reste prévue par le code, mais n'a pas été testée 
 Protocole utilisé : [documentation officielle OpenAI du Codex app-server](https://learn.chatgpt.com/docs/app-server).
 Les règles de progression et détails des fonctions du jeu restent décrits dans le [README d'origine](README.md).
 
-## Mettre l'objectif en pause
-
-Dans **Y → Objectif** (ou **Projet**), cliquer sur **Mettre en pause**. Le bouton devient
-**Reprendre** et l'état « En pause » reste visible. Aucune requête IA n'est nécessaire.
-Les étapes, compteurs et recettes sont conservés, même après fermeture de l'assistant.
-Les objets obtenus pendant la pause restent comptés pour la reprise. Les rappels de
-progression, le guidage automatique de l'objectif et l'enchaînement sont suspendus.
-Les questions et recherches manuelles restent disponibles.
-Reprendre avant de remplacer l'objectif du projet actif ; choisir un autre projet conserve sa pause.
-Supprimer l'objectif reste possible depuis Discussion.
-On peut aussi demander « mets mon objectif en pause » ou « reprends mon objectif » dans Discussion.
-Un double clic envoie le même état ; il ne bascule pas deux fois. Le bouton attend la
-confirmation de l'assistant, puis permet de réessayer après cinq secondes en cas de coupure.
-
-Cette fonction est un ajout volontaire à la parité amont : ses méthodes sont testées
-séparément dans `tests/test_objective_pause.py`. Le reste du code de jeu garde le contrôle de parité.
-
 ## Filons : liste, surbrillance et téléportation (Codex.3)
+
+> Historique des premières versions. Le fonctionnement actuel (scan complet, compte en direct,
+> réglages de surbrillance) est décrit dans [le guide d'utilisation](utilisation.md#filons--scan-complet-surbrillance-et-téléportation).
 
 Ouvrir **Y → Filons**. La liste utilise les **gisements natifs GregTech**, avec leur nom, leur centre,
 leur composition et leur indicateur d'épuisement. Elle ne transforme plus les blocs voisins en filons.
@@ -224,35 +210,11 @@ La molette fait défiler la liste ou les minerais selon la zone survolée. Sur p
 passe sous la liste. L'âge du relevé, la dimension et les limites du comptage se lisent au survol.
 Une seule ligne de statut et une barre de progression rendent le scan visible ; son arrêt reste en haut.
 
-## Mes projets et onglet Base
-
-Dans **Y → Objectif** ou **Projet**, cliquer sur **Mes projets ▾** en haut du contenu.
-Le sélecteur **Mes projets** propose :
-
-Sélectionner une ligne pour afficher ses actions. Chaque ligne indique son statut et le nombre
-d’objectifs terminés. Sélectionner une ligne ne change pas encore le projet actif.
-
-- **Ouvrir** : retrouver un projet, ses étapes cochées, ses compteurs et sa pause, sans requête IA.
-- **Nouveau projet** : saisir un nom ou un but, choisir **Plusieurs objectifs** ou **Un seul objectif**, puis **Créer**.
-- **Renommer** : modifier le projet sélectionné, même s’il n’est pas actif, sans refaire sa progression.
-- **Supprimer…** : vérifier le nom dans la confirmation, puis supprimer. Si c’est le projet actif, le panneau indique celui qui sera ouvert ensuite ; sa pause est conservée. Supprimer le dernier laisse un projet vide sans génération IA.
-
-**Échap** revient de la confirmation ou du formulaire à la liste ; depuis la liste, il revient à
-l’onglet précédent. Le statut **EN PAUSE** est visible dans **Objectif**, **Projet** et **Mes projets**.
-
-Un seul projet est suivi à la fois. Les autres restent sauvegardés localement : leur progression
-ne s'actualise pas pendant leur inactivité. Le contenu actuel des coffres et de l'inventaire
-reste partagé et est réévalué au retour. Choisir un projet en pause ne le reprend jamais.
-La création conserve le projet précédent, même s'il était en pause. Changer de projet attend
-la fin d'une réponse en cours. Les clics répétés sont bloqués pendant l'enregistrement ;
-**Réessayer** renvoie la même demande sans créer un doublon.
-
-Le projet existant est repris automatiquement. La sauvegarde `plan_ia.json` contient le
-catalogue et le projet actif, avec écriture atomique ; sa première migration conserve aussi
-`plan_ia.json.avant-projets`. Aucun effacement de monde, coffre ou historique n'est nécessaire.
+## Onglet Base
 
 **Y → Base** affiche une liste défilante de machines, avec recherche par nom et filtres
 **Toutes / À vérifier / En marche**. Les alertes sont placées en premier. Le résumé indique
 le nombre de machines, de coffres et d'alertes ; les coordonnées et la dimension sont au survol.
 Les observations anciennes sont signalées comme « Dernier relevé », sans prétendre que la
-machine tourne encore actuellement. Les actions d'objectif ne sont plus affichées sur cet onglet.
+machine tourne encore actuellement. Les projets (**Mes projets**), leurs objectifs et leur pause
+ont été retirés ; l'ancien `plan_ia.json` reste en place, sans être lu.

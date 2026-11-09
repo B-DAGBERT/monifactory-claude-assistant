@@ -18,58 +18,85 @@ Pour une recette ou un objet reconnu dans ta question, l’assistant joint les s
 machines utiles. Ajoute **contexte complet** dans la question si tu veux aussi lui donner
 les autres relevés et événements. Un état historique indique ce qui a été observé à cette date.
 
-## Objectif dans EMI
+La discussion ne crée plus d’objectif et ne met rien en pause. Aucune demande IA ne part sans
+action de ta part, même à la connexion.
 
-Dans **Y → Objectif** ou **Projet**, **Objectif EMI** met le craft demandé dans l’arbre
-EMI : toutes les cibles avec leurs quantités, et les recettes intermédiaires choisies par
-l’assistant. Le livre « Objectif » est une racine virtuelle qui regroupe les cibles ; il
-n’est pas un objet à fabriquer. Clique sur les branches pour suivre leurs recettes dans EMI.
+## Onglet Recette
 
-La synchronisation se fait au clic, sans appel IA. Après un changement d’objectif ou de
-projet, clique à nouveau sur **Objectif EMI**. Réouvrir le même objectif conserve les choix
-et les branches de l’arbre tant que les cibles et leur avancement n’ont pas changé. Si
-l’avancement a changé, l’import explicite reconstruit uniquement ce qu’il reste à obtenir. Les favoris et
-les recettes par défaut d’EMI ne sont pas modifiés.
+**Y** s’ouvre sur **Recette**, le premier onglet. Il analyse l’arbre choisi dans **EMI Recipe
+Tree** et remplace les anciens onglets Objectif et Projet ; la touche F7 et l’objectif préparé
+par l’IA ont disparu. Le calcul est local, sans appel IA, et rien ne change dans l’arbre sans
+clic sur **Appliquer** ou **Annuler**. Sans arbre, l’onglet invite à choisir un objet dans Recipe
+Tree.
 
-**Mettre en pause** arrête aussi l’arbre EMI actif, le scan des coffres, ses surbrillances et
-un éventuel transfert en cours. Cela s’applique aussi à une pause demandée dans la discussion.
-**Objectif EMI** reste désactivé pendant la pause. Après **Reprendre**, clique sur **Objectif EMI**
-pour retrouver les choix de recettes conservés pendant cette session, puis réactive le scan si
-nécessaire. Rien ne redémarre automatiquement. Tu peux toujours choisir un autre craft directement
-dans EMI pendant que ton objectif reste en pause.
+L’en-tête montre l’objet final, sa quantité, le nombre d’étapes et celles qui sont prêtes. Un clic
+sur une icône ouvre ses recettes dans EMI.
 
-Si la recette indiquée manque ou si plusieurs recettes sont possibles sans choix dans le
-plan, un message indique les objets concernés : choisis leurs recettes directement dans EMI.
-L’import retire les cibles déjà obtenues, rangées ou posées, et tient compte de l’avancement
-partiel. Le stock encore dans ton inventaire est inclus dans la quantité envoyée pour qu’EMI
-le déduise lui-même, une seule fois. L’assistant conserve le suivi des coffres et machines posées. Échap revient à l’inventaire, puis au menu
-assistant.
+- **Plan** : les fabrications restantes, numérotées dans l’ordre où les faire. Chaque carte
+  indique le produit, le poste (établi ou machine), le circuit, les entrées et l’état, par exemple
+  **Prête**, **Machine à poser**, **Attend l’étape 2**, **Manque …** ou **En machine**. La première
+  étape où tu peux agir porte une **★**. Le survol détaille l’étape et explique sa place.
+- **Meilleures alternatives** : une autre recette pour un produit de l’arbre, avec le gain en
+  clair, par exemple « 1 Iron Ingot au lieu de 2 par Iron Plate · 2 étapes au lieu de 12 ».
+  **Appliquer** la choisit dans cet arbre seulement ; **Annuler : …** rétablit le choix précédent.
+  Les favoris et les recettes par défaut d’EMI ne sont jamais modifiés.
+- **Introuvable** : une matière de base de l’arbre absente de l’inventaire, du sac, des coffres
+  connus et des lots en cours. C’est une simple information, sans bouton.
+- **Machine à fabriquer** : une machine que tu n’as pas encore, faisable à l’établi avec ce que
+  tu as (« tu as tout » ou « 2 sous-crafts avec ce que tu as »), et qui permettrait une meilleure
+  recette.
+
+Une alternative n’est proposée que si elle est **strictement meilleure** : moins de matière sans
+plus d’une étape supplémentaire, autant de matière ou moins avec moins d’étapes, ou au moins deux
+fois moins d’étapes (sur une chaîne d’au moins quatre) sans plus de matière au total. Ses postes
+doivent être posés, portés ou rangés dans un coffre connu, et elle ne doit pas demander de matière
+introuvable. Les sous-ingrédients suivent les choix actuels de l’arbre, sinon les défauts d’EMI.
+**Machine à fabriquer** n’apparaît que si tu n’as aucune machine de ce type et qu’elle se fabrique
+à l’établi avec l’inventaire, le sac et les coffres connus, avec au plus un niveau de sous-craft.
+Une montée de tier n’est jamais proposée.
+
+Dans le monde, les machines entourées en rouge affichent le numéro de leur étape. La **★** dorée
+marque la plus proche machine de la première étape machine à faire, un numéro grisé signale une
+étape qui ne peut pas encore se faire et « 3 · en cours » ou « 3 · prêt » suit un lot déjà envoyé.
+Au plus 16 machines, les plus proches, sont numérotées. Ces repères n’apparaissent que si le mode
+fabrication de Recipe Tree ou **Coffres** est actif ; sinon, l’onglet le rappelle.
+
+La prochaine étape s’affiche aussi dans le panneau en haut à gauche, par exemple
+**★ Basic Bender** puis « 4 Iron Ingot → 4 Iron Plate ». **F9** ou **Y → Réglages → Panneau en
+jeu** masque ce panneau ; les réponses de l’assistant restent dans leur bulle.
+
+Limites : les coûts sont comparés par unité produite et peuvent être fractionnaires ; un tag compte
+pour sa première variante ; un multibloc est supposé assez puissant ; « facile » ignore le NBT. La
+recette de l’objet final reste celle choisie dans EMI : les alternatives portent sur ses
+ingrédients. Changer d’objet dans Recipe Tree efface l’historique d’**Annuler**, limité aux huit
+derniers choix.
 
 ## Backpack comme inventaire
 
-Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans l’arbre natif EMI et sa liste latérale, les besoins du scan, la planification des machines et l’avancement des objectifs. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
+Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans l’arbre natif EMI et sa liste latérale, les besoins du scan, la planification des machines et l’onglet Recette. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
 
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 
 La barre près de Recipe Tree propose **Coffres OFF / ON**, **Suivi** et **Sac N**.
-Le soulignement vert signale le scan actif, le bleu les objets présents dans le sac.
+**Coffres ON** s’affiche en doré pendant le scan ; **Sac N** compte les types d’objets du sac.
 Les boutons restent sur une seule ligne, avec une largeur calculée sur leur texte.
 Si la place manque à côté de la recherche EMI, **Aide…** ouvre les trois actions.
 Échap ou **Retour à EMI** retrouve l’écran précédent. Les infobulles précisent l’action
 et la raison d’un bouton désactivé.
 
 Le bouton **Sac N**, près de **Coffres** et **Suivi** dans EMI, ouvre la liste des
-objets présents dans tes backpacks portés, avec leur quantité et une recherche par nom.
-Le fond bleu rappelle qu’ils sont déjà sur toi. `N` est le nombre de types d’objets ; les grandes
-valeurs sont abrégées. **Retour à EMI** ou Échap ramène au même écran.
+objets présents dans tes backpacks portés, chacun sur une carte avec sa quantité, et une
+recherche par nom. Le sous-titre rappelle qu’ils sont déjà sur toi et comptés dans EMI. `N` est
+le nombre de types d’objets ; les grandes valeurs sont abrégées. **Retour à EMI** ou Échap ramène
+au même écran.
 Pendant la synchronisation, la liste attend les données du sac sans afficher l’ancien stock.
 
 Cette option concerne le **comptage**. **Envoyer** continue à utiliser les cases accessibles de l’inventaire : le suivi indique **À sortir du sac** lorsque les ingrédients nécessaires sont dans le backpack. Le mod ne les extrait pas automatiquement.
 
 ## Coffres depuis l’arbre EMI
 
-Choisir l’objectif et ses recettes dans **Recipe Tree**, puis cliquer sur **Coffres**,
-en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton indique **Coffres ON** :
+Choisir l’objet et ses recettes dans **Recipe Tree**, puis cliquer sur **Coffres**,
+en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton indique **Coffres ON**, en doré :
 un second clic désactive le repérage. Il remplace l’ancien bouton sous chaque recette.
 
 La recherche suit **tout l’arbre choisi**, avec les composants intermédiaires,
@@ -94,7 +121,7 @@ sans appel IA ni scan du monde : ouvrir un coffre actualise son contenu.
 Tous les stockages connus de la dimension sont examinés, sans limite à 16 coffres.
 Seules les sources utiles sont signalées, en préférant les plus proches à niveau égal dans l’arbre.
 
-Le panneau en haut à gauche garde uniquement le **plan**, l’**objectif** et son **avancement**.
+Le panneau en haut à gauche montre seulement la prochaine étape de l’onglet **Recette**.
 Dans le menu de l’assistant, **Masquer** ferme l’avis de mise à jour et mémorise ce choix
 localement, y compris après redémarrage. Une nouvelle version peut afficher un nouvel avis.
 
@@ -110,21 +137,24 @@ EMI ouvertes depuis un coffre. Effacer ou remplacer l’arbre coupe aussi l’an
 
 Avec un craft EMI actif, les machines GregTech compatibles des chunks chargés, à moins de
 48 blocs, sont entourées en **rouge**. Les recettes suivent les branches choisies dans EMI et
-les composants déjà présents dans l’inventaire sont déduits. Un objectif IA seul ne déclenche
-pas ce repérage.
+les composants déjà présents dans l’inventaire sont déduits. Les contours portent aussi le numéro
+de leur étape dans l’onglet **Recette**.
 
 Dans une machine compatible, le panneau de l’assistant, au même style que celui des coffres, propose les recettes utiles :
 
-- Choisir le produit à préparer. Le titre indique les fabrications possibles et restantes.
+- Choisir le produit à préparer. Le titre indique les fabrications possibles et restantes ;
+  pour un lot en cours, la deuxième ligne compte les résultats reçus, par exemple « 2/8 récupérés ».
 - Survoler **Envoyer** pour voir les ingrédients, le circuit et les volumes de fluide.
 - Cliquer **Envoyer** pour déposer un lot réalisable, limité par le stock et la place disponible.
   Les entrées existantes sont déduites, les sorties ne sont pas touchées. Le **Circuit setting**
   est vérifié comme réglage virtuel de la machine : aucun circuit physique à collecter ou à envoyer.
   Si le numéro est incorrect, **Circuit à régler** indique le numéro requis au survol. Le mod ne
   modifie pas ce réglage à ta place et n’utilise pas le NBT factice de l’aperçu EMI.
+- **Autre priorité** signale une recette encore envoyable dont le stock est d’abord prévu pour une
+  autre recette ; la choisir reste possible.
 - **En cours de craft**, directement dans le panneau machine, réserve les résultats du lot déjà lancé.
   EMI masque les ingrédients des branches entièrement couvertes et garde le produit attendu.
-  Les résultats restent à récupérer : cette réservation ne valide pas l’objectif.
+  Les résultats restent à récupérer : cette réservation ne termine pas le craft.
 - **Suivi**, près de **Coffres**, conserve l’accès aux étapes, à **Recette** et à **Annuler le lot**.
   Récupérer soi-même le résultat dans la machine.
 
@@ -133,8 +163,8 @@ vidés par le clic natif GregTech puis rendus à l’inventaire. Le volume réel
 l’envoi : par exemple, un seau de 1 000 mB peut dépasser un besoin de 144 mB. Les fluides déjà
 présents dans les cuves d’entrée sont déduits. Les réservoirs voisins ne sont pas sollicités.
 
-Le bouton affiche l’avancement de l’envoi, attend la confirmation des transferts et ignore les doubles clics. Fermer l’interface,
-arrêter le craft ou mettre son objectif en pause interrompt la séquence. Une machine occupée,
+Le bouton affiche l’avancement de l’envoi, attend la confirmation des transferts et ignore les doubles clics. Fermer l’interface
+ou arrêter le craft interrompt la séquence. Une machine occupée,
 un ingrédient manquant ou une entrée incompatible désactive l’envoi avec le motif au survol.
 Les fabrications envoyées restent réservées dans ce suivi pour éviter de les proposer à nouveau
 avant la récupération des sorties. Modifier l’arbre actif conserve ces réservations ; arrêter l’arbre les efface.
@@ -148,13 +178,14 @@ Les composants transformés ne laissent plus un double crédit de matières prem
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
 **Collecte** suit **les ingrédients du scan actif** : activer **Coffres** pour utiliser
-**Prendre / Tout**. Cela fonctionne aussi sans objectif dans l’assistant. Un arbre simplement
-consulté, un objectif seul ou un scan arrêté ne proposent aucun transfert. Le sélecteur montre les objets manquants disponibles dans ce
+**Prendre / Tout**. Un arbre simplement consulté ou un scan arrêté ne propose aucun transfert.
+Le sélecteur montre les objets manquants disponibles dans ce
 coffre, avec la quantité à prendre sur chaque icône ; ses flèches (ou la molette) parcourent les pages.
 
 Le panneau ne recouvre jamais le coffre : il se place au-dessus quand il y a la place, sinon en
 bloc large et bas sur le côté le plus libre, et EMI range ses listes d’objets autour de lui. Il se coupe dans
 **Y → Réglages → Retrait depuis les coffres**, indépendamment du remplissage de l’établi.
+Sur une petite fenêtre, un libellé trop long est coupé par « … » et reste lisible au survol.
 
 - **Prendre** récupère la quantité manquante de l’objet sélectionné.
 - **Tout** prend tous les objets sélectionnés par le scan et disponibles dans ce coffre,
@@ -175,18 +206,19 @@ Le retrait fonctionne même si le coffre ne fournit qu’une partie des ingrédi
 réutilisables ne sont pas multipliés ; fluides, upgrades, filtres et grilles de craft sont ignorés.
 Sans scan actif ou sans objet sélectionné disponible, le panneau n’apparaît pas.
 
-Depuis une recette EMI ouverte avec un coffre, la flèche **↓** permet aussi de **tout récupérer
-pour le scan actif**. Il n’y a plus de mode « une fabrication » dans les coffres.
-Le panneau d’un établi conserve **Remplir / Tout** et son fonctionnement habituel ; il se coupe
+Depuis une recette EMI ouverte avec un coffre, la flèche verte **↓** permet aussi de **tout récupérer
+pour le scan actif** ; elle est grisée quand ce coffre n’a rien à donner. Il n’y a plus de mode
+« une fabrication » dans les coffres.
+Le panneau d’un établi a le même aspect que ceux des coffres et des machines. Il propose
+**Remplir / Tout** pour les recettes d’établi de l’arbre EMI actif et se place au-dessus ou à
+côté de l’interface, jamais sur la grille. Sans arbre EMI actif, il n’affiche rien. Il se coupe
 dans **Y → Réglages → Remplissage de l’établi**.
 Le bouton **Coffres** prépare le repérage et la liste de retrait, sans déplacer d’objet.
 
-L’onglet **Objectif** affiche l’objectif, son avancement, les cibles finales et les machines
-nécessaires. Les détails de fabrication sont dans **Objectif EMI**.
-
 Les transferts utilisent les clics du jeu, avec le mécanisme natif de Sophisticated Storage
 pour ses coffres, sans commande ni installation serveur. Un transfert réussi est silencieux.
-Les clics répétés sont bloqués pendant le transfert ; fermer le coffre l’arrête.
+Pendant un retrait, le panneau indique **Retrait…** et les clics répétés sont bloqués ; fermer le
+coffre l’arrête.
 Les mises à jour d’objets sans rapport (par exemple la charge d’un outil électrique) n’interrompent
 pas le retrait. Après un déplacement, le mod attend jusqu’à trois secondes la synchronisation du
 serveur, sans renvoyer les clics. Si le contenu reste incohérent, il s’arrête et consigne le slot
@@ -195,47 +227,78 @@ est plein, le retrait s’arrête en conservant les objets déjà récupérés. 
 dans le coffre ouvert ; la sélection vient du scan et des coffres mémorisés. Aucun appel IA
 n’est nécessaire.
 
-## Filons : scan, marquage et téléportation
+## Filons : scan complet, surbrillance et téléportation
 
-Sélectionner un filon puis **Scanner**. Pour un filon cuboïde reconnu par GregTech, le scan
-couvre les hauteurs et l’étendue horizontale indiquées par son générateur. Les autres filons
-gardent la recherche à 16 blocs du repère. Seuls les blocs chargés sont lus. Le pourcentage
-apparaît pendant le parcours, qui s’arrête automatiquement. Un résultat vide laisse le total du
-gisement inconnu.
+**Y → Filons** liste les gisements GregTech connus de la dimension actuelle. Sélectionner un filon
+puis **Scanner** : le scan parcourt tout le volume où le générateur GregTech de ce filon peut placer
+ses minerais. Pour un générateur inconnu, il couvre un cube autour du centre puis suit le filon de
+proche en proche, en tolérant des trous de 2 blocs. Le bouton affiche **Scan 63 %** ; un clic
+l’arrête en gardant les minerais trouvés. Les zones non chargées restent en attente, même après
+un redémarrage, et se scannent dès que tu t’en approches (« zones à charger : approche-toi »).
 
-Les deux lignes en haut regroupent **recherche / tri**, puis **Épuisés masqués / Vue / Blocs**.
-Les boutons **Vue** et **Blocs** changent de valeur à chaque clic, avec sauvegarde locale immédiate :
+La fiche du filon indique **X restants sur Y trouvés (Z %)**, avec une barre, puis les minerais par
+type. Le compte suit le minage en direct dans les chunks chargés : les minerais connus y sont
+revérifiés en continu, et les plus proches du filon surligné à chaque tick. Un minerai miné reste
+compté dans les trouvés. Un relevé de plus de dix minutes est signalé comme ancien. La discussion
+reçoit les mêmes comptes.
 
-- **Vue : Surface / Total** : Surface montre les contours visibles ; Total ajoute les minerais
-  derrière la roche. Le bloc visé garde son contour de minage normal.
-- **Blocs : 64 / 192 / 512 / 1 024 / 4 096** : plafond de blocs surlignés simultanément,
-  en donnant la priorité aux plus proches. Le défaut est **192**.
+Quand il reste au plus **10 %** des minerais trouvés (au moins 16 trouvés et aucune zone en
+attente), la liste affiche **presque épuisé** et **Épuisé** devient le bouton vert. Le filon n’est
+jamais marqué tout seul. **Épuisé** ajoute un marquage personnel, enregistré pour le monde actif :
+le filon disparaît de la liste si les épuisés sont masqués. Pour annuler, choisir **Épuisés
+visibles**, sélectionner le filon, puis **Rétablir**. Les relevés et le journal GregTech restent
+conservés.
 
-Les modes concernent les blocs déjà relevés, encore présents et chargés dans un rayon de 64 blocs.
-Ils respectent la sélection des types de minerai. L’intensité déjà enregistrée est conservée.
-Le mode Surface est choisi par défaut pour les anciennes configurations. Il n’y a plus de
-sous-menu Affichage/Options, de bouton global Tout masquer, de vidage manuel des relevés ni
-de bouton Arrêter le scan. Chaque filon garde son propre bouton Afficher/Masquer.
+La première ligne regroupe la recherche et le tri : **Tri : distance**, **Tri : recette** ou
+**Tri : nom**. **Tri : recette** place en tête, avec une **★** cyan, les filons qui fournissent une
+matière première de l’arbre choisi dans EMI ; sans arbre, l’ordre reste celui de la distance.
+La deuxième ligne contient **Épuisés masqués / visibles** puis les réglages de surbrillance,
+enregistrés localement à chaque clic. Sur une petite fenêtre, ceux qui ne tiennent pas passent dans
+**Affichage…** :
 
-Ce plafond concerne seulement l’affichage simultané : il ne réduit ni le scan ni les données enregistrées.
+- **Vue : Surface / Total** : Surface montre les minerais visibles ; Total ajoute ceux derrière la
+  roche. Le bloc visé garde son contour de minage normal.
+- **Blocs : 64 / 192 / 512 / 1 024 / 4 096** : plafond de blocs surlignés simultanément, en
+  donnant la priorité aux plus proches. Le défaut est **512** pour une nouvelle installation ; un
+  réglage existant est conservé. Ce plafond ne réduit ni le scan ni les données enregistrées.
+- **Épaisseur : Fine / Normale / Épaisse / Très épaisse** : épaisseur des contours.
+- **Intensité : Douce / Normale / Forte / Maximale** : opacité des contours ; Maximale ajoute un
+  liseré sombre, lisible sur tout fond. Une ancienne configuration à l’intensité 0 passe à **Normale**.
+- **Remplissage : oui / non** : teinte légèrement les faces visibles des minerais surlignés.
 
-Le cache garde jusqu’à **100 000 blocs par monde**. Au plafond, les nouvelles observations
-remplacent par lots les relevés de blocs minés, puis les blocs les moins récemment revus hors
-de la zone scannée. Les blocs présents dans cette zone sont protégés. Les filons GregTech,
-les choix d’affichage et les marquages « épuisé » restent conservés ; un ancien filon peut
-être rescanné pour retrouver ses blocs. Il s’agit toujours de relevés partiels, pas du total du gisement.
+**Afficher** ouvre le choix des minerais à surligner et devient disponible après un scan qui en a
+trouvé ; **Masquer** retire la surbrillance. Un seul filon est surligné par dimension : en afficher
+un autre remplace le précédent. Chaque minerai a sa couleur, tirée de son matériau GregTech et
+ajustée au fond de la dimension. Le brouillard ne cache plus les contours, y compris dans le Nether.
+La surbrillance porte sur les minerais encore présents dans les chunks chargés, à 96 blocs au plus,
+et respecte la sélection des types. Pendant la partie, chaque dimension garde son filon surligné :
+il revient quand tu y retournes, et le statut rappelle une surbrillance active ailleurs.
 
-Dans la fiche d’un filon, **Épuisé** ajoute un marquage personnel, enregistré pour le monde actif.
-Il disparaît de la liste si les épuisés sont masqués. Pour annuler, choisir **Épuisés visibles**,
-sélectionner le filon, puis **Rétablir**. Les relevés et le journal GregTech restent conservés.
+Pendant la lecture de la mémoire des filons, faite hors du jeu, la liste indique **Chargement des
+filons…**. La mémoire garde jusqu’à 400 000 minerais présents par monde ; au-delà, un message
+indique que les nouveaux ne sont plus retenus. Les minerais minés ne sont plus mémorisés un par un :
+seul leur nombre est gardé, ce qui conserve le total trouvé. Les filons GregTech, les choix
+d’affichage et les marquages « épuisé » restent conservés. Il n’y a pas de bouton global Tout
+masquer ni de vidage manuel des relevés.
+
+Limites : un filon voisin non prospecté qui contient les mêmes minerais n’est pas séparé du filon
+scanné ; les minerais des chunks non chargés ne sont revérifiés qu’à leur chargement.
 
 **TP** cherche le point libre le plus proche au-dessus du filon, dans un voisinage de 8 blocs
 horizontalement. Si aucun point libre n’est connu, la TP vise directement un bloc au-dessus
 du centre, même en zone non chargée : **l’arrivée peut être dans la roche**. Aucun bloc n’est
 creusé ou supprimé. Les commandes / permissions opérateur restent nécessaires.
 
-Dans **Réglages**, la liste défile à la molette ou en faisant glisser la barre de droite.
-Les boutons **Modèles IA…** et **Diagnostic** restent fixes au-dessus de la liste.
+## Réglages
+
+**Y → Réglages** regroupe les options de l’assistant. **Panneau en jeu**, ou **F9**, masque
+seulement le panneau en haut à gauche ; les réponses restent dans leur bulle. **Annonces de
+progression** concerne les quêtes terminées, les nouveaux filons et les machines retenues.
+**Objectif suivant automatique** et **Surbrillance des besoins** ont disparu avec les objectifs.
+**Modèles IA…** ne règle plus que le profil **Discussion et fiches**.
+
+La liste défile à la molette ou avec sa barre de défilement. **Modèles IA…** et **Diagnostic…**
+s’ouvrent depuis cet onglet.
 
 ## Machines regroupées dans Base
 
@@ -243,6 +306,9 @@ Les machines d’un même type apparaissent dans un groupe repliable avec leur q
 des états. Cliquer sur le groupe pour voir chaque emplacement et son propre état. Les tiers différents
 restent séparés ; une machine unique apparaît directement. La recherche et les filtres continuent
 de s’appliquer aux machines du groupe.
+
+**Production…**, dans Base, lit le plan ou le diagnostic de l’arbre EMI choisi, sans rien modifier
+dans le jeu. Son ancien onglet Projet a disparu.
 
 ## Diagnostic et demandes en attente
 
@@ -252,8 +318,14 @@ l’arbre EMI, le scan des coffres, les transferts, la dernière demande et les 
 Le panneau se rafraîchit automatiquement et possède une pagination. **Retour** ou Échap revient
 aux réglages. L’ouvrir ne lance aucune demande IA.
 
+Pour limiter les saccades, les relevés ne sont réécrits qu’à un changement. Au repos, l’âge du
+relevé d’inventaire peut donc atteindre 2 à 3 secondes : il est confirmé toutes les deux secondes.
+« Coffre mémorisé » peut arriver jusqu’à deux secondes après l’ouverture d’un coffre. L’assistant
+voit la progression d’une tâche de quête au plus toutes les 30 secondes, et une quête terminée en
+moins de dix secondes.
+
 Avec shared.31 et l’assistant à jour, chaque clic destiné à l’assistant est enregistré séparément.
-Une demande reste valable 45 secondes ; une action liée à un ancien projet ou une ancienne
+Une demande reste valable 45 secondes ; une action liée à une ancienne connexion ou une ancienne
 dimension est refusée. Les demandes de questions faites pendant une réponse sont refusées,
 pour éviter un second envoi involontaire. Une demande prise en compte n’implique pas que la
 réponse IA ou une fabrication soit terminée.
@@ -294,8 +366,7 @@ le coffre puis utiliser **Prendre / Tout**, ou récupérer ses résultats normal
 Le suivi passe à **À récupérer** quand le scan trouve un résultat disponible, puis progresse avec
 les gains réels de l’inventaire, backpack compris. Un lot partiellement récupéré continue à chercher
 le reste ; il devient **Terminé** lorsque toute sa quantité a été reçue. Observer un coffre ne
-valide aucune production. Une pause de l’objectif arrête le repérage et garde les lots tant que le
-monde et la connexion restent les mêmes ; la reprise reste explicite.
+valide aucune production.
 
 Un résultat réellement récupéré reste **acquis pour le craft en cours**, même après l’avoir posé
 ou rangé ailleurs. Exemple : 64 récupérés sur 200 laissent **136 à récupérer** ; déplacer ensuite

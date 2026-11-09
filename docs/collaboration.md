@@ -48,7 +48,7 @@ les préserver. Une absence de réseau conserve la version installée.
 
 - Les adaptateurs **Claude/Codex** restent dans `monifactory_assistant/providers/` ; une fonction du jeu ne doit pas dépendre d’un seul moteur.
 - Les recettes, stocks, filons et scans sont calculés localement. Une interaction de menu ne doit pas lancer une requête IA cachée.
-- Une pause reste une pause ; une mise à jour ou un recalcul ne reprend aucun objectif.
+- Un scan ou un arbre arrêté le reste ; une mise à jour ou un recalcul ne relance aucun craft, scan ni transfert.
 - Les transferts partent des cases réelles et attendent la confirmation du serveur. Une erreur ne rejoue pas les clics à l’aveugle.
 - `assistant.local.json`, les sessions, plans, coffres et sauvegardes restent ignorés par Git. Utiliser `git status` avant de préparer le commit.
 
