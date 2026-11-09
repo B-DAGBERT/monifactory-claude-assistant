@@ -142,6 +142,66 @@ def latest_remembered_containers(containers, twins):
     return kept
 
 
+def _published_place(entry):
+    """Version, bloc, position et date entières d'une observation, ou None si elle est mal formée."""
+    here = position(entry)
+    block, date = entry.get("bloc"), entry.get("t")
+    if (
+        here is None
+        or not isinstance(block, str)
+        or not block
+        or isinstance(date, bool)
+        or not isinstance(date, (int, float))
+        or not math.isfinite(date)
+        or not 0 <= date < 1e16
+    ):
+        return None
+    dimension, x, y, z = here
+    return {"v": 2, "bloc": block, "dimension": dimension, "x": x, "y": y, "z": z, "t": int(date)}
+
+
+def known_chests(observations):
+    """Relevés du serveur (drawers, coffres jamais ouverts…) publiés pour l'onglet Recette du mod.
+
+    Seulement ceux du serveur : le mod lit lui-même la mémoire du client (stockage.json) et garde,
+    par position, l'observation la plus récente. Recopier ici les coffres du client garderait un
+    coffre que le client a oublié (cassé, « oublie ce coffre ») tant que l'assistant ne republie pas.
+    Les relevés vides (coffre vidé, bloc disparu) sont publiés : plus récents qu'un ancien contenu
+    mémorisé par le client au même endroit, ils le masquent. Les deux moitiés d'un double coffre vu
+    par le serveur portent le même inventaire : la seconde est publiée vide, à la même date.
+    """
+    raw = [o for o in observations if isinstance(o, dict) and o.get("etat") is None]
+    containers, seen, stocks = [], set(), set()
+    for chest, stock in grouped_containers(raw):
+        place = _published_place(chest)
+        counts = inventory_key(chest) if place is not None else None
+        if counts is None:
+            continue
+        here = (place["dimension"], place["x"], place["y"], place["z"])
+        if here in seen:
+            continue
+        seen.add(here)
+        absorbed = stock in stocks
+        stocks.add(stock)
+        name = chest.get("nom")
+        entry = {"v": 2, "bloc": place["bloc"]}
+        if isinstance(name, str) and name:
+            entry["nom"] = name
+        entry.update(place)
+        entry["objets"] = [] if absorbed else [{"item": item, "n": n} for item, n in counts]
+        containers.append(entry)
+    machines = [
+        place
+        for place in (
+            _published_place(m)
+            for m in observations
+            if isinstance(m, dict) and m.get("etat") is not None and not m.get("absent")
+        )
+        if place is not None
+    ]
+    return {"v": 2, "conteneurs": containers, "machines": machines}
+
+
 class Storage:
     """Coffres mémorisés par le jeu (stockage.json) : ce qu'il y a dedans et où ils sont."""
 

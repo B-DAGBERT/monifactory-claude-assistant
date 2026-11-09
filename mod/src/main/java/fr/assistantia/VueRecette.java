@@ -26,7 +26,7 @@ public record VueRecette(
     /**
      * {@code plan} : raison pour laquelle le plan n'est pas encore calculé (sac en lecture, calcul
      * en attente, arbre trop grand…), vide une fois le plan calculé. Un plan vide et calculé
-     * signifie au contraire que tout est déjà en stock.
+     * signifie au contraire que tout est déjà dans l'inventaire ou les coffres connus.
      */
     public VueRecette {
         message = texte(message);
@@ -143,6 +143,11 @@ public record VueRecette(
 
         /** Rétablit le dernier choix remplacé par « Appliquer ». */
         String annuler();
+
+        /** Ouvre EMI sur la recette proposée (« Nouvelle recette ») ; message d'erreur ou vide. */
+        default String voir(String id) {
+            return "EMI indisponible.";
+        }
     }
 
     private static volatile VueRecette courante;
@@ -175,6 +180,11 @@ public record VueRecette(
     public static String annuler() {
         var a = actions;
         return a == null ? "EMI indisponible." : a.annuler();
+    }
+
+    public static String voir(String id) {
+        var a = actions;
+        return a == null ? "EMI indisponible." : a.voir(id);
     }
 
     /**

@@ -77,13 +77,15 @@ public final class Reperage {
         if (RechercheEmi.actif())
             return; // Des contours uniquement, sans texte empilé sur les coffres.
         Font font = mc.font;
+        // Textes par le tampon principal du jeu, comme les noms des entités.
+        var principal = mc.renderBuffers().bufferSource();
         for (Pont.Repere r : reperes) {
             if (!visible(r, dimension) || r.texte().isEmpty()) {
                 continue;
             }
             texte(
                     pose,
-                    tampons,
+                    principal,
                     font,
                     camera,
                     r.x() + 0.5,
@@ -93,7 +95,7 @@ public final class Reperage {
                     0xFF9FEFFF,
                     0x70000000);
         }
-        tampons.endBatch();
+        principal.endBatch();
     }
 
     /**

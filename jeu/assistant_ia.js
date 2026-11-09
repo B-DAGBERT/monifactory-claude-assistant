@@ -9,7 +9,7 @@
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 13  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_SCRIPT = 14  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
 const VERSION_RECETTES = 2 // export des recettes plus ancien : refait au chargement (2 : durée et EU/t des recettes GregTech)
 const RECETTES_PAR_TICK = 400
 const RECETTES_PAR_FICHIER = 15000
@@ -738,8 +738,10 @@ function recevoirMonde(event) {
   )) return
   // Avec le mod : assemblage, contrôle de la dimension, annotation et écriture hors du thread du jeu
   if (typeof Echanges != 'undefined' && Echanges != null && typeof Echanges.transmettreMonde == 'function') {
-    const erreur = str(Echanges.erreurMonde())
-    if (erreur !== '') noterErreur('données du serveur', erreur)
+    // Pas de const dans ce bloc : Rhino le refuse à chaque appel d'une fonction qui contient
+    // des fonctions fléchées (« redeclaration of var »), et plus rien n'était transmis
+    let erreurEchanges = str(Echanges.erreurMonde())
+    if (erreurEchanges !== '') noterErreur('données du serveur', erreurEchanges)
     Echanges.transmettreMonde(d, n, courant.monde, courant.session, courant.dimension)
     return
   }

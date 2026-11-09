@@ -80,6 +80,7 @@ class App(GameController, ConversationController, InterfaceController):
         self.storage = Storage([])
         self.storage_text = None
         self.storage_export_key = None
+        self.known_chests_published = None  # (mémoire du serveur, texte de coffres_connus.json)
         self.logged_errors = set()
         self.status = ""
         self.connection_problem = ""

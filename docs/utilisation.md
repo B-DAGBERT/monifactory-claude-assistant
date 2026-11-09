@@ -39,15 +39,23 @@ sur une icône ouvre ses recettes dans EMI.
 
 - **Plan** : les fabrications restantes, numérotées dans l’ordre où les faire. Chaque carte
   indique le produit, le poste (établi ou machine), le circuit, les entrées et l’état, par exemple
-  **Prête**, **Machine à poser**, **Attend l’étape 2**, **Manque …** ou **En machine**. La première
-  étape où tu peux agir porte une **★**. Le survol détaille l’étape et explique sa place.
+  **Prête**, **Machine à poser**, **Attend l’étape 2**, **Manque …** ou **En machine**. L’étape en
+  cours porte une **★** et reste en tête jusqu’à ce qu’elle soit faite : fabriquée ou envoyée en
+  machine (une seule action), ou, pour les sorties d’un lot, récupérées jusqu’à la dernière.
+  Ramasser la matière d’une autre étape ne la fait plus passer devant. Ce qui est déjà dans un
+  coffre connu n’est plus à fabriquer, seulement à récupérer. Le survol détaille l’étape et
+  explique sa place.
 - **Meilleures alternatives** : une autre recette pour un produit de l’arbre, objet final compris,
   avec le gain en clair, par exemple « 1 Iron Ingot au lieu de 2 par Iron Plate · 2 étapes au lieu
-  de 12 ». **Appliquer** la choisit dans cet arbre seulement ; **Annuler : …** rétablit le choix
-  précédent. Pour l’objet final, la quantité visée est conservée. Les favoris et les recettes par
-  défaut d’EMI ne sont jamais modifiés.
+  de 12 ». **Appliquer** la choisit dans cet arbre et en fait la recette par défaut d’EMI (bouton
+  doré « Définir par défaut », valable pour tous les arbres) ; **Annuler : …** rétablit les deux.
+  **Nouvelle recette** (**Voir** quand la place manque) ouvre EMI sur la recette proposée. Pour
+  l’objet final, la quantité visée est conservée. Les favoris d’EMI ne sont jamais modifiés.
 - **Introuvable** : une matière de base de l’arbre absente de l’inventaire, du sac, des coffres
-  connus et des lots en cours. C’est une simple information, sans bouton.
+  connus et des lots en cours. C’est une simple information, sans bouton. Les coffres connus
+  comprennent aussi, quand l’assistant tourne, les conteneurs relevés par le serveur autour de toi
+  sans que tu les aies ouverts (tiroirs, barils…) ; pour un même bloc, le relevé le plus récent
+  compte.
 - **Machine à fabriquer** : une machine que tu n’as pas encore, faisable à l’établi avec ce que
   tu as (« tu as tout » ou « 2 sous-crafts avec ce que tu as »), et qui permettrait une meilleure
   recette.
@@ -57,7 +65,10 @@ plus d’une étape supplémentaire, autant de matière ou moins avec moins d’
 fois moins d’étapes (sur une chaîne d’au moins quatre) sans plus de matière au total. Ses postes
 et ses outils réutilisables (moules, lentilles, formes d’extrudeuse) doivent être posés, portés ou
 rangés dans un coffre connu, et elle ne doit pas demander de matière introuvable. Les
-sous-ingrédients suivent les choix actuels de l’arbre, sinon les défauts d’EMI.
+sous-ingrédients suivent les choix de l’arbre, sinon les recettes par défaut d’EMI. Une matière
+nouvelle, absente de l’arbre et de tes stocks, se fabrique aussi dans le calcul : ses étapes et ses
+matières comptent. Une recette qui défait un objet fabriqué à partir du produit (casser une
+batterie pour récupérer sa coque) ou qui consomme le produit pour le refaire n’est jamais proposée.
 **Machine à fabriquer** n’apparaît que si tu n’as aucune machine de ce type et qu’elle se fabrique
 à l’établi avec l’inventaire, le sac et les coffres connus, avec au plus un niveau de sous-craft.
 Une montée de tier n’est jamais proposée : si une étape demande plus de tension que ta machine, elle
@@ -68,11 +79,14 @@ Si le plan ne peut pas encore être calculé (inventaire ou sac pas encore synch
 l’onglet affiche **Plan non calculé** avec la raison au lieu de « Rien à fabriquer ». Une lecture
 impossible de l’arbre EMI affiche « Arbre EMI illisible · détails dans le journal ».
 
-Dans le monde, les machines entourées en rouge affichent le numéro de leur étape. La **★** dorée
-marque la plus proche machine de la première étape machine à faire, un numéro grisé signale une
-étape qui ne peut pas encore se faire et « 3 · en cours » ou « 3 · prêt » suit un lot déjà envoyé.
-Au plus 16 machines, les plus proches, sont numérotées. Ces repères n’apparaissent que si le mode
-fabrication de Recipe Tree ou **Coffres** est actif ; sinon, l’onglet le rappelle.
+Dans le monde, les machines entourées en rouge affichent au-dessus d’elles le numéro de leur étape.
+La **★** dorée marque la plus proche machine de l’étape en cours (« ★ 3 · prêt » pour un lot à
+récupérer) et aucune quand l’étape en cours se fait à l’établi ; un numéro grisé signale une étape
+qui ne peut pas encore se faire et « 3 · en cours » ou « 3 · prêt » suit un lot déjà envoyé. Au
+plus 16 machines, les plus proches, sont numérotées. Seules les machines encore utiles brillent :
+quand le résultat, ou une partie de l’arbre, est déjà dans un coffre connu, les machines qui le
+fabriqueraient ne sont plus entourées. Ces repères n’apparaissent que si le mode fabrication de
+Recipe Tree ou **Coffres** est actif ; sinon, l’onglet le rappelle.
 
 La prochaine étape s’affiche aussi dans le panneau en haut à gauche, par exemple
 **★ Basic Bender** puis « 4 Iron Ingot → 4 Iron Plate ». **F9** ou **Y → Réglages → Panneau en

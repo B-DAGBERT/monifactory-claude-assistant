@@ -266,6 +266,126 @@ class WorldRoutingTests(unittest.TestCase):
         self.assertEqual((first / "plan_ia.json").read_bytes(), saved_plan)
         self.assertFalse((self.root / "mondes" / WORLD_B / "plan_ia.json").exists())
 
+    def test_server_chests_are_published_for_the_mod_in_the_world_partition(self):
+        """coffres_connus.json : relevés du serveur seulement, par monde, écrits s'ils changent."""
+        client = stored(7)
+        client["conteneurs"][0]["nom"] = "Tonneau étiqueté"
+
+        def frame(t, drawer, chest_items):
+            return {
+                "t": t,
+                "dimension": OVERWORLD,
+                "zone": [0, 0, 0, 0],
+                "blocs": [
+                    # Tiroir jamais ouvert : seul le serveur le connaît.
+                    {"p": [2, 64, 2], "b": "functionalstorage:oak_1", "o": drawer},
+                    # Coffre vidé depuis la dernière visite : le relevé vide est publié.
+                    {"p": [9, 64, 9], "b": "minecraft:barrel", "o": chest_items},
+                    # Double coffre : les deux moitiés portent le même inventaire.
+                    {"p": [5, 64, 5], "b": "minecraft:chest", "o": [["minecraft:sand", 30]]},
+                    {"p": [6, 64, 5], "b": "minecraft:chest", "o": [["minecraft:sand", 30]]},
+                    {"p": [4, 64, 4], "b": "gtceu:steam_solid_boiler", "o": [], "m": {"s": "IDLE"}},
+                ],
+            }
+
+        world = World(enabled=False)
+        self.assertTrue(world.update(frame(500, [["minecraft:sand", 379]], []), received_ms=5000))
+        app = GameController()
+        app.bridge = self.bridge
+        app.world = World(enabled=False)
+        with patch("monifactory_assistant.application.game.ROOT", self.root):
+            self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
+            app.apply_world_scope(self.bridge.scope)
+            app.world = world
+            dump(self.bridge.dir / "mondes" / WORLD_A / "stockage.json", client)
+            write = Mock(wraps=self.bridge.write_text)
+            with patch.object(self.bridge, "write_text", write):
+                app.publish_known_chests(app.world)
+                published = self.bridge.dir / "mondes" / WORLD_A / "coffres_connus.json"
+
+                def place(bloc, nom, x, z, objets):
+                    return {
+                        "v": 2,
+                        "bloc": bloc,
+                        "nom": nom,
+                        "dimension": OVERWORLD,
+                        "x": x,
+                        "y": 64,
+                        "z": z,
+                        "t": 5000,
+                        "objets": objets,
+                    }
+
+                sable = [{"item": "minecraft:sand", "n": 30}]
+                expected = {
+                    "v": 2,
+                    "conteneurs": [
+                        place(
+                            "functionalstorage:oak_1",
+                            "Oak 1",
+                            2,
+                            2,
+                            [{"item": "minecraft:sand", "n": 379}],
+                        ),
+                        place("minecraft:barrel", "Barrel", 9, 9, []),
+                        place("minecraft:chest", "Chest", 5, 5, sable),
+                        # Seconde moitié : vide, pour ne pas compter deux fois le double coffre.
+                        place("minecraft:chest", "Chest", 6, 5, []),
+                    ],
+                    # Le client n'est jamais recopié : le mod lit stockage.json lui-même.
+                    "machines": [
+                        {
+                            "v": 2,
+                            "bloc": "gtceu:steam_solid_boiler",
+                            "dimension": OVERWORLD,
+                            "x": 4,
+                            "y": 64,
+                            "z": 4,
+                            "t": 5000,
+                        }
+                    ],
+                }
+                self.assertEqual(
+                    published.read_text(encoding="utf-8"),
+                    json.dumps(expected, ensure_ascii=False, separators=(",", ":")),
+                )
+                self.assertNotIn("Tonneau", published.read_text(encoding="utf-8"))
+                self.assertFalse((self.bridge.dir / "coffres_connus.json").exists())
+                self.assertEqual(write.call_count, 1)
+
+                # Même mémoire du serveur : aucune réécriture, même si le client change.
+                client["conteneurs"][0]["objets"][0]["n"] = 8
+                dump(self.bridge.dir / "mondes" / WORLD_A / "stockage.json", client)
+                app.publish_known_chests(app.world)
+                self.assertEqual(write.call_count, 1)
+
+                # Nouveau relevé du serveur : réécrit.
+                self.assertTrue(
+                    world.update(frame(900, [["minecraft:sand", 300]], []), received_ms=26000)
+                )
+                app.publish_known_chests(app.world)
+                self.assertEqual(write.call_count, 2)
+                self.assertIn('"n":300', published.read_text(encoding="utf-8"))
+                saved = published.read_bytes()
+
+                # Monde changé mais pas encore confirmé : aucune partition, rien d'écrit.
+                receipt(self.bridge, WORLD_B, SESSION_B)
+                self.assertIsNone(self.bridge.data_path("coffres_connus.json"))
+                app.publish_known_chests(World(enabled=False))
+                self.assertEqual(write.call_count, 2)
+
+                # Autre monde : cache remis à zéro, fichier propre au monde, l'ancien intact.
+                self.assertTrue(enter(self.bridge, WORLD_B, SESSION_B))
+                app.apply_world_scope(self.bridge.scope)
+                self.assertIsNone(app.known_chests_published)
+                app.publish_known_chests(app.world)
+                self.assertEqual(write.call_count, 3)
+        other = json.loads(
+            (self.bridge.dir / "mondes" / WORLD_B / "coffres_connus.json").read_text("utf-8")
+        )
+        self.assertEqual(other, {"v": 2, "conteneurs": [], "machines": []})
+        self.assertEqual(published.read_bytes(), saved)
+
     def test_expired_native_receipt_cannot_reactivate_cached_state(self):
         self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
         stamp = time.time() * 1000 - 6000

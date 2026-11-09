@@ -61,6 +61,15 @@ public final class MachinesEmi {
                     MachinesEmi::lotsModifies,
                     MachinesEmi::porteeProduction);
     private static List<PlanMachines.Operation<EmiRecipe>> toutes = List.of();
+
+    /**
+     * Opérations encore nécessaires quand les coffres connus fournissent aussi : surbrillance des
+     * machines et plan de l'onglet Recette. Un résultat déjà rangé dans un coffre ne fait plus
+     * briller les machines qui le fabriqueraient. Le panneau d'une machine garde {@link #toutes}.
+     */
+    private static List<PlanMachines.Operation<EmiRecipe>> utiles = List.of(),
+            operationsUtiles = List.of();
+
     private static String calculPrecedent = "";
 
     private record EntreesConnues(Object machine, List<PlanRetrait.Stock<EmiStack>> objets) {}
@@ -109,7 +118,38 @@ public final class MachinesEmi {
     }
 
     static List<PlanMachines.Operation<EmiRecipe>> operationsSuivies() {
-        return toutes;
+        return utiles;
+    }
+
+    /**
+     * Ce que les coffres connus contiennent des objets de l'arbre, à récupérer : jamais dans les
+     * poches, mais plus à fabriquer. Les variantes NBT ne sont pas distinguées par la mémoire des
+     * coffres : la variante de l'arbre est reprise telle quelle.
+     *
+     * @param dejaComptes ce que le plan compte déjà et qui peut se trouver dans un coffre : sorties
+     *     attendues des lots (souvent dans le coffre de sortie de la machine) et objets crédités
+     *     sortis des poches. Retiré des coffres pour ne jamais compter deux fois ; dans le doute,
+     *     le plan garde une fabrication de trop plutôt qu'une de moins.
+     */
+    static List<PlanRetrait.Stock<EmiStack>> stockCoffres(
+            InstantaneArbreEmi vue, List<PlanRetrait.Stock<EmiStack>> dejaComptes) {
+        var coffres = fr.assistantia.CoffresConnus.etat();
+        if (!coffres.pret() || coffres.objets().isEmpty() || vue == null) return List.of();
+        var deja = new java.util.HashMap<String, Long>();
+        for (var s : dejaComptes)
+            if (!s.objet().getItemStack().isEmpty())
+                deja.merge(s.objet().getId().toString(), (long) s.quantite(), Long::sum);
+        var vus = new java.util.HashSet<String>();
+        List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
+        for (var variante : vue.variantes()) {
+            String id = variante.getId().toString();
+            if (!vus.add(id)) continue;
+            long n = coffres.objets().getOrDefault(id, 0L) - deja.getOrDefault(id, 0L);
+            if (n <= 0) continue;
+            stock.add(
+                    new PlanRetrait.Stock<>(variante.copy(), (int) Math.min(1_000_000L, n), false));
+        }
+        return stock;
     }
 
     static List<LotMachine> lotsSuivis() {
@@ -648,7 +688,7 @@ public final class MachinesEmi {
                 operationsOutils = null;
             }
             lots.oublierInterface();
-            toutes = List.of();
+            toutes = utiles = operationsUtiles = List.of();
             calculPrecedent = "";
             problemeOrdre = "";
             choixExplicite = false;
@@ -687,20 +727,38 @@ public final class MachinesEmi {
                                             new PlanRetrait.Stock<>(
                                                     EmiStack.of(c.objet()), c.quantite(), true))
                             .toList();
-            stock.addAll(creditsAcquis(stock, finaux));
+            var credites = creditsAcquis(stock, finaux);
+            stock.addAll(credites);
             stock.addAll(finaux);
             stock.addAll(completerOutils(stock));
-            String cle = cleStock(stock) + "|" + lots.revision();
+            String cle =
+                    cleStock(stock)
+                            + "|"
+                            + lots.revision()
+                            + "|"
+                            + fr.assistantia.CoffresConnus.etat().revision();
             if (cle.equals(calculPrecedent)) return;
             calculPrecedent = cle;
             // Les réceptions sorties des poches gardent un crédit de travail accompli.
             // Les quantités restantes seules restent réservées et recherchées en jaune.
-            for (var lot : lots.actifs()) stock.addAll(lot.suivi().restants());
+            List<PlanRetrait.Stock<EmiStack>> horsPoches = new ArrayList<>(credites);
+            horsPoches.addAll(finaux);
+            for (var lot : lots.actifs()) {
+                stock.addAll(lot.suivi().restants());
+                horsPoches.addAll(lot.suivi().restants());
+            }
             toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
+            var coffres = stockCoffres(vue, horsPoches);
+            if (coffres.isEmpty()) utiles = toutes;
+            else {
+                stock.addAll(coffres);
+                utiles = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
+            }
+            operationsUtiles = utiles.stream().filter(o -> estGT(o.recette())).toList();
             problemeOrdre = "";
         } catch (ReflectiveOperationException | RuntimeException e) {
-            operations = toutes = List.of();
+            operations = toutes = utiles = operationsUtiles = List.of();
             calculPrecedent = "";
             problemeOrdre = "Arbre EMI invalide ou cyclique · choisis une autre branche.";
             if (!erreurSignalee) {
@@ -720,7 +778,9 @@ public final class MachinesEmi {
         if (ticks % 100 == 0) compatibilites.clear();
         if (ticks % 40 != 0) return;
         var mc = Minecraft.getInstance();
-        if (arbre == null || mc.level == null || mc.player == null || operations.isEmpty()) {
+        // Seules les machines encore utiles brillent : rien quand les coffres ont déjà le résultat.
+        var utilesGT = operationsUtiles;
+        if (arbre == null || mc.level == null || mc.player == null || utilesGT.isEmpty()) {
             machines = List.of();
             return;
         }
@@ -734,7 +794,7 @@ public final class MachinesEmi {
                     if (be.getBlockPos().distSqr(joueur) > 48 * 48) continue;
                     Object machine = GregTechMachines.machine(be);
                     if (machine != null
-                            && operations.stream().anyMatch(o -> compatible(machine, o.recette())))
+                            && utilesGT.stream().anyMatch(o -> compatible(machine, o.recette())))
                         trouvées.add(be.getBlockPos().immutable());
                 }
             }

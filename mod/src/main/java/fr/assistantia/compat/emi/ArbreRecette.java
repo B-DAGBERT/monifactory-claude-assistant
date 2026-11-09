@@ -16,10 +16,15 @@ import net.minecraft.client.Minecraft;
 /**
  * Accès en réflexion à l'arbre interne d'EMI ({@code BoM.tree}, {@code MaterialTree}, {@code
  * MaterialNode}). La lecture conserve l'ingrédient de chaque nœud, clé des résolutions locales.
- * L'écriture se limite aux résolutions de cet arbre : jamais {@code BoM.addRecipe}, ni sauvegarde
- * EMI, ni favoris.
+ * L'écriture touche les résolutions de cet arbre et, sur « Appliquer » seulement, la recette par
+ * défaut d'EMI de l'ingrédient ({@code BoM.addedRecipes}, bouton doré « Définir par défaut »).
  */
 final class ArbreRecette {
+    /** Recette par défaut d'EMI d'un ingrédient avant « Appliquer », pour « Annuler ». */
+    record Defaut(EmiIngredient cle, boolean avait, EmiRecipe recette) {}
+
+    private static Field ajoutees;
+    private static Method sauver;
     static final int MAX_PROFONDEUR = 128, MAX_NOEUDS = 4096;
 
     /**
@@ -128,7 +133,8 @@ final class ArbreRecette {
     /**
      * Change la recette du but par le chemin natif d'EMI ({@code addResolution} sur la clé du but),
      * puis rétablit la quantité visée : EMI remettrait la quantité par lot à celle de la clé (1).
-     * Seule la résolution locale de cet arbre change ; jamais les défauts ni les favoris EMI.
+     * Seule la résolution locale de cet arbre change ici ; la recette par défaut d'EMI se change à
+     * part ({@link #definirDefaut}).
      *
      * @return l'état d'avant, pour « Annuler »
      */
@@ -259,6 +265,53 @@ final class ArbreRecette {
         recalculate.invoke(arbre);
         calculateCost.invoke(arbre);
         rafraichir();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<EmiIngredient, EmiRecipe> defauts() throws ReflectiveOperationException {
+        if (ajoutees == null || sauver == null) {
+            // Les deux ou aucun : jamais une recette par défaut changée sans pouvoir l'enregistrer.
+            var champ = Class.forName("dev.emi.emi.bom.BoM").getField("addedRecipes");
+            sauver = Class.forName("dev.emi.emi.runtime.EmiPersistentData").getMethod("save");
+            ajoutees = champ;
+        }
+        return (Map<EmiIngredient, EmiRecipe>) ajoutees.get(null);
+    }
+
+    /**
+     * Fait de {@code choisie} la recette par défaut d'EMI pour cet ingrédient, comme le bouton «
+     * Définir par défaut » (sans recalcul : la résolution locale qui suit recalcule l'arbre), et
+     * l'enregistre.
+     *
+     * @return la recette par défaut d'avant, pour « Annuler »
+     */
+    static Defaut definirDefaut(EmiIngredient cle, EmiRecipe choisie)
+            throws ReflectiveOperationException {
+        var defauts = defauts();
+        var avant = new Defaut(cle, defauts.containsKey(cle), defauts.get(cle));
+        defauts.put(cle, choisie);
+        try {
+            sauver.invoke(null);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // Non enregistrée : rien ne change, le choix restera local à l'arbre.
+            if (avant.avait()) defauts.put(cle, avant.recette());
+            else defauts.remove(cle);
+            throw e;
+        }
+        return avant;
+    }
+
+    /** Rétablit la recette par défaut d'EMI d'avant « Appliquer », puis l'enregistre. */
+    static void restaurerDefaut(Defaut avant) throws ReflectiveOperationException {
+        var defauts = defauts();
+        if (avant.avait()) defauts.put(avant.cle(), avant.recette());
+        else defauts.remove(avant.cle());
+        sauver.invoke(null);
+    }
+
+    /** Recette par défaut d'EMI choisie par le joueur pour cet ingrédient, ou null. */
+    static EmiRecipe defaut(EmiIngredient cle) throws ReflectiveOperationException {
+        return defauts().get(cle);
     }
 
     /** L'écran Recipe Tree ouvert relit l'arbre, comme après un choix natif. */

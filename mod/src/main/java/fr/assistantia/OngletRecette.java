@@ -87,6 +87,7 @@ public final class OngletRecette {
     private enum Action {
         APPLIQUER,
         ANNULER,
+        VOIR,
         RECETTE
     }
 
@@ -238,7 +239,7 @@ public final class OngletRecette {
             liste.add(
                     vue.plan().isEmpty()
                             ? new LigneTexte(
-                                    "Rien à fabriquer : tout est déjà en stock.",
+                                    "Rien à fabriquer : tout est dans ton inventaire ou tes coffres.",
                                     Theme.TEXTE_SECONDAIRE)
                             : new LigneTexte("Plan non calculé : " + vue.plan(), Theme.JAUNE));
         for (var etape : vue.etapes()) liste.add(new LigneEtape(etape));
@@ -363,9 +364,21 @@ public final class OngletRecette {
         Theme.carte(g, lx, ly, l, CARTE, survol);
         icone(g, font, a.produit(), lx + 4, ly + 5, mx, my);
         String libelle = "Appliquer";
-        int bl = Math.min(Theme.largeurBouton(font, libelle, 80), Math.max(Theme.BOUTON, l / 3));
+        // « Nouvelle recette » en entier quand la ligne le permet, sinon « Voir » (même action).
+        String voir = "Nouvelle recette";
+        int bv = Theme.largeurBouton(font, voir, 140);
+        if (bv > l / 3) {
+            voir = "Voir";
+            bv = Math.min(Theme.largeurBouton(font, voir, 60), Math.max(Theme.BOUTON, l / 5));
+        }
+        int bl = Math.min(Theme.largeurBouton(font, libelle, 80), Math.max(Theme.BOUTON, l / 4));
         int bx = lx + l - 4 - bl, by = ly + (CARTE - Theme.BOUTON) / 2;
+        int vx = bx - Theme.ECART - bv;
         boolean surBouton = dans(mx, my, bx, by, bl, Theme.BOUTON);
+        boolean surVoir = dans(mx, my, vx, by, bv, Theme.BOUTON);
+        Theme.bouton(
+                g, font, vx, by, bv, Theme.BOUTON, voir, Theme.Genre.NORMAL, true, surVoir, false);
+        zone(vx, by, bv, Theme.BOUTON, Action.VOIR, a.id(), ItemStack.EMPTY);
         Theme.bouton(
                 g,
                 font,
@@ -379,14 +392,18 @@ public final class OngletRecette {
                 surBouton,
                 false);
         zone(bx, by, bl, Theme.BOUTON, Action.APPLIQUER, a.id(), ItemStack.EMPTY);
-        int tx = lx + 4 + ICONE + 4, place = Math.max(0, bx - Theme.ECART - tx);
+        int tx = lx + 4 + ICONE + 4, place = Math.max(0, vx - Theme.ECART - tx);
         Theme.texte(g, font, a.produit().nom() + " → " + a.poste(), tx, ly + 3, place, Theme.TEXTE);
         Theme.texte(g, font, a.gain(), tx, ly + 14, place, Theme.VERT);
         if (surBouton)
             Theme.infobulle(
                     font,
                     Component.literal(
-                            "Choisir cette recette dans l’arbre EMI (uniquement cet arbre). « Annuler » rétablit l’ancien choix."));
+                            "Choisir cette recette dans l’arbre EMI et en faire la recette par défaut d’EMI pour tous les arbres. « Annuler » rétablit les deux."));
+        else if (surVoir)
+            Theme.infobulle(
+                    font,
+                    Component.literal("Nouvelle recette : ouvre EMI sur la recette proposée."));
         else if (survol && !dans(mx, my, lx + 4, ly + 5, ICONE, ICONE) && !a.detail().isEmpty())
             Theme.infobulle(font, Component.literal(a.detail()));
     }
@@ -486,6 +503,7 @@ public final class OngletRecette {
             switch (zone.action()) {
                 case APPLIQUER -> retour(VueRecette.appliquer(zone.id()));
                 case ANNULER -> retour(VueRecette.annuler());
+                case VOIR -> retour(VueRecette.voir(zone.id()));
                 case RECETTE -> ouvrirRecette(zone.objet());
             }
             return true;
