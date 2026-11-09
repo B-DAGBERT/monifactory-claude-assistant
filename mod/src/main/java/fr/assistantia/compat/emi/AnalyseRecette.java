@@ -116,7 +116,7 @@ public final class AnalyseRecette {
     private static String erreur = "";
     private static boolean sale, erreurSignalee, branche, connecte;
     private static long revisionVue, dernierePublication;
-    private static int ticks, pause;
+    private static int ticks, pause, prochainPlan;
     private static VueRecette.Etat etatPublie;
     private static java.lang.reflect.Method estCharge;
 
@@ -203,7 +203,7 @@ public final class AnalyseRecette {
             publierVide(VueRecette.Etat.ERREUR, erreur);
             return;
         }
-        if (ticks % 10 == 0) actualiserPlan(false);
+        if (ticks >= prochainPlan && ticks % 10 == 0) actualiserPlan(false);
         long limite = System.nanoTime() + BUDGET_NS;
         while (!taches.isEmpty() && System.nanoTime() < limite) {
             executer(taches.pollFirst());
@@ -480,6 +480,17 @@ public final class AnalyseRecette {
                         + InventaireJoueur.disponible();
         if (!force && signature.equals(clePlan)) return;
         clePlan = signature;
+        long debut = System.nanoTime();
+        try {
+            ordonner(operationsSuivies, suivi);
+        } finally {
+            // Un très grand plan coûte plusieurs millisecondes : le relire moins souvent.
+            prochainPlan = ticks + (System.nanoTime() - debut > 5_000_000L ? 60 : 0);
+        }
+    }
+
+    private static void ordonner(
+            List<PlanMachines.Operation<EmiRecipe>> operationsSuivies, boolean suivi) {
         List<PlanMachines.Operation<EmiRecipe>> operations;
         try {
             operations =
