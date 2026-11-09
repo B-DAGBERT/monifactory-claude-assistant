@@ -56,7 +56,10 @@ final class GregTechRecette {
     }
 
     static long tension(Object gt) throws ReflectiveOperationException {
-        return ((Number) tension.invoke(energie(gt))).longValue();
+        // energie() initialise la méthode mise en cache : l'appeler dans une instruction à part,
+        // car la cible d'un appel est évaluée avant ses arguments (JLS 15.12.4.1).
+        Object e = energie(gt);
+        return ((Number) tension.invoke(e)).longValue();
     }
 
     /** Énergie d'une fabrication (EU) et sa durée (ticks). */

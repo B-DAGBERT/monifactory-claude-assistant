@@ -139,6 +139,9 @@ class RecipeEngineTests(unittest.TestCase):
     def test_expansion_counter_bounds_work_per_tick(self):
         self.run_case("expansions")
 
+    def test_stale_follow_up_snapshot_is_never_adopted(self):
+        self.run_case("source")
+
 
 # Reproduction fidèle (javap d'emi-1.1.22) de MaterialTree/MaterialNode : addResolution sur la clé
 # du but appelle goal.defineRecipe puis remet goal.amount à la quantité de la clé (1) ; la quantité
@@ -599,6 +602,79 @@ class RealTreeNotificationTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS arbre-reel", result.stdout)
+
+
+# GregTechRecette met ses accès réflexifs en cache au premier appel : la toute première lecture
+# d'une recette GT de la session doit déjà fonctionner (sinon un poste de catégorie resterait en
+# cache et la décision C serait contournée pour cette recette).
+GT_STUBS = {
+    "dev.emi.emi.api.recipe.EmiRecipe": "public interface EmiRecipe {}",
+    "com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe": """public class GTEmiRecipe implements dev.emi.emi.api.recipe.EmiRecipe {
+ private final Object recipe;public GTEmiRecipe(Object r){recipe=r;}}""",
+    "com.gregtechceu.gtceu.api.recipe.GTRecipe": """public class GTRecipe {public final Object recipeType;public int duration;private final Energie energie;
+ public GTRecipe(Object type,int duree,long v,long a){recipeType=type;duration=duree;energie=new Energie(v,a);}
+ public Energie getInputEUt(){return energie;}
+ public static final class Energie {private final long v,a;Energie(long v,long a){this.v=v;this.a=a;}public long voltage(){return v;}public long amperage(){return a;}}}""",
+    "fr.assistantia.compat.emi.GregTechMachines": """public final class GregTechMachines {
+ public static java.lang.reflect.Field champ(Class<?> type,String nom)throws NoSuchFieldException{
+  for(Class<?> c=type;c!=null;c=c.getSuperclass()){try{var f=c.getDeclaredField(nom);f.setAccessible(true);return f;}catch(NoSuchFieldException ignored){}}
+  throw new NoSuchFieldException(nom);}}""",
+}
+
+GT_HARNESS = """package fr.assistantia.compat.emi;
+import com.gregtechceu.gtceu.api.recipe.GTRecipe;import com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe;
+public class GregTechRecetteTest {
+ public static void main(String[] a)throws Exception{
+  Object bender=new Object();var gt=new GTRecipe(bender,200,24,1);var emi=new GTEmiRecipe(gt);
+  assert GregTechRecette.recette(emi)==gt;assert GregTechRecette.recette(new dev.emi.emi.api.recipe.EmiRecipe(){})==null;
+  switch(a[0]){
+   case "tension-d-abord"->{
+    assert GregTechRecette.tension(gt)==24:"first call of the session must not throw";
+    assert GregTechRecette.type(gt)==bender;
+    double[] cout=GregTechRecette.cout(gt);assert cout[0]==24*200&&cout[1]==200;
+   }
+   case "cout-d-abord"->{
+    double[] cout=GregTechRecette.cout(gt);assert cout[0]==4800&&cout[1]==200;
+    assert GregTechRecette.tension(new GTRecipe(bender,100,120,2))==120;
+   }
+   default->throw new AssertionError(a[0]);
+  }
+  System.out.println("PASS "+a[0]);
+ }
+}
+"""
+
+
+class GregTechHandlesTests(unittest.TestCase):
+    """Chaque cas tourne dans une JVM neuve : les accès réflexifs ne sont pas encore en cache."""
+
+    def test_first_reads_work_in_any_order(self):
+        java, javac = jdk()
+        if not java or not javac:
+            self.skipTest("JDK 17 requis")
+        with tempfile.TemporaryDirectory() as tmp:
+            harness = Path(tmp) / "GregTechRecetteTest.java"
+            harness.write_text(GT_HARNESS, encoding="utf-8")
+            compile_sources(
+                javac, tmp, GT_STUBS, [MOD / "compat/emi/GregTechRecette.java", harness]
+            )
+            for case in ("tension-d-abord", "cout-d-abord"):
+                with self.subTest(case=case):
+                    result = subprocess.run(
+                        [
+                            java,
+                            "-ea",
+                            "-cp",
+                            tmp,
+                            "fr.assistantia.compat.emi.GregTechRecetteTest",
+                            case,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn("PASS " + case, result.stdout)
 
 
 if __name__ == "__main__":

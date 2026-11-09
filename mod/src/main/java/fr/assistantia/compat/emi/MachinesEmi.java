@@ -120,6 +120,14 @@ public final class MachinesEmi {
         return machines;
     }
 
+    /**
+     * Onglet Recette : après une vraie modification de l'arbre (choix appliqué, résolution EMI),
+     * relire l'arbre tout de suite plutôt qu'au prochain relevé de dix ticks.
+     */
+    static void relireArbre() {
+        actualiserArbre();
+    }
+
     /** Identité de navigation, y compris lorsque le service Production n'est pas disponible. */
     public static String contexteSelection() {
         return fr.assistantia.Pont.cleContexte();

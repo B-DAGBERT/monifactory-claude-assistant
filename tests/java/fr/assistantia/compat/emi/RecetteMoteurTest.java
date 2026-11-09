@@ -116,6 +116,7 @@ public final class RecetteMoteurTest {
             case "outils" -> outils();
             case "tension" -> tension();
             case "expansions" -> expansions();
+            case "source" -> source();
             default -> throw new IllegalArgumentException(args[0]);
         }
         System.out.println("PASS " + args[0]);
@@ -645,6 +646,28 @@ public final class RecetteMoteurTest {
         assert premier == 3 : "bronze ingot, copper, tin: " + premier;
         chaine.evaluer("bend_bronze", "bronze_plate");
         assert chaine.expansions() == premier : "memoised ingredient costs no expansion";
+    }
+
+    /**
+     * Après Appliquer (mode fabrication actif), le suivi garde quelques ticks l'instantané d'avant
+     * : il n'est jamais adopté, le plan affiché reste celui du même arbre jusqu'au nouveau calcul.
+     */
+    private static void source() {
+        Object avant = new Object(), apres = new Object();
+        assert RangsRecette.source(true, apres, apres, 0, 3) == RangsRecette.Source.SUIVI;
+        assert RangsRecette.source(true, avant, apres, 0, 3) == RangsRecette.Source.ATTENDRE
+                : "stale follow-up snapshot never adopted";
+        assert RangsRecette.source(true, null, apres, 2, 3) == RangsRecette.Source.ATTENDRE;
+        assert RangsRecette.source(true, avant, apres, 3, 3) == RangsRecette.Source.LOCAL
+                : "local plan when the follow-up never reads this tree";
+        assert RangsRecette.source(false, apres, apres, 0, 3) == RangsRecette.Source.LOCAL;
+        var etapes =
+                List.of(
+                        new RangsRecette.Etape<>(
+                                1, "bend", 8, 0, RangsRecette.Statut.PRETE, "", 0));
+        assert RangsRecette.conservees(true, etapes) == etapes
+                : "same tree edited: steps, HUD and markers stay until the new plan";
+        assert RangsRecette.conservees(false, etapes).isEmpty() : "another tree starts empty";
     }
 
     // ---------- Facile à fabriquer ----------
