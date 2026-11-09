@@ -166,12 +166,19 @@ public final class GregTechFilons {
 
     // ---------- Bornes des générateurs ----------
 
+    private static final Map<String, Optional<Class<?>>> CLASSES = new HashMap<>();
+
     private static Class<?> classe(String nom) {
-        try {
-            return Class.forName(VEINES + nom);
-        } catch (ClassNotFoundException e) {
-            return null;
-        }
+        return CLASSES.computeIfAbsent(
+                        nom,
+                        n -> {
+                            try {
+                                return Optional.of(Class.forName(VEINES + n));
+                            } catch (ClassNotFoundException e) {
+                                return Optional.empty();
+                            }
+                        })
+                .orElse(null);
     }
 
     private static boolean est(Object generateur, String nom) {

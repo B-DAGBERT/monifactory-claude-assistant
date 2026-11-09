@@ -91,6 +91,11 @@ public final class Filons {
     private static volatile String messageChargement = "";
     private static final Set<Path> VERSIONS_VERIFIEES =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Fichiers lus ou écrits sans erreur : seuls eux deviennent la copie de secours .bak. */
+    private static final Set<Path> FICHIERS_SAINS =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private static final Map<String, String> NOMS = new HashMap<>();
     private static final Set<String> DANGERS =
             Set.of(
@@ -438,7 +443,9 @@ public final class Filons {
                                     : Files.exists(secours)
                                             ? Files.readString(secours, StandardCharsets.UTF_8)
                                             : null;
-            return texte == null ? new FilonMemoire() : FormatFilons.lire(texte, id);
+            var lue = texte == null ? new FilonMemoire() : FormatFilons.lire(texte, id);
+            if (attente == null && Files.exists(chemin)) FICHIERS_SAINS.add(chemin);
+            return lue;
         } catch (Exception e) {
             LogUtils.getLogger().warn("Lecture des filons", e);
             try {
@@ -532,18 +539,22 @@ public final class Filons {
         Files.createDirectories(p.getParent());
         Path tmp = p.resolveSibling(p.getFileName() + ".tmp");
         Files.writeString(tmp, texte, StandardCharsets.UTF_8);
-        if (p.getParent().getFileName().toString().equals("filons_gregtech") && Files.exists(p)) {
+        boolean natif = p.getParent().getFileName().toString().equals("filons_gregtech");
+        if (natif && Files.exists(p)) {
             conserverAncienFormat(p);
-            Files.copy(
-                    p,
-                    p.resolveSibling(p.getFileName() + ".bak"),
-                    StandardCopyOption.REPLACE_EXISTING);
+            // Un fichier illisible ne remplace jamais une bonne copie de secours.
+            if (FICHIERS_SAINS.contains(p))
+                Files.copy(
+                        p,
+                        p.resolveSibling(p.getFileName() + ".bak"),
+                        StandardCopyOption.REPLACE_EXISTING);
         }
         try {
             Files.move(tmp, p, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException e) {
             Files.move(tmp, p, StandardCopyOption.REPLACE_EXISTING);
         }
+        if (natif) FICHIERS_SAINS.add(p);
     }
 
     /** Avant la première sauvegarde v2, l'ancien fichier v1 est gardé une fois pour toutes. */
@@ -1015,6 +1026,7 @@ public final class Filons {
         final int x, y, z;
         final long revision;
         final StyleFilons style;
+        long date;
         final boolean[] dessines;
 
         /** Carré de la distance à la caméra, recalculé à chaque image. */
@@ -1072,12 +1084,14 @@ public final class Filons {
     private static void actualiserContours(
             FilonMemoire.Filon f, BlockPos joueur, StyleFilons style) {
         var c = contours;
+        long maintenant = System.currentTimeMillis();
         if (c.filon == f
-                && c.revision == f.revision
                 && c.style == style
                 && Math.abs(c.x - joueur.getX()) < 2
                 && Math.abs(c.y - joueur.getY()) < 2
-                && Math.abs(c.z - joueur.getZ()) < 2) return;
+                && Math.abs(c.z - joueur.getZ()) < 2
+                // Pendant un scan le filon change à chaque tick : au plus 4 calculs par seconde.
+                && (c.revision == f.revision || maintenant - c.date < 250)) return;
         int[] indices =
                 f.contours(
                         joueur.getX(),
@@ -1115,6 +1129,7 @@ public final class Filons {
                         joueur.getZ(),
                         f.revision,
                         style);
+        contours.date = maintenant;
     }
 
     @SubscribeEvent
