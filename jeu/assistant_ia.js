@@ -66,7 +66,7 @@ let dimensionPrecedente = null, debutDimension = 0
 let etatEcrit = null, etatEcritA = 0   // dernier etat.json écrit : texte sans l'heure, et date
 let quetesEcrites = null // empreintes du dernier quetes.json écrit : { quetes, progres, t }
 let resume = null        // dernier comptage des quêtes : { empreinte, terminees, total }
-let stockageEnAttente = 0, ecranStockage = null   // première modification non écrite, et l'écran d'alors
+let stockageEnAttente = 0, ecranEcrit = null   // modification non écrite depuis ; écran de la dernière écriture
 let mondeVerifie = null, sessionVerifiee = null   // identifiants déjà validés
 
 function isolationDemandee() {
@@ -130,9 +130,12 @@ function lireMemoire(nom) {
 }
 
 function ecrireMemoire(nom, data) {
-  if (memoireMonde) MemoireMonde.ecrire(memoireMonde, nom, JsonIO.of(data).getAsJsonObject())
-  else if (memoireDifferee()) MemoireMonde.ecrireHistorique(nom, JsonIO.of(data).getAsJsonObject())
+  let erreur = ''
+  if (memoireMonde) erreur = str(MemoireMonde.ecrire(memoireMonde, nom, JsonIO.of(data).getAsJsonObject()))
+  else if (memoireDifferee()) erreur = str(MemoireMonde.ecrireHistorique(nom, JsonIO.of(data).getAsJsonObject()))
   else JsonIO.write(DOSSIER + nom, data)
+  // Échec d'une écriture précédente : noté une seule fois ; le mod la retente lui-même jusqu'à réussite
+  if (erreur !== '') noterErreur('mémoire', erreur)
 }
 
 function amorcerCommande() {
@@ -173,7 +176,7 @@ function synchroniserContexte(suivant) {
   }
   conteneur = ecranPrecedent = mineraiVise = null
   dimensionPrecedente = null
-  etatEcrit = quetesEcrites = ecranStockage = null   // relevés du nouveau contexte écrits sans attendre
+  etatEcrit = quetesEcrites = ecranEcrit = null   // relevés du nouveau contexte écrits sans attendre
   stockageEnAttente = 0
   amorcerCommande()
   inventaire = {}
@@ -371,8 +374,11 @@ function ecrireEtat() {
   etatEcritA = maintenant
 }
 
-// Réécrit seulement si les quêtes ont changé ; une progression de tâche seule, au plus toutes les 30 s
+// Réécrit seulement si les quêtes ont changé ; une progression de tâche seule, au plus toutes les 30 s.
+// Un fichier que le mod n'a pas pu écrire (erreur, verrou trop long) est republié tel quel.
 function ecrireQuetes() {
+  if (quetesEcrites != null && ECHANGES && typeof Echanges.perdu == 'function'
+    && Echanges.perdu('quetes.json') == true) quetesEcrites = null
   const empreinte = empreinteQuetes()
   const maintenant = Date.now()
   if (empreinte != null && quetesEcrites != null && empreinte.quetes === quetesEcrites.quetes
@@ -571,15 +577,19 @@ function suivreConteneur() {
   else if (ecran != ecranPrecedent) surOuvertureEcran()
   ecranPrecedent = ecran
   if (conteneur != null) lireConteneur()
+  if (ecran == null) ecranEcrit = null
   if (!stockageModifie) return
-  // Un coffre qu'on range change à chaque déplacement : toute la mémoire est écrite au plus
+  // Première modification d'un écran : écrite aussitôt (l'assistant annonce le coffre mémorisé).
+  // Un coffre qu'on range change ensuite à chaque déplacement : toute la mémoire est écrite au plus
   // toutes les 2 s tant qu'il reste ouvert, et dès que l'écran se ferme ou change.
-  const maintenant = Date.now()
-  if (stockageEnAttente == 0) {
-    stockageEnAttente = maintenant
-    ecranStockage = ecran
+  if (ecran == null || ecran != ecranEcrit) {
+    ecrireStockage()
+    ecranEcrit = ecran
+    return
   }
-  if (ecran == null || ecran != ecranStockage || maintenant - stockageEnAttente >= ATTENTE_STOCKAGE) ecrireStockage()
+  const maintenant = Date.now()
+  if (stockageEnAttente == 0) stockageEnAttente = maintenant
+  if (maintenant - stockageEnAttente >= ATTENTE_STOCKAGE) ecrireStockage()
 }
 
 function ecrireStockage() {
@@ -590,7 +600,6 @@ function ecrireStockage() {
   })
   stockageModifie = false
   stockageEnAttente = 0
-  ecranStockage = null
 }
 
 // ---------- Export des recettes (EMI) ----------
@@ -763,7 +772,11 @@ ClientEvents.tick(function (event) {
     courant = contexteCourant()
     synchroniserContexte(courant)
   })
-  if (Client.player == null || Client.level == null || courant == null || !memeContexte(contexte, courant)) return
+  if (Client.player == null || Client.level == null || courant == null || !memeContexte(contexte, courant)) {
+    // Déconnexion brutale (expulsion, redémarrage du serveur) : la mémoire des coffres en attente est écrite
+    if (stockageModifie && (Client.player == null || Client.level == null)) essayer('coffres', ecrireStockage)
+    return
+  }
   ticks++
   if (exportRecettes != null) essayer('export des recettes', avancerExportRecettes)
   if (ticks % 5 == 0) essayer('coffres', suivreConteneur)

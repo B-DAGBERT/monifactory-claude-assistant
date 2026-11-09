@@ -19,8 +19,10 @@ public final class EcrituresTest {
     static final AtomicInteger REFUS = new AtomicInteger();
     static volatile CountDownLatch bloque; // holds the writer thread inside a replacement
     static volatile boolean erreurDisque;
+    static volatile String temporaireVu = "";
 
     static void remplacer(Path temporaire, Path cible) throws IOException {
+        temporaireVu = temporaire.getFileName().toString();
         var verrou = bloque;
         if (verrou != null && Thread.currentThread().getName().startsWith("test-")) {
             try {
@@ -63,6 +65,11 @@ public final class EcrituresTest {
         check(ms < 250, "no wait on the caller thread: " + ms + " ms");
         check(e.vider(5000), "retries finish");
         check(Files.readString(cible).equals("A"), "request delivered once the reader released it");
+        // Neutral prefix: an orphan never looks like a copy of the file to the assistant's tools.
+        check(
+                temporaireVu.startsWith(".ecriture-inventaire_joueur.json-")
+                        && temporaireVu.endsWith(".tmp"),
+                "temporary name: " + temporaireVu);
 
         // 2. A newer request during a refusal is written alone; the older one never lands after.
         ECRITS.clear();
@@ -264,5 +271,76 @@ public final class EcrituresTest {
                 "refused target not written");
         refuse[0] = false;
         check(e.vider(5000) && Files.readString(memoire).equals("M6"), "written once allowed");
+
+        // A target refused by its checks (Refus) is never retried, even for player data.
+        int[] essais = {0};
+        e.differer(
+                memoire,
+                new Ecritures.Contenu() {
+                    protected void preparer() throws IOException {
+                        essais[0]++;
+                        throw new Ecritures.Refus("linked partition");
+                    }
+
+                    protected byte[] produire() {
+                        return "M7".getBytes();
+                    }
+                }.durable());
+        check(e.vider(5000), "refused target dropped at once");
+        check(essais[0] == 1, "refused target not retried: " + essais[0]);
+        check(e.derniereErreur(memoire) != null, "refusal kept for the caller");
+        check(Files.readString(memoire).equals("M6"), "never written through a refused target");
+
+        // Legacy memory (persistent, no fsync) is never abandoned either.
+        long forces = journal.stream().filter(l -> l.startsWith("force")).count();
+        pannes.set(1_000_000);
+        e.differer(memoire, Ecritures.texte("M8").persistant());
+        Thread.sleep(700);
+        check(!e.vider(50), "legacy player data never abandoned");
+        pannes.set(0);
+        check(e.vider(5000) && Files.readString(memoire).equals("M8"), "written after recovery");
+        check(
+                journal.stream().filter(l -> l.startsWith("force")).count() == forces,
+                "legacy memory not forced to disk");
+
+        // An Error (out of memory while serialising) never leaves a task stuck.
+        Path trame = dossier.resolve("quetes.json");
+        e.differer(
+                trame,
+                new Ecritures.Contenu() {
+                    protected byte[] produire() {
+                        throw new OutOfMemoryError("test");
+                    }
+                });
+        check(e.vider(5000) && e.dernier(trame) == null, "ordinary frame released after an Error");
+        e.differer(trame, Ecritures.texte("Q2"));
+        check(e.vider(5000) && Files.readString(trame).equals("Q2"), "the file is written again");
+        check(
+                !e.essayer(
+                        trame,
+                        new Ecritures.Contenu() {
+                            protected byte[] produire() {
+                                throw new StackOverflowError("test");
+                            }
+                        }),
+                "an Error on the caller's attempt is reported as a failure");
+        check(
+                e.dernier(trame) == null && e.vider(1000),
+                "caller's attempt released after an Error");
+        boolean[] premier = {true};
+        e.differer(
+                memoire,
+                new Ecritures.Contenu() {
+                    protected byte[] produire() {
+                        if (premier[0]) {
+                            premier[0] = false;
+                            throw new OutOfMemoryError("test");
+                        }
+                        return "M9".getBytes();
+                    }
+                }.persistant());
+        check(
+                e.vider(5000) && Files.readString(memoire).equals("M9"),
+                "player data retried after an Error");
     }
 }

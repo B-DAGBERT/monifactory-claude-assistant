@@ -102,6 +102,10 @@ public final class SacsPortes {
         baseLue = null;
         quantitesBase = Map.of();
         racinesBase.clear();
+        // Aucune pile de l'ancienne connexion ne reste référencée par les listes du parcours.
+        racines.clear();
+        portesSeuls.clear();
+        parcours.clear();
         parcoursCompose.clear();
         dernier = new Etat(List.of(), true);
     }

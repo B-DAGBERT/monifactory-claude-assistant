@@ -36,6 +36,9 @@ public final class Ecritures {
 
     private static final long DELAI_MAX_MS = 250, DELAI_MAX_DURABLE_MS = 1000;
 
+    /** Préfixe des fichiers temporaires (.ecriture-nom-123.tmp), étranger à tout autre fichier. */
+    static final String PREFIXE_TEMPORAIRE = ".ecriture-";
+
     /** Remplace la cible par le fichier temporaire (déplacement atomique en production). */
     @FunctionalInterface
     interface Remplacement {
@@ -48,31 +51,55 @@ public final class Ecritures {
         void forcer(Path temporaire) throws IOException;
     }
 
+    /**
+     * Cible refusée par ses contrôles (dossier lié, fichier à la place d'un dossier) : jamais
+     * retentée.
+     */
+    public static final class Refus extends IOException {
+        public Refus(String message) {
+            super(message);
+        }
+    }
+
     /** Contenu d'un fichier, produit une seule fois : sur le fil d'écriture s'il est différé. */
     public abstract static class Contenu {
         private byte[] octets;
-        private boolean produit, durable;
+        private boolean produit, persistant, force;
 
         /** Les octets à écrire, ou null pour ne rien écrire (relevé devenu invalide). */
         protected abstract byte[] produire() throws IOException;
 
-        /** Sur le fil d'écriture, avant tout fichier temporaire : prépare et contrôle la cible. */
+        /**
+         * Sur le fil d'écriture, avant tout fichier temporaire : prépare et contrôle la cible (une
+         * cible refusée lève {@link Refus}).
+         */
         protected void preparer() throws IOException {}
 
         /** Appelé sur le fil d'écriture une fois le fichier remplacé. */
         protected void ecrit() {}
 
         /**
-         * Donnée du joueur : forcée sur le disque avant le remplacement, et retentée après toute
-         * erreur jusqu'à ce qu'un contenu plus récent la remplace (jamais abandonnée).
+         * Donnée du joueur : jamais abandonnée. Après toute erreur (sauf une cible refusée), elle
+         * est retentée jusqu'à réussite ou jusqu'à ce qu'un contenu plus récent la remplace.
          */
-        public final Contenu durable() {
-            durable = true;
+        public final Contenu persistant() {
+            persistant = true;
             return this;
         }
 
-        final boolean estDurable() {
-            return durable;
+        /** Donnée du joueur d'une partition : persistante et forcée sur le disque (fsync). */
+        public final Contenu durable() {
+            persistant = true;
+            force = true;
+            return this;
+        }
+
+        final boolean estPersistant() {
+            return persistant;
+        }
+
+        final boolean estForce() {
+            return force;
         }
 
         final synchronized byte[] octets() throws IOException {
@@ -261,7 +288,7 @@ public final class Ecritures {
             taches.put(cible, tache);
         }
         IOException echec = essai(cible, contenu);
-        boolean refuse = echec != null && (retentable(echec) || contenu.estDurable());
+        boolean refuse = echec != null && aRetenter(echec, contenu);
         synchronized (verrou) {
             tache.enCours = null;
             if (refuse && tache.contenu == null) {
@@ -273,7 +300,7 @@ public final class Ecritures {
         }
         if (echec != null && !retentable(echec)) {
             signaler(cible, echec);
-            return contenu.estDurable(); // une donnée du joueur reste en file jusqu'à réussite
+            return refuse; // une donnée du joueur reste en file jusqu'à réussite
         }
         return true;
     }
@@ -289,8 +316,9 @@ public final class Ecritures {
             }
             tache.enCours = contenu;
         }
+        // essai ne lève jamais : la tâche est toujours libérée ou reprogrammée ci-dessous.
         IOException echec = essai(tache.cible, contenu);
-        boolean refuse = echec != null && (retentable(echec) || contenu.estDurable());
+        boolean refuse = echec != null && aRetenter(echec, contenu);
         boolean abandon = false;
         synchronized (verrou) {
             tache.enCours = null;
@@ -299,7 +327,7 @@ public final class Ecritures {
                 if (tache.contenu == null) { // rien de plus récent : retenter le même contenu
                     // Une donnée du joueur n'est jamais abandonnée ; une demande l'est après sa
                     // validité.
-                    if (contenu.estDurable() || System.nanoTime() - tache.echeance < 0)
+                    if (contenu.estPersistant() || System.nanoTime() - tache.echeance < 0)
                         tache.contenu = contenu;
                     else abandon = true;
                 }
@@ -312,8 +340,9 @@ public final class Ecritures {
     }
 
     /**
-     * Un essai complet ; null s'il a réussi (ou rien à écrire). La confirmation a lieu avant que la
-     * tâche ne soit libérée : une écriture terminée est toujours confirmée.
+     * Un essai complet, qui ne lève jamais (une Error comprise, par exemple un manque de mémoire en
+     * sérialisant) ; null s'il a réussi ou s'il n'y avait rien à écrire. La confirmation a lieu
+     * avant que la tâche ne soit libérée : une écriture terminée est toujours confirmée.
      */
     private IOException essai(Path cible, Contenu contenu) {
         try {
@@ -321,9 +350,17 @@ public final class Ecritures {
             return null;
         } catch (IOException e) {
             return e;
-        } catch (RuntimeException e) {
+        } catch (Throwable e) {
             return new IOException(e);
         }
+    }
+
+    /**
+     * Un refus de partage de Windows se retente toujours ; une donnée du joueur après toute autre
+     * erreur aussi, sauf une cible refusée par ses contrôles. Une trame ordinaire est abandonnée.
+     */
+    private static boolean aRetenter(IOException echec, Contenu contenu) {
+        return retentable(echec) || contenu.estPersistant() && !(echec instanceof Refus);
     }
 
     /** Une vraie erreur (disque, dossier refusé) se retente moins souvent qu'un refus d'accès. */
@@ -376,11 +413,14 @@ public final class Ecritures {
         contenu.preparer();
         Path dossier = cible.toAbsolutePath().getParent();
         Files.createDirectories(dossier);
+        // Préfixe neutre : un temporaire orphelin (plantage) n'est jamais pris pour une copie du
+        // fichier par la migration ou la sauvegarde de l'assistant.
         Path temporaire =
-                Files.createTempFile(dossier, "." + cible.getFileName().toString() + "-", ".tmp");
+                Files.createTempFile(
+                        dossier, PREFIXE_TEMPORAIRE + cible.getFileName().toString() + "-", ".tmp");
         try {
             Files.write(temporaire, octets);
-            if (contenu.estDurable()) synchronisation.forcer(temporaire);
+            if (contenu.estForce()) synchronisation.forcer(temporaire);
             remplacement.remplacer(temporaire, cible);
             temporaire = null;
             return true;
@@ -429,8 +469,8 @@ public final class Ecritures {
         }
         try {
             contenu.ecrit();
-        } catch (RuntimeException ignored) {
-            // Un suivi d'écriture ne doit jamais arrêter le fil.
+        } catch (Throwable ignored) {
+            // Un suivi d'écriture ne doit jamais arrêter le fil, ni faire croire à un échec.
         }
     }
 

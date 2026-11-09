@@ -3,6 +3,7 @@ package fr.assistantia;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
@@ -44,8 +45,11 @@ public final class IdentiteMonde {
     // Dernière identité publiée : comparée chaque tick sans construire de texte.
     private static String vueMonde, vueSession, vueDimension;
     private static Mode vueMode;
-    private static Object dimensionLue, soloLu;
+    private static Object dimensionLue;
     private static String dimensionTexte = "", soloSource = "";
+    // Référence faible : un serveur intégré arrêté (mondes, chunks) ne reste jamais en mémoire.
+    private static final WeakReference<Object> AUCUN = new WeakReference<>(null);
+    private static WeakReference<Object> soloLu = AUCUN;
     private static Connection adresseConnexion;
     private static String adresseTexte = "", adresseNormalisee = "";
 
@@ -81,18 +85,22 @@ public final class IdentiteMonde {
         var mc = Minecraft.getInstance();
         Connection connexion = connexion();
         String type = "", source = "";
+        var solo = connexion == null ? null : mc.getSingleplayerServer();
+        if (solo == null) {
+            soloLu = AUCUN;
+            soloSource = "";
+        }
         if (connexion != null) {
-            var solo = mc.getSingleplayerServer();
             if (solo != null) {
                 type = "solo";
                 // Le dossier d'un serveur intégré ne change pas pendant sa vie : calculé une fois.
-                if (solo != soloLu) {
+                if (solo != soloLu.get()) {
                     soloSource =
                             solo.getWorldPath(LevelResource.ROOT)
                                     .toAbsolutePath()
                                     .normalize()
                                     .toString();
-                    soloLu = solo;
+                    soloLu = new WeakReference<>(solo);
                 }
                 source = soloSource;
             } else {
