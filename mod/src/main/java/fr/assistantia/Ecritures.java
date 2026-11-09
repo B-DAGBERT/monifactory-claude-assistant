@@ -6,6 +6,7 @@ import com.google.gson.stream.JsonWriter;
 import com.mojang.logging.LogUtils;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -13,6 +14,7 @@ import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -32,7 +34,7 @@ public final class Ecritures {
     /** Durée pendant laquelle un remplacement refusé est retenté. */
     static final long VALIDITE_MS = 45_000;
 
-    private static final long DELAI_MAX_MS = 250;
+    private static final long DELAI_MAX_MS = 250, DELAI_MAX_DURABLE_MS = 1000;
 
     /** Remplace la cible par le fichier temporaire (déplacement atomique en production). */
     @FunctionalInterface
@@ -40,16 +42,38 @@ public final class Ecritures {
         void remplacer(Path temporaire, Path cible) throws IOException;
     }
 
+    /** Force le fichier temporaire sur le disque avant le remplacement (fsync en production). */
+    @FunctionalInterface
+    interface Synchronisation {
+        void forcer(Path temporaire) throws IOException;
+    }
+
     /** Contenu d'un fichier, produit une seule fois : sur le fil d'écriture s'il est différé. */
     public abstract static class Contenu {
         private byte[] octets;
-        private boolean produit;
+        private boolean produit, durable;
 
         /** Les octets à écrire, ou null pour ne rien écrire (relevé devenu invalide). */
         protected abstract byte[] produire() throws IOException;
 
+        /** Sur le fil d'écriture, avant tout fichier temporaire : prépare et contrôle la cible. */
+        protected void preparer() throws IOException {}
+
         /** Appelé sur le fil d'écriture une fois le fichier remplacé. */
         protected void ecrit() {}
+
+        /**
+         * Donnée du joueur : forcée sur le disque avant le remplacement, et retentée après toute
+         * erreur jusqu'à ce qu'un contenu plus récent la remplace (jamais abandonnée).
+         */
+        public final Contenu durable() {
+            durable = true;
+            return this;
+        }
+
+        final boolean estDurable() {
+            return durable;
+        }
 
         final synchronized byte[] octets() throws IOException {
             if (!produit) {
@@ -63,6 +87,7 @@ public final class Ecritures {
     private static final class Tache {
         final Path cible;
         Contenu contenu; // dernier contenu demandé, pas encore écrit
+        Contenu enCours; // contenu en train d'être écrit (lu par enAttente)
         long echeance; // System.nanoTime() au-delà duquel un refus n'est plus retenté
         int refus;
 
@@ -75,7 +100,11 @@ public final class Ecritures {
             new GsonBuilder().disableHtmlEscaping().serializeNulls().create();
 
     private static final Ecritures INSTANCE =
-            new Ecritures(Ecritures::deplacer, fil("assistant-ecritures"), VALIDITE_MS);
+            new Ecritures(
+                    Ecritures::deplacer,
+                    Ecritures::forcer,
+                    fil("assistant-ecritures"),
+                    VALIDITE_MS);
 
     static {
         try {
@@ -91,12 +120,23 @@ public final class Ecritures {
     // Une tâche présente est en cours d'écriture ou programmée sur le fil : jamais les deux.
     private final Map<Path, Tache> taches = new HashMap<>();
     private final Set<Path> signales = new HashSet<>();
+    private final Map<Path, String> erreurs = new HashMap<>();
     private final Remplacement remplacement;
+    private final Synchronisation synchronisation;
     private final ScheduledExecutorService fil;
     private final long validite;
 
     Ecritures(Remplacement remplacement, ScheduledExecutorService fil, long validiteMs) {
+        this(remplacement, Ecritures::forcer, fil, validiteMs);
+    }
+
+    Ecritures(
+            Remplacement remplacement,
+            Synchronisation synchronisation,
+            ScheduledExecutorService fil,
+            long validiteMs) {
         this.remplacement = remplacement;
+        this.synchronisation = synchronisation;
         this.fil = fil;
         this.validite = TimeUnit.MILLISECONDS.toNanos(validiteMs);
     }
@@ -163,6 +203,34 @@ public final class Ecritures {
         return INSTANCE.vider(millisecondes);
     }
 
+    /**
+     * Le contenu le plus récent encore en file ou en cours d'écriture pour ce fichier, sinon null
+     * (le fichier sur le disque est alors à jour) : une relecture voit toujours la dernière
+     * écriture.
+     */
+    static Contenu enAttente(Path cible) {
+        return INSTANCE.dernier(cible);
+    }
+
+    /** Dernière erreur d'écriture de ce fichier, effacée par la réussite suivante ; null sinon. */
+    public static String erreur(Path cible) {
+        return INSTANCE.derniereErreur(cible);
+    }
+
+    Contenu dernier(Path cible) {
+        synchronized (verrou) {
+            Tache tache = taches.get(cible);
+            if (tache == null) return null;
+            return tache.contenu != null ? tache.contenu : tache.enCours;
+        }
+    }
+
+    String derniereErreur(Path cible) {
+        synchronized (verrou) {
+            return erreurs.get(cible);
+        }
+    }
+
     void differer(Path cible, Contenu contenu) {
         synchronized (verrou) {
             Tache tache = taches.get(cible);
@@ -189,31 +257,23 @@ public final class Ecritures {
                 return true;
             }
             tache = new Tache(cible); // réservée : le fil ne touche pas à ce fichier entre-temps
+            tache.enCours = contenu;
             taches.put(cible, tache);
         }
-        IOException erreur = null;
-        boolean refuse = false, ecrit = false;
-        try {
-            ecrit = ecrireMaintenant(cible, contenu);
-        } catch (IOException e) {
-            refuse = retentable(e);
-            if (!refuse) erreur = e;
-        } catch (RuntimeException e) {
-            erreur = new IOException(e);
-        }
-        // Confirmer avant de libérer la tâche : une écriture terminée est toujours confirmée.
-        if (ecrit) reussite(cible, contenu);
+        IOException echec = essai(cible, contenu);
+        boolean refuse = echec != null && (retentable(echec) || contenu.estDurable());
         synchronized (verrou) {
+            tache.enCours = null;
             if (refuse && tache.contenu == null) {
                 tache.contenu = contenu;
                 tache.echeance = echeance();
             }
             tache.refus = refuse ? 1 : 0;
-            terminer(tache, refuse);
+            terminer(tache, refuse, lent(echec));
         }
-        if (erreur != null) {
-            signaler(cible, erreur);
-            return false;
+        if (echec != null && !retentable(echec)) {
+            signaler(cible, echec);
+            return contenu.estDurable(); // une donnée du joueur reste en file jusqu'à réussite
         }
         return true;
     }
@@ -224,42 +284,58 @@ public final class Ecritures {
             contenu = tache.contenu;
             tache.contenu = null;
             if (contenu == null) {
-                terminer(tache, false);
+                terminer(tache, false, false);
                 return;
             }
+            tache.enCours = contenu;
         }
-        IOException erreur = null;
-        boolean refuse = false, ecrit = false;
-        try {
-            ecrit = ecrireMaintenant(tache.cible, contenu);
-        } catch (IOException e) {
-            refuse = retentable(e);
-            if (!refuse) erreur = e;
-        } catch (RuntimeException e) {
-            erreur = new IOException(e);
-        }
-        if (ecrit) reussite(tache.cible, contenu); // avant de libérer la tâche (voir essayer)
+        IOException echec = essai(tache.cible, contenu);
+        boolean refuse = echec != null && (retentable(echec) || contenu.estDurable());
         boolean abandon = false;
         synchronized (verrou) {
+            tache.enCours = null;
             if (refuse) {
                 tache.refus++;
                 if (tache.contenu == null) { // rien de plus récent : retenter le même contenu
-                    if (System.nanoTime() - tache.echeance < 0) tache.contenu = contenu;
+                    // Une donnée du joueur n'est jamais abandonnée ; une demande l'est après sa
+                    // validité.
+                    if (contenu.estDurable() || System.nanoTime() - tache.echeance < 0)
+                        tache.contenu = contenu;
                     else abandon = true;
                 }
             } else tache.refus = 0;
-            terminer(tache, refuse);
+            terminer(tache, refuse, lent(echec));
         }
-        if (erreur != null) signaler(tache.cible, erreur);
+        if (echec != null && !retentable(echec)) signaler(tache.cible, echec);
         else if (abandon)
             signaler(tache.cible, new IOException("fichier toujours tenu par son lecteur"));
     }
 
+    /**
+     * Un essai complet ; null s'il a réussi (ou rien à écrire). La confirmation a lieu avant que la
+     * tâche ne soit libérée : une écriture terminée est toujours confirmée.
+     */
+    private IOException essai(Path cible, Contenu contenu) {
+        try {
+            if (ecrireMaintenant(cible, contenu)) reussite(cible, contenu);
+            return null;
+        } catch (IOException e) {
+            return e;
+        } catch (RuntimeException e) {
+            return new IOException(e);
+        }
+    }
+
+    /** Une vraie erreur (disque, dossier refusé) se retente moins souvent qu'un refus d'accès. */
+    private static boolean lent(IOException echec) {
+        return echec != null && !retentable(echec);
+    }
+
     /** Sous le verrou : reprogramme la tâche s'il reste un contenu, sinon la retire. */
-    private void terminer(Tache tache, boolean refuse) {
+    private void terminer(Tache tache, boolean refuse, boolean lent) {
         if (tache.contenu != null) {
-            programmer(
-                    tache, refuse ? Math.min(DELAI_MAX_MS, 5L << Math.min(6, tache.refus - 1)) : 0);
+            long plafond = lent ? DELAI_MAX_DURABLE_MS : DELAI_MAX_MS;
+            programmer(tache, refuse ? Math.min(plafond, 5L << Math.min(8, tache.refus - 1)) : 0);
         } else {
             taches.remove(tache.cible);
             verrou.notifyAll();
@@ -297,12 +373,14 @@ public final class Ecritures {
     private boolean ecrireMaintenant(Path cible, Contenu contenu) throws IOException {
         byte[] octets = contenu.octets();
         if (octets == null) return false;
+        contenu.preparer();
         Path dossier = cible.toAbsolutePath().getParent();
         Files.createDirectories(dossier);
         Path temporaire =
                 Files.createTempFile(dossier, "." + cible.getFileName().toString() + "-", ".tmp");
         try {
             Files.write(temporaire, octets);
+            if (contenu.estDurable()) synchronisation.forcer(temporaire);
             remplacement.remplacer(temporaire, cible);
             temporaire = null;
             return true;
@@ -314,6 +392,12 @@ public final class Ecritures {
                     // Le fichier temporaire sera remplacé au prochain essai.
                 }
             }
+        }
+    }
+
+    private static void forcer(Path temporaire) throws IOException {
+        try (var canal = FileChannel.open(temporaire, StandardOpenOption.WRITE)) {
+            canal.force(true);
         }
     }
 
@@ -341,6 +425,7 @@ public final class Ecritures {
     private void reussite(Path cible, Contenu contenu) {
         synchronized (verrou) {
             signales.remove(cible);
+            erreurs.remove(cible);
         }
         try {
             contenu.ecrit();
@@ -351,6 +436,13 @@ public final class Ecritures {
 
     private void signaler(Path cible, IOException erreur) {
         synchronized (verrou) {
+            erreurs.put(
+                    cible,
+                    cible.getFileName()
+                            + " non écrit ("
+                            + erreur.getClass().getSimpleName()
+                            + (erreur.getMessage() == null ? "" : " : " + erreur.getMessage())
+                            + ")");
             if (!signales.add(cible)) return; // une seule trace par série d'échecs
         }
         LogUtils.getLogger().warn("Assistant IA : " + cible.getFileName() + " non écrit", erreur);

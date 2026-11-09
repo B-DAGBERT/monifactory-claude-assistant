@@ -118,12 +118,20 @@ function contexteTrame(data) {
       && str(data.get('dimension_monde')) === contexte.dimension)
 }
 
+// Avec le mod, les mémoires sont écrites sur son fil d'écriture (le jeu n'attend pas le disque) ;
+// une relecture voit toujours la dernière écriture, même encore en file
+function memoireDifferee() {
+  return MemoireMonde != null && typeof MemoireMonde.ecrireHistorique == 'function'
+}
+
 function lireMemoire(nom) {
-  return memoireMonde ? MemoireMonde.lire(memoireMonde, nom) : JsonIO.read(DOSSIER + nom)
+  if (memoireMonde) return MemoireMonde.lire(memoireMonde, nom)
+  return memoireDifferee() ? MemoireMonde.lireHistorique(nom) : JsonIO.read(DOSSIER + nom)
 }
 
 function ecrireMemoire(nom, data) {
   if (memoireMonde) MemoireMonde.ecrire(memoireMonde, nom, JsonIO.of(data).getAsJsonObject())
+  else if (memoireDifferee()) MemoireMonde.ecrireHistorique(nom, JsonIO.of(data).getAsJsonObject())
   else JsonIO.write(DOSSIER + nom, data)
 }
 

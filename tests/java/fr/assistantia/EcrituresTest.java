@@ -163,6 +163,106 @@ public final class EcrituresTest {
                                         + "\t\"c\": \"<x>\"\n}"),
                 "KubeJS layout: " + Ecritures.serialiser(json, true));
         check(Ecritures.serialiser(json, false).equals(json.toString()), "compact unchanged");
+        durables(dossier);
         System.out.println("Ecritures OK");
+    }
+
+    /** Player data: fsync before the replace, never dropped, readable while still queued. */
+    static void durables(Path dossier) throws Exception {
+        List<String> journal = Collections.synchronizedList(new ArrayList<>());
+        AtomicInteger pannes = new AtomicInteger();
+        var verrou = new CountDownLatch[1];
+        var e =
+                new Ecritures(
+                        (t, c) -> {
+                            if (pannes.get() > 0) {
+                                pannes.decrementAndGet();
+                                throw new IOException("disk error");
+                            }
+                            Files.move(t, c, StandardCopyOption.REPLACE_EXISTING);
+                            journal.add("move " + Files.readString(c));
+                        },
+                        t -> {
+                            var attente = verrou[0];
+                            journal.add("force " + Files.readString(t));
+                            if (attente != null) {
+                                try {
+                                    attente.await(5, TimeUnit.SECONDS);
+                                } catch (InterruptedException ex) {
+                                    throw new IOException(ex);
+                                }
+                            }
+                        },
+                        Ecritures.fil("test-durable"),
+                        300);
+        Path memoire = dossier.resolve("stockage.json");
+
+        // fsync happens on the writer thread, before the atomic replacement.
+        e.differer(memoire, Ecritures.texte("M1").durable());
+        check(e.vider(5000), "durable write flushed");
+        check(journal.equals(List.of("force M1", "move M1")), "forced before replace: " + journal);
+        e.differer(dossier.resolve("etat.json"), Ecritures.texte("{}"));
+        check(e.vider(5000), "frame flushed");
+        check(
+                journal.equals(List.of("force M1", "move M1", "move {}")),
+                "ordinary frames are not forced: " + journal);
+
+        // Disk errors: retried past the validity, error visible meanwhile, cleared by the success.
+        pannes.set(1_000_000);
+        e.differer(memoire, Ecritures.texte("M2").durable());
+        Thread.sleep(700); // more than twice the 300 ms validity of ordinary requests
+        check(!e.vider(50), "player data never abandoned");
+        check(e.derniereErreur(memoire) != null, "error kept for the caller while failing");
+        check(e.dernier(memoire) != null, "still pending while failing");
+        pannes.set(0);
+        check(e.vider(5000), "written once the disk recovers");
+        check(
+                Files.readString(memoire).equals("M2") && e.derniereErreur(memoire) == null,
+                "cleared");
+
+        // Read back: the newest queued content, then the one being written, then the disk.
+        verrou[0] = new CountDownLatch(1);
+        e.differer(memoire, Ecritures.texte("M3").durable());
+        Thread.sleep(100); // the writer thread is now inside the fsync of M3
+        check(
+                e.dernier(memoire) != null && new String(e.dernier(memoire).octets()).equals("M3"),
+                "in-progress content readable");
+        long debut = System.nanoTime();
+        e.differer(memoire, Ecritures.texte("M4").durable());
+        e.differer(memoire, Ecritures.texte("M5").durable());
+        check(depuis(debut) < 1000, "queueing never waits for the stuck writer");
+        check(
+                new String(e.dernier(memoire).octets()).equals("M5"),
+                "newest queued content readable");
+        verrou[0].countDown();
+        verrou[0] = null;
+        check(e.vider(5000), "flushed");
+        check(
+                e.dernier(memoire) == null && Files.readString(memoire).equals("M5"),
+                "disk is current");
+        check(!journal.contains("move M4"), "a superseded content is never written: " + journal);
+
+        // The target is prepared on the writer thread; a refused target is retried, not lost.
+        String[] fil = {""};
+        boolean[] refuse = {true};
+        e.differer(
+                memoire,
+                new Ecritures.Contenu() {
+                    protected void preparer() throws IOException {
+                        fil[0] = Thread.currentThread().getName();
+                        if (refuse[0]) throw new IOException("partition refused");
+                    }
+
+                    protected byte[] produire() {
+                        return "M6".getBytes();
+                    }
+                }.durable());
+        Thread.sleep(100);
+        check(fil[0].equals("test-durable"), "prepared on the writer thread: " + fil[0]);
+        check(
+                e.derniereErreur(memoire) != null && Files.readString(memoire).equals("M5"),
+                "refused target not written");
+        refuse[0] = false;
+        check(e.vider(5000) && Files.readString(memoire).equals("M6"), "written once allowed");
     }
 }
