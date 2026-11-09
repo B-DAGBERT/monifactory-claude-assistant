@@ -13,8 +13,8 @@ import org.lwjgl.glfw.GLFW;
 
 /** Une déclaration masque les ingrédients ; seuls les objets réellement reçus acquittent le lot. */
 public final class DeclarerFabricationEcran extends Screen {
-    /** Le champ, puis les boutons de quantité sur la même ligne. */
-    private static final int CHAMP = 64;
+    /** Largeur du champ, contour compris, puis les boutons de quantité sur la même rangée. */
+    private static final int CHAMP = 66;
 
     private static long dernierClic;
     private final Screen parent;
@@ -111,8 +111,8 @@ public final class DeclarerFabricationEcran extends Screen {
                         + Theme.MARGE;
         fenetre = Theme.Fenetre.centree(width, height, 360, hauteur);
         int x = fenetre.contenuX(), largeur = fenetre.contenuLargeur(), y = yChamp();
-        // EditBox dessine son contour un pixel autour : le champ s'aligne sur le contenu.
-        nombre = new ChampTheme(font, x + 1, y, CHAMP, Component.literal("Nombre de fabrications"));
+        // Contour du champ dans la rangée de 16 px des boutons voisins.
+        nombre = ChampTheme.dans(font, x, y, CHAMP, Component.literal("Nombre de fabrications"));
         nombre.setMaxLength(7);
         nombre.setFilter(s -> s.isEmpty() || s.matches("[0-9]{1,7}"));
         nombre.setValue(brouillon);
@@ -122,7 +122,7 @@ public final class DeclarerFabricationEcran extends Screen {
                     erreur = "";
                 });
         addRenderableWidget(nombre);
-        int bx = x + CHAMP + 2 + Theme.ECART, reste = fenetre.contenuDroite() - bx;
+        int bx = x + CHAMP + Theme.ECART, reste = fenetre.contenuDroite() - bx;
         int moitie = (reste - Theme.ECART) / 2;
         charge =
                 addRenderableWidget(

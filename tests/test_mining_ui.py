@@ -164,6 +164,7 @@ public class MiningUiTest {
   }else if(c.equals("bag-screen")){
    var mc=new Minecraft();var parent=new Screen(Component.literal("EMI"));var s=new EcranSac(parent);mc.screen=s;s.init(mc,320,240);bounds(s);
    var retour=button(s,"Retour à EMI");assert retour instanceof BoutonTheme&&retour.h==16&&retour.x+retour.w<=s.width-10:"theme button inside the window";
+   var champ=input(s);assert champ.h+2==16&&champ.x+champ.w+1==retour.x+retour.w:"search outline is one 16 px row aligned on the content";
    InventaireJoueur.contenu=List.of(new ItemStack("Étain",128,""));s.render(new GuiGraphics(),0,0,0);assert GuiGraphics.labels.contains("Étain");
    InventaireJoueur.disponible=false;GuiGraphics.labels.clear();s.render(new GuiGraphics(),0,0,0);assert !GuiGraphics.labels.contains("Étain"):"never display stale bag stock";
    InventaireJoueur.disponible=true;input(s).setValue("cuivre");GuiGraphics.labels.clear();s.render(new GuiGraphics(),0,0,0);assert !GuiGraphics.labels.contains("Étain");

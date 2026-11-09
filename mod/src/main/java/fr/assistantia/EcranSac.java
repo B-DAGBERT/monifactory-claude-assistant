@@ -30,11 +30,10 @@ public final class EcranSac extends Screen {
         fenetre = Theme.Fenetre.centree(width, height, 460);
         int x = fenetre.contenuX(), l = fenetre.contenuLargeur();
         int y = fenetre.contenuY() + Theme.LIGNE + Theme.ECART;
-        // EditBox dessine son contour un pixel autour : le champ s'aligne sur le contenu.
+        // Contour du champ dans une rangée de 16 px, comme un bouton.
         recherche =
                 addRenderableWidget(
-                        new ChampTheme(
-                                font, x + 1, y, l - 2, Component.literal("Chercher dans le sac")));
+                        ChampTheme.dans(font, x, y, l, Component.literal("Chercher dans le sac")));
         recherche.setMaxLength(100);
         recherche.setHint(Component.literal("Chercher dans le sac…"));
         recherche.setValue(filtre);

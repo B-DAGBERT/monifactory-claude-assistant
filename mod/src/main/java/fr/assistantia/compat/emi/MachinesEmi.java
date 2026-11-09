@@ -930,7 +930,8 @@ public final class MachinesEmi {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
         if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
-        event.setCanceled(true);
+        // Ni la machine ni EMI ne prennent ce clic, ni son relâchement, même hors du panneau.
+        fr.assistantia.RelachementSouris.consommer(event);
         if (event.getButton() != 0 || EnvoiMachine.occupe()) return;
         var d = dispositionAffichee;
         double x = event.getMouseX(), y = event.getMouseY();
