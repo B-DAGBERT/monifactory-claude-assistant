@@ -245,6 +245,27 @@ public final class PlanArbreTest {
                 : "chaîne rapide : matières et intermédiaires consommés sans double crédit";
         suivi.actualiser(Map.of("gear", 2), Map.of("plate", 2, "gear", 1));
         assert suivi.dansCoffres(List.of(stock("iron", 64, false))).isEmpty();
+        // Coffre ouvert lu en direct, ses piles placées avant celles des coffres mémorisés : il
+        // fournit en premier, et l'allocation reste globale (le composant rangé ailleurs couvre
+        // sa branche).
+        var ouvert = new MemoireCollecte(partial, 1);
+        ouvert.actualiser(Map.of());
+        assert ouvert.dansCoffres(
+                                List.of(
+                                        stock("iron", 64, false),
+                                        stock("casing", 2, false),
+                                        stock("iron", 64, false)))
+                        .equals(List.of(new PlanRetrait.Prise(0, 8), new PlanRetrait.Prise(1, 2)))
+                : "le fer du coffre ouvert avant celui d'un coffre mémorisé";
+        // Player report: a machine result taken before the panel refreshed broke the recipe. A
+        // result that just arrived in the open chest is offered at once, without the server memory.
+        var sortie = new MemoireCollecte(machine, 1);
+        sortie.actualiser(Map.of());
+        sortie.reserver(Map.of("casing", 1));
+        sortie.actualiser(Map.of());
+        assert sortie.dansCoffres(List.of(stock("casing", 1, false)))
+                        .equals(List.of(new PlanRetrait.Prise(0, 1)))
+                : "résultat arrivé à l'instant dans le coffre ouvert : proposé tout de suite";
         System.out.println(
                 "Branches acquises, quantités partielles, stocks partagés, outils et extinction durable : OK");
     }

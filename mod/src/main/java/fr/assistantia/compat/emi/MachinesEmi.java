@@ -39,6 +39,10 @@ public final class MachinesEmi {
     private static List<PlanMachines.Operation<EmiRecipe>> operations = List.of(),
             locales = List.of();
     private static List<BlockPos> machines = List.of();
+
+    /** Les machines ne brillent qu'avec le repérage actif ({@link CoffresArbreEmi#scanActif}). */
+    private static boolean surlignage;
+
     private static AbstractContainerScreen<?> ecran;
     private static Disposition disposition;
     private static int choix, page;
@@ -815,7 +819,15 @@ public final class MachinesEmi {
         lots.actualiser();
         AnalyseRecette.tick(); // onglet Recette : calcul incrémental borné, jamais pendant le rendu
         if (ticks % 100 == 0) compatibilites.clear();
-        if (ticks % 40 != 0) return;
+        // Contours rouges et rangs seulement pendant le repérage : effacés dès son arrêt, relevés
+        // dès son activation, puis toutes les deux secondes.
+        boolean demarrage = !surlignage;
+        surlignage = CoffresArbreEmi.scanActif();
+        if (!surlignage) {
+            machines = List.of();
+            return;
+        }
+        if (ticks % 40 != 0 && !demarrage) return;
         var mc = Minecraft.getInstance();
         // Seules les machines encore utiles brillent : rien quand les coffres ont déjà le résultat.
         var utilesGT = operationsUtiles;
@@ -843,8 +855,9 @@ public final class MachinesEmi {
     @SubscribeEvent
     public static void monde(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS
-                || actif() == null
-                || machines.isEmpty()) return;
+                || !surlignage
+                || machines.isEmpty()
+                || actif() == null) return;
         var mc = Minecraft.getInstance();
         if (mc.level == null) return;
         var buffers = mc.renderBuffers().bufferSource();

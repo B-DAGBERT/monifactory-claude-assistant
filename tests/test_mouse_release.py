@@ -46,7 +46,7 @@ public class RelachementTest {
  public static void main(String[] args){
   Screen coffre=new AbstractContainerScreen<Object>("coffre"),machine=new AbstractContainerScreen<Object>("machine");
   Screen suivi=new Screen("suivi"),recette=new Screen("recette EMI");
-  appui(coffre,0,true);assert relache(coffre,0):"Coffres ON/OFF : le relâchement ne va pas au coffre";
+  appui(coffre,0,true);assert relache(coffre,0):"Repérage ON/OFF : le relâchement ne va pas au coffre";
   appui(coffre,0,true);assert relache(coffre,0):"bouton quitté avant le relâchement : toujours pris";
   appui(coffre,0,false);assert !relache(coffre,0):"clic ordinaire dans le coffre transmis";
   appui(coffre,0,false);assert !relache(coffre,0):"aucun reste du clic précédent";

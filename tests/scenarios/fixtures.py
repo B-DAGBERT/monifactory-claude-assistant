@@ -18,6 +18,7 @@ STUBS = {
     "net.minecraft.resources.ResourceLocation": "public record ResourceLocation(String value){public String toString(){return value;}}",
     "net.minecraft.world.item.ItemStack": "public record ItemStack(String item,int count){public boolean isEmpty(){return count<=0;}public int getCount(){return count;}public String getItem(){return item;}}",
     "net.minecraft.world.inventory.AbstractContainerMenu": "public class AbstractContainerMenu {}",
+    "net.minecraft.core.BlockPos": "public record BlockPos(int x,int y,int z){public int getX(){return x;}public int getY(){return y;}public int getZ(){return z;}}",
     "net.minecraft.client.Minecraft": r"""
 public class Minecraft {
  private static final Minecraft MC=new Minecraft();public static Minecraft getInstance(){return MC;}
@@ -60,6 +61,7 @@ import java.util.*;
 public class RetraitCoffre {public static boolean busy;public static Map<String,Integer> selection=Map.of();
  public record Plan(List<Object> lots,long manquants){}
  public static boolean occupe(){return busy;}public static void arreter(){busy=false;}
+ public static List<net.minecraft.world.item.ItemStack> coffreOuvert(){return List.of();}
  public static Plan planRecherche(net.minecraft.world.inventory.AbstractContainerMenu menu,
  java.util.function.Function<List<PlanRetrait.Stock<String>>,List<PlanRetrait.Prise>> selectionner,
  java.util.function.Function<net.minecraft.world.item.ItemStack,String> id){

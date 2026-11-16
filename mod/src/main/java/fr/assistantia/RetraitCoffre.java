@@ -79,6 +79,19 @@ public final class RetraitCoffre {
         return false;
     }
 
+    /**
+     * Piles des cases du coffre ouvert (ni poches, ni filtres, ni upgrades) ; vide hors d'un
+     * coffre. Lu à chaque tick : les piles du menu, sans copie, à ne pas modifier.
+     */
+    public static List<ItemStack> coffreOuvert() {
+        var p = Minecraft.getInstance().player;
+        if (p == null || p.containerMenu == null || !estCoffre(p.containerMenu)) return List.of();
+        List<ItemStack> piles = new ArrayList<>();
+        for (Slot s : p.containerMenu.slots)
+            if (s.isActive() && s.hasItem() && source(p.containerMenu, s)) piles.add(s.getItem());
+        return piles;
+    }
+
     private record Contenu(List<Slot> slots, List<PlanRetrait.Stock<ItemStack>> stocks) {}
 
     private static Contenu contenu(AbstractContainerMenu m) {

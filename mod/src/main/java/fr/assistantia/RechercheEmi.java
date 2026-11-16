@@ -34,7 +34,29 @@ public final class RechercheEmi {
     /** Nombre d'objets à sortir de chaque conteneur surligné (position du premier bloc). */
     private static Map<String, Integer> aSortir = Map.of();
 
+    /**
+     * Dernier relevé des coffres reçu de l'assistant, pour les objets qu'il demandait. La sélection
+     * en est recalculée ici à chaque acquisition : rien ne disparaît pendant l'aller-retour d'une
+     * nouvelle demande, et un résultat pris à la main est retiré tout de suite.
+     */
+    private record Releve(
+            List<PlanRetrait.Stock<String>> stocks,
+            List<String> groupes,
+            Map<String, List<Pont.Repere>> positions,
+            Set<String> objets) {}
+
+    private static Releve releve;
+    private static long versionAppliquee = -1, revision;
+    private static boolean annoncer;
+
     private RechercheEmi() {}
+
+    /**
+     * Change dès que la sélection, les crédits ou le relevé changent : les panneaux se relisent.
+     */
+    public static long revision() {
+        return revision + (collecte == null ? 0 : collecte.version());
+    }
 
     /**
      * Nombre d'objets à sortir de ce conteneur pour la recherche en cours, 0 sinon. Lu à chaque
@@ -89,6 +111,15 @@ public final class RechercheEmi {
                 (id, n) -> {
                     if (collecte.enFabrication(id)) resultats.put(id, n);
                 });
+        // Le coffre ouvert compte tout de suite, sans attendre le relevé du serveur : le lot
+        // passe « À récupérer » avant que le joueur ne prenne son résultat.
+        Map<String, Integer> ici = new HashMap<>();
+        for (var item : RetraitCoffre.coffreOuvert()) {
+            var id = ForgeRegistries.ITEMS.getKey(item.getItem());
+            if (id != null && collecte.enFabrication(id.toString()))
+                ici.merge(id.toString(), item.getCount(), Integer::sum);
+        }
+        ici.forEach((id, n) -> resultats.merge(id, n, Math::max));
         return Map.copyOf(resultats);
     }
 
@@ -100,22 +131,73 @@ public final class RechercheEmi {
         return r.dimension() + "|" + r.x() + "|" + r.y() + "|" + r.z();
     }
 
-    /** Même sélection et mêmes crédits que les contours : aucun recalcul depuis l'objectif. */
     public static RetraitCoffre.Plan retrait(
             net.minecraft.world.inventory.AbstractContainerMenu menu) {
-        if (!Pont.retraitCoffres()
-                || !actif()
-                || collecte == null
-                || !InventaireJoueur.synchronise()) return new RetraitCoffre.Plan(List.of(), 0);
+        return retrait(menu, null);
+    }
+
+    /**
+     * Ce que le scan prend dans le coffre ouvert : son contenu réel d'abord, puis les autres
+     * coffres connus, avec les mêmes crédits que les contours. Un résultat qui vient d'arriver dans
+     * le coffre se prend aussitôt, sans attendre le relevé du serveur.
+     */
+    public static RetraitCoffre.Plan retrait(
+            net.minecraft.world.inventory.AbstractContainerMenu menu,
+            net.minecraft.core.BlockPos ouvert) {
+        if (!pret()) return new RetraitCoffre.Plan(List.of(), 0);
+        return RetraitCoffre.planRecherche(
+                menu, locaux -> retraitDirect(locaux, ouvert), RechercheEmi::identifiant);
+    }
+
+    /** L'identifiant compté par le scan, ou "" pour une variante refusée (NBT, autre forme). */
+    private static String identifiant(net.minecraft.world.item.ItemStack item) {
+        if (item.isEmpty() || !conforme.test(item)) return "";
+        var id = ForgeRegistries.ITEMS.getKey(item.getItem());
+        return id == null ? "" : id.toString();
+    }
+
+    /**
+     * Quantités à prendre dans le coffre ouvert, lu en direct : ses piles passent avant celles des
+     * coffres mémorisés, ce coffre excepté. Les prises renvoyées désignent ses seules piles.
+     */
+    private static List<PlanRetrait.Prise> retraitDirect(
+            List<PlanRetrait.Stock<String>> locaux, net.minecraft.core.BlockPos ouvert) {
+        if (!pret()) return List.of();
         actualiserCollecte();
         actualiserVue();
-        return RetraitCoffre.planRecherche(
-                menu,
-                stocks -> MemoireCollecte.retraitSelection(stocks, quantites),
-                item ->
-                        conforme.test(item)
-                                ? String.valueOf(ForgeRegistries.ITEMS.getKey(item.getItem()))
-                                : "");
+        var suivi = collecte;
+        if (suivi == null || locaux.isEmpty()) return List.of();
+        List<PlanRetrait.Stock<String>> tous = new ArrayList<>(locaux);
+        tous.addAll(stocksConnus(ouvert));
+        List<PlanRetrait.Prise> prises = new ArrayList<>();
+        for (var prise : suivi.dansCoffres(tous))
+            if (prise.index() < locaux.size()) prises.add(prise);
+        return List.copyOf(prises);
+    }
+
+    private static boolean pret() {
+        return Pont.retraitCoffres()
+                && actif()
+                && collecte != null
+                && InventaireJoueur.synchronise();
+    }
+
+    /** Coffres mémorisés encore utiles, sans le stock ouvert (son contenu réel le remplace). */
+    private static List<PlanRetrait.Stock<String>> stocksConnus(
+            net.minecraft.core.BlockPos ouvert) {
+        var r = releve;
+        if (r == null) return List.of();
+        String exclu = null;
+        if (ouvert != null)
+            for (var entree : r.positions().entrySet())
+                for (var p : entree.getValue())
+                    if (p.x() == ouvert.getX() && p.y() == ouvert.getY() && p.z() == ouvert.getZ())
+                        exclu = entree.getKey();
+        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
+        for (int i = 0; i < r.stocks().size(); i++)
+            if (!r.groupes().get(i).equals(exclu) && demandes.contains(r.stocks().get(i).objet()))
+                stocks.add(r.stocks().get(i));
+        return stocks;
     }
 
     private static void actualiserCollecte() {
@@ -148,7 +230,7 @@ public final class RechercheEmi {
                 ? !InventaireJoueur.synchronise()
                         ? "Lecture du sac…"
                         : attente ? "Recherche…" : "Arrêter"
-                : "Coffres";
+                : "Repérage";
     }
 
     public static void basculer(
@@ -206,13 +288,16 @@ public final class RechercheEmi {
         conforme = accepte;
         inventaireEnAttente = true;
         demandes = Set.of();
-        // Invalider aussi les quotas tant que le nouveau relevé n'est pas arrivé.
+        // Invalider les quotas de l'ancien arbre. Le dernier relevé reste : ses coffres sont
+        // recomptés pour le nouvel arbre dès que ses besoins sont connus.
         objets = Set.of();
         quantites = Map.of();
         aSortir = Map.of();
         reperes = List.of();
         resultatsPrets = Set.of();
         derniereVue = null;
+        versionAppliquee = -1;
+        revision++;
         fin = horloge.getAsLong() + 600_000;
         actualiserCollecte();
     }
@@ -249,14 +334,13 @@ public final class RechercheEmi {
         numero = Math.max(now, numero + 1);
         envoye = now;
         attente = !demandes.isEmpty();
-        // Retirer immédiatement les anciens faisceaux. Une réponse de l'ancienne sélection
-        // est rejetée grâce au numéro de requête, même si elle arrive après le transfert.
-        reperes = List.of();
-        resultatsPrets = Set.of();
-        objets = Set.of();
-        quantites = Map.of();
-        aSortir = Map.of();
+        // Annoncer seulement une recherche qui demande des objets encore jamais relevés.
+        annoncer |= releve == null || !releve.objets().containsAll(demandes);
+        // Garder le dernier relevé, limité aux objets encore demandés : panneau, contours et lots
+        // restent justes pendant l'aller-retour, au lieu de disparaître une à deux secondes. Une
+        // réponse à une demande plus ancienne reste rejetée grâce à son numéro.
         derniereVue = null;
+        appliquer();
         JsonObject demande = new JsonObject();
         demande.addProperty("n", numero);
         demande.addProperty("actif", attente);
@@ -295,6 +379,10 @@ public final class RechercheEmi {
         reperes = List.of();
         resultatsPrets = Set.of();
         derniereVue = null;
+        releve = null;
+        versionAppliquee = -1;
+        annoncer = false;
+        revision++;
         collecte = null;
         conforme = s -> false;
     }
@@ -322,6 +410,12 @@ public final class RechercheEmi {
         }
         if (++ticks % 2 == 0) actualiserCollecte();
         actualiserVue();
+        // Une acquisition (résultat pris à la main, objet rangé) refait la sélection tout de suite.
+        var suivi = collecte;
+        if (suivi != null
+                && releve != null
+                && suivi.version() != versionAppliquee
+                && !RetraitCoffre.occupe()) appliquer();
     }
 
     private static void actualiserVue() {
@@ -343,6 +437,10 @@ public final class RechercheEmi {
                 || !monde.equals(Pont.texte(vue, "monde"))
                 || !dimension.equals(Pont.texte(vue, "dimension"))) return;
         derniereVue = vue;
+        // Les objets que cette réponse a cherchés : un relevé ne dit rien des autres.
+        Set<String> cherches = new java.util.HashSet<>();
+        for (JsonElement e : Pont.liste(vue, "objets"))
+            if (e.isJsonPrimitive()) cherches.add(e.getAsString());
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
         List<String> groupes = new ArrayList<>();
         Map<String, List<Pont.Repere>> positions = new java.util.LinkedHashMap<>();
@@ -371,21 +469,60 @@ public final class RechercheEmi {
                                                         c.getAsJsonObject("objets"),
                                                         entry.getKey(),
                                                         0)));
-                if (n == 0 || !demandes.contains(entry.getKey())) continue;
+                if (n == 0 || !cherches.contains(entry.getKey())) continue;
                 groupes.add(groupe);
                 stocks.add(new PlanRetrait.Stock<>(entry.getKey(), n, false));
             }
         }
+        positions.replaceAll((groupe, blocs) -> List.copyOf(blocs));
+        releve =
+                new Releve(
+                        List.copyOf(stocks),
+                        List.copyOf(groupes),
+                        java.util.Collections.unmodifiableMap(positions),
+                        Set.copyOf(cherches));
+        appliquer();
+        if (attente && annoncer)
+            informer(
+                    reperes.isEmpty()
+                            ? "Aucun stockage utile connu pour les branches restantes."
+                            : reperes.size()
+                                    + " stockage(s) utile(s) à l’arbre. Composants prêts à récupérer en priorité.");
+        if (attente) annoncer = false;
+        attente = false;
+        reessais = 0;
+    }
+
+    /**
+     * Sélection du dernier relevé pour les objets encore demandés, avec les crédits actuels : les
+     * mêmes quotas que les contours, recalculés sans attendre l'assistant.
+     */
+    private static void appliquer() {
+        var suivi = collecte;
+        if (suivi == null) return;
+        versionAppliquee = suivi.version();
+        revision++;
+        var r = releve;
+        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
+        List<String> groupes = new ArrayList<>();
+        if (r != null)
+            for (int i = 0; i < r.stocks().size(); i++)
+                if (demandes.contains(r.stocks().get(i).objet())) {
+                    stocks.add(r.stocks().get(i));
+                    groupes.add(r.groupes().get(i));
+                }
+        Map<String, List<Pont.Repere>> positions = r == null ? Map.of() : r.positions();
         Set<String> utiles = new java.util.LinkedHashSet<>(),
                 visibles = new java.util.LinkedHashSet<>();
         Map<String, Integer> selection = new HashMap<>(), parGroupe = new HashMap<>();
         Set<String> groupesPrets = new java.util.LinkedHashSet<>();
-        for (var prise : collecte.dansCoffres(stocks)) {
+        for (var prise :
+                stocks.isEmpty() ? List.<PlanRetrait.Prise>of() : suivi.dansCoffres(stocks)) {
             selection.merge(stocks.get(prise.index()).objet(), prise.quantite(), Integer::sum);
             parGroupe.merge(groupes.get(prise.index()), prise.quantite(), Integer::sum);
             utiles.add(stocks.get(prise.index()).objet());
             visibles.add(groupes.get(prise.index()));
-            if (collecte.enFabrication(stocks.get(prise.index()).objet()))
+            if (suivi.enFabrication(stocks.get(prise.index()).objet()))
                 groupesPrets.add(groupes.get(prise.index()));
         }
         List<Pont.Repere> coffres = new ArrayList<>();
@@ -403,15 +540,8 @@ public final class RechercheEmi {
                 });
         aSortir = Map.copyOf(parPosition);
         Set<String> prets = new java.util.LinkedHashSet<>();
-        for (String groupe : groupesPrets) for (var r : positions.get(groupe)) prets.add(cle(r));
+        for (String groupe : groupesPrets)
+            for (var bloc : positions.get(groupe)) prets.add(cle(bloc));
         resultatsPrets = Set.copyOf(prets);
-        if (attente)
-            informer(
-                    coffres.isEmpty()
-                            ? "Aucun stockage utile connu pour les branches restantes."
-                            : coffres.size()
-                                    + " stockage(s) utile(s) à l’arbre. Composants prêts à récupérer en priorité.");
-        attente = false;
-        reessais = 0;
     }
 }

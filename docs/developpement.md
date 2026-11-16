@@ -97,6 +97,8 @@ source de style et gardent une seule hauteur de bouton.
 
 ## Collecte et machines EMI
 
+- `RechercheEmi` garde le dernier relevé des coffres envoyé par l’assistant et en recalcule la sélection à chaque acquisition : une nouvelle demande ne vide plus contours, quotas ni panneau pendant l’aller-retour, et une réponse plus ancienne reste rejetée par son numéro. Dans le coffre ouvert, `retrait` compte ses cases réelles avant les coffres mémorisés (le bloc visé à l’ouverture est exclu de la mémoire) ; `AideCoffre` se relit dès qu’une case ou `RechercheEmi.revision()` change.
+- Les contours rouges des machines et leurs rangs ne sont relevés et tracés que pendant le repérage (`CoffresArbreEmi.scanActif()`).
 - `RechercheEmi` possède la sélection globale du scan et ses quantités. `AideCoffre` et `RecuperationEmi` passent par cette sélection ; aucun retrait ne doit reconstruire un arbre depuis le seul coffre ouvert.
 - `MemoireCollecte` conserve les ingrédients acquis ; `PlanArbre` réserve les composants avant leurs enfants. `RetraitCoffre.planRecherche` applique les quotas aux cases réelles, sans déduire deux fois l’inventaire.
 - `SuiviFabrication` conserve les acquisitions finales et déduit les retours d’objets déjà sortis. `OrigineFabrication` rapproche les gains réels des événements de craft et des sorties natives ; ne jamais compter l’aperçu de résultat. `CycleArbreEmi` suit la durée de vie du craft et retire l’arbre d’EMI quand ses cibles finales sont obtenues ; il n’exporte plus `fabrication_emi.json`.
