@@ -249,7 +249,7 @@ public final class DeclarerFabricationEcran extends Screen {
                 Theme.paragraphe(
                         g,
                         font,
-                        "Résultats ensuite accessibles avec « Coffres ON »",
+                        "Résultats ensuite accessibles avec « Repérage ON »",
                         x,
                         suite + Theme.LIGNE + Theme.ECART,
                         largeur,

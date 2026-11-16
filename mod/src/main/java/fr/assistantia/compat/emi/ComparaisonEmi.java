@@ -56,7 +56,7 @@ public final class ComparaisonEmi {
      * recette dans le jeu : avant, un outil entamé ou chargé n'était pas toujours surligné.
      */
     public static boolean meme(EmiStack reel, EmiStack attendu) {
-        // Appelé des milliers de fois par image (Coffres ON) : d'abord la clé, sans rien créer.
+        // Appelé des milliers de fois par image (Repérage ON) : d'abord la clé, sans rien créer.
         // Deux objets différents ne sont jamais le même ; ni copie d'ItemStack ni nom de registre.
         Object cle = attendu.getKey();
         if (cle == null || !cle.equals(reel.getKey())) return false;

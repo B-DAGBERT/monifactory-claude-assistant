@@ -87,8 +87,9 @@ l’étape en cours (★ 3 ✓ pour un lot à récupérer) et aucune quand l’�
 l’établi ; un numéro grisé signale une étape qui ne peut pas encore se faire, ✓ un lot prêt et
 … un lot en cours. Au plus 16 machines, les plus proches, sont numérotées. Seules les machines
 encore utiles brillent : quand le résultat, ou une partie de l’arbre, est déjà dans un coffre
-connu à portée, les machines qui le fabriqueraient ne sont plus entourées. Ces repères n’apparaissent que si le mode fabrication de
-Recipe Tree ou **Coffres** est actif ; sinon, l’onglet le rappelle.
+connu à portée, les machines qui le fabriqueraient ne sont plus entourées. Les contours et leurs
+numéros n’apparaissent que pendant le repérage (**Repérage ON**) ; ils disparaissent dès son arrêt.
+L’onglet Recette garde son plan sans repérage.
 
 L’étape en cours s’affiche aussi dans le panneau en haut à gauche, par exemple
 **★ Basic Bender** puis « 4 Iron Ingot → 4 Iron Plate ». Dessous, **Aussi prêtes** liste en vert
@@ -114,18 +115,19 @@ Lorsque tu suis une recette, ouvre ton backpack pour retrouver les cases encadr�
 d’une case indique **À sortir × N**. Ce nombre couvre une fabrication en tenant compte de tes poches.
 Pour changer la recette suivie, sélectionne-la dans **Suivi** ou dans le panneau d’une machine.
 
-La barre près de Recipe Tree regroupe **Coffres OFF / ON** et **Suivi**. Si la place manque à côté de
-la recherche EMI, **Aide…** ouvre ces deux actions. **Coffres ON** s’affiche en doré pendant le scan.
+La barre près de Recipe Tree regroupe **Repérage OFF / ON** et **Suivi**. Si la place manque à côté de
+la recherche EMI, **Aide…** ouvre ces deux actions. **Repérage ON** s’affiche en doré pendant le scan.
 Échap ou **Retour à EMI** retrouve l’écran précédent. Les clics sur la barre et les panneaux
 préservent l’objet tenu au curseur.
 
 Cette option concerne le **comptage**. **Envoyer** continue à utiliser les cases accessibles de l’inventaire : le suivi indique **À sortir du sac** lorsque les ingrédients nécessaires sont dans le backpack. Le mod ne les extrait pas automatiquement.
 
-## Coffres depuis l’arbre EMI
+## Repérage depuis l’arbre EMI
 
-Choisir l’objet et ses recettes dans **Recipe Tree**, puis cliquer sur **Coffres**,
-en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton indique **Coffres ON**, en doré :
-un second clic désactive le repérage. Il remplace l’ancien bouton sous chaque recette.
+Choisir l’objet et ses recettes dans **Recipe Tree**, puis cliquer sur **Repérage** (anciennement
+**Coffres**), en bas à gauche, juste à droite du bouton Recipe Tree. Le bouton indique
+**Repérage ON**, en doré : les coffres utiles s’entourent en cyan (jaune pour un résultat attendu)
+et les machines utiles en rouge. Un second clic désactive le repérage et efface ces contours.
 
 La recherche suit **tout l’arbre choisi**, avec les composants intermédiaires,
 les matières premières, les variantes et les quantités pour le nombre de lots de l’arbre.
@@ -183,7 +185,7 @@ Dans une machine compatible, le panneau de l’assistant, au même style que cel
 - **En cours de craft**, directement dans le panneau machine, réserve les résultats du lot déjà lancé.
   EMI masque les ingrédients des branches entièrement couvertes et garde le produit attendu.
   Les résultats restent à récupérer : cette réservation ne termine pas le craft.
-- **Suivi**, près de **Coffres**, conserve l’accès aux étapes, à **Recette** et à **Annuler le lot**.
+- **Suivi**, près de **Repérage**, conserve l’accès aux étapes, à **Recette** et à **Annuler le lot**.
   Récupérer soi-même le résultat dans la machine.
 
 Les fluides proviennent uniquement des seaux et cellules de l’inventaire. Les contenants sont
@@ -198,17 +200,20 @@ Les fabrications envoyées restent réservées dans ce suivi pour éviter de les
 avant la récupération des sorties. Modifier l’arbre actif conserve ces réservations ; arrêter l’arbre les efface.
 Les machines et cuves sans entrées accessibles dans leur interface ne permettent pas cet envoi.
 
-À côté de **Coffres**, **Suivi** affiche les états **À collecter**, **À envoyer / À fabriquer**, **En machine**, **À récupérer** et **Terminé**. **En cours de craft** réserve le nombre de fabrications déjà lancées manuellement. Leurs résultats attendus et leurs ingrédients cessent d’être demandés par le suivi et le scan. **Recalculer** relit les besoins sans effacer l’avancement final ni les lots en attente. **Annuler le lot** libère sa réservation sans retirer les objets de la machine. Le fonctionnement et les limites sont détaillés dans [le guide EMI](emi-transferts.md).
+À côté de **Repérage**, **Suivi** affiche les états **À collecter**, **À envoyer / À fabriquer**, **En machine**, **À récupérer** et **Terminé**. **En cours de craft** réserve le nombre de fabrications déjà lancées manuellement. Leurs résultats attendus et leurs ingrédients cessent d’être demandés par le suivi et le scan. **Recalculer** relit les besoins sans effacer l’avancement final ni les lots en attente. **Annuler le lot** libère sa réservation sans retirer les objets de la machine. Le fonctionnement et les limites sont détaillés dans [le guide EMI](emi-transferts.md).
 
 Les composants transformés ne laissent plus un double crédit de matières premières. Les outils partagés sont prévus une seule fois, et les allers-retours du même résultat dans un coffre ne font plus progresser artificiellement la cible.
 
 ## Récupérer les ingrédients depuis un coffre
 
 Dans un coffre vanilla, une boîte de Shulker ou un coffre Sophisticated Storage, le panneau
-**Collecte** suit **les ingrédients du scan actif** : activer **Coffres** pour utiliser
+**Collecte** suit **les ingrédients du scan actif** : activer **Repérage** pour utiliser
 **Prendre / Tout**. Un arbre simplement consulté ou un scan arrêté ne propose aucun transfert.
 Le sélecteur montre les objets manquants disponibles dans ce
 coffre, avec la quantité à prendre sur chaque icône ; ses flèches (ou la molette) parcourent les pages.
+Il lit le contenu réel du coffre ouvert : un résultat de machine qui vient d’y arriver se prend
+tout de suite, et le panneau se met à jour à l’image suivante quand un objet entre ou sort, sans
+attendre la mémoire des coffres. Le lot passe **À récupérer** dès l’ouverture du coffre.
 
 Le panneau ne recouvre jamais le coffre : il se place au-dessus quand il y a la place, sinon en
 bloc large et bas sur le côté le plus libre, et EMI range ses listes d’objets autour de lui. Il se coupe dans
@@ -241,7 +246,7 @@ Le panneau d’un établi a le même aspect que ceux des coffres et des machines
 **Remplir / Tout** pour les recettes d’établi de l’arbre EMI actif et se place au-dessus ou à
 côté de l’interface, jamais sur la grille. Sans arbre EMI actif, il n’affiche rien. Il se coupe
 dans **Y → Réglages → Remplissage de l’établi**.
-Le bouton **Coffres** prépare le repérage et la liste de retrait, sans déplacer d’objet.
+Le bouton **Repérage** prépare les contours et la liste de retrait, sans déplacer d’objet.
 
 Les transferts utilisent les clics du jeu, avec le mécanisme natif de Sophisticated Storage
 pour ses coffres, sans commande ni installation serveur. Un transfert réussi est silencieux.
@@ -397,7 +402,7 @@ Le seuil concerne les résultats objets garantis, en tenant compte du rendement 
 et les doubles clics ne déclarent pas deux lots.
 
 Les quantités en cours servent à masquer leurs ingrédients dans EMI. Elles restent des résultats
-à récupérer pour **Coffres** : avec ce scan activé, un coffre utile contenant un résultat
+à récupérer pour **Repérage** : avec ce scan activé, un coffre utile contenant un résultat
 attendu prend un **contour jaune**. Les autres coffres utiles gardent leur contour cyan. Ouvrir
 le coffre puis utiliser **Prendre / Tout**, ou récupérer ses résultats normalement.
 

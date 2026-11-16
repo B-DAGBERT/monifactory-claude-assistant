@@ -95,7 +95,7 @@ class ThemePanelTests(unittest.TestCase):
         # Le rappel de la déclaration nomme le bouton actuel, plus l'ancien « Scanner coffres ».
         declaration = source("compat/emi/DeclarerFabricationEcran")
         self.assertNotIn("Scanner coffres", declaration)
-        self.assertIn("« Coffres ON »", declaration)
+        self.assertIn("« Repérage ON »", declaration)
 
 
 if __name__ == "__main__":

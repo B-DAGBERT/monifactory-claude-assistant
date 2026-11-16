@@ -84,25 +84,30 @@ public final class PlanMachinesTest {
                         .equals(List.of(new PlanMachines.Operation<>("pair_mold", 1)))
                 : "le surplus d'une fabrication d'outils couvre la deuxième branche";
         // Stock ME : couvrir d'abord les composants et déduire le stock déjà porté.
-        var stockMe = List.of(
-                new PlanRetrait.Stock<>("plate", 7, true),
-                new PlanRetrait.Stock<>("plate", 24, false),
-                new PlanRetrait.Stock<>("ore", 64, false));
+        var stockMe =
+                List.of(
+                        new PlanRetrait.Stock<>("plate", 7, true),
+                        new PlanRetrait.Stock<>("plate", 24, false),
+                        new PlanRetrait.Stock<>("ore", 64, false));
         assert PlanMachines.retraits(machine, 2, stockMe)
                 .equals(List.of(new PlanRetrait.Prise(1, 3)));
-        stockMe = List.of(
-                new PlanRetrait.Stock<>("plate", 7, true),
-                new PlanRetrait.Stock<>("plate", 1, false),
-                new PlanRetrait.Stock<>("ore", 64, false));
+        stockMe =
+                List.of(
+                        new PlanRetrait.Stock<>("plate", 7, true),
+                        new PlanRetrait.Stock<>("plate", 1, false),
+                        new PlanRetrait.Stock<>("ore", 64, false));
         assert PlanMachines.retraits(machine, 2, stockMe)
                 .equals(List.of(new PlanRetrait.Prise(1, 1), new PlanRetrait.Prise(2, 3)));
-        assert PlanMachines.retraits(nested, 1,
-                List.of(new PlanRetrait.Stock<>("mold", 10, false)))
-                .equals(List.of(new PlanRetrait.Prise(0, 1))) : "un seul moule partagé à retirer";
+        assert PlanMachines.retraits(nested, 1, List.of(new PlanRetrait.Stock<>("mold", 10, false)))
+                        .equals(List.of(new PlanRetrait.Prise(0, 1)))
+                : "un seul moule partagé à retirer";
         var variant = node("cell:four", 1, 1, null, List.of());
-        assert PlanMachines.retraits(variant, 1, List.of(
-                new PlanRetrait.Stock<>("cell:two", 16, false),
-                new PlanRetrait.Stock<>("cell:four", 16, false)))
+        assert PlanMachines.retraits(
+                        variant,
+                        1,
+                        List.of(
+                                new PlanRetrait.Stock<>("cell:two", 16, false),
+                                new PlanRetrait.Stock<>("cell:four", 16, false)))
                 .equals(List.of(new PlanRetrait.Prise(1, 1)));
         assert PlanMachines.produit(Long.MAX_VALUE, Long.MAX_VALUE) == 1_000_000;
     }

@@ -80,6 +80,11 @@ public final class CoffresArbreEmi {
         charge = true;
     }
 
+    /** Repérage actif (bouton près de Recipe Tree) : coffres et machines utiles surlignés. */
+    public static boolean scanActif() {
+        return RechercheEmi.selectionnee(ID);
+    }
+
     public static Object arbreActif() {
         try {
             charger();
@@ -97,14 +102,14 @@ public final class CoffresArbreEmi {
         if (!(screen instanceof AbstractContainerScreen<?>)
                 && !name.equals("dev.emi.emi.screen.RecipeScreen")
                 && !name.equals("dev.emi.emi.screen.BoMScreen")) return;
-        var scan = outil("Coffres OFF", b -> basculer());
+        var scan = outil("Repérage OFF", b -> basculer());
         var suivi =
                 outil("Suivi", b -> ouvrirSuivi(screen))
                         .infobulle("Suivre les fabrications, recalculer ou annuler un lot");
         var menu =
                 outil("Aide…", b -> ouvrirDepuisCoffre(screen, new Menu(screen)))
                         .infobulle(
-                                "Outils EMI : recherche dans les coffres et suivi des fabrications");
+                                "Outils EMI : repérage des coffres et machines, suivi des fabrications");
         boutons.put(screen, scan);
         suivis.put(screen, suivi);
         menus.put(screen, menu);
@@ -143,15 +148,15 @@ public final class CoffresArbreEmi {
         boolean selection = RechercheEmi.selectionnee(ID);
         boolean attend = selection && !fr.assistantia.InventaireJoueur.synchronise();
         bouton.active = selection || ArbreEmi.consulte() != null;
-        bouton.texte(attend ? "Coffres…" : selection ? "Coffres ON" : "Coffres OFF")
+        bouton.texte(attend ? "Repérage…" : selection ? "Repérage ON" : "Repérage OFF")
                 .choisi(selection)
                 .infobulle(
                         attend
-                                ? "Lecture du backpack en cours · cliquer pour arrêter le scan"
+                                ? "Lecture du backpack en cours · cliquer pour arrêter le repérage"
                                 : selection
-                                        ? "Scan actif · cliquer pour arrêter la recherche dans les coffres"
+                                        ? "Coffres et machines utiles surlignés · cliquer pour arrêter"
                                         : bouton.active
-                                                ? "Chercher les ingrédients de l’arbre EMI dans les coffres"
+                                                ? "Surligner les coffres et les machines utiles à l’arbre EMI"
                                                 : "Choisis d’abord une recette dans Recipe Tree");
     }
 
@@ -184,7 +189,7 @@ public final class CoffresArbreEmi {
                             x,
                             y,
                             place,
-                            Math.max(largeur(font, "Coffres OFF"), largeur(font, "Coffres ON")),
+                            Math.max(largeur(font, "Repérage OFF"), largeur(font, "Repérage ON")),
                             largeur(font, "Suivi"),
                             largeur(font, "Aide…"));
             BoutonTheme suivi = suivis.get(screen);
@@ -258,7 +263,7 @@ public final class CoffresArbreEmi {
 
     /** Repli unique : aucune rangée supplémentaire ne recouvre les contrôles des autres mods. */
     private static final class Menu extends Screen {
-        private static final String AIDE = "Coffres et fabrications";
+        private static final String AIDE = "Repérage et fabrications";
         private final Screen parent;
         private final Object connexionOuverture, mondeOuverture;
         private BoutonTheme scan, suivi;
@@ -311,7 +316,7 @@ public final class CoffresArbreEmi {
                 suivi.active = ArbreEmi.actif() != null || MachinesEmi.dernierTermine();
             } catch (ReflectiveOperationException | RuntimeException e) {
                 scan.active = suivi.active = false;
-                scan.texte("Coffres indisponibles")
+                scan.texte("Repérage indisponible")
                         .choisi(false)
                         .infobulle("Arbre EMI illisible · retourne dans Recipe Tree");
                 signaler(e);
@@ -400,7 +405,7 @@ public final class CoffresArbreEmi {
     /** Les quantités réservées par la recherche active, sans reconstruire l'arbre. */
     public static fr.assistantia.RetraitCoffre.Plan planTransfert(
             AbstractContainerScreen<?> screen) {
-        return RechercheEmi.retrait(screen.getMenu());
+        return RechercheEmi.retrait(screen.getMenu(), fr.assistantia.AideCoffre.position(screen));
     }
 
     private static void signaler(Exception e) {

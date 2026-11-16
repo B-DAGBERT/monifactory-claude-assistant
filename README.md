@@ -25,9 +25,9 @@ chaque poste. Les conversations, relevés de coffres et filons restent locaux.
 | Savoir quoi fabriquer et dans quel ordre  | **Y → Recette** : plan numéroté ; la prochaine étape s’affiche en haut à gauche.                               |
 | Trouver une meilleure recette             | **Y → Recette → Meilleures alternatives**, puis **Appliquer** (cet arbre seulement).                           |
 | Calculer les besoins de production        | **Y → Base → Production…**, depuis l’arbre EMI ou un coffre ouvert pour utiliser son relevé courant.           |
-| Chercher les ingrédients                  | **Coffres**, à droite de Recipe Tree, doré pendant le scan. Un second clic arrête le scan.                     |
+| Chercher les ingrédients                  | **Repérage**, à droite de Recipe Tree, doré pendant le scan. Un second clic arrête le scan.                    |
 | Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.                                         |
-| Utiliser une machine                      | Contour rouge numéroté, puis **Envoyer** dans sa fenêtre. Récupérer soi-même les sorties.                      |
+| Utiliser une machine                      | Contour rouge numéroté (avec **Repérage ON**), puis **Envoyer**. Récupérer soi-même les sorties.               |
 | Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                                                     |
 | Suivre les lots et les priorités          | **Suivi**, groupes À lancer maintenant / À préparer. Le panneau machine classe aussi ses recettes compatibles. |
 | Voir les stocks ou les filons connus      | **Y → Base / Filons**.                                                                                         |

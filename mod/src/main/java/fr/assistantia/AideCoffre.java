@@ -28,8 +28,11 @@ public final class AideCoffre {
     private static RetraitCoffre.Plan plan = new RetraitCoffre.Plan(List.of(), 0);
     private static List<ItemStack> objets = List.of();
     private static ItemStack choisi = ItemStack.EMPTY;
-    private static long actualise;
+    private static long actualise, signature, revision;
     private static int page;
+
+    /** Bloc visé à l'ouverture : son contenu réel remplace sa copie mémorisée. */
+    private static net.minecraft.core.BlockPos ouvert;
 
     private AideCoffre() {}
 
@@ -41,6 +44,17 @@ public final class AideCoffre {
                 || !RetraitCoffre.estCoffre(screen.getMenu())) return;
         ecran = screen;
         occupee = PanneauAssistant.occupee(screen);
+        var mc = Minecraft.getInstance();
+        ouvert =
+                mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult bloc
+                                && bloc.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                        ? bloc.getBlockPos().immutable()
+                        : null;
+    }
+
+    /** Position du coffre de cet écran, si le joueur l'a ouvert en le visant. */
+    public static net.minecraft.core.BlockPos position(Screen screen) {
+        return screen == ecran ? ouvert : null;
     }
 
     public static void vider() {
@@ -82,6 +96,26 @@ public final class AideCoffre {
                                 libelles(Minecraft.getInstance().font));
         page = disposition == null ? 0 : Math.min(page, derniere());
         actualise = System.currentTimeMillis();
+        signature = signature(ecran);
+        revision = RechercheEmi.revision();
+    }
+
+    /**
+     * Empreinte des cases du coffre et des poches, sans copie : le panneau suit un résultat qui
+     * arrive ou qui part dès l'image suivante, au lieu d'attendre la prochaine relecture.
+     */
+    private static long signature(AbstractContainerScreen<?> screen) {
+        long h = 1;
+        for (var slot : screen.getMenu().slots) {
+            ItemStack item = slot.getItem();
+            h =
+                    31 * h
+                            + (item.isEmpty()
+                                    ? 0
+                                    : System.identityHashCode(item.getItem()) * 131L
+                                            + item.getCount());
+        }
+        return h;
     }
 
     /** Le titre le plus long possible reste entier : la disposition ne bouge pas avec le total. */
@@ -114,7 +148,11 @@ public final class AideCoffre {
     @SubscribeEvent
     public static void avantRendu(ScreenEvent.Render.Pre event) {
         if (!actif(event.getScreen())) return;
-        if (!RetraitCoffre.occupe() && System.currentTimeMillis() - actualise >= 400) actualiser();
+        if (RetraitCoffre.occupe()) return;
+        // Relu dès qu'une case, un crédit ou le relevé change ; sinon une fois par seconde.
+        if (System.currentTimeMillis() - actualise >= 1000
+                || RechercheEmi.revision() != revision
+                || signature(ecran) != signature) actualiser();
     }
 
     @SubscribeEvent
