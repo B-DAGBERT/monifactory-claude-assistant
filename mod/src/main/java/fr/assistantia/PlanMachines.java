@@ -21,7 +21,24 @@ public final class PlanMachines {
 
     public static <T, R> List<Operation<R>> calculer(
             Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock) {
+        return calculer(root, batches, stock, null);
+    }
+
+    /** Parts allouées aux besoins de l'arbre depuis une source extérieure à l'inventaire. */
+    public static <T, R> List<PlanRetrait.Prise> retraits(
+            Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock) {
+        int[] prises = new int[stock.size()];
+        calculer(root, batches, stock, prises);
+        var resultat = new ArrayList<PlanRetrait.Prise>();
+        for (int i = 0; i < prises.length; i++)
+            if (prises[i] > 0) resultat.add(new PlanRetrait.Prise(i, prises[i]));
+        return List.copyOf(resultat);
+    }
+
+    private static <T, R> List<Operation<R>> calculer(
+            Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock, int[] prises) {
         var reserve = new ArrayList<>(stock);
+        int[] outilsPris = prises == null ? null : new int[stock.size()];
         var operations = new LinkedHashMap<R, Integer>();
         var outilsPrevus = new LinkedHashMap<R, Integer>();
         List<Demande<T, R>> niveau =
@@ -38,7 +55,7 @@ public final class PlanMachines {
                                                     d.node().accepte(),
                                                     d.node().reutilisable() ? 0 : d.quantite()))
                             .toList();
-            List<Integer> outilsPresents =
+            List<Long> outilsPresents =
                     niveau.stream()
                             .map(
                                     d ->
@@ -51,22 +68,31 @@ public final class PlanMachines {
                                                                                     .test(
                                                                                             s
                                                                                                     .objet()))
-                                                            .mapToInt(PlanRetrait.Stock::quantite)
+                                                            .mapToLong(PlanRetrait.Stock::quantite)
                                                             .sum()
-                                                    : 0)
+                                                    : 0L)
                             .toList();
             var allocation = PlanRetrait.calculer(reserve, besoins);
             for (int i = 0; i < reserve.size(); i++) {
                 var s = reserve.get(i);
+                int utilise = allocation.utilises().get(i);
+                if (prises != null && !s.inventaire()) prises[i] += utilise;
                 reserve.set(
                         i,
-                        new PlanRetrait.Stock<>(
-                                s.objet(), s.quantite() - allocation.utilises().get(i), true));
+                        new PlanRetrait.Stock<>(s.objet(), s.quantite() - utilise, s.inventaire()));
             }
             List<Demande<T, R>> suite = new ArrayList<>();
             for (int i = 0; i < niveau.size(); i++) {
                 var d = niveau.get(i);
-                int manque = d.quantite() - allocation.fournis().get(i) - outilsPresents.get(i);
+                int manque =
+                        (int)
+                                Math.max(
+                                        0L,
+                                        d.quantite()
+                                                - allocation.fournis().get(i)
+                                                - outilsPresents.get(i));
+                if (outilsPris != null && d.node().reutilisable())
+                    reserverOutil(d, reserve, outilsPris);
                 if (d.node().reutilisable() && d.node().recette() != null) {
                     int deja = outilsPrevus.getOrDefault(d.node().recette(), 0);
                     manque = Math.max(0, manque - deja);
@@ -89,9 +115,30 @@ public final class PlanMachines {
             }
             niveau = suite;
         }
+        if (prises != null)
+            for (int i = 0; i < prises.length; i++)
+                prises[i] = Math.min(stock.get(i).quantite(), prises[i] + outilsPris[i]);
         return operations.entrySet().stream()
                 .map(e -> new Operation<>(e.getKey(), e.getValue()))
                 .toList();
+    }
+
+    private static <T, R> void reserverOutil(
+            Demande<T, R> demande, List<PlanRetrait.Stock<T>> stocks, int[] pris) {
+        int manque = demande.quantite();
+        for (int i = 0; i < stocks.size() && manque > 0; i++) {
+            var stock = stocks.get(i);
+            if (!demande.node().accepte().test(stock.objet())) continue;
+            if (stock.inventaire()) manque -= stock.quantite();
+            else manque -= Math.min(pris[i], stock.quantite());
+        }
+        for (int i = 0; i < stocks.size() && manque > 0; i++) {
+            var stock = stocks.get(i);
+            if (stock.inventaire() || !demande.node().accepte().test(stock.objet())) continue;
+            int utiliser = Math.min(manque, Math.max(0, stock.quantite() - pris[i]));
+            pris[i] += utiliser;
+            manque -= utiliser;
+        }
     }
 
     public static int produit(long a, long b) {

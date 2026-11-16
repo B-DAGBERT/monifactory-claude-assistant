@@ -42,6 +42,12 @@ public class InventaireJoueur {public static boolean sync=true;public static jav
  public static java.util.List<net.minecraft.world.item.ItemStack> sacs;
  public static boolean disponible(){return sync;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return sacs==null?piles:sacs;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}}
 """,
+    "fr.assistantia.compat.emi.TerminalMe": """
+class TerminalMe {
+ static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> stock = java.util.List.of();
+ static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> stock(){return stock;}
+}
+""",
     "fr.assistantia.compat.emi.CoffresArbreEmi": """
 public class CoffresArbreEmi {public static Object arbre=new Object();public static Object arbreActif(){return arbre;}}
 """,

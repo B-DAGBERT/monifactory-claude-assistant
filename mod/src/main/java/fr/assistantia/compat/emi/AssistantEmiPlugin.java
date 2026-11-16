@@ -31,6 +31,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
         // EMI range ses listes d'objets autour du panneau de retrait au lieu de passer dessous.
         registry.addGenericExclusionArea(
                 (screen, zones) -> {
+                    TerminalMe.zoneEmi(screen, zones);
                     var suivi = CoffresArbreEmi.zoneSuivi(screen);
                     if (suivi != null)
                         zones.accept(
@@ -49,6 +50,7 @@ public final class AssistantEmiPlugin implements EmiPlugin {
             MinecraftForge.EVENT_BUS.register(AssistantEmiPlugin.class);
             MinecraftForge.EVENT_BUS.register(CoffresArbreEmi.class);
             MinecraftForge.EVENT_BUS.register(InventaireArbreEmi.class);
+            MinecraftForge.EVENT_BUS.register(TerminalMe.class);
             MinecraftForge.EVENT_BUS.register(CycleArbreEmi.class);
             MinecraftForge.EVENT_BUS.register(OrigineFabrication.class);
             MinecraftForge.EVENT_BUS.register(AideCoffre.class);

@@ -28,7 +28,7 @@ public class InventaireArbreEmiTest {
             InventaireArbreEmi.tick(new TickEvent.ClientTickEvent(TickEvent.Phase.END));
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws ReflectiveOperationException {
         var mc = Minecraft.getInstance();
         mc.player = new net.minecraft.world.entity.player.Player();
         mc.level = new Object();
@@ -105,6 +105,16 @@ public class InventaireArbreEmiTest {
         tick();
         assert EmiFavorites.updates == changements + 1;
         changements = EmiFavorites.updates;
+        // Le stock du terminal compte uniquement dans la vue EMI et disparaît à sa fermeture.
+        var classeMe = Class.forName("fr.assistantia.compat.emi.TerminalMe");
+        var champMe = classeMe.getDeclaredField("stock");
+        champMe.setAccessible(true);
+        champMe.set(null, List.of(new PlanRetrait.Stock<>(EmiStack.of(s("iron", 2)), 100, false)));
+        var terminal = InventaireArbreEmi.completer(original);
+        assert n(terminal, "iron") == 102 && n(original, "iron") == 2;
+        assert n(InventaireArbreEmi.completer(terminal), "iron") == 102;
+        champMe.set(null, List.of());
+        assert InventaireArbreEmi.completer(terminal) == original;
         // Le fluide porté existe même sans sac ni lot. Un seau vide ne crée aucun stock.
         var drum = s("steel_drum", 1);
         var volume = new net.minecraft.nbt.CompoundTag();

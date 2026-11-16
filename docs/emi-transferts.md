@@ -33,6 +33,19 @@ Avec une recette suivie, les cases utiles du backpack ouvert sont encadrées en 
 indique la quantité **À sortir** pour une fabrication après déduction des objets dans les poches.
 Les cases des poches, filtres et upgrades gardent leur affichage natif.
 
+## Terminal ME
+
+Ouvre un terminal de stockage ou de fabrication AE2 avec un **Recipe Tree** sélectionné.
+L’arbre EMI compte les objets que le terminal annonce en stock, même avec un filtre de
+recherche. **Prendre pour EMI** montre le total à retirer et son survol liste les quantités
+par objet. Le calcul déduit tes poches et ton sac, puis prend les composants déjà prêts
+avant de chercher les matières de leur branche. Clique pour les recevoir dans l’inventaire.
+
+Le relevé est valable tant que le menu du terminal est ouvert. Laisse le curseur vide avant
+de lancer le retrait. Tu peux l’arrêter depuis le même bouton. En cas d’interruption, les
+objets déjà retirés peuvent se trouver sur le curseur. Les objets seulement autocraftables
+et les fluides du réseau restent à gérer dans AE2.
+
 ## Remplir l’établi
 
 Avec un arbre EMI actif, le panneau propose les recettes d’établi encore nécessaires à cet arbre. Il a le même aspect que ceux des coffres et des machines et se place au-dessus ou à côté de l’interface, jamais sur la grille ; EMI range ses listes autour de lui. Il se rafraîchit lorsque la recette, les stocks ou les lots en cours changent. **Remplir** utilise le gestionnaire natif EMI et les vraies cases accessibles ; les objets réservés en machine ou dans un sac fermé ne sont pas prélevés. Sans arbre EMI actif, ou si l’arbre ne contient plus de recette d’établi réalisable, le panneau n’affiche rien.

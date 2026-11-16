@@ -35,9 +35,11 @@ public final class InventaireArbreEmi {
         natif = ORIGINES.getOrDefault(natif, natif);
         var mc = Minecraft.getInstance();
         if (mc.player == null || !InventaireJoueur.disponible()) return natif;
-        var resultat = composer(InventaireJoueur.piles(), grilles());
+        var resultat = personnel();
+        var stockMe = TerminalMe.stock();
         var reservations = stocksVirtuels(resultat);
         if (InventaireJoueur.sacs().isEmpty()
+                && stockMe.isEmpty()
                 && reservations.isEmpty()
                 && resultat.inventory.values().stream()
                         .noneMatch(pile -> pile.getKey() instanceof Fluid)) return natif;
@@ -49,6 +51,8 @@ public final class InventaireArbreEmi {
                 resultat.inventory.merge(
                         copie, copie, (a, b) -> a.getAmount() >= b.getAmount() ? a : b);
             }
+        for (var stock : stockMe)
+            ajouter(resultat, stock.objet().copy().setAmount(stock.quantite()));
         for (var reserve : reservations) {
             var pile = ComparaisonEmi.pourInventaire(reserve.objet()).setAmount(reserve.quantite());
             resultat.inventory.merge(
@@ -56,6 +60,10 @@ public final class InventaireArbreEmi {
         }
         ORIGINES.put(resultat, natif);
         return resultat;
+    }
+
+    static EmiPlayerInventory personnel() {
+        return composer(InventaireJoueur.piles(), grilles());
     }
 
     private static List<ItemStack> grilles() {
@@ -67,7 +75,7 @@ public final class InventaireArbreEmi {
         return grilles;
     }
 
-    private static List<PlanRetrait.Stock<EmiStack>> stocksVirtuels(EmiPlayerInventory personnels) {
+    static List<PlanRetrait.Stock<EmiStack>> stocksVirtuels(EmiPlayerInventory personnels) {
         var physiques =
                 personnels.inventory.values().stream()
                         .map(
@@ -136,7 +144,7 @@ public final class InventaireArbreEmi {
                 return;
             }
             if (!InventaireJoueur.disponible()) return;
-            var personnels = composer(InventaireJoueur.piles(), grilles());
+            var personnels = personnel();
             var reservations = stocksVirtuels(personnels);
             var physiques =
                     personnels.inventory.values().stream()
