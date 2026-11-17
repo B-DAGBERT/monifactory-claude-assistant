@@ -183,3 +183,26 @@ class ScenariosBasiques(Parcours, unittest.TestCase):
         r = self.rafraichir([coffre(12, item="test:a", n=1)])
         self.assertEqual(r["coffres"], [])
         self.assertEqual(r["selection"], {})
+
+    def test_11_exclure_un_double_enleve_ses_deux_reperes_et_ses_retraits(self):
+        self.demarrer(4)
+        self.client.step(lot={"item": "test:plate", "n": 4})
+        r = self.rafraichir([coffre(3), coffre(4), coffre(11)])
+        self.assertCountEqual([c["x"] for c in r["coffres"]], [3, 4, 11])
+        r = self.client.step(
+            exclus=["test:world|3|64|0", "test:world|4|64|0"],
+            ouvert=[4, 64, 0],
+            locaux={"test:plate": 2},
+        )
+        self.assertEqual(r["coffres"], [{"x": 11, "jaune": True}])
+        self.assertEqual(r["quotas"], {"11": 2})
+        self.assertEqual(r["selection"], {})
+        self.assertEqual(r["resultats"], {"test:plate": 2})
+        # Une paire supposée par le relevé peut aussi être deux coffres simples.
+        r = self.client.step(
+            exclus=["test:world|3|64|0"], ouvert=[4, 64, 0], locaux={"test:plate": 2}
+        )
+        self.assertCountEqual([c["x"] for c in r["coffres"]], [4, 11])
+        self.assertEqual(r["selection"], {"test:plate": 2})
+        r = self.client.step(exclus=[])
+        self.assertCountEqual([c["x"] for c in r["coffres"]], [3, 4, 11])

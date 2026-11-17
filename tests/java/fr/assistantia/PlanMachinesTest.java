@@ -33,6 +33,17 @@ public final class PlanMachinesTest {
                 PlanMachines.calculer(
                         machine, 2, List.of(new PlanRetrait.Stock<>("plate", 7, true)));
         assert partial.get(1).fois() == 2 : "Arrondi au nombre de fabrications";
+        var tampon = List.of(new PlanRetrait.Stock<>("plate", 10, false));
+        assert PlanMachines.calculer(machine, 2, tampon)
+                        .equals(List.of(new PlanMachines.Operation<>("assemble", 2)))
+                : "Le composant du tampon n'est plus à fabriquer";
+        var pochesEtTampon =
+                List.of(
+                        new PlanRetrait.Stock<>("plate", 3, true),
+                        new PlanRetrait.Stock<>("plate", 2, false),
+                        new PlanRetrait.Stock<>("plate", 2, false));
+        assert PlanMachines.calculer(machine, 2, pochesEtTampon).equals(partial)
+                : "Les tampons complètent les poches en quantités partielles";
         var fluid = node("acid", 144, 1000, "reactor", List.of());
         assert PlanMachines.calculer(fluid, 8, List.<PlanRetrait.Stock<String>>of()).get(0).fois()
                 == 2;

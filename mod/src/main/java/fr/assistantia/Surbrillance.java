@@ -24,7 +24,7 @@ public final class Surbrillance {
             return;
         }
         boolean recherche = RechercheEmi.actif() || Pont.rechercheActive();
-        if (!recherche) return;
+        if (!recherche || CoffreTampon.menuExclu()) return;
         int alpha = (int) (0x60 + 0x50 * Math.sin(System.currentTimeMillis() / 220.0)) << 24;
         GuiGraphics g = event.getGuiGraphics();
         g.pose().pushPose();

@@ -55,6 +55,8 @@ STUBS.update(
         "fr.assistantia.CoffreTampon": """public class CoffreTampon {
  public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
  public static boolean menuObserve(){return false;}
+ public static boolean menuExclu(){return exclude;}
+ public static boolean exclude;
  public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}}""",
         "fr.assistantia.StockProduction": """public class StockProduction {
  public static com.google.gson.JsonObject packet;public static int reads;
@@ -135,6 +137,9 @@ public class OrderIntegrationTest {
    case "chest_coherent_sources" -> {
     mc.player.inventory.items.add(new ItemStack("test:iron",3));chest("test:iron",5);InventaireJoueur.bags=List.of(new ItemStack("test:iron",100));var a=recipe(item("test:iron",8));
     mode(calculate(null,a),a,OrdreMachines.Mode.PREPARER);var tooMuch=recipe(item("test:iron",9));mode(calculate(null,tooMuch),tooMuch,OrdreMachines.Mode.BLOQUE);
+    CoffreTampon.exclude=true;InventaireJoueur.bags=List.of();int reads=StockProduction.reads;
+    mode(calculate(null,a),a,OrdreMachines.Mode.BLOQUE);assert StockProduction.reads==reads;
+    CoffreTampon.exclude=false;InventaireJoueur.bags=List.of(new ItemStack("test:iron",100));
     StockProduction.packet=null;mode(calculate(null,a),a,OrdreMachines.Mode.PREPARER);InventaireJoueur.bags=List.of();mode(calculate(null,a),a,OrdreMachines.Mode.BLOQUE);
    }
    case "inventory_unknown" -> {

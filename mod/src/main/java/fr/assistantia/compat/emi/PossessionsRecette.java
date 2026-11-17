@@ -206,7 +206,9 @@ final class PossessionsRecette {
         outilsConnus = outils;
         Map<String, Long> totaux = new HashMap<>(coffres.objets());
         for (var coffre : coffres.conteneurs())
-            if (CoffreTampon.contient(coffre.dimension(), coffre.x(), coffre.y(), coffre.z()))
+            if (CoffreTampon.exclu(coffre.dimension(), coffre.x(), coffre.y(), coffre.z())
+                    || CoffreTampon.contient(
+                            coffre.dimension(), coffre.x(), coffre.y(), coffre.z()))
                 coffre.objets()
                         .forEach(
                                 (id, n) ->

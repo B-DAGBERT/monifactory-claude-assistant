@@ -274,7 +274,7 @@ final class OrdonnancementEmi {
         var mc = Minecraft.getInstance();
         if (mc.player == null) return List.of();
         var coffre =
-                CoffreTampon.menuObserve()
+                CoffreTampon.menuObserve() || CoffreTampon.menuExclu()
                         ? null
                         : StockProduction.capturer(System.currentTimeMillis());
         for (var pile : mc.player.getInventory().items)

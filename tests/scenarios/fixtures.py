@@ -33,13 +33,16 @@ public class Minecraft {
     "fr.assistantia.CoffreTampon": r"""
 public class CoffreTampon {
  public static java.util.Set<String> positions=java.util.Set.of();
+ public static java.util.Set<String> exclus=java.util.Set.of();
  public static java.util.Map<String,java.util.List<net.minecraft.world.item.ItemStack>> stock=java.util.Map.of();
  public static String ouvert="";
  public static long rev;
  public static long revision(){return rev;}
- public static boolean selectionActive(){return !positions.isEmpty();}
+ public static boolean filtrageActif(){return !positions.isEmpty()||!exclus.isEmpty();}
  public static boolean selectionne(String dim,long x,long y,long z){return positions.contains(dim+"|"+x+"|"+y+"|"+z);}
  public static boolean menuObserve(){return positions.contains(ouvert);}
+ public static boolean exclu(String dim,long x,long y,long z){return exclus.contains(dim+"|"+x+"|"+y+"|"+z);}
+ public static boolean menuExclu(){return exclus.contains(ouvert);}
  public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return pilesSauf("");}
  public static java.util.List<net.minecraft.world.item.ItemStack> pilesHorsMenu(){return pilesSauf(ouvert);}
  private static java.util.List<net.minecraft.world.item.ItemStack> pilesSauf(String sauf){
@@ -127,6 +130,11 @@ public final class ParcoursCoffres {
    var positions=new HashSet<String>();
    for(var p:j.getAsJsonArray("tampon"))positions.add(p.getAsString());
    CoffreTampon.positions=Set.copyOf(positions);CoffreTampon.rev++;
+  }
+  if(j.has("exclus")){
+   var positions=new HashSet<String>();
+   for(var p:j.getAsJsonArray("exclus"))positions.add(p.getAsString());
+   CoffreTampon.exclus=Set.copyOf(positions);CoffreTampon.rev++;
   }
   if(j.has("stock_tampons")){
    var coffres=new LinkedHashMap<String,List<ItemStack>>();

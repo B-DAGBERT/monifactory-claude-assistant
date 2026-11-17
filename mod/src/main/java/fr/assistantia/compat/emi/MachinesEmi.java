@@ -64,6 +64,8 @@ public final class MachinesEmi {
                     MachinesEmi::inventaire,
                     MachinesEmi::lotsModifies,
                     MachinesEmi::porteeProduction);
+
+    /** Besoins du panneau et du suivi, après prise en compte des tampons relevés. */
     private static List<PlanMachines.Operation<EmiRecipe>> toutes = List.of();
 
     /**
@@ -783,8 +785,9 @@ public final class MachinesEmi {
                 calculPrecedent = "";
                 instantane = vue;
             }
-            var personnels = inventaire();
-            var stock = new ArrayList<>(personnels);
+            var tampon = AnalyseRecette.stockTampon();
+            var stock = inventaire();
+            stock.addAll(tampon);
             var finaux =
                     CycleArbreEmi.credits().stream()
                             .map(
@@ -792,9 +795,10 @@ public final class MachinesEmi {
                                             new PlanRetrait.Stock<>(
                                                     EmiStack.of(c.objet()), c.quantite(), true))
                             .toList();
-            var credites = creditsAcquis(stock, finaux);
+            var creditFinal = InventaireArbreEmi.sansTampon(finaux, tampon);
+            var credites = creditsAcquis(stock, creditFinal);
             stock.addAll(credites);
-            stock.addAll(finaux);
+            stock.addAll(creditFinal);
             stock.addAll(completerOutils(stock));
             String cle =
                     cleStock(stock)
@@ -815,24 +819,11 @@ public final class MachinesEmi {
             stock.addAll(attendus);
             toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
-            var tampon = AnalyseRecette.stockTampon();
-            var creditFinalUtile = finaux;
-            var creditsUtiles = credites;
-            if (!tampon.isEmpty()) {
-                stock = new ArrayList<>(personnels);
-                stock.addAll(tampon);
-                creditFinalUtile = InventaireArbreEmi.sansTampon(finaux, tampon);
-                creditsUtiles = creditsAcquis(stock, creditFinalUtile);
-                stock.addAll(creditsUtiles);
-                stock.addAll(creditFinalUtile);
-                stock.addAll(completerOutils(stock));
-                stock.addAll(attendus);
-            }
-            var horsPoches = new ArrayList<>(creditsUtiles);
-            horsPoches.addAll(creditFinalUtile);
+            var horsPoches = new ArrayList<>(credites);
+            horsPoches.addAll(creditFinal);
             horsPoches.addAll(attendus);
             var coffres = stockCoffres(vue, horsPoches);
-            if (tampon.isEmpty() && coffres.isEmpty()) utiles = toutes;
+            if (coffres.isEmpty()) utiles = toutes;
             else {
                 stock.addAll(coffres);
                 utiles = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
@@ -1141,6 +1132,7 @@ public final class MachinesEmi {
             return;
         }
         if (d.prendre().contient(x, y)) {
+            if (!fr.assistantia.InventaireJoueur.synchronise()) return;
             if (!selectionnerAffichee(recetteAffichee)) return;
             var op = selection();
             var envoi = plan;

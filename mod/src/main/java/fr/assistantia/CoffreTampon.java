@@ -15,6 +15,7 @@ import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ShulkerBoxMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ChestType;
@@ -27,7 +28,7 @@ import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.registries.ForgeRegistries;
 
-/** Stock de planification relevé dans un menu ouvert avec l'accès natif du joueur. */
+/** Rôles des coffres choisis par le joueur et relevés natifs des tampons. */
 public final class CoffreTampon {
     private static final long DUREE_RELEVE = 60_000_000_000L;
 
@@ -39,11 +40,12 @@ public final class CoffreTampon {
     }
 
     private record Cible(ClientPacketListener connexion, ClientLevel niveau, List<Bloc> blocs) {
+        boolean memeContexte(Minecraft mc) {
+            return mc.player != null && niveau == mc.level && connexion == mc.getConnection();
+        }
+
         boolean valide(Minecraft mc) {
-            return mc.player != null
-                    && niveau == mc.level
-                    && connexion == mc.getConnection()
-                    && !modifie();
+            return memeContexte(mc) && !modifie();
         }
 
         boolean contient(BlockPos position) {
@@ -71,6 +73,12 @@ public final class CoffreTampon {
                     && connexion == autre.connexion
                     && blocs.size() == autre.blocs.size()
                     && blocs.containsAll(autre.blocs);
+        }
+
+        boolean positionsCommunes(Cible autre) {
+            return niveau == autre.niveau
+                    && connexion == autre.connexion
+                    && blocs.stream().anyMatch(bloc -> autre.contient(bloc.position()));
         }
     }
 
@@ -102,6 +110,7 @@ public final class CoffreTampon {
     }
 
     private static final List<Suivi> TAMPONS = new ArrayList<>();
+    private static final List<Cible> EXCLUS = new ArrayList<>();
     private static Ouverture ouverture;
     private static Interaction interaction;
     private static Suivi precedent;
@@ -128,11 +137,12 @@ public final class CoffreTampon {
             message(mc, "Coffre tampon désélectionné.");
             return;
         }
-        var nouvelle = identifier(mc, pos);
+        var nouvelle = identifier(mc, pos, false);
         if (nouvelle == null) {
             message(mc, "Vise un coffre ou un tonneau compatible dont les blocs sont chargés.");
             return;
         }
+        EXCLUS.removeIf(nouvelle::positionsCommunes);
         revision++;
         if (precedent != null
                 && nouvelle.memeCoffre(precedent.coffre)
@@ -146,7 +156,29 @@ public final class CoffreTampon {
         }
     }
 
-    private static Cible identifier(Minecraft mc, BlockPos pos) {
+    public static void basculerExclusion(Minecraft mc) {
+        if (mc.player == null || mc.level == null || mc.getConnection() == null) return;
+        nettoyer(mc);
+        var cible =
+                mc.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK
+                        ? identifier(mc, hit.getBlockPos(), true)
+                        : null;
+        if (cible == null) {
+            message(mc, "Vise un coffre, un tonneau ou un tiroir compatible.");
+            return;
+        }
+        if (EXCLUS.removeIf(cible::positionsCommunes)) {
+            message(mc, "Stockage réintégré aux recherches.");
+        } else {
+            TAMPONS.removeIf(t -> t.coffre.memeCoffre(cible));
+            if (precedent != null && cible.memeCoffre(precedent.coffre)) precedent = null;
+            EXCLUS.add(cible);
+            message(mc, "Stockage exclu des recherches.");
+        }
+        revision++;
+    }
+
+    private static Cible identifier(Minecraft mc, BlockPos pos, boolean exclusion) {
         if (mc.level == null || mc.getConnection() == null || !mc.level.hasChunkAt(pos))
             return null;
         var bloc = mc.level.getBlockState(pos).getBlock();
@@ -156,7 +188,10 @@ public final class CoffreTampon {
                 || id == null
                 || !(bloc instanceof ChestBlock
                         || id.toString().equals("minecraft:barrel")
-                        || id.getNamespace().equals("sophisticatedstorage"))) return null;
+                        || id.getNamespace().equals("sophisticatedstorage")
+                        || exclusion
+                                && (bloc instanceof ShulkerBoxBlock
+                                        || TraitsReperes.tiroir(id.toString())))) return null;
         pos = pos.immutable();
         var voisin = autreMoitie(mc.level, pos);
         var blocs = List.of(new Bloc(pos, entite, voisin));
@@ -204,7 +239,7 @@ public final class CoffreTampon {
         ouverture = null;
         BlockPos position = positionMenu(ecran.getMenu(), mc, entree);
         if (position == null) return;
-        var coffre = identifier(mc, position);
+        var coffre = identifier(mc, position, true);
         if (coffre != null) ouverture = new Ouverture(ecran.getMenu(), coffre);
     }
 
@@ -242,6 +277,19 @@ public final class CoffreTampon {
 
     private static void nettoyer(Minecraft mc) {
         if (TAMPONS.removeIf(t -> !t.coffre.valide(mc))) revision++;
+        if (EXCLUS.removeIf(c -> !c.memeContexte(mc))) revision++;
+        for (int i = 0; i < EXCLUS.size(); i++) {
+            var exclu = EXCLUS.get(i);
+            if (exclu.blocs().size() != 1 || !exclu.charge()) continue;
+            var pos = exclu.blocs().get(0).position();
+            if (autreMoitie(mc.level, pos) == null) continue;
+            // Un coffre simple déjà exclu peut être agrandi par le joueur.
+            var doubleCoffre = identifier(mc, pos, true);
+            if (doubleCoffre != null && doubleCoffre.blocs().size() == 2) {
+                EXCLUS.set(i, doubleCoffre);
+                revision++;
+            }
+        }
         for (var tampon : TAMPONS) if (!tampon.coffre.charge()) invalider(tampon);
         if (precedent != null && !precedent.disponible(mc)) precedent = null;
     }
@@ -271,6 +319,7 @@ public final class CoffreTampon {
     }
 
     private static void releverMenu() {
+        if (exclu(ouverture.coffre())) return;
         if (!StockProduction.menuInitialise(ouverture.menu())) return;
         var stock = RetraitCoffre.pilesTampon(ouverture.menu());
         if (stock == null) return;
@@ -338,9 +387,8 @@ public final class CoffreTampon {
                 .anyMatch(t -> t.coffre.contient(dimension, x, y, z) && t.disponible(mc));
     }
 
-    static boolean selectionActive() {
-        var mc = Minecraft.getInstance();
-        return TAMPONS.stream().anyMatch(t -> t.coffre.valide(mc));
+    static boolean filtrageActif() {
+        return !TAMPONS.isEmpty() || !EXCLUS.isEmpty();
     }
 
     static List<BlockPos> positionsRepere() {
@@ -356,6 +404,22 @@ public final class CoffreTampon {
         var mc = Minecraft.getInstance();
         return TAMPONS.stream()
                 .anyMatch(t -> t.coffre.contient(dimension, x, y, z) && t.coffre.valide(mc));
+    }
+
+    public static boolean exclu(String dimension, long x, long y, long z) {
+        if (EXCLUS.isEmpty()) return false;
+        var mc = Minecraft.getInstance();
+        return EXCLUS.stream().anyMatch(c -> c.contient(dimension, x, y, z) && c.memeContexte(mc));
+    }
+
+    public static boolean menuExclu() {
+        return !EXCLUS.isEmpty()
+                && menuCourant(Minecraft.getInstance())
+                && exclu(ouverture.coffre());
+    }
+
+    private static boolean exclu(Cible coffre) {
+        return EXCLUS.stream().anyMatch(coffre::positionsCommunes);
     }
 
     private static void message(Minecraft mc, String texte) {

@@ -41,12 +41,22 @@ de l’ouvrir, son relevé est repris immédiatement. Sinon ouvre-le une fois po
 Les deux moitiés d’un coffre double comptent pour un seul tampon. La même touche sur un coffre
 déjà marqué retire ce coffre de la sélection.
 
-Les relevés entrent dans le calcul de l’arbre EMI et du plan **Recette**. Avec **Repérage** sur
+Les relevés entrent dans le calcul de l’arbre EMI, du plan **Recette** et des quantités proposées
+par **Envoyer** dans les machines. Un résultat déjà couvert par les tampons retire les opérations
+correspondantes. Pour envoyer des ingrédients rangés dans un tampon, prends-les d’abord.
+Avec **Repérage** sur
 **ON**, un faisceau violet indique chaque tampon et les coffres ordinaires proposent seulement les
 quantités qui manquent encore. Tu peux utiliser **Prendre / Tout** dans un tampon ouvert. Dans
 Sophisticated Storage, retire à la main les objets des cases exclues du tri. Rouvre le coffre après
 une modification automatique. Sélectionne tes coffres de nouveau après reconnexion ou changement de
 dimension.
+
+Dans le même menu de contrôles, assigne une touche à **Exclure / réintégrer un coffre**.
+Vise le stockage et presse la touche pour le retirer des repères, du calcul des coffres
+à portée et des propositions **Prendre / Tout**. Appuie de nouveau pour le réintégrer.
+Les deux blocs d’un coffre double sont marqués ensemble, y compris si tu agrandis un coffre
+simple déjà exclu. Marquer un tampon comme exclu lui retire le rôle de tampon. Les exclusions
+valent pour la connexion et la dimension en cours.
 
 ## Terminal ME
 

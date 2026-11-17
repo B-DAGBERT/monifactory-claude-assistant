@@ -200,6 +200,7 @@ public final class Reperage {
 
     private static boolean visible(Pont.Repere r, String dimension) {
         return (r.dimension().isEmpty() || r.dimension().equals(dimension))
+                && !CoffreTampon.exclu(dimension, r.x(), r.y(), r.z())
                 && !CoffreTampon.selectionne(dimension, r.x(), r.y(), r.z());
     }
 }

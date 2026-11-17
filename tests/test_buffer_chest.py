@@ -67,6 +67,8 @@ public class ClientLevel {
         "net.minecraft.world.level.block.ChestBlock": """public class ChestBlock {
      public static int getConnectedDirection(net.minecraft.client.multiplayer.ClientLevel.State state){
          return state.type() == net.minecraft.world.level.block.state.properties.ChestType.LEFT ? 1 : -1;}}""",
+        "net.minecraft.world.level.block.ShulkerBoxBlock": "public class ShulkerBoxBlock {}",
+        "fr.assistantia.TraitsReperes": "public class TraitsReperes {public static boolean tiroir(String id){return false;}}",
         "net.minecraft.world.level.block.state.properties.ChestType": "public enum ChestType {SINGLE, LEFT, RIGHT}",
         "net.minecraft.world.level.block.state.properties.BlockStateProperties": """public class BlockStateProperties {
      public static final Object CHEST_TYPE=new Object();}""",
@@ -132,6 +134,11 @@ public class CoffreTamponTest {
     static void toggle(BlockPos pos) {
         MC.hitResult = new BlockHitResult(pos);
         CoffreTampon.basculer(MC);
+    }
+
+    static void exclude(BlockPos pos) {
+        MC.hitResult = new BlockHitResult(pos);
+        CoffreTampon.basculerExclusion(MC);
     }
 
     static AbstractContainerScreen<?> open(AbstractContainerMenu menu) {
@@ -201,6 +208,31 @@ public class CoffreTamponTest {
         toggle(left);
         assert stock() == 18 : "reselecting a recently observed double chest counts it once";
 
+        exclude(left);
+        assert stock() == 5 : "excluding a buffer removes only its contribution";
+        assert CoffreTampon.exclu("test:world", 10, 90, -4);
+        assert CoffreTampon.exclu("test:world", 11, 90, -4);
+        assert !CoffreTampon.exclu("test:another_world", 11, 90, -4);
+        assert CoffreTampon.positionsRepere().equals(List.of(pos));
+        MC.level.unloaded.add(right);
+        tick();
+        MC.level.blocks.put(right, new BlockEntity());
+        MC.level.unloaded.clear();
+        tick();
+        assert CoffreTampon.exclu("test:world", 11, 90, -4) : "exclusion survives chunk reload";
+        doubleChest = openChest(right);
+        assert CoffreTampon.menuExclu() && !CoffreTampon.menuObserve();
+        tick();
+        close(doubleChest);
+        exclude(right);
+        assert !CoffreTampon.exclu("test:world", 10, 90, -4);
+        toggle(left);
+        assert stock() == 5 : "an excluded menu never seeds new buffer stock";
+        doubleChest = openChest(right);
+        tick();
+        close(doubleChest);
+        assert stock() == 18;
+
         var reopened = open(new StorageMenu(pos));
         assert stockOutsideMenu() == 13;
         RetraitCoffre.piles = List.of(stored);
@@ -251,6 +283,23 @@ public class CoffreTamponTest {
         tick();
         toggle(pos);
         assert stock() == 0 && CoffreTampon.positionsRepere().equals(List.of(pos));
+        exclude(pos);
+        assert CoffreTampon.exclu("test:world", 7, 90, -4);
+        var ajoute = pos.relative(1);
+        MC.level.blocks.put(ajoute, new BlockEntity());
+        MC.level.types.put(pos, ChestType.LEFT);
+        MC.level.types.put(ajoute, ChestType.RIGHT);
+        var revisionSimple = CoffreTampon.revision();
+        tick();
+        assert CoffreTampon.exclu("test:world", 8, 90, -4);
+        assert CoffreTampon.revision() > revisionSimple : "forming a double refreshes search";
+        toggle(pos);
+        assert !CoffreTampon.exclu("test:world", 7, 90, -4);
+        assert !CoffreTampon.exclu("test:world", 8, 90, -4);
+        exclude(pos);
+        MC.connection = new ClientPacketListener();
+        tick();
+        assert !CoffreTampon.exclu("test:world", 7, 90, -4);
     }
 }
 """

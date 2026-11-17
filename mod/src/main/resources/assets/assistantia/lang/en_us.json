@@ -3,6 +3,7 @@
   "key.assistantia.ouvrir": "Open the assistant",
   "key.assistantia.info": "What is this for? (hovered item, block or held item)",
   "key.assistantia.coffre_tampon": "Select / clear the buffer chest",
+  "key.assistantia.exclure_coffre": "Exclude / reinclude a chest",
   "key.assistantia.parler": "Talk (hold; Shift: type; Ctrl: new conversation)",
   "key.assistantia.panneau": "Show / hide panel",
   "key.assistantia.voix": "Enable / disable voice"

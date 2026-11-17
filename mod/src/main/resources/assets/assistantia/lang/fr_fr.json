@@ -3,6 +3,7 @@
   "key.assistantia.ouvrir": "Ouvrir l'assistant",
   "key.assistantia.info": "À quoi ça sert ? (objet survolé, bloc ou objet en main)",
   "key.assistantia.coffre_tampon": "Choisir / désélectionner le coffre tampon",
+  "key.assistantia.exclure_coffre": "Exclure / réintégrer un coffre",
   "key.assistantia.parler": "Parler (maintenir ; Maj : écrire ; Ctrl : nouvelle conversation)",
   "key.assistantia.panneau": "Afficher / masquer le panneau",
   "key.assistantia.voix": "Activer / désactiver la voix"

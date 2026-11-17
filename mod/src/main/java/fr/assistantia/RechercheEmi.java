@@ -12,6 +12,7 @@ import java.util.HashMap;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
@@ -120,7 +121,9 @@ public final class RechercheEmi {
         // passe « À récupérer » avant le retrait. L'ouverture peut relire la même source que
         // le cache, donc son stock complète seulement le groupe de coffres auquel il appartient.
         Map<String, Integer> ici = new HashMap<>();
-        for (var item : RetraitCoffre.coffreOuvert()) {
+        var pilesOuvertes =
+                CoffreTampon.menuExclu() ? List.<ItemStack>of() : RetraitCoffre.coffreOuvert();
+        for (var item : pilesOuvertes) {
             String id = identifiant(item);
             if (collecte.enFabrication(id)) ajouter(ici, id, item.getCount());
         }
@@ -151,7 +154,7 @@ public final class RechercheEmi {
     public static RetraitCoffre.Plan retrait(
             net.minecraft.world.inventory.AbstractContainerMenu menu,
             net.minecraft.core.BlockPos ouvert) {
-        if (!pret()) return new RetraitCoffre.Plan(List.of(), 0);
+        if (!pret() || CoffreTampon.menuExclu()) return new RetraitCoffre.Plan(List.of(), 0);
         return RetraitCoffre.planRecherche(
                 menu, locaux -> retraitDirect(locaux, ouvert), RechercheEmi::identifiant);
     }
@@ -203,7 +206,7 @@ public final class RechercheEmi {
             net.minecraft.core.BlockPos ouvert) {
         var r = releve;
         if (r == null) return List.of();
-        var positions = horsTampon(r);
+        var positions = positionsEligibles(r);
         String exclu = null;
         if (ouvert != null)
             for (var entree : positions.entrySet())
@@ -220,9 +223,9 @@ public final class RechercheEmi {
         return stocks;
     }
 
-    /** Le stock disparaît si toutes ses positions sont celles du tampon. */
-    private static Map<String, List<Pont.Repere>> horsTampon(Releve r) {
-        if (!CoffreTampon.selectionActive()) return r.positions();
+    /** Les deux moitiés d'un double sont filtrées grâce à l'identité native du coffre. */
+    private static Map<String, List<Pont.Repere>> positionsEligibles(Releve r) {
+        if (!CoffreTampon.filtrageActif()) return r.positions();
         long courante = CoffreTampon.revision();
         if (positionsFiltrees != null && courante == revisionFiltre) return positionsFiltrees;
         Map<String, List<Pont.Repere>> positions = new HashMap<>();
@@ -233,11 +236,16 @@ public final class RechercheEmi {
                                     blocs.stream()
                                             .filter(
                                                     p ->
-                                                            !CoffreTampon.selectionne(
-                                                                    p.dimension(),
-                                                                    p.x(),
-                                                                    p.y(),
-                                                                    p.z()))
+                                                            !CoffreTampon.exclu(
+                                                                            p.dimension(),
+                                                                            p.x(),
+                                                                            p.y(),
+                                                                            p.z())
+                                                                    && !CoffreTampon.selectionne(
+                                                                            p.dimension(),
+                                                                            p.x(),
+                                                                            p.y(),
+                                                                            p.z()))
                                             .toList();
                             if (!autres.isEmpty()) positions.put(groupe, autres);
                         });
@@ -561,7 +569,7 @@ public final class RechercheEmi {
         versionTamponAppliquee = CoffreTampon.revision();
         revision++;
         var r = releve;
-        Map<String, List<Pont.Repere>> positions = r == null ? Map.of() : horsTampon(r);
+        Map<String, List<Pont.Repere>> positions = r == null ? Map.of() : positionsEligibles(r);
         var tampons = stocksTampons(CoffreTampon.piles());
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>(tampons);
         List<String> groupes = new ArrayList<>();

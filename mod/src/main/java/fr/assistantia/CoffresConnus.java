@@ -145,8 +145,10 @@ public final class CoffresConnus {
                         etat.conteneurs().stream()
                                 .filter(
                                         c ->
-                                                !CoffreTampon.contient(
-                                                        c.dimension(), c.x(), c.y(), c.z()))
+                                                !CoffreTampon.exclu(
+                                                                c.dimension(), c.x(), c.y(), c.z())
+                                                        && !CoffreTampon.contient(
+                                                                c.dimension(), c.x(), c.y(), c.z()))
                                 .toList(),
                         dimension,
                         pos.getX(),

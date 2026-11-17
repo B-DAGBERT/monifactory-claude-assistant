@@ -35,6 +35,24 @@ class MachinePanelClickTests(unittest.TestCase):
         self.assertIn("Clic droit : voir la recette dans EMI", panneau)
         self.assertNotIn("Clic : ouvrir cette recette dans EMI", panneau)
 
+    def test_machine_send_uses_demand_after_buffer_allocation(self):
+        machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
+        arbre = corps(machines, "private static void actualiserArbre()")
+        demande = arbre.index("toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock)")
+        self.assertIn("var tampon = AnalyseRecette.stockTampon()", arbre[:demande])
+        self.assertIn("stock.addAll(tampon)", arbre[:demande])
+        self.assertIn("creditsAcquis(stock, creditFinal)", arbre[:demande])
+        self.assertIn("InventaireArbreEmi.sansTampon(finaux, tampon)", arbre[:demande])
+        self.assertIn("operations = toutes.stream()", arbre[demande:])
+        self.assertIn("stockCoffres(vue, horsPoches)", arbre[demande:])
+        interface = corps(machines, "private static void actualiserInterface()")
+        self.assertIn("operations.stream()", interface)
+        self.assertIn(
+            "EnvoiMachine.preparer(ecran, selected.recette(), selected.fois())", interface
+        )
+        selection = corps(machines, "private static boolean selectionnerAffichee(")
+        self.assertLess(selection.index("actualiserInterface();"), selection.index("for (int i"))
+
 
 if __name__ == "__main__":
     unittest.main()

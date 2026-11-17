@@ -42,6 +42,12 @@ public final class Touches {
                     InputConstants.Type.KEYSYM,
                     InputConstants.UNKNOWN.getValue(),
                     "key.categories.assistantia");
+    public static final KeyMapping EXCLURE_COFFRE =
+            new KeyMapping(
+                    "key.assistantia.exclure_coffre",
+                    InputConstants.Type.KEYSYM,
+                    InputConstants.UNKNOWN.getValue(),
+                    "key.categories.assistantia");
 
     private Touches() {}
 
@@ -49,6 +55,7 @@ public final class Touches {
         event.register(OUVRIR);
         event.register(INFO);
         event.register(COFFRE_TAMPON);
+        event.register(EXCLURE_COFFRE);
         TouchesMac.enregistrer(event);
     }
 
@@ -67,6 +74,9 @@ public final class Touches {
         }
         while (COFFRE_TAMPON.consumeClick()) {
             if (mc.screen == null && mc.player != null) CoffreTampon.basculer(mc);
+        }
+        while (EXCLURE_COFFRE.consumeClick()) {
+            if (mc.screen == null && mc.player != null) CoffreTampon.basculerExclusion(mc);
         }
         while (INFO.consumeClick()) {
             if (mc.screen == null && mc.player != null) {

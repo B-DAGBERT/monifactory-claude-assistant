@@ -493,6 +493,7 @@ class RecipeTabScreenTests(unittest.TestCase):
 MEMORY_STUBS = {
     "fr.assistantia.CoffreTampon": """public class CoffreTampon {
  public static long revision(){return 0;}
+ public static boolean exclu(String dimension,long x,long y,long z){return false;}
  public static boolean contient(String dimension,long x,long y,long z){return false;}}""",
     "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft I=new Minecraft();public static Minecraft getInstance(){return I;}
  public Niveau level;public Joueur player;public Object getConnection(){return null;}
