@@ -148,12 +148,21 @@ final class PanneauMachineEmi {
                     if (priorite.foisPretes() > 0)
                         tooltip.add(Component.literal("Ingrédients alloués pour 1 fabrication."));
                 }
-                tooltip.add(
-                        Component.literal(
-                                        occupe
-                                                ? "Recette accessible après l’envoi"
-                                                : "Clic : ouvrir cette recette dans EMI")
-                                .withStyle(s -> s.withColor(PanneauAssistant.BLEU)));
+                if (occupe)
+                    tooltip.add(
+                            Component.literal("Recette accessible après l’envoi")
+                                    .withStyle(s -> s.withColor(PanneauAssistant.BLEU)));
+                else {
+                    tooltip.add(
+                            Component.literal(
+                                            i == choix
+                                                    ? "Recette choisie pour Envoyer"
+                                                    : "Clic : choisir pour Envoyer")
+                                    .withStyle(s -> s.withColor(PanneauAssistant.BLEU)));
+                    tooltip.add(
+                            Component.literal("Clic droit : voir la recette dans EMI")
+                                    .withStyle(s -> s.withColor(PanneauAssistant.GRIS)));
+                }
             }
         }
         boolean libre = !occupe;
