@@ -5,7 +5,7 @@
 1. Choisir le craft et ses branches dans **Recipe Tree**. **Y → Recette** donne l’ordre des étapes et signale les meilleures recettes.
 2. Activer **Repérage**, à droite de Recipe Tree : le bouton passe en doré, les coffres et machines utiles s’entourent.
 3. Ouvrir un coffre entouré en cyan : **Prendre** retire la quantité de l’icône choisie ; **Tout** retire les ingrédients du scan présents ici.
-4. Aller dans une machine entourée en rouge, en suivant les numéros de l’onglet Recette (★ pour la première). Cliquer sur le produit du bandeau ouvre sa recette précise dans EMI ; Échap revient à la machine avec ce produit sélectionné. Survoler **Envoyer** pour vérifier le lot puis cliquer.
+4. Aller dans une machine entourée en rouge, en suivant les numéros de l’onglet Recette (★ pour la première). Cliquer sur le produit du bandeau le choisit quand la machine en a plusieurs à faire ; le clic droit ouvre sa recette précise dans EMI, et Échap revient à la machine avec ce produit sélectionné. Survoler **Envoyer** pour vérifier le lot puis cliquer.
 5. Récupérer le résultat soi-même. Les cibles finales reçues restent acquises après rangement.
 
 ## Ce qui est réellement sélectionné

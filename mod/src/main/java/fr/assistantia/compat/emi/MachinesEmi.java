@@ -1080,9 +1080,27 @@ public final class MachinesEmi {
         if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
         // Ni la machine ni EMI ne prennent ce clic, ni son relâchement, même hors du panneau.
         fr.assistantia.RelachementSouris.consommer(event);
-        if (event.getButton() != 0 || EnvoiMachine.occupe()) return;
+        int bouton = event.getButton();
+        if (bouton != 0 && bouton != 1 || EnvoiMachine.occupe()) return;
         var d = dispositionAffichee;
         double x = event.getMouseX(), y = event.getMouseY();
+        EmiRecipe produit = null;
+        for (int rang = 0; rang < d.parPage(); rang++) {
+            int i = pageAffichee * d.parPage() + rang;
+            if (i < affichees.size() && d.icone(rang).contient(x, y)) {
+                produit = affichees.get(i).recette();
+                break;
+            }
+        }
+        if (bouton == 1) {
+            // Clic droit sur un produit : sa recette dans EMI ; Échap revient avec ce choix.
+            if (produit != null && selectionnerAffichee(produit)) {
+                actualise = 0;
+                PanneauAssistant.son();
+                dev.emi.emi.api.EmiApi.displayRecipe(produit);
+            }
+            return;
+        }
         if (d.prendre().contient(x, y)) {
             if (!selectionnerAffichee(recetteAffichee)) return;
             var op = selection();
@@ -1116,18 +1134,11 @@ public final class MachinesEmi {
         } else if (d.pages() && d.precedent().contient(x, y)) page = Math.max(0, pageAffichee - 1);
         else if (d.pages() && d.suivant().contient(x, y))
             page = Math.min((affichees.size() - 1) / d.parPage(), pageAffichee + 1);
-        else
-            for (int rang = 0; rang < d.parPage(); rang++) {
-                int i = pageAffichee * d.parPage() + rang;
-                if (i < affichees.size() && d.icone(rang).contient(x, y)) {
-                    var recette = affichees.get(i).recette();
-                    if (!selectionnerAffichee(recette)) return;
-                    actualise = 0;
-                    PanneauAssistant.son();
-                    dev.emi.emi.api.EmiApi.displayRecipe(recette);
-                    break;
-                }
-            }
+        else if (produit != null && selectionnerAffichee(produit)) {
+            // Clic gauche : la recette d'Envoyer et d'En cours change, sans quitter la machine.
+            actualise = 0;
+            PanneauAssistant.son();
+        }
     }
 
     /** Le clic désigne la recette rendue, même si les priorités ont changé entre deux ticks. */
