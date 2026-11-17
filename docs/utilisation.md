@@ -106,7 +106,7 @@ choix.
 
 Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans l’arbre natif EMI et sa liste latérale, les besoins du scan, la planification des machines et l’onglet Recette. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
 
-Le plan dit où aller chercher ce qui manque aux poches : « À sortir du backpack : Iron Ingot, Hammer », « À prendre dans un coffre : Coal » ou « À reprendre en main : … » (main secondaire, armure, curseur). La carte de l’étape affiche « Dans ton backpack », « Dans un coffre » ou « Backpack + coffre », et le panneau en jeu la phrase complète. Pendant la recherche dans les coffres (**Coffres ON**), chaque drawer surligné affiche le nombre d’objets à en sortir, tracé comme les numéros des machines ; un coffre n’en affiche pas, son bouton **Prendre** sort tout seul ce qu’il faut. Dans un coffre ouvert, les ingrédients qui ne se consomment pas (moules, presses, outils) encore demandés pulsent aussi en cyan. Un outil déjà installé dans une machine compte comme en place, jamais à chercher ni à fabriquer : moule vu dans une machine GregTech ouverte, ou presse dans un inscriber d’AE2 relevé par le serveur (un inscriber n’est jamais compté comme un coffre). Backpack ouvert, les cases à sortir sont entourées en or pour l’étape en cours (★), ou pour le produit choisi à l’instant dans le panneau d’une machine (pendant deux minutes). Un outil est reconnu quelle que soit son usure ou sa charge ; un outil d’un autre matériau reste un autre objet, sauf si la recette accepte plusieurs matériaux.
+Le plan dit où aller chercher ce qui manque aux poches : « À sortir du backpack : Iron Ingot, Hammer », « À prendre dans un coffre : Coal » ou « À reprendre en main : … » (main secondaire, armure, curseur). La carte de l’étape affiche « Dans ton backpack », « Dans un coffre » ou « Backpack + coffre », et le panneau en jeu la phrase complète. Pendant la recherche dans les coffres (**Repérage ON**), chaque drawer surligné affiche le nombre d’objets à en sortir, tracé comme les numéros des machines ; un coffre n’en affiche pas, son bouton **Prendre** sort tout seul ce qu’il faut. Dans un coffre ouvert, les ingrédients qui ne se consomment pas (moules, presses, outils) encore demandés pulsent aussi en cyan. Un outil déjà installé dans une machine compte comme en place, jamais à chercher ni à fabriquer : moule vu dans une machine GregTech ouverte, ou presse dans un inscriber d’AE2 relevé par le serveur (un inscriber n’est jamais compté comme un coffre). Backpack ouvert, les cases à sortir sont entourées en or pour l’étape en cours (★), ou pour le produit choisi à l’instant dans le panneau d’une machine (pendant deux minutes). Un outil est reconnu quelle que soit son usure ou sa charge ; un outil d’un autre matériau reste un autre objet, sauf si la recette accepte plusieurs matériaux.
 
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 
@@ -283,6 +283,15 @@ principal. Le filon n’est jamais marqué tout seul. **Épuisé** ajoute un mar
 le filon disparaît de la liste si les épuisés sont masqués. Pour annuler, choisir **Épuisés
 visibles**, sélectionner le filon, puis **Rétablir**. Les relevés et le journal GregTech restent
 conservés.
+
+Le même seuil de **10 %** s’applique aussi à chaque minerai du filon, toutes pierres confondues
+(Gold Ore et Deepslate Gold Ore comptent ensemble), après un scan complet. Si tu as miné l’or d’un
+filon de magnésite encore plein à 65 %, la fiche affiche « épuisé » en jaune sur la ligne de l’or :
+la recherche **gold** ne propose plus ce filon, mais **magnesite** le propose toujours. Un minerai
+de la composition que le scan complet n’a jamais trouvé n’est pas proposé non plus. **Tri : recette**
+ignore de la même façon les minerais épuisés, et la discussion les signale sans les proposer. Rien
+n’est conclu pendant un scan ou sur une zone vue en partie. Avec **Épuisés visibles**, la recherche
+montre tout, pour vérifier ou rétablir un filon.
 
 La première ligne regroupe la recherche et le tri : **Tri : distance**, **Tri : recette** ou
 **Tri : nom**. **Tri : recette** place en tête, avec une **★** cyan, les filons qui fournissent une

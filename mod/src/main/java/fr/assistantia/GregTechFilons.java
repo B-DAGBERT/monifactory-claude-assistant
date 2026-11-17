@@ -406,6 +406,8 @@ public final class GregTechFilons {
         if (besoins.isEmpty()) return false;
         Set<Object> vus = Collections.newSetFromMap(new IdentityHashMap<>());
         for (String bloc : filon.composition) {
+            // Un minerai épuisé dans ce filon ne le rend plus utile à la recette.
+            if (!filon.matiereDisponible(FilonMemoire.matiere(bloc))) continue;
             Object m = matiere(bloc);
             if (m == null || !vus.add(m)) continue;
             if (besoins.contains(m)) return true;
