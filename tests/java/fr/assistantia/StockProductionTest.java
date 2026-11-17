@@ -222,6 +222,67 @@ public final class StockProductionTest {
         check(capture() == null, "custom slot update revokes full");
     }
 
+    private static void initialisation() {
+        var m = menu(true);
+        var connexion = MC.listener.getConnection();
+        check(!StockProduction.menuInitialise(m), "menu waits for native full and metadata");
+        full(m);
+        check(!StockProduction.menuInitialise(m), "full alone is insufficient for Sophisticated");
+        StockProduction.variation(connexion);
+        m.getSlot(0).stack = pile("test:iron", 5);
+        StockProduction.tick(new TickEvent.ClientTickEvent());
+        StockProduction.informations(connexion);
+        check(StockProduction.menuInitialise(m), "delta before metadata preserves menu readiness");
+        check(capture() == null, "readiness never restores the strict Production snapshot");
+        StockProduction.clic();
+        m.getSlot(0).stack.count = 3;
+        m.stateId++;
+        StockProduction.tick(new TickEvent.ClientTickEvent());
+        check(StockProduction.menuInitialise(m), "click and newer state preserve menu readiness");
+        check(capture() == null, "updated menu still needs new full for Production");
+
+        var autre = menu(true);
+        check(!StockProduction.menuInitialise(m), "closed menu immediately unavailable");
+        check(!StockProduction.menuInitialise(autre), "same id does not transfer readiness");
+        StockProduction.informations(connexion);
+        check(!StockProduction.menuInitialise(autre), "metadata alone is insufficient");
+        full(autre);
+        check(StockProduction.menuInitialise(autre), "native packet order can be reversed");
+        check(capture() != null, "new coherent full restores Production independently");
+
+        MC.level.dim = "minecraft:the_nether";
+        check(!StockProduction.menuInitialise(autre), "dimension invalidates the observed menu");
+        StockProduction.tick(new TickEvent.ClientTickEvent());
+        MC.level.dim = "minecraft:overworld";
+        check(!StockProduction.menuInitialise(autre), "old markers are discarded at the tick");
+        full(autre);
+        StockProduction.informations(new Connection());
+        check(!StockProduction.menuInitialise(autre), "foreign metadata cannot initialize menu");
+        StockProduction.informations(connexion);
+        check(StockProduction.menuInitialise(autre), "current metadata completes new observation");
+        MC.listener = new Minecraft.Listener();
+        check(!StockProduction.menuInitialise(autre), "new connection immediately rejects markers");
+        StockProduction.deconnexion(new ClientPlayerNetworkEvent.LoggingOut());
+        MC.listener.connection = connexion;
+        check(!StockProduction.menuInitialise(autre), "logout discards both markers");
+    }
+
+    private static void initialisationVanilla() {
+        var m = menu(false);
+        var connexion = MC.listener.getConnection();
+        StockProduction.complet(connexion, m.containerId, m.stateId, List.of(), m.carried, false);
+        check(!StockProduction.menuInitialise(m), "partial packet cannot initialize a chest");
+        full(m);
+        StockProduction.variation(connexion);
+        StockProduction.tick(new TickEvent.ClientTickEvent());
+        check(StockProduction.menuInitialise(m), "vanilla readiness does not need extra metadata");
+        check(capture() == null, "vanilla Production proof was invalidated by delta");
+        IdentiteMonde.session = "c".repeat(32);
+        check(!StockProduction.menuInitialise(m), "new session rejects old initialization");
+        full(m);
+        check(StockProduction.menuInitialise(m), "new session accepts its own full");
+    }
+
     private static void screen() {
         var m = menu(false);
         full(m);
@@ -297,6 +358,8 @@ public final class StockProductionTest {
             case "scope" -> scope();
             case "bounds" -> bounds();
             case "sophisticated" -> sophisticated();
+            case "initialisation" -> initialisation();
+            case "initialisation-vanilla" -> initialisationVanilla();
             case "screen" -> screen();
             case "suivi" -> suivi();
             default -> throw new AssertionError(args[0]);

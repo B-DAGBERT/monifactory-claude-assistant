@@ -9,7 +9,9 @@ import fr.assistantia.ReceptionManuelle;
 import fr.assistantia.ReceptionSortie;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -21,6 +23,7 @@ import net.minecraft.world.item.ItemStack;
 final class SuiviLotsEmi {
     private final List<LotMachine> lots = new ArrayList<>();
     private final List<LotMachine> lecture = Collections.unmodifiableList(lots);
+    private final Set<Integer> retiresDuSuivi = new HashSet<>();
     private final Supplier<List<PlanRetrait.Stock<EmiStack>>> inventaire;
     private final Runnable changement;
     private final Supplier<Object> provenance;
@@ -108,6 +111,7 @@ final class SuiviLotsEmi {
         lots.clear();
         origines.clear();
         arbresTermines.clear();
+        retiresDuSuivi.clear();
         inventaireAssimile = null;
         oublierInterface();
         receptionManuelle.vider();
@@ -135,6 +139,24 @@ final class SuiviLotsEmi {
         return false;
     }
 
+    boolean retirerDuSuivi(int id) {
+        return lots.stream()
+                        .anyMatch(
+                                lot ->
+                                        lot.id() == id
+                                                && lot.suivi().etat()
+                                                        == LotFabrication.Etat.TERMINE)
+                && retiresDuSuivi.add(id);
+    }
+
+    boolean visibleDansSuivi(LotMachine lot) {
+        return switch (lot.suivi().etat()) {
+            case ANNULE -> false;
+            case TERMINE -> !retiresDuSuivi.contains(lot.id());
+            default -> true;
+        };
+    }
+
     /** Les sorties confirmées par le joueur comptent uniquement pour le calcul de cet arbre. */
     List<PlanRetrait.Stock<EmiStack>> avancement(Object arbre) {
         return lots.stream()
@@ -153,6 +175,7 @@ final class SuiviLotsEmi {
             if (lot.id() != id || lot.recette() != recette) continue;
             var sorties = sortiesLot(recette, supplement, !lot.manuel());
             if (sorties.isEmpty() || !lot.suivi().ajouter(sorties)) return false;
+            retiresDuSuivi.remove(id);
             if (!java.util.Objects.equals(origines.get(id), provenance.get())) origines.remove(id);
             lots.set(
                     i,

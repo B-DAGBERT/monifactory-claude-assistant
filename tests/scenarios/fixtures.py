@@ -30,6 +30,15 @@ public class Minecraft {
 """,
     "net.minecraftforge.registries.ForgeRegistries": "public class ForgeRegistries {public static final Registry ITEMS=new Registry();public static class Registry {public net.minecraft.resources.ResourceLocation getKey(String id){return new net.minecraft.resources.ResourceLocation(id);}}}",
     "fr.assistantia.InventaireJoueur": "public class InventaireJoueur {public static boolean sync=true;public static java.util.List<net.minecraft.world.item.ItemStack> items=java.util.List.of();public static boolean synchronise(){return sync;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return items;}}",
+    "fr.assistantia.CoffreTampon": r"""
+public class CoffreTampon {
+ public static java.util.Set<String> positions=java.util.Set.of();
+ public static long rev;
+ public static long revision(){return rev;}
+ public static boolean selectionActive(){return !positions.isEmpty();}
+ public static boolean selectionne(String dim,long x,long y,long z){return positions.contains(dim+"|"+x+"|"+y+"|"+z);}
+}
+""",
     "fr.assistantia.Filons": 'public class Filons {public static String monde="test:server";public static String monde(){return monde;}public static boolean synchroniserMonde(){return true;}}',
     "fr.assistantia.AideCoffre": "public class AideCoffre {public static void vider(){}}",
     "fr.assistantia.Emi": r"""
@@ -58,14 +67,16 @@ public class Pont {
 """,
     "fr.assistantia.RetraitCoffre": r"""
 import java.util.*;
-public class RetraitCoffre {public static boolean busy;public static Map<String,Integer> selection=Map.of();
+public class RetraitCoffre {public static boolean busy;public static Map<String,Integer> selection=Map.of(),locaux;
  public record Plan(List<Object> lots,long manquants){}
  public static boolean occupe(){return busy;}public static void arreter(){busy=false;}
  public static List<net.minecraft.world.item.ItemStack> coffreOuvert(){return List.of();}
  public static Plan planRecherche(net.minecraft.world.inventory.AbstractContainerMenu menu,
  java.util.function.Function<List<PlanRetrait.Stock<String>>,List<PlanRetrait.Prise>> selectionner,
  java.util.function.Function<net.minecraft.world.item.ItemStack,String> id){
- var stock=new ArrayList<PlanRetrait.Stock<String>>();for(var c:Pont.liste(Pont.reply,"coffres"))
+ var stock=new ArrayList<PlanRetrait.Stock<String>>();
+ if(locaux!=null)locaux.forEach((item,n)->stock.add(new PlanRetrait.Stock<>(item,n,false)));
+ else for(var c:Pont.liste(Pont.reply,"coffres"))
   for(var e:c.getAsJsonObject().getAsJsonObject("objets").entrySet())stock.add(new PlanRetrait.Stock<>(e.getKey(),e.getValue().getAsInt(),false));
  var result=new HashMap<String,Integer>();for(var p:selectionner.apply(stock))result.merge(stock.get(p.index()).objet(),p.quantite(),Integer::sum);
  selection=Map.copyOf(result);return new Plan(List.of(),0);}}
@@ -102,6 +113,11 @@ public final class ParcoursCoffres {
   if(j.has("assistance"))Pont.actif=j.get("assistance").getAsBoolean();
   if(j.has("ecriture"))Pont.write=j.get("ecriture").getAsBoolean();
   if(j.has("reponse"))Pont.reply=j.getAsJsonObject("reponse");
+  if(j.has("tampon")){
+   var positions=new HashSet<String>();
+   for(var p:j.getAsJsonArray("tampon"))positions.add(p.getAsString());
+   CoffreTampon.positions=Set.copyOf(positions);CoffreTampon.rev++;
+  }
   if(j.has("lot")){var l=j.getAsJsonObject("lot");lots.add(new LotFabrication<>(List.of(new PlanRetrait.Stock<>(l.get("item").getAsString(),l.get("n").getAsInt(),true)),String::equals));receptions.initialiser(stock());}
   if(InventaireJoueur.sync){var gains=receptions.actualiser(stock(),List.of());ReceptionLots.repartir(gains,lots.stream().map(l->new ReceptionLots.Source<>(l,(java.util.function.Predicate<String>)s->true)).toList());}
   var reserves=new HashMap<String,Integer>();var recus=new ArrayList<PlanRetrait.Stock<String>>();for(var l:lots){for(var s:l.restants())reserves.merge(s.objet(),s.quantite(),Integer::sum);recus.addAll(l.obtenus());}Emi.reservations=Map.copyOf(reserves);
@@ -109,7 +125,14 @@ public final class ParcoursCoffres {
   if(j.has("arbre")){receptions.initialiser(stock());RechercheEmi.basculer("assistantia:coffres_arbre",new MemoireCollecte(arbre(j.getAsJsonObject("arbre")),1),s->true);}
   if(j.has("arreter")&&j.get("arreter").getAsBoolean())RechercheEmi.arreter();
   var tick=new TickEvent.ClientTickEvent(TickEvent.Phase.END);RechercheEmi.tick(tick);RechercheEmi.tick(tick);
-  RetraitCoffre.selection=Map.of();RechercheEmi.retrait(null);
+  RetraitCoffre.locaux=null;
+  if(j.has("locaux")){
+   RetraitCoffre.locaux=new LinkedHashMap<>();
+   j.getAsJsonObject("locaux").entrySet().forEach(e->RetraitCoffre.locaux.put(e.getKey(),e.getValue().getAsInt()));
+  }
+  var p=Pont.liste(j,"ouvert");
+  var ouvert=p.size()==3?new net.minecraft.core.BlockPos(p.get(0).getAsInt(),p.get(1).getAsInt(),p.get(2).getAsInt()):null;
+  RetraitCoffre.selection=Map.of();RechercheEmi.retrait(null,ouvert);
   var result=new JsonObject();result.addProperty("temps",temps);result.addProperty("actif",RechercheEmi.actif());result.addProperty("envois",Pont.sends);result.add("demande",Pont.request==null?JsonNull.INSTANCE:Pont.request);
   result.add("selection",new Gson().toJsonTree(RetraitCoffre.selection));result.add("restants",new Gson().toJsonTree(reserves));
   var coffres=new JsonArray();for(var r:RechercheEmi.reperes()){var c=new JsonObject();c.addProperty("x",r.x());c.addProperty("jaune",RechercheEmi.resultatPret(r));coffres.add(c);}result.add("coffres",coffres);

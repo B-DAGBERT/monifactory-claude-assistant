@@ -169,7 +169,11 @@ public final class ProjectionLotsEmiTest {
         } else if (scenario.equals("manual_completion")) {
             receiveExplicitModel(owner, 3);
             long revision = owner.revision();
+            assert !owner.retirerDuSuivi(id) && owner.visibleDansSuivi(owner.actifs().get(0));
             assert owner.terminer(id, TREE);
+            assert owner.revision() == revision + 1;
+            assert owner.retirerDuSuivi(id) && !owner.retirerDuSuivi(id);
+            assert !owner.visibleDansSuivi(owner.actifs().get(0));
             assert owner.revision() == revision + 1;
             assert !owner.terminer(id, TREE) && !owner.annuler(id);
             assert !owner.completer(id, recipe, 2);
@@ -202,6 +206,8 @@ public final class ProjectionLotsEmiTest {
             receiveExplicitModel(owner, 10);
             var complete = only(project(owner));
             assert complete.get("etat").getAsString().equals("termine");
+            assert owner.retirerDuSuivi(id);
+            assert !owner.visibleDansSuivi(owner.actifs().get(0));
             inventory = List.of();
             owner.recevoir(List.of());
             var moved = only(project(owner));

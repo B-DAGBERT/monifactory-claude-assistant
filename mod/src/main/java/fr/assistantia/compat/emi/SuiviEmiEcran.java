@@ -16,7 +16,10 @@ public final class SuiviEmiEcran extends Screen {
     private static final String[] GROUPES = {
         "À lancer maintenant", "À préparer", "En cours", "Étapes suivantes"
     };
-    private static final String DECLARER = "En cours de craft", ANNULER = "Annuler le lot";
+    private static final String DECLARER = "En cours de craft",
+            ANNULER = "Annuler le lot",
+            TERMINER = "Terminer",
+            SUPPRIMER = "Supprimer";
     private final Screen parent;
     private final Object connexionOuverture, mondeOuverture;
     private static SuiviEmiEcran retourRecette;
@@ -29,7 +32,7 @@ public final class SuiviEmiEcran extends Screen {
     private boolean replisChoisis;
     private int debut, selection = -1, hauteur;
     private long actualise, dernierClic;
-    private BoutonTheme recalculer, annuler, terminer, voir, deplier;
+    private BoutonTheme recalculer, annuler, statutLot, voir, deplier;
     private String message = "", probleme = "";
     private final BarreDefilement barre = new BarreDefilement();
     private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
@@ -98,15 +101,16 @@ public final class SuiviEmiEcran extends Screen {
                                         })
                                 .zone(droite - replier, y, replier));
         String texteAction = font.width(DECLARER) >= font.width(ANNULER) ? DECLARER : ANNULER;
+        String texteLot = font.width(SUPPRIMER) >= font.width(TERMINER) ? SUPPRIMER : TERMINER;
         int[] largeurs =
                 Theme.largeursRangee(
                         font,
-                        List.of("Recette", texteAction, "Terminer", "Retour"),
+                        List.of("Recette", texteAction, texteLot, "Retour"),
                         droite - x,
                         Theme.ECART);
         int largeurRecette = largeurs[0], largeurAction = largeurs[1];
         int xAction = x + largeurRecette + Theme.ECART;
-        int xTerminer = xAction + largeurAction + Theme.ECART;
+        int xStatutLot = xAction + largeurAction + Theme.ECART;
         voir =
                 addRenderableWidget(
                         BoutonTheme.creer(
@@ -151,30 +155,10 @@ public final class SuiviEmiEcran extends Screen {
                                             selectionRendue = null;
                                         })
                                 .zone(xAction, basBoutons, largeurAction));
-        terminer =
+        statutLot =
                 addRenderableWidget(
-                        BoutonTheme.creer(
-                                        "Terminer",
-                                        b -> {
-                                            var affichee = selectionRendue;
-                                            var ligne = pourAction();
-                                            if (ligne == null
-                                                    || ligne.lot() <= 0
-                                                    || !ligne.annulable()) return;
-                                            if (ligne.fois() != affichee.fois()) {
-                                                message =
-                                                        "La quantité du lot a changé · vérifie la ligne.";
-                                                return;
-                                            }
-                                            if (!clicPossible()
-                                                    || !MachinesEmi.terminerLot(ligne.lot()))
-                                                return;
-                                            actualise = 0;
-                                            selectionRendue = null;
-                                            message = "Lot marqué terminé";
-                                        })
-                                .zone(xTerminer, basBoutons, largeurs[2])
-                                .infobulle("Marquer ce lot terminé dans l’arbre EMI."));
+                        BoutonTheme.creer(TERMINER, b -> agirSurLot())
+                                .zone(xStatutLot, basBoutons, largeurs[2]));
 
         addRenderableWidget(
                 BoutonTheme.creer("Retour", b -> onClose())
@@ -335,6 +319,28 @@ public final class SuiviEmiEcran extends Screen {
         return lignes.get(i);
     }
 
+    private void agirSurLot() {
+        var affichee = selectionRendue;
+        var ligne = pourAction();
+        if (ligne == null || ligne.lot() <= 0) return;
+        if (ligne.fois() != affichee.fois() || ligne.terminee() != affichee.terminee()) {
+            message = "Le lot a changé · vérifie la ligne.";
+            selectionRendue = null;
+            return;
+        }
+        boolean supprimer = affichee.terminee();
+        if ((!supprimer && !ligne.annulable()) || !clicPossible()) return;
+        boolean ok =
+                supprimer
+                        ? MachinesEmi.retirerLotDuSuivi(ligne.lot())
+                        : MachinesEmi.terminerLot(ligne.lot());
+        if (!ok) return;
+        selectionRendue = null;
+        message = supprimer ? "Lot retiré du suivi" : "Lot marqué terminé";
+        actualiser(true);
+        actualiserBoutons();
+    }
+
     private void actualiserBoutons() {
         boolean actif = CoffresArbreEmi.arbreActif() != null;
         recalculer.active = actif && !EnvoiMachine.occupe();
@@ -347,6 +353,7 @@ public final class SuiviEmiEcran extends Screen {
                         declaration
                                 ? "Déclarer un résultat déjà en fabrication. Aucun objet transféré ni résultat validé."
                                 : "Libérer ce lot dans le suivi. Les objets restent dans la machine.");
+        annuler.visible = ligne == null || !ligne.terminee();
         annuler.active =
                 actif
                         && !EnvoiMachine.occupe()
@@ -354,8 +361,15 @@ public final class SuiviEmiEcran extends Screen {
                         && (declaration
                                 ? MachinesEmi.declarables(ligne.recette()) > 0
                                 : ligne.annulable());
-        terminer.visible = visible && !declaration && ligne.annulable();
-        terminer.active = terminer.visible && actif && !EnvoiMachine.occupe();
+        boolean fini = ligne != null && ligne.terminee();
+        statutLot
+                .texte(fini ? SUPPRIMER : TERMINER)
+                .infobulle(
+                        fini
+                                ? "Retirer la ligne du suivi et garder son avancement EMI."
+                                : "Marquer ce lot terminé dans l’arbre EMI.");
+        statutLot.visible = visible && !declaration && (fini || ligne.annulable());
+        statutLot.active = statutLot.visible && actif && !EnvoiMachine.occupe();
         deplier.active = !lignes.isEmpty();
         deplier.texte(replisPresents() ? "Tout déplier" : "Tout replier");
     }
@@ -441,10 +455,7 @@ public final class SuiviEmiEcran extends Screen {
                         ligne.recette().getOutputs().isEmpty()
                                 ? "Recette"
                                 : ligne.recette().getOutputs().get(0).getName().getString();
-                int couleur =
-                        ligne.etat().equals("Terminé")
-                                ? Theme.VERT
-                                : couleurGroupe(entree.groupe());
+                int couleur = ligne.terminee() ? Theme.VERT : couleurGroupe(entree.groupe());
                 // L'état garde au plus la moitié de la ligne ; le détail complet reste au survol.
                 int place = fin - 6 - texteX;
                 int largeurEtat = Math.min(font.width(ligne.etat()), Math.max(20, place / 2));

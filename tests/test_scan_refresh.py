@@ -53,6 +53,18 @@ class ScanRefreshTests(unittest.TestCase):
         self.assertIn('"Repérage ON"', barre)
         self.assertNotIn('"Coffres ON"', barre)
 
+    def test_buffer_beam_is_independent_of_ordinary_search_results(self):
+        reperage = source("Reperage")
+        rendu = corps(reperage, "public static void rendu(RenderLevelStageEvent event)")
+        self.assertIn("rechercheActive ? CoffreTampon.positionRepere() : null", rendu)
+        self.assertIn("hasChunkAt(tampon)", rendu)
+        self.assertIn("if (tampon == null && reperes.isEmpty())", rendu)
+        self.assertLess(rendu.index("faisceauTampon("), rendu.index("if (reperes.isEmpty())"))
+        self.assertIn(
+            "CoffreTampon.selectionne(", corps(reperage, "private static boolean visible(")
+        )
+        self.assertIn("BeaconRenderer.renderBeaconBeam(", reperage)
+
 
 if __name__ == "__main__":
     unittest.main()

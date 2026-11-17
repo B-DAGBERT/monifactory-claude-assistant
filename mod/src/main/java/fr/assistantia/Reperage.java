@@ -10,6 +10,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -19,9 +20,12 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 /**
  * Les coffres qui contiennent ce que tu cherches (« trouve-moi mes torches ») : un contour cyan qui
  * pulse, visible à travers les murs, et au-dessus ce qu'il y a dedans (« Torch ×18 »), lisible même
- * de loin.
+ * de loin. Le coffre tampon a un faisceau violet dédié pendant le repérage.
  */
 public final class Reperage {
+    private static final float[] COULEUR_TAMPON = {0.74F, 0.42F, 1F};
+    private static final int HAUTEUR_TAMPON = 64;
+
     // Un tampon propre évite de vider les dessins des coffres et des autres mods.
     private static final MultiBufferSource.BufferSource TAMPONS =
             MultiBufferSource.immediate(new BufferBuilder(1024));
@@ -34,17 +38,22 @@ public final class Reperage {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        var reperes = RechercheEmi.actif() ? RechercheEmi.reperes() : Pont.reperes();
-        if (mc.level == null || mc.player == null || reperes.isEmpty()) {
-            return;
-        }
-        String dimension = mc.level.dimension().location().toString();
+        if (mc.level == null || mc.player == null) return;
+        boolean rechercheActive = RechercheEmi.actif(); // une fois par image, pas par coffre
+        var reperes = rechercheActive ? RechercheEmi.reperes() : Pont.reperes();
+        BlockPos tampon = rechercheActive ? CoffreTampon.positionRepere() : null;
+        if (tampon != null && !mc.level.hasChunkAt(tampon)) tampon = null;
+        if (tampon == null && reperes.isEmpty()) return;
         Vec3 camera = event.getCamera().getPosition();
         PoseStack pose = event.getPoseStack();
         MultiBufferSource.BufferSource tampons = TAMPONS;
+        if (tampon != null)
+            faisceauTampon(
+                    pose, tampons, camera, tampon, event.getPartialTick(), mc.level.getGameTime());
+        if (reperes.isEmpty()) return;
+        String dimension = mc.level.dimension().location().toString();
         float pulsation = (float) (0.65 + 0.35 * Math.sin(System.currentTimeMillis() / 220.0));
         VertexConsumer lignes = tampons.getBuffer(Lignes.TRAVERSANTES);
-        boolean rechercheActive = RechercheEmi.actif(); // une fois par image, pas par coffre
         for (Pont.Repere r : reperes) {
             if (visible(r, dimension)) {
                 boolean resultat = RechercheEmi.resultatPret(r);
@@ -96,8 +105,7 @@ public final class Reperage {
             }
         }
         tampons.endBatch(Lignes.TRAVERSANTES);
-        if (RechercheEmi.actif())
-            return; // Des contours uniquement, sans texte empilé sur les coffres.
+        if (rechercheActive) return; // Des contours uniquement, sans texte empilé sur les coffres.
         Font font = mc.font;
         // Textes par le tampon principal du jeu, comme les noms des entités.
         var principal = mc.renderBuffers().bufferSource();
@@ -118,6 +126,34 @@ public final class Reperage {
                     0x70000000);
         }
         principal.endBatch();
+    }
+
+    private static void faisceauTampon(
+            PoseStack pose,
+            MultiBufferSource.BufferSource tampons,
+            Vec3 camera,
+            BlockPos pos,
+            float tickPartiel,
+            long temps) {
+        pose.pushPose();
+        try {
+            pose.translate(pos.getX() - camera.x, pos.getY() + 1 - camera.y, pos.getZ() - camera.z);
+            BeaconRenderer.renderBeaconBeam(
+                    pose,
+                    tampons,
+                    BeaconRenderer.BEAM_LOCATION,
+                    tickPartiel,
+                    1F,
+                    temps,
+                    0,
+                    HAUTEUR_TAMPON,
+                    COULEUR_TAMPON,
+                    0.12F,
+                    0.17F);
+        } finally {
+            pose.popPose();
+        }
+        tampons.endBatch();
     }
 
     /**
@@ -159,6 +195,7 @@ public final class Reperage {
     }
 
     private static boolean visible(Pont.Repere r, String dimension) {
-        return r.dimension().isEmpty() || r.dimension().equals(dimension);
+        return (r.dimension().isEmpty() || r.dimension().equals(dimension))
+                && !CoffreTampon.selectionne(dimension, r.x(), r.y(), r.z());
     }
 }

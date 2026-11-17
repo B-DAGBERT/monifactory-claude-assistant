@@ -54,6 +54,7 @@ public class AbstractContainerMenu {
     public int containerId=1; public java.util.List<Slot> slots=new java.util.ArrayList<>();
     public net.minecraft.world.item.ItemStack carried=new net.minecraft.world.item.ItemStack("",0);
     public net.minecraft.world.item.ItemStack getCarried(){return carried;}
+    public Slot getSlot(int index){return slots.get(index);}
 }
 """,
     "net.minecraft.world.inventory.ChestMenu": "public class ChestMenu extends AbstractContainerMenu {}",

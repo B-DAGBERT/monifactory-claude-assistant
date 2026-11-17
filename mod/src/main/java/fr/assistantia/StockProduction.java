@@ -36,6 +36,12 @@ public final class StockProduction {
 
     private record Portee(Connection connexion, String monde, String session, String dimension) {}
 
+    private record MenuRecu(Portee portee, AbstractContainerMenu menu) {
+        boolean correspond(Portee contexte, AbstractContainerMenu actif) {
+            return actif == menu && portee.equals(contexte);
+        }
+    }
+
     private record Case(Slot slot, ItemStack pile, int nature) {}
 
     private record Instantane(
@@ -49,8 +55,7 @@ public final class StockProduction {
 
     private static Instantane instantane;
     private static String revision = "";
-    private static AbstractContainerMenu informationsMenu;
-    private static Portee informationsPortee;
+    private static MenuRecu contenuRecu, informationsRecues;
     private static AbstractContainerScreen<?> retour, transition;
     private static Portee retourPortee;
 
@@ -160,6 +165,7 @@ public final class StockProduction {
                             List.copyOf(cases),
                             curseur.copy(),
                             sophistique);
+            contenuRecu = new MenuRecu(contexte, menu);
             revision = UUID.randomUUID().toString();
         } catch (ReflectiveOperationException | RuntimeException e) {
             invalider();
@@ -185,13 +191,12 @@ public final class StockProduction {
         ItemStack assistantia$curseur();
     }
 
-    /** Reçu après le full initial : les cases infinies/inaccessibles sont désormais connues. */
+    /** Les cases infinies et inaccessibles sont décrites par un paquet séparé. */
     public static void informations(Connection connexion) {
         if (!origine(connexion)) return;
         var menu = Minecraft.getInstance().player.containerMenu;
         if (!sophistique(menu)) return;
-        informationsMenu = menu;
-        informationsPortee = portee();
+        informationsRecues = new MenuRecu(portee(), menu);
         // Un changement de droits doit aussi révoquer une capture déjà envoyée.
         revision = UUID.randomUUID().toString();
     }
@@ -220,8 +225,7 @@ public final class StockProduction {
                 || mc.player.containerMenu.getStateId() != s.etat()
                 || exigerInformations
                         && s.sophistique()
-                        && (informationsMenu != s.menu() || !s.portee().equals(informationsPortee)))
-            return false;
+                        && !aRecuInformations(s.portee(), s.menu())) return false;
         try {
             if (nombreCases(s.menu()) != s.cases().size()
                     || !ItemStack.matches(s.menu().getCarried(), s.curseur())) return false;
@@ -324,6 +328,22 @@ public final class StockProduction {
         return courant(System.currentTimeMillis(), true);
     }
 
+    /**
+     * Le coffre tampon lit le menu natif après ses paquets initiaux, puis suit ses mises à jour.
+     */
+    static boolean menuInitialise(AbstractContainerMenu menu) {
+        var contexte = portee();
+        return contexte != null
+                && Minecraft.getInstance().player.containerMenu == menu
+                && contenuRecu != null
+                && contenuRecu.correspond(contexte, menu)
+                && (!sophistique(menu) || aRecuInformations(contexte, menu));
+    }
+
+    private static boolean aRecuInformations(Portee contexte, AbstractContainerMenu menu) {
+        return informationsRecues != null && informationsRecues.correspond(contexte, menu);
+    }
+
     /** Uniquement pendant setScreen : empêcher removed de toucher les upgrades du coffre. */
     public static boolean garderMenu(Screen ecran) {
         return ecran == transition && retourPossible(ecran);
@@ -387,11 +407,11 @@ public final class StockProduction {
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         if (instantane != null && !courant(System.currentTimeMillis(), false)) invalider();
-        if (informationsPortee != null
-                && (!informationsPortee.equals(portee())
-                        || Minecraft.getInstance().player.containerMenu != informationsMenu)) {
-            informationsMenu = null;
-            informationsPortee = null;
+        if (contenuRecu != null || informationsRecues != null) {
+            var contexte = portee();
+            var actif = contexte == null ? null : Minecraft.getInstance().player.containerMenu;
+            if (contenuRecu != null && !contenuRecu.correspond(contexte, actif)) contenuRecu = null;
+            if (!aRecuInformations(contexte, actif)) informationsRecues = null;
         }
         if (retour != null && !retourPossible(retour)) {
             retour = null;
@@ -402,8 +422,7 @@ public final class StockProduction {
     @SubscribeEvent
     public static void deconnexion(ClientPlayerNetworkEvent.LoggingOut event) {
         invalider();
-        informationsMenu = null;
-        informationsPortee = null;
+        contenuRecu = informationsRecues = null;
         retour = transition = null;
         retourPortee = null;
     }

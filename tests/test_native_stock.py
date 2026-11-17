@@ -108,6 +108,12 @@ class NativeStockTests(unittest.TestCase):
     def test_sophisticated_extended_counts_ghost_infinite_and_metadata(self):
         self.run_case("sophisticated")
 
+    def test_sophisticated_buffer_initialization_survives_deltas_and_packet_order(self):
+        self.run_case("initialisation")
+
+    def test_vanilla_buffer_initialization_requires_current_full_packet(self):
+        self.run_case("initialisation-vanilla")
+
     def test_screen_transition_no_removal_and_old_parent_rejected(self):
         self.run_case("screen")
 

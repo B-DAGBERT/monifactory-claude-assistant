@@ -52,10 +52,14 @@ STUBS.update(
  public static dev.emi.emi.api.recipe.EmiRecipe declared;public static int calls;
  public static boolean ouvrir(net.minecraft.client.gui.screens.Screen parent,dev.emi.emi.api.recipe.EmiRecipe r){declared=r;calls++;return true;}}""",
         "fr.assistantia.compat.emi.MachinesEmi": """import java.util.*;import dev.emi.emi.api.recipe.EmiRecipe;
- public class MachinesEmi {public record Ligne(int lot,EmiRecipe recette,int fois,String etat,boolean annulable,String detail,int groupe){}
- public static List<Ligne> rows=List.of();public static int reads,cancelled=-1,finished=-1,finishCalls,max=10;public static String problem="",context="project-A";public static String contexteSelection(){return context;}
+ public class MachinesEmi {public record Ligne(int lot,EmiRecipe recette,int fois,String etat,boolean annulable,String detail,int groupe){
+ boolean terminee(){return lot>0&&etat.equals("Terminé");}}
+ public static List<Ligne> rows=List.of();public static int reads,cancelled=-1,finished=-1,finishCalls,removed=-1,removeCalls,max=10;public static String problem="",context="project-A";public static String contexteSelection(){return context;}
  public static void choisirSac(dev.emi.emi.api.recipe.EmiRecipe r){}public static List<Ligne> lignes(){reads++;return rows;}public static String problemeOrdre(){return problem;}
  public static void recalculer(){} public static void annulerLot(int id){cancelled=id;}public static boolean terminerLot(int id){finished=id;finishCalls++;return true;}public static int declarables(EmiRecipe r){return max;}
+ public static boolean retirerLotDuSuivi(int id){
+  removed=id;removeCalls++;rows=rows.stream().filter(l->l.lot()!=id).toList();return true;
+ }
  public static boolean dernierTermine(){return false;}}
 """,
         "net.minecraftforge.eventbus.api.EventPriority": "public enum EventPriority {HIGHEST,NORMAL}",
@@ -155,7 +159,27 @@ public class SuiviOrderMenuTest {
     button(s,"Terminer").press();assert MachinesEmi.finished==11&&MachinesEmi.cancelled==-1;
     button(s,"Terminer").press();assert MachinesEmi.finishCalls==1;
     MachinesEmi.rows=List.of(new MachinesEmi.Ligne(11,a,4,"Terminé",false,"Manuel",2));
-    refresh(s);render(s);assert !button(s,"Terminer").visible;
+    refresh(s);render(s);assert button(s,"Supprimer").active;
+   }
+   case "remove-finished-lot" -> {
+    assert !button(s,"Terminer").visible;
+    var done=new MachinesEmi.Ligne(11,a,4,"Terminé",false,"Récupéré",2);
+    var other=new MachinesEmi.Ligne(12,a,4,"Terminé",false,"Récupéré",2);
+    MachinesEmi.rows=List.of(done,other);refresh(s);render(s);
+    assert s.mouseClicked(45,124,0);render(s);
+    assert button(s,"Supprimer").active && selected(s).lot()==12;
+    var remove=button(s,"Supprimer");
+    remove.press();assert MachinesEmi.removed==12 && MachinesEmi.rows.equals(List.of(done));
+    remove.press();assert MachinesEmi.removeCalls==1;
+    assert selected(s)==null;
+   }
+   case "does-not-remove-on-stale-finish-click" -> {
+    MachinesEmi.rows=List.of(row(10,a,2));refresh(s);render(s);
+    assert s.mouseClicked(45,88,0);render(s);var finish=button(s,"Terminer");
+    assert finish.active;
+    MachinesEmi.rows=List.of(new MachinesEmi.Ligne(10,a,4,"Terminé",false,"Récupéré",2));
+    finish.press();
+    assert MachinesEmi.removeCalls==0&&MachinesEmi.finishCalls==0;
    }
    case "finish-stale-lot" -> {
     MachinesEmi.rows=List.of(row(10,a,2));refresh(s);render(s);
@@ -244,6 +268,8 @@ class MachineOrderMenuTests(unittest.TestCase):
                 "lot-identity",
                 "finish-lot",
                 "finish-stale-lot",
+                "remove-finished-lot",
+                "does-not-remove-on-stale-finish-click",
                 "context",
                 "tree",
                 "same-tree-project",

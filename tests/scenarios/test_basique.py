@@ -102,3 +102,19 @@ class ScenariosBasiques(Parcours, unittest.TestCase):
         self.client.step(outils={})
         r = self.rafraichir([coffre(2, "test:mold", 3), coffre(4, "test:ingot", 40)])
         self.assertEqual(r["selection"], {"test:mold": 1, "test:ingot": 40})
+
+    def test_07_le_reperage_ignore_le_tampon_et_garde_le_retrait_direct(self):
+        self.demarrer(6)
+        coffres = [coffre(3), coffre(4), coffre(3, n=1, y=65), coffre(11, n=1)]
+        r = self.rafraichir(coffres)
+        self.assertCountEqual([c["x"] for c in r["coffres"]], [3, 4, 3, 11])
+        # Changer la sélection réutilise le dernier relevé, avant toute lecture du contenu réel.
+        r = self.client.step(tampon=["test:world|3|64|0", "test:world|4|64|0"])
+        self.assertCountEqual([c["x"] for c in r["coffres"]], [3, 11])
+        r = self.client.step(ouvert=[4, 64, 0], locaux={"test:plate": 2})
+        self.assertEqual(r["selection"], {"test:plate": 2})
+        # Deux coffres simples de même contenu peuvent avoir le même groupe dans le relevé.
+        r = self.client.step(tampon=["test:world|3|64|0"])
+        self.assertCountEqual([c["x"] for c in r["coffres"]], [4, 3, 11])
+        r = self.client.step(tampon=[])
+        self.assertCountEqual([c["x"] for c in r["coffres"]], [3, 4, 3, 11])

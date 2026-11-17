@@ -94,23 +94,31 @@ public final class RetraitCoffre {
 
     static List<ItemStack> pilesTampon(AbstractContainerMenu menu) {
         var joueur = Minecraft.getInstance().player;
-        if (joueur == null || joueur.containerMenu != menu) return List.of();
+        if (joueur == null || joueur.containerMenu != menu) return null;
         List<ItemStack> piles = new ArrayList<>();
         try {
+            boolean sophistique = !(menu instanceof ChestMenu || menu instanceof ShulkerBoxMenu);
             var infini =
-                    menu instanceof ChestMenu || menu instanceof ShulkerBoxMenu
-                            ? null
-                            : menu.getClass().getMethod("isInfiniteSlot", int.class);
-            for (Slot slot : menu.slots)
+                    sophistique ? menu.getClass().getMethod("isInfiniteSlot", int.class) : null;
+            int taille =
+                    sophistique
+                            ? (int)
+                                    menu.getClass()
+                                            .getMethod("getNumberOfStorageInventorySlots")
+                                            .invoke(menu)
+                            : menu.slots.size();
+            for (int i = 0; i < taille; i++) {
+                var slot = menu.getSlot(i);
                 if (slot.isActive()
                         && slot.hasItem()
                         && source(menu, slot)
                         && slot.mayPickup(joueur)
-                        && (infini == null || !(boolean) infini.invoke(menu, slot.index)))
+                        && (infini == null || !(boolean) infini.invoke(menu, i)))
                     piles.add(slot.getItem());
+            }
             return piles;
         } catch (ReflectiveOperationException | RuntimeException e) {
-            return List.of();
+            return null;
         }
     }
 

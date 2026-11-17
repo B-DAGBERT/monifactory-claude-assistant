@@ -46,7 +46,9 @@ public final class RechercheEmi {
             Set<String> objets) {}
 
     private static Releve releve;
-    private static long versionAppliquee = -1, revision;
+    private static Map<String, List<Pont.Repere>> positionsFiltrees;
+    private static long revisionFiltre;
+    private static long versionAppliquee = -1, versionTamponAppliquee = -1, revision;
     private static boolean annoncer;
 
     private RechercheEmi() {}
@@ -187,17 +189,47 @@ public final class RechercheEmi {
             net.minecraft.core.BlockPos ouvert) {
         var r = releve;
         if (r == null) return List.of();
+        var positions = horsTampon(r);
         String exclu = null;
         if (ouvert != null)
-            for (var entree : r.positions().entrySet())
+            for (var entree : positions.entrySet())
                 for (var p : entree.getValue())
                     if (p.x() == ouvert.getX() && p.y() == ouvert.getY() && p.z() == ouvert.getZ())
                         exclu = entree.getKey();
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
-        for (int i = 0; i < r.stocks().size(); i++)
-            if (!r.groupes().get(i).equals(exclu) && demandes.contains(r.stocks().get(i).objet()))
-                stocks.add(r.stocks().get(i));
+        for (int i = 0; i < r.stocks().size(); i++) {
+            String groupe = r.groupes().get(i);
+            if (!groupe.equals(exclu)
+                    && positions.containsKey(groupe)
+                    && demandes.contains(r.stocks().get(i).objet())) stocks.add(r.stocks().get(i));
+        }
         return stocks;
+    }
+
+    /** Le stock disparaît si toutes ses positions sont celles du tampon. */
+    private static Map<String, List<Pont.Repere>> horsTampon(Releve r) {
+        if (!CoffreTampon.selectionActive()) return r.positions();
+        long courante = CoffreTampon.revision();
+        if (positionsFiltrees != null && courante == revisionFiltre) return positionsFiltrees;
+        Map<String, List<Pont.Repere>> positions = new HashMap<>();
+        r.positions()
+                .forEach(
+                        (groupe, blocs) -> {
+                            var autres =
+                                    blocs.stream()
+                                            .filter(
+                                                    p ->
+                                                            !CoffreTampon.selectionne(
+                                                                    p.dimension(),
+                                                                    p.x(),
+                                                                    p.y(),
+                                                                    p.z()))
+                                            .toList();
+                            if (!autres.isEmpty()) positions.put(groupe, autres);
+                        });
+        positionsFiltrees = positions;
+        revisionFiltre = courante;
+        return positions;
     }
 
     private static void actualiserCollecte() {
@@ -380,6 +412,7 @@ public final class RechercheEmi {
         resultatsPrets = Set.of();
         derniereVue = null;
         releve = null;
+        positionsFiltrees = null;
         versionAppliquee = -1;
         annoncer = false;
         revision++;
@@ -414,7 +447,8 @@ public final class RechercheEmi {
         var suivi = collecte;
         if (suivi != null
                 && releve != null
-                && suivi.version() != versionAppliquee
+                && (suivi.version() != versionAppliquee
+                        || CoffreTampon.revision() != versionTamponAppliquee)
                 && !RetraitCoffre.occupe()) appliquer();
     }
 
@@ -475,6 +509,7 @@ public final class RechercheEmi {
             }
         }
         positions.replaceAll((groupe, blocs) -> List.copyOf(blocs));
+        positionsFiltrees = null;
         releve =
                 new Releve(
                         List.copyOf(stocks),
@@ -501,17 +536,20 @@ public final class RechercheEmi {
         var suivi = collecte;
         if (suivi == null) return;
         versionAppliquee = suivi.version();
+        versionTamponAppliquee = CoffreTampon.revision();
         revision++;
         var r = releve;
+        Map<String, List<Pont.Repere>> positions = r == null ? Map.of() : horsTampon(r);
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
         List<String> groupes = new ArrayList<>();
         if (r != null)
-            for (int i = 0; i < r.stocks().size(); i++)
-                if (demandes.contains(r.stocks().get(i).objet())) {
+            for (int i = 0; i < r.stocks().size(); i++) {
+                String groupe = r.groupes().get(i);
+                if (positions.containsKey(groupe) && demandes.contains(r.stocks().get(i).objet())) {
                     stocks.add(r.stocks().get(i));
-                    groupes.add(r.groupes().get(i));
+                    groupes.add(groupe);
                 }
-        Map<String, List<Pont.Repere>> positions = r == null ? Map.of() : r.positions();
+            }
         Set<String> utiles = new java.util.LinkedHashSet<>(),
                 visibles = new java.util.LinkedHashSet<>();
         Map<String, Integer> selection = new HashMap<>(), parGroupe = new HashMap<>();

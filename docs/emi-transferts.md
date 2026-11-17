@@ -36,15 +36,17 @@ Les cases des poches, filtres et upgrades gardent leur affichage natif.
 ## Coffre tampon
 
 Dans **Options → Contrôles → Assistant IA**, assigne une touche à **Choisir / désélectionner le coffre tampon**.
-Vise un coffre ou un tonneau, presse la touche, puis ouvre le conteneur pour relever son contenu.
-Tu peux viser l’autre moitié d’un coffre double pour le rouvrir. Le même raccourci sur le coffre choisi
-retire la sélection.
+Vise un coffre ou un tonneau et presse la touche. Si tu viens de l’ouvrir, son relevé est repris
+immédiatement. Sinon ouvre-le une fois pour relever son contenu. Tu peux rouvrir un coffre double
+par l’une ou l’autre moitié. Le même raccourci sur le coffre choisi retire la sélection.
 
 Le relevé entre dans le calcul de l’arbre EMI et du plan **Recette**. Une étape peut indiquer
-**Dans le coffre tampon**. Reprends les objets à la main ou utilise **Prendre / Tout** dans le
-coffre ouvert avec **Repérage**. Le dernier contenu relevé sert au calcul après fermeture. Rouvre le
-coffre après une modification automatique et sélectionne-le de nouveau après reconnexion ou changement
-de dimension. Quand le terminal ME fournit un stock à EMI, ce dernier couvre aussi les conteneurs que
+**Dans le coffre tampon**. Avec **Repérage** sur **ON**, un faisceau violet indique le tampon.
+Les résultats de recherche ordinaires l’ignorent. En ouvrant le coffre, tu peux utiliser
+**Prendre / Tout** si **Repérage** est actif. Dans Sophisticated Storage, retire à la main les objets
+des cases exclues du tri. Le dernier contenu relevé sert au calcul après fermeture. Rouvre le coffre
+après une modification automatique et sélectionne-le de nouveau après reconnexion ou changement de
+dimension. Quand le terminal ME fournit un stock à EMI, ce dernier couvre aussi les conteneurs que
 le réseau expose via ses bus de stockage.
 
 ## Terminal ME
@@ -111,8 +113,8 @@ L’onglet **Y → Recette** numérote le plan avec le même calcul d’ordre, e
 
 Dans **Suivi**, sélectionne un lot de machine en cours puis clique sur **Terminer** quand sa
 fabrication est finie. Cette validation clôt tout le lot et retire les sorties de la liste des
-attentes. L’arbre EMI en cours en tient compte. Les réceptions constatées restent enregistrées
-séparément.
+attentes. L’arbre EMI en cours en tient compte. Sélectionne ensuite une ligne marquée **Terminé** et
+clique sur **Supprimer** pour la retirer du suivi. Le calcul EMI conserve l’avancement du lot.
 
 Le bouton **Suivi** est placé à côté de **Repérage**, en bas d’EMI. Dans le panneau d’une machine, **En cours de craft** permet directement de déclarer le lot sélectionné. Chaque ligne affiche le produit, le nombre de fabrications et son état :
 

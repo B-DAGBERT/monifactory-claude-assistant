@@ -105,6 +105,10 @@ public final class MachinesEmi {
                 String detail) {
             this(lot, recette, fois, etat, annulable, detail, lot > 0 ? 2 : 3);
         }
+
+        boolean terminee() {
+            return lot > 0 && LotFabrication.Etat.TERMINE.texte.equals(etat);
+        }
     }
 
     public static String problemeOrdre() {
@@ -344,6 +348,11 @@ public final class MachinesEmi {
         return true;
     }
 
+    static boolean retirerLotDuSuivi(int id) {
+        actualiserArbre();
+        return actif() != null && instantane != null && lots.retirerDuSuivi(id);
+    }
+
     public static void recalculer() {
         if (EnvoiMachine.occupe()) return;
         calculPrecedent = "";
@@ -405,7 +414,7 @@ public final class MachinesEmi {
                                 3));
         }
         for (var lot : lots.actifs())
-            if (lot.suivi().etat() != LotFabrication.Etat.ANNULE)
+            if (lots.visibleDansSuivi(lot))
                 lignes.add(
                         new Ligne(
                                 lot.id(),
