@@ -101,6 +101,7 @@ public final class FilonMemoireTest {
         remplissageMarge();
         comptesDirects();
         presqueEpuise();
+        epuisementParMinerai();
         sauvegardeCompacte();
         ancienFormat();
         couleurs();
@@ -113,7 +114,7 @@ public final class FilonMemoireTest {
         teleportationDirecte();
         securite();
         System.out.println(
-                "21 scenarios filons valides : volume, remplissage, propriete, comptes, sauvegarde,"
+                "22 scenarios filons valides : volume, remplissage, propriete, comptes, sauvegarde,"
                         + " ancien format, couleurs, destination.");
     }
 
@@ -542,6 +543,64 @@ public final class FilonMemoireTest {
                         .getAsJsonObject();
         verifier(resume.get("presque_epuise").getAsBoolean(), "Résumé : scan complet confirmé");
         verifier(!f.presqueEpuiseAConfirmer(), "Scan complet : plus rien à confirmer");
+    }
+
+    /** L'or épuisé d'un filon de magnésite encore plein : seul l'or n'est plus proposé. */
+    static void epuisementParMinerai() {
+        verifier(
+                FilonMemoire.matiere("gtceu:deepslate_gold_ore").equals("gold")
+                        && FilonMemoire.matiere("gtceu:moon_asbestos_ore").equals("asbestos")
+                        && FilonMemoire.matiere("minecraft:redstone_ore").equals("redstone"),
+                "Matière d'un minerai, pierres confondues");
+        var m = new FilonMemoire();
+        var f =
+                gisement(
+                        m,
+                        "mg",
+                        0,
+                        10,
+                        0,
+                        "gtceu:magnesite_ore",
+                        "gtceu:gold_ore",
+                        "gtceu:deepslate_gold_ore",
+                        "gtceu:cobaltite_ore");
+        int mg = m.type("gtceu:magnesite_ore"),
+                or = m.type("gtceu:gold_ore"),
+                orProfond = m.type("gtceu:deepslate_gold_ore");
+        for (int i = 0; i < 400; i++) m.ajouter(f, FilonMemoire.pos(i % 20, 10, i / 20), mg);
+        for (int i = 0; i < 150; i++) m.ajouter(f, FilonMemoire.pos(i % 20, 11, i / 20), or);
+        for (int i = 0; i < 70; i++) m.ajouter(f, FilonMemoire.pos(i % 20, 12, i / 20), orProfond);
+        for (int i = 0; i < 149; i++) m.miner(f, FilonMemoire.pos(i % 20, 11, i / 20));
+        for (int i = 0; i < 69; i++) m.miner(f, FilonMemoire.pos(i % 20, 12, i / 20));
+        verifier(
+                !f.matiereEpuisee("gold") && f.matieresEpuisees().isEmpty(),
+                "Sans scan complet, aucun minerai déclaré épuisé");
+        f.scanComplet = true;
+        int[] orCompte = f.comptesMatieres().get("gold");
+        verifier(orCompte[0] == 2 && orCompte[1] == 218, "Or compté sur ses deux pierres");
+        verifier(
+                f.matiereEpuisee("gold") && !f.matiereDisponible("gold"),
+                "2 / 220 (1 %) d'or : épuisé dans ce filon");
+        verifier(
+                f.matiereDisponible("magnesite") && f.pourcentRestant() > 60 && !f.presqueEpuise(),
+                "La magnésite reste proposée, le filon n'est pas presque épuisé");
+        verifier(
+                f.matieresEpuisees().equals(Set.of("cobaltite", "gold")),
+                "Un minerai jamais trouvé au scan complet n'est pas proposé non plus");
+        verifier(
+                f.blocsConnus().contains("gtceu:deepslate_gold_ore") && f.visible(),
+                "Blocs connus pour la recherche, filon toujours visible");
+        f.colonnesRestantes = new long[] {VolumeFilon.colonne(0, 0)};
+        verifier(!f.matiereEpuisee("gold"), "Scan relancé : rien n'est conclu avant sa fin");
+        f.colonnesRestantes = new long[0];
+        for (int i = 0; i < 365; i++) m.miner(f, FilonMemoire.pos(i % 20, 10, i / 20));
+        verifier(
+                f.matiereEpuisee("magnesite")
+                        && f.comptesMatieres().get("magnesite")[0] == 35
+                        && f.presqueEpuise(),
+                "Comptes suivis après minage : tout le filon est presque épuisé");
+        f.marquerEpuise(true);
+        verifier(!f.matiereDisponible("magnesite"), "Filon marqué épuisé : plus rien de proposé");
     }
 
     static FilonMemoire exemple() {

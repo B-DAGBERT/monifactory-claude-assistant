@@ -2,10 +2,13 @@ package fr.assistantia.compat.emi;
 
 import com.mojang.logging.LogUtils;
 import dev.emi.emi.api.stack.EmiStack;
-import fr.assistantia.BoutonTheme;
+import fr.assistantia.DispositionCoffre;
+import fr.assistantia.DispositionCoffre.Disposition;
 import fr.assistantia.InventaireJoueur;
+import fr.assistantia.PanneauAssistant;
 import fr.assistantia.PlanMachines;
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.RelachementSouris;
 import fr.assistantia.Theme;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.lang.reflect.Method;
@@ -14,9 +17,9 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.WeakHashMap;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -30,7 +33,11 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
-/** L'inventaire ME est celui du menu AE2 synchronisé, valable le temps de son ouverture. */
+/**
+ * L'inventaire ME est celui du menu AE2 synchronisé, valable le temps de son ouverture. Le retrait
+ * passe par le même panneau que la Collecte des coffres (voir DispositionCoffre) : posé hors du
+ * terminal, réservé auprès d'EMI, et dont l'appui comme le relâchement ne vont jamais au terminal.
+ */
 final class TerminalMe {
     private record Entree(long serial, EmiStack pile, int quantite) {}
 
@@ -61,8 +68,18 @@ final class TerminalMe {
             long lots,
             List<Lot> retraits) {}
 
-    private static final Map<Screen, BoutonTheme> boutons = new WeakHashMap<>();
+    private static final String NOM = "Réseau ME", RETRAIT = "Retrait… ";
+    private static final String PRENDRE = "Prendre", TOUT = "Tout", ARRETER = "Arrêter";
     private static final Acces ACCES = charger();
+
+    /** Terminal ouvert et son panneau : objets proposés, choix de Prendre, page. */
+    private static AbstractContainerScreen<?> affiche;
+
+    private static Disposition disposition;
+    private static List<Lot> objets = List.of();
+    private static ItemStack choisi = ItemStack.EMPTY;
+    private static int page;
+    private static long cleDisposition, placeLe;
     private static Vue vue;
     private static AbstractContainerMenu menu;
     private static AbstractContainerScreen<?> ecran;
@@ -210,70 +227,254 @@ final class TerminalMe {
 
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post event) {
-        if (ACCES == null || !ACCES.ecran().isInstance(event.getScreen())) return;
-        var screen = (AbstractContainerScreen<?>) event.getScreen();
-        var bouton = BoutonTheme.creer("Prendre pour EMI", b -> lancer(screen));
-        bouton.visible = false;
-        boutons.put(screen, bouton);
-        event.addListener(bouton);
+        boolean terminal = ACCES != null && ACCES.ecran().isInstance(event.getScreen());
+        affiche = terminal ? (AbstractContainerScreen<?>) event.getScreen() : null;
+        disposition = null;
+        objets = List.of();
+        page = 0;
     }
 
     static void zoneEmi(
             Screen screen, java.util.function.Consumer<dev.emi.emi.api.widget.Bounds> zones) {
-        var b = boutons.get(screen);
-        if (b != null && b.visible)
+        var d = disposition;
+        if (d != null && screen == affiche && !objets.isEmpty())
             zones.accept(
                     new dev.emi.emi.api.widget.Bounds(
-                            b.getX(), b.getY(), b.getWidth(), b.getHeight()));
+                            d.cadre().x(),
+                            d.cadre().y(),
+                            d.cadre().largeur(),
+                            d.cadre().hauteur()));
     }
 
+    /** Pendant un retrait, ses lots figés ; sinon ceux du relevé de ce terminal. */
+    private static List<Lot> proposes(Screen screen) {
+        if (occupe()) return screen == ecran ? retraits : List.of();
+        return vue != null && affiche != null && vue.menu() == affiche.getMenu()
+                ? vue.retraits()
+                : List.of();
+    }
+
+    /** Ce qu'il reste à retirer du lot {@code n} pendant le retrait en cours. */
+    private static int restant(int n) {
+        if (!occupe() || n < index) return occupe() ? 0 : objets.get(n).quantite();
+        return n == index ? reste : retraits.get(n).quantite();
+    }
+
+    private static long restantTotal() {
+        long total = 0;
+        for (int n = 0; n < objets.size(); n++) total += restant(n);
+        return total;
+    }
+
+    private static int quantite(ItemStack item) {
+        for (int n = 0; n < objets.size(); n++)
+            if (ItemStack.isSameItemSameTags(objets.get(n).pile(), item)) return restant(n);
+        return 0;
+    }
+
+    private static String aPrendre(long total) {
+        return Theme.nombre(total) + " à prendre";
+    }
+
+    private static int derniere() {
+        return (objets.size() - 1) / disposition.parPage();
+    }
+
+    /**
+     * Liste et place tenues à jour avant le rendu ; la place ne bouge qu'avec le nombre d'objets.
+     */
     @SubscribeEvent
-    public static void rendu(ScreenEvent.Render.Pre event) {
-        var b = boutons.get(event.getScreen());
-        if (b == null) return;
-        var screen = (AbstractContainerScreen<?>) event.getScreen();
-        b.visible =
-                vue != null
-                        && vue.menu() == screen.getMenu()
-                        && (!vue.retraits().isEmpty() || occupe());
-        if (!b.visible) return;
-        int largeur = Math.min(screen.getXSize(), 146);
-        // La grille ME, sa recherche et le titre commencent sous ce bouton.
-        int y = Math.max(0, screen.getGuiTop() - Theme.BOUTON - 2);
-        b.zone(screen.getGuiLeft() + (screen.getXSize() - largeur) / 2, y, largeur);
-        b.active = true;
-        if (occupe()) {
-            b.texte("Arrêter le retrait · " + recus);
-            b.infobulle("Arrête après l’action en cours.");
-        } else {
-            long total = vue.retraits().stream().mapToLong(Lot::quantite).sum();
-            b.texte("Prendre pour EMI · " + total);
-            var lignes =
-                    vue.retraits().stream()
-                            .limit(8)
-                            .map(l -> l.quantite() + " × " + l.pile().getHoverName().getString())
-                            .toList();
-            b.infobulle(String.join("\n", lignes) + (vue.retraits().size() > 8 ? "\n…" : ""));
-        }
-    }
-
-    @SubscribeEvent
-    public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
-        if (event.getScreen() != ecran || !occupe()) return;
-        var bouton = boutons.get(ecran);
-        if (event.getButton() != 0
-                || bouton == null
-                || !bouton.isMouseOver(event.getMouseX(), event.getMouseY()))
-            terminer("Retrait ME interrompu.");
-    }
-
-    private static void lancer(AbstractContainerScreen<?> screen) {
-        if (occupe()) {
-            terminer("Retrait ME arrêté.");
+    public static void avantRendu(ScreenEvent.Render.Pre event) {
+        if (event.getScreen() != affiche) return;
+        objets = proposes(affiche);
+        if (objets.isEmpty()) {
+            disposition = null;
+            PanneauAssistant.poser(affiche, null);
             return;
         }
+        // Le choix de Prendre survit au retrait de Tout, qui ne montre que ses propres lots.
+        if (!occupe()
+                && objets.stream().noneMatch(l -> ItemStack.isSameItemSameTags(l.pile(), choisi)))
+            choisi = objets.get(0).pile();
+        long cle = (objets.size() * 31L + affiche.width) * 31L + affiche.height;
+        long maintenant = System.currentTimeMillis();
+        if (disposition == null || cle != cleDisposition || maintenant - placeLe >= 1000) {
+            Font font = Minecraft.getInstance().font;
+            disposition =
+                    DispositionCoffre.calculer(
+                            affiche.width,
+                            affiche.height,
+                            PanneauAssistant.occupee(affiche),
+                            objets.size(),
+                            PanneauAssistant.libelles(
+                                    font,
+                                    List.of(
+                                            NOM,
+                                            aPrendre(999_999),
+                                            RETRAIT + Theme.nombre(999_999)),
+                                    List.of(PRENDRE),
+                                    List.of(TOUT, ARRETER),
+                                    false));
+            cleDisposition = cle;
+            placeLe = maintenant;
+        }
+        page = Math.min(page, derniere());
+        PanneauAssistant.poser(affiche, disposition.cadre());
+    }
+
+    @SubscribeEvent
+    public static void rendu(ScreenEvent.Render.Post event) {
+        Disposition d = disposition;
+        if (d == null || event.getScreen() != affiche || objets.isEmpty()) return;
+        GuiGraphics g = event.getGuiGraphics();
+        Font font = Minecraft.getInstance().font;
+        int mx = event.getMouseX(), my = event.getMouseY();
+        boolean occupe = occupe();
+        PanneauAssistant.fond(g, d.cadre());
+        long total = restantTotal();
+        String detail = occupe ? RETRAIT + Theme.nombre(total) : aPrendre(total);
+        PanneauAssistant.titre(g, font, d.titre(), NOM, detail);
+        List<Component> infobulle = null;
+        if (d.titre().contient(mx, my))
+            infobulle =
+                    List.of(
+                            Component.literal(
+                                    NOM
+                                            + " · "
+                                            + (occupe ? RETRAIT + total : total + " à prendre")),
+                            gris("Objets de l’arbre EMI à retirer du réseau AE2"),
+                            gris(
+                                    occupe
+                                            ? "Un clic hors du panneau arrête aussi le retrait"
+                                            : "Garde le curseur vide pendant le retrait"));
+        for (int rang = 0; rang < d.parPage(); rang++) {
+            int n = page * d.parPage() + rang;
+            if (n >= objets.size()) break;
+            var lot = objets.get(n);
+            var z = d.icone(rang);
+            int quantite = restant(n);
+            PanneauAssistant.caseIcone(
+                    g, z, !occupe && ItemStack.isSameItemSameTags(lot.pile(), choisi));
+            ItemStack icone = lot.pile().copy();
+            icone.setCount(1);
+            g.renderItem(icone, z.x() + 1, z.y() + 1);
+            PanneauAssistant.nombre(g, font, z, quantite);
+            if (occupe && quantite == 0) PanneauAssistant.etat(g, z, Theme.VERT);
+            if (z.contient(mx, my))
+                infobulle =
+                        occupe
+                                ? List.of(
+                                        lot.pile().getHoverName(),
+                                        gris(quantite == 0 ? "Retiré" : quantite + " restants"))
+                                : List.of(
+                                        lot.pile().getHoverName(),
+                                        gris(quantite + " à prendre"),
+                                        Component.literal("Clic : choisir pour Prendre")
+                                                .withStyle(
+                                                        s -> s.withColor(PanneauAssistant.BLEU)));
+        }
+        if (d.pages()) {
+            boolean avant =
+                    PanneauAssistant.bouton(
+                            g, font, d.precedent(), "‹", Theme.Genre.NORMAL, page > 0, mx, my);
+            boolean apres =
+                    PanneauAssistant.bouton(
+                            g,
+                            font,
+                            d.suivant(),
+                            "›",
+                            Theme.Genre.NORMAL,
+                            page < derniere(),
+                            mx,
+                            my);
+            if (avant || apres)
+                infobulle =
+                        List.of(Component.literal("Page " + (page + 1) + "/" + (derniere() + 1)));
+        }
+        int choix = quantite(choisi);
+        if (PanneauAssistant.bouton(
+                g, font, d.prendre(), PRENDRE, Theme.Genre.NORMAL, !occupe && choix > 0, mx, my))
+            infobulle =
+                    List.of(
+                            Component.literal(
+                                    "Prendre " + choix + " " + choisi.getHoverName().getString()));
+        if (occupe) {
+            if (PanneauAssistant.bouton(
+                    g, font, d.tout(), ARRETER, Theme.Genre.DANGER, true, mx, my))
+                infobulle = List.of(Component.literal("Arrêter après l’action en cours"));
+        } else if (PanneauAssistant.bouton(
+                g, font, d.tout(), TOUT, Theme.Genre.PRINCIPAL, total > 0, mx, my))
+            infobulle =
+                    List.of(
+                            Component.literal(
+                                    "Prendre les " + total + " objets du réseau pour l’arbre EMI"));
+        if (infobulle != null) g.renderComponentTooltip(font, infobulle, mx, my);
+    }
+
+    private static Component gris(String texte) {
+        return Component.literal(texte).withStyle(s -> s.withColor(PanneauAssistant.GRIS));
+    }
+
+    private static boolean surPanneau(Screen screen, double mx, double my) {
+        var d = disposition;
+        return d != null && screen == affiche && !objets.isEmpty() && d.cadre().contient(mx, my);
+    }
+
+    /**
+     * L'appui sur le panneau est consommé avec son relâchement : relâché au-dessus du terminal, il
+     * y poserait ou jetterait l'objet que le retrait tient au curseur. Tout autre clic dans le
+     * terminal arrête le retrait en cours.
+     */
+    @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true)
+    public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
+        double mx = event.getMouseX(), my = event.getMouseY();
+        if (event.isCanceled() || !surPanneau(event.getScreen(), mx, my)) {
+            if (event.getScreen() == ecran && occupe()) terminer("Retrait ME interrompu.");
+            return;
+        }
+        RelachementSouris.consommer(event);
+        if (event.getButton() != 0) return;
+        Disposition d = disposition;
+        if (d.tout().contient(mx, my)) {
+            PanneauAssistant.son();
+            if (occupe()) terminer("Retrait ME arrêté.");
+            else lancer(affiche, null);
+        } else if (d.pages() && d.precedent().contient(mx, my)) tourner(-1);
+        else if (d.pages() && d.suivant().contient(mx, my)) tourner(1);
+        else if (occupe()) return;
+        else if (d.prendre().contient(mx, my)) {
+            PanneauAssistant.son();
+            lancer(affiche, choisi.copy());
+        } else
+            for (int rang = 0; rang < d.parPage(); rang++) {
+                int n = page * d.parPage() + rang;
+                if (n < objets.size() && d.icone(rang).contient(mx, my)) {
+                    choisi = objets.get(n).pile();
+                    return;
+                }
+            }
+    }
+
+    private static void tourner(int sens) {
+        page = Math.max(0, Math.min(derniere(), page + sens));
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void molette(ScreenEvent.MouseScrolled.Pre event) {
+        if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
+        event.setCanceled(true);
+        if (disposition.pages()) tourner(event.getScrollDelta() > 0 ? -1 : 1);
+    }
+
+    /**
+     * Le clic relit le terminal et l'arbre : il retire ce qui manque à cet instant, jamais le plan
+     * de l'image précédente. {@code selection} : un seul objet (Prendre), sinon tout (Tout).
+     */
+    private static void lancer(AbstractContainerScreen<?> screen, ItemStack selection) {
         var mc = Minecraft.getInstance();
-        if (mc.screen != screen
+        if (occupe()
+                || screen == null
+                || mc.screen != screen
                 || courant() != screen.getMenu()
                 || mc.getConnection() == null
                 || fr.assistantia.RetraitCoffre.occupe()
@@ -283,17 +484,27 @@ final class TerminalMe {
             return;
         }
         try {
-            Vue proposee = vue;
             actualiser();
-            if (vue == null || vue.retraits().isEmpty() || vue != proposee) {
-                message("Besoins EMI actualisés. Vérifie les quantités puis clique à nouveau.");
+            var lots =
+                    vue == null
+                            ? List.<Lot>of()
+                            : vue.retraits().stream()
+                                    .filter(
+                                            l ->
+                                                    selection == null
+                                                            || ItemStack.isSameItemSameTags(
+                                                                    l.pile(), selection))
+                                    .toList();
+            if (lots.isEmpty()) {
+                message("Rien à prendre dans le réseau ME pour l’arbre EMI.");
                 return;
             }
             ecran = screen;
             menu = screen.getMenu();
             arbre = vue.arbre();
             connexion = mc.getConnection();
-            retraits = vue.retraits();
+            retraits = lots;
+            objets = lots;
             index = recus = avant = attendus = 0;
             destination = null;
             reste = retraits.get(0).quantite();
@@ -426,7 +637,13 @@ final class TerminalMe {
         destination = null;
         retraits = List.of();
         vue = null;
-        ticks = 9;
+        ticks = 0;
+        try { // Relevé refait tout de suite : le panneau passe au reste sans disparaître.
+            actualiser();
+        } catch (ReflectiveOperationException | RuntimeException ex) {
+            signaler(ex);
+            vue = null;
+        }
         InventaireArbreEmi.invalider();
         message(texte);
     }

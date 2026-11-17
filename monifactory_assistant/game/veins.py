@@ -115,6 +115,10 @@ STONE_PREFIXES = (
 )
 
 
+# Part restante (en %) sous laquelle un minerai d'un filon entièrement scanné est épuisé.
+EXHAUSTED_PERCENT = 10
+
+
 def ore_material(block):
     """« gtceu:deepslate_galena_ore » -> « galena » : le minerai, quelle que soit la pierre qui l'entoure."""
     name = block.split(":")[-1].removesuffix("_ore")
@@ -157,6 +161,9 @@ def _summary_veins(scanned):
         complete = g.get("scan") == "complet"
         for material in sorted(materials):
             present, mined = counts.get(material, (0, 0))
+            # Même seuil que le mod, minerai par minerai : l'or épuisé d'un filon de magnésite
+            # ne le propose plus pour l'or, ses autres minerais restent disponibles.
+            ore_exhausted = complete and present * 100 <= (present + mined) * EXHAUSTED_PERCENT
             veins.append(
                 {
                     "minerai": material,
@@ -172,6 +179,7 @@ def _summary_veins(scanned):
                     "partiel": not complete,
                     "complet": complete,
                     "presque_epuise": bool(g.get("presque_epuise")),
+                    "minerai_epuise": ore_exhausted,
                     "epuise": bool(g.get("epuise") or g.get("epuise_manuel")),
                     "epuise_manuel": bool(g.get("epuise_manuel")),
                 }
@@ -288,15 +296,26 @@ def describe_veins(veins, state, limit=25):
             else 1e9
         )
 
+    def available(v):
+        return not (v.get("epuise") or v.get("minerai_epuise"))
+
     parts = []
-    for v in sorted(veins, key=distance)[:limit]:
+    # Les filons qui peuvent encore fournir leur minerai d'abord, les plus proches en tête.
+    for v in sorted(veins, key=lambda v: (not available(v), distance(v)))[:limit]:
         position = f"{int(v['x'])} {int(v['y'])} {int(v['z'])} ({v['dimension']})"
         if v.get("complet") or v.get("partiel"):
+            epuise_minerai = (
+                "minerai épuisé dans ce gisement (10 % ou moins restant), ne pas le proposer"
+                if v.get("trouves")
+                else "aucun bloc trouvé au scan complet, ne pas le proposer"
+            )
             etat = (
                 "marqué épuisé par le joueur"
                 if v.get("epuise_manuel")
                 else "épuisé selon GregTech"
                 if v.get("epuise")
+                else epuise_minerai
+                if v.get("minerai_epuise")
                 else "presque épuisé"
                 if v.get("presque_epuise")
                 else "scan complet du gisement"

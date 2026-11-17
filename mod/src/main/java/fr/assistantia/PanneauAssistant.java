@@ -4,6 +4,8 @@ import fr.assistantia.DispositionCoffre.Libelles;
 import fr.assistantia.DispositionCoffre.Zone;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -33,6 +35,9 @@ public final class PanneauAssistant {
 
     /** Espace entre le texte d'un bouton de panneau et chacun de ses bords. */
     private static final int MARGE_BOUTON = 4;
+
+    /** Panneau déjà posé sur un écran par un autre module (réseau ME) : les suivants l'évitent. */
+    private static final Map<Screen, Zone> poses = new WeakHashMap<>();
 
     private PanneauAssistant() {}
 
@@ -183,6 +188,18 @@ public final class PanneauAssistant {
         Minecraft.getInstance()
                 .getSoundManager()
                 .play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+    }
+
+    /** Déclare (ou retire, avec null) le panneau posé sur cet écran. */
+    public static void poser(Screen screen, Zone cadre) {
+        if (cadre == null) poses.remove(screen);
+        else poses.put(screen, cadre);
+    }
+
+    /** L'interface et le panneau déjà posé sur elle : un second panneau ne le recouvre jamais. */
+    public static Zone occupeeEtPanneau(AbstractContainerScreen<?> screen) {
+        Zone zone = occupee(screen), pose = poses.get(screen);
+        return pose == null ? zone : zone.union(pose);
     }
 
     /** L'interface, ses cases (upgrades comprises) et les widgets ajoutés autour par son mod. */

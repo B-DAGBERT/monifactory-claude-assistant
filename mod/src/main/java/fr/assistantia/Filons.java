@@ -688,7 +688,9 @@ public final class Filons {
     public static boolean utilePourRecette(FilonMemoire.Filon f) {
         actualiserRecette();
         if (besoinsRecette.isEmpty()) return false;
-        return utiles.computeIfAbsent(f.id, k -> GregTechFilons.utile(f, besoinsRecette));
+        // L'épuisement d'un minerai change la réponse sans changer la recette.
+        String cle = f.id + "|" + f.estEpuise() + f.matieresEpuisees();
+        return utiles.computeIfAbsent(cle, k -> GregTechFilons.utile(f, besoinsRecette));
     }
 
     /** Un arbre EMI avec des matières premières est choisi. */

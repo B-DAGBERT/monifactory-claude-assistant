@@ -37,14 +37,20 @@ Les cases des poches, filtres et upgrades gardent leur affichage natif.
 
 Ouvre un terminal de stockage ou de fabrication AE2 avec un **Recipe Tree** sélectionné.
 L’arbre EMI compte les objets que le terminal annonce en stock, même avec un filtre de
-recherche. **Prendre pour EMI** montre le total à retirer et son survol liste les quantités
-par objet. Le calcul déduit tes poches et ton sac, puis prend les composants déjà prêts
-avant de chercher les matières de leur branche. Clique pour les recevoir dans l’inventaire.
+recherche. Le panneau **Réseau ME** a le même aspect que la **Collecte** des coffres et se
+place hors du terminal ; EMI range ses listes autour de lui. Il montre chaque objet à retirer
+avec sa quantité et le total « N à prendre ». Le calcul déduit tes poches et ton sac, puis
+prend les composants déjà prêts avant de chercher les matières de leur branche.
 
+Un simple clic suffit : **Tout** retire tout ce qui manque à l’arbre, **Prendre** seulement
+l’objet choisi (clic sur son icône). Le clic relit le terminal et l’arbre à cet instant. Pendant
+le retrait, les quantités restantes baissent, les objets terminés sont soulignés en vert et
+**Tout** devient **Arrêter**. Un clic ailleurs dans le terminal arrête aussi le retrait.
 Le relevé est valable tant que le menu du terminal est ouvert. Laisse le curseur vide avant
-de lancer le retrait. Tu peux l’arrêter depuis le même bouton. En cas d’interruption, les
-objets déjà retirés peuvent se trouver sur le curseur. Les objets seulement autocraftables
-et les fluides du réseau restent à gérer dans AE2.
+de lancer le retrait ; en cas d’interruption, les objets déjà retirés peuvent se trouver sur
+le curseur. Les objets seulement autocraftables et les fluides du réseau restent à gérer dans
+AE2. Sur un terminal de fabrication, le panneau **Remplir** de l’établi se place à côté de
+**Réseau ME** sans le recouvrir.
 
 ## Remplir l’établi
 

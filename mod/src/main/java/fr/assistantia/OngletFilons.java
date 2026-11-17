@@ -191,6 +191,9 @@ public final class OngletFilons {
         }
     }
 
+    /** Identifiant et nom affiché de chaque bloc, normalisés une fois pour la recherche. */
+    private static final Map<String, String> TEXTES_BLOCS = new HashMap<>();
+
     private static String normaliser(String s) {
         return Normalizer.normalize(s, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "")
@@ -279,19 +282,28 @@ public final class OngletFilons {
         liste =
                 Filons.memoire().filonsDans(dimension).stream()
                         .filter(f -> !masquerVides || f.visible())
-                        .filter(
-                                f ->
-                                        q.isEmpty()
-                                                || normaliser(
-                                                                titre(f)
-                                                                        + " "
-                                                                        + String.join(
-                                                                                " ", f.composition))
-                                                        .contains(q))
+                        .filter(f -> q.isEmpty() || correspond(f, q, !masquerVides))
                         .sorted(ordre.thenComparing(f -> f.id))
                         .toList();
         if (liste.stream().noneMatch(f -> f.id.equals(selection)))
             selection = liste.isEmpty() ? "" : liste.get(0).id;
+    }
+
+    /**
+     * Le filon répond par un minerai cité (identifiant ou nom) encore disponible : un minerai
+     * épuisé dans ce filon ne le propose plus, ses autres minerais si. Sans minerai cité, son nom.
+     * {@code epuises} : « Épuisés visibles », tout ce qui est cité répond.
+     */
+    private static boolean correspond(FilonMemoire.Filon f, String q, boolean epuises) {
+        boolean cite = false;
+        for (String bloc : f.blocsConnus()) {
+            String texte =
+                    TEXTES_BLOCS.computeIfAbsent(bloc, b -> normaliser(b + " " + Filons.nom(b)));
+            if (!texte.contains(q)) continue;
+            if (epuises || f.matiereDisponible(FilonMemoire.matiere(bloc))) return true;
+            cite = true;
+        }
+        return !cite && normaliser(f.nom + " " + f.definition).contains(q);
     }
 
     private int premiereLigne() {
@@ -704,7 +716,8 @@ public final class OngletFilons {
                 int ly = haut - decalage + (i - premier) * DispositionFilons.MINERAI;
                 if (ly >= haut + hauteur) break;
                 var type = types.get(i);
-                String nombre = "× " + type.getValue();
+                boolean epuise = f.matiereEpuisee(FilonMemoire.matiere(type.getKey()));
+                String nombre = "× " + type.getValue() + (epuise ? " · épuisé" : "");
                 g.renderItem(Pont.objet(type.getKey()), dx, ly);
                 Theme.texte(
                         g,
@@ -721,7 +734,7 @@ public final class OngletFilons {
                         nombre,
                         dx + place - font.width(nombre),
                         ly + 4,
-                        Theme.TEXTE_SECONDAIRE,
+                        epuise ? Theme.JAUNE : Theme.TEXTE_SECONDAIRE,
                         false);
             }
             g.disableScissor();
@@ -856,12 +869,18 @@ public final class OngletFilons {
                                 + String.join(
                                         "\n",
                                         r.types().entrySet().stream()
-                                                .map(
-                                                        e ->
-                                                                e.getValue()
-                                                                        + " × "
-                                                                        + Filons.nom(e.getKey()))
-                                                .toList()));
+                                                .map(e -> ligneMinerai(f, e.getKey(), e.getValue()))
+                                                .toList()))
+                + (f.matieresEpuisees().isEmpty()
+                        ? ""
+                        : "\nMinerai épuisé (≤ "
+                                + FilonMemoire.POURCENT_PRESQUE_EPUISE
+                                + " % restant) : ce filon ne sort plus quand tu cherches ce minerai.");
+    }
+
+    private static String ligneMinerai(FilonMemoire.Filon f, String bloc, int nombre) {
+        boolean epuise = f.matiereEpuisee(FilonMemoire.matiere(bloc));
+        return nombre + " × " + Filons.nom(bloc) + (epuise ? " · épuisé ici" : "");
     }
 
     // ---------- Souris ----------

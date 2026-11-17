@@ -15,8 +15,27 @@ public final class FilonMemoire {
     /** Minerais présents mémorisés au plus, tous gisements confondus. */
     public static final int MAX_BLOCS = 400_000;
 
-    /** Proposition « Épuisé » : il reste au plus 10 % des minerais trouvés. */
+    /**
+     * Proposition « Épuisé » : il reste au plus 10 % des minerais trouvés. Le même seuil, appliqué
+     * à chaque minerai du gisement, le retire des recherches de ce seul minerai.
+     */
     public static final int POURCENT_PRESQUE_EPUISE = 10, MINIMUM_PRESQUE_EPUISE = 16;
+
+    /** Pierres hôtes d'un minerai, retirées de son nom (même liste que l'assistant Python). */
+    private static final String[] PIERRES = {
+        "deepslate_", "tuff_", "andesite_", "diorite_", "granite_", "red_granite_", "marble_",
+        "basalt_", "netherrack_", "endstone_", "sand_", "red_sand_", "gravel_", "blackstone_",
+        "calcite_", "stone_", "moon_", "mars_", "venus_", "mercury_", "glacio_"
+    };
+
+    /** « gtceu:deepslate_gold_ore » → « gold » : la matière, quelle que soit la pierre autour. */
+    public static String matiere(String bloc) {
+        String nom = bloc.substring(bloc.indexOf(':') + 1);
+        if (nom.endsWith("_ore")) nom = nom.substring(0, nom.length() - 4);
+        for (String pierre : PIERRES)
+            if (nom.startsWith(pierre)) nom = nom.substring(pierre.length());
+        return nom;
+    }
 
     public static final int RAYON_TP = 8;
 
@@ -135,6 +154,12 @@ public final class FilonMemoire {
         /** Le volume entier a été parcouru depuis le dernier « Scanner ». */
         boolean scanComplet;
 
+        /** Restants et minés par matière, et blocs connus ; recalculés quand le gisement change. */
+        private Map<String, int[]> comptesMatieres = Map.of();
+
+        private Set<String> blocsConnus = Set.of();
+        private long cleComptes = Long.MIN_VALUE;
+
         Filon(FilonMemoire memoire, String id, Position ancre) {
             this.memoire = memoire;
             this.id = id;
@@ -227,6 +252,67 @@ public final class FilonMemoire {
             return !estEpuise()
                     && total >= MINIMUM_PRESQUE_EPUISE
                     && presents * 100L <= (long) total * POURCENT_PRESQUE_EPUISE;
+        }
+
+        private void compterMatieres() {
+            long cle = ((revision * 31 + mines) * 31 + presents) * 31 + composition.hashCode();
+            if (cle == cleComptes) return;
+            int[] restantsType = new int[memoire.types.size()],
+                    minesType = new int[restantsType.length];
+            for (int i = 0; i < presents; i++) restantsType[typesBlocs[i]]++;
+            for (int i = 0; i < minesTypesNombre; i++) minesType[minesTypes[i]] += minesNombres[i];
+            Map<String, int[]> comptes = new TreeMap<>();
+            Set<String> blocs = new TreeSet<>(composition);
+            for (String bloc : composition) comptes.computeIfAbsent(matiere(bloc), m -> new int[2]);
+            for (int t = 0; t < restantsType.length; t++) {
+                if (restantsType[t] == 0 && minesType[t] == 0) continue;
+                String bloc = memoire.typeId(t);
+                blocs.add(bloc);
+                int[] c = comptes.computeIfAbsent(matiere(bloc), m -> new int[2]);
+                c[0] += restantsType[t];
+                c[1] += minesType[t];
+            }
+            comptesMatieres = Collections.unmodifiableMap(comptes);
+            blocsConnus = Collections.unmodifiableSet(blocs);
+            cleComptes = cle;
+        }
+
+        /** Restants et minés par matière (pierres confondues), composition GT comprise. */
+        public Map<String, int[]> comptesMatieres() {
+            compterMatieres();
+            return comptesMatieres;
+        }
+
+        /** Blocs de la composition et blocs déjà repérés ou minés dans ce gisement. */
+        public Set<String> blocsConnus() {
+            compterMatieres();
+            return blocsConnus;
+        }
+
+        /**
+         * Minerai épuisé dans ce gisement : après un scan complet, il en reste au plus 10 % des
+         * blocs trouvés (aucun trouvé compte aussi). Les autres minerais du gisement restent
+         * proposés ; sans scan complet le reste est inconnu et rien n'est conclu.
+         */
+        public boolean matiereEpuisee(String matiere) {
+            if (!scanComplet || scanEnAttente()) return false;
+            int[] c = comptesMatieres().get(matiere);
+            if (c == null) return false;
+            long trouves = (long) c[0] + c[1];
+            return c[0] * 100L <= trouves * POURCENT_PRESQUE_EPUISE;
+        }
+
+        /** Matières épuisées dans ce gisement, triées. */
+        public Set<String> matieresEpuisees() {
+            if (!scanComplet || scanEnAttente()) return Set.of();
+            Set<String> resultat = new TreeSet<>();
+            for (String m : comptesMatieres().keySet()) if (matiereEpuisee(m)) resultat.add(m);
+            return resultat;
+        }
+
+        /** Le gisement peut encore fournir cette matière : ni lui ni ce minerai ne sont épuisés. */
+        public boolean matiereDisponible(String matiere) {
+            return !estEpuise() && !matiereEpuisee(matiere);
         }
 
         public String quantite() {

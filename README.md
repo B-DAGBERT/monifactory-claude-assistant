@@ -27,6 +27,7 @@ chaque poste. Les conversations, relevés de coffres et filons restent locaux.
 | Calculer les besoins de production        | **Y → Base → Production…**, depuis l’arbre EMI ou un coffre ouvert pour utiliser son relevé courant.           |
 | Chercher les ingrédients                  | **Repérage**, à droite de Recipe Tree, doré pendant le scan. Un second clic arrête le scan.                    |
 | Récupérer dans un coffre                  | Panneau **Collecte → Prendre / Tout**, pour les besoins du scan actif.                                         |
+| Récupérer dans le réseau AE2              | Terminal ME ouvert : panneau **Réseau ME → Prendre / Tout**, un clic, pour l’arbre EMI choisi.                 |
 | Utiliser une machine                      | Contour rouge numéroté (avec **Repérage ON**), puis **Envoyer**. Récupérer soi-même les sorties.               |
 | Déclarer une fabrication lancée à la main | **Suivi → En cours de craft**, quantité puis confirmation.                                                     |
 | Suivre les lots et les priorités          | **Suivi**, groupes À lancer maintenant / À préparer. Le panneau machine classe aussi ses recettes compatibles. |
@@ -39,6 +40,7 @@ chaque poste. Les conversations, relevés de coffres et filons restent locaux.
 Le contenu des **Sophisticated Backpacks portés** compte dans les besoins, EMI et l’avancement.
 Les boutons de transfert utilisent les cases accessibles : sortir les ingrédients du sac pour les envoyer.
 **Filons → Scanner** parcourt tout le volume du filon et le compte restant suit le minage.
+Un minerai épuisé dans un filon (10 % ou moins restant) ne le fait plus sortir quand tu cherches ce minerai.
 **Vue**, **Blocs**, **Épaisseur**, **Intensité** et **Remplissage** règlent la surbrillance, sans
 toucher aux relevés.
 Survole un objet dans EMI pour voir **Dans ton backpack × N** lorsque le sac en contient.

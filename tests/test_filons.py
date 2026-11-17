@@ -31,7 +31,10 @@ class FilonsTests(unittest.TestCase):
                 "vein_files_stamp",
             }
             or isinstance(n, ast.Assign)
-            and any(isinstance(t, ast.Name) and t.id == "STONE_PREFIXES" for t in n.targets)
+            and any(
+                isinstance(t, ast.Name) and t.id in {"STONE_PREFIXES", "EXHAUSTED_PERCENT"}
+                for t in n.targets
+            )
         ]
         namespace = {"math": math}
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "assistant_mc.py", "exec"), namespace)
@@ -199,9 +202,39 @@ class FilonsTests(unittest.TestCase):
         self.assertTrue(redstone["complet"] and redstone["presque_epuise"])
         self.assertFalse(redstone["partiel"])
         self.assertEqual(redstone["t"], 1234)
+        self.assertTrue(redstone["minerai_epuise"] and by_material["ruby"]["minerai_epuise"])
         description = self.describe(veins, None)
         self.assertIn("100 blocs restants sur 1500 trouvés", description)
-        self.assertIn("presque épuisé", description)
+        self.assertIn("minerai épuisé dans ce gisement", description)
+        self.assertIn("aucun bloc trouvé au scan complet", description)
+
+    def test_one_exhausted_ore_does_not_exhaust_the_others(self):
+        # Or épuisé dans un filon de magnésite encore plein : seul l'or n'est plus proposé.
+        data = self.summary(
+            nom="Magnesite Vein",
+            composition=["gtceu:magnesite_ore", "gtceu:gold_ore", "gtceu:deepslate_gold_ore"],
+            restants=402,
+            mines=218,
+            trouves=620,
+            presque_epuise=False,
+            minerais={
+                "gtceu:magnesite_ore": [400, 0],
+                "gtceu:gold_ore": [1, 150],
+                "gtceu:deepslate_gold_ore": [1, 68],
+            },
+        )
+        veins = self.find(SimpleNamespace(read=lambda n: data if n == "filons_mod.json" else None))
+        by_material = {v["minerai"]: v for v in veins}
+        self.assertTrue(by_material["gold"]["minerai_epuise"])
+        self.assertFalse(by_material["magnesite"]["minerai_epuise"])
+        self.assertFalse(by_material["gold"]["presque_epuise"])
+        description = self.describe(veins, None)
+        self.assertLess(description.index("magnesite en"), description.index("gold en"))
+        self.assertIn("gold en 10 -20 30 (minecraft:overworld), minerai épuisé", description)
+        # Sans scan complet, le reste est inconnu : rien n'est conclu.
+        data["gisements"][0]["scan"] = "zone"
+        veins = self.find(SimpleNamespace(read=lambda n: data if n == "filons_mod.json" else None))
+        self.assertFalse(any(v["minerai_epuise"] for v in veins))
 
     def test_planet_stone_variants_are_one_material(self):
         data = self.summary(
@@ -385,7 +418,21 @@ class FilonsTests(unittest.TestCase):
                 timeout=60,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("21 scenarios filons valides", result.stdout)
+            self.assertIn("22 scenarios filons valides", result.stdout)
+
+
+class VeinSearchSourceTests(unittest.TestCase):
+    def test_search_and_recipe_sort_skip_an_exhausted_ore_only(self):
+        # Player report: gold mined out of a magnesite vein still listed it for "gold".
+        java = ROOT / "mod/src/main/java/fr/assistantia"
+        onglet = (java / "OngletFilons.java").read_text(encoding="utf-8")
+        self.assertIn("correspond(f, q, !masquerVides)", onglet)
+        self.assertIn("f.matiereDisponible(FilonMemoire.matiere(bloc))", onglet)
+        self.assertNotIn('String.join(" ", f.composition)', onglet)
+        utile = (java / "GregTechFilons.java").read_text(encoding="utf-8")
+        self.assertIn("if (!filon.matiereDisponible(FilonMemoire.matiere(bloc))) continue;", utile)
+        filons = (java / "Filons.java").read_text(encoding="utf-8")
+        self.assertIn("f.matieresEpuisees()", filons)
 
 
 if __name__ == "__main__":

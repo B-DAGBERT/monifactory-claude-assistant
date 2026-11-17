@@ -190,7 +190,7 @@ public final class AideEcran {
             cle = nouvelleCle;
             // L'arbre, ses réservations et le chargement EMI évoluent sans changer le stock.
             prochainCalcul = maintenant + 250_000_000L;
-            occupee = PanneauAssistant.occupee(ecranActuel);
+            occupee = PanneauAssistant.occupeeEtPanneau(ecranActuel);
             disposition =
                     propositions.isEmpty()
                             ? null
