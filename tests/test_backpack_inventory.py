@@ -50,11 +50,13 @@ public class ListTag extends Tag {private final java.util.List<CompoundTag> item
     "net.minecraft.world.item.ItemStack": """
 import net.minecraft.nbt.*;
 public class ItemStack {
- public static final ItemStack EMPTY=new ItemStack("",0); public final String id;private int count;private CompoundTag tag;
+ public static final ItemStack EMPTY=new ItemStack("",0); public final String id;private int count;private CompoundTag tag,caps;
  public ItemStack(String id,int n){this.id=id;count=n;}public int getCount(){return count;}public void setCount(int n){count=n;}
  public boolean isEmpty(){return count<=0||id.isEmpty();} public boolean hasTag(){return tag!=null;}public CompoundTag getTag(){return tag;}
  public String getItem(){return id;}public void setTag(CompoundTag t){tag=t;}
- public ItemStack copy(){var s=new ItemStack(id,count);s.tag=tag==null?null:tag.copy();return s;}
+ public ItemStack copy(){var s=new ItemStack(id,count);s.tag=tag==null?null:tag.copy();s.caps=caps==null?null:caps.copy();return s;}
+ public void setCaps(CompoundTag c){caps=c;}
+ public CompoundTag save(CompoundTag n){if(caps!=null)n.put("ForgeCaps",caps.copy());return n;}
  public static boolean matches(ItemStack a,ItemStack b){return a.id.equals(b.id)&&a.count==b.count&&java.util.Objects.equals(a.tag,b.tag);}
  public static ItemStack of(CompoundTag n){var s=new ItemStack(n.getString("id"),n.getInt("Count")); if(n.get("tag")!=null)s.tag=n.getCompound("tag").copy(); return s;}
 }

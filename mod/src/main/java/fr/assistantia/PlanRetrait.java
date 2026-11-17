@@ -41,6 +41,11 @@ public final class PlanRetrait {
     }
 
     public static <T> Resultat calculer(List<Stock<T>> stocks, List<Besoin<T>> besoins) {
+        return calculer(stocks, besoins, 0);
+    }
+
+    static <T> Resultat calculer(
+            List<Stock<T>> stocks, List<Besoin<T>> besoins, int finPrioritaire) {
         int n = stocks.size(), m = besoins.size(), fin = n + m + 1;
         List<List<Arc>> graphe = new ArrayList<>();
         for (int i = 0; i <= fin; i++) graphe.add(new ArrayList<>());
@@ -64,10 +69,14 @@ public final class PlanRetrait {
                 if (besoins.get(j).accepte().test(stocks.get(i).objet()))
                     lien(graphe, i + 1, n + 1 + j, q);
         }
-        // Réserver d'abord l'inventaire, puis compléter depuis le coffre.
+        // Réserver d'abord l'inventaire, puis les tampons, puis les autres coffres.
         // Les chemins résiduels réaffectent les variantes sans compter deux fois un objet.
         long fourni = augmenter(graphe, fin);
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < finPrioritaire; i++)
+            if (!stocks.get(i).inventaire())
+                sources.get(i).capacite = Math.max(0, stocks.get(i).quantite());
+        if (finPrioritaire > 0) fourni += augmenter(graphe, fin);
+        for (int i = finPrioritaire; i < n; i++)
             if (!stocks.get(i).inventaire())
                 sources.get(i).capacite = Math.max(0, stocks.get(i).quantite());
         fourni += augmenter(graphe, fin);

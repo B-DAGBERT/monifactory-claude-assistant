@@ -118,3 +118,68 @@ class ScenariosBasiques(Parcours, unittest.TestCase):
         self.assertCountEqual([c["x"] for c in r["coffres"]], [4, 3, 11])
         r = self.client.step(tampon=[])
         self.assertCountEqual([c["x"] for c in r["coffres"]], [3, 4, 3, 11])
+
+    def test_08_le_reperage_ne_propose_que_le_complement_des_tampons(self):
+        premier, second = "test:world|3|64|0", "test:world|4|64|0"
+        self.client.step(inventaire={"test:plate": 3})
+        self.demarrer(10)
+        r = self.rafraichir([coffre(12, n=24)])
+        self.assertEqual(r["quotas"], {"12": 7})
+
+        r = self.client.step(
+            tampon=[premier, second],
+            stock_tampons={premier: {"test:plate": 2}, second: {"test:plate": 3}},
+        )
+        self.assertEqual(r["quotas"], {"12": 2})
+        r = self.client.step(
+            inventaire={},
+            stock_tampons={premier: {"test:plate": 5}, second: {"test:plate": 3}},
+            ouvert=[12, 64, 0],
+            locaux={"test:plate": 24},
+        )
+        self.assertEqual(r["quotas"], {"12": 2})
+        self.assertEqual(r["selection"], {"test:plate": 2})
+        r = self.client.step(ouvert=[3, 64, 0], locaux={"test:plate": 5})
+        self.assertEqual(r["selection"], {"test:plate": 5})
+
+        r = self.client.step(stock_tampons={premier: {"test:plate": 5}, second: {"test:plate": 5}})
+        self.assertEqual(r["quotas"], {})
+        r = self.client.step(tampon=[premier])
+        self.assertEqual(r["quotas"], {"12": 5})
+        r = self.client.step(tampon=[])
+        self.assertEqual(r["quotas"], {"12": 7})
+
+    def test_09_les_sorties_dans_le_tampon_restent_a_receptionner(self):
+        tampon = "test:world|3|64|0"
+        self.demarrer()
+        self.client.step(lot={"item": "test:plate", "n": 2})
+        self.client.step(tampon=[tampon], stock_tampons={tampon: {"test:plate": 1}})
+        r = self.client.step(ouvert=[12, 64, 0], locaux={"test:plate": 1})
+        self.assertEqual(r["resultats"], {"test:plate": 2})
+        r = self.client.step(ouvert=[3, 64, 0], locaux={"test:plate": 1})
+        self.assertEqual(r["resultats"], {"test:plate": 1})
+        r = self.rafraichir([coffre(12)])
+        self.assertEqual(r["coffres"], [{"x": 12, "jaune": True}])
+        self.assertEqual(r["quotas"], {"12": 1})
+        self.assertEqual(r["resultats"], {"test:plate": 2})
+        self.assertEqual(r["restants"], {"test:plate": 2})
+        r = self.client.step(
+            stock_tampons={tampon: {"test:plate": 2}},
+            ouvert=[3, 64, 0],
+            locaux={"test:plate": 2},
+        )
+        self.assertEqual(r["coffres"], [])
+        self.assertEqual(r["selection"], {"test:plate": 2})
+        self.assertEqual(r["restants"], {"test:plate": 2})
+
+    def test_10_les_variantes_des_tampons_sont_reaffectees_avant_un_coffre_ordinaire(self):
+        flexible = {**noeud("test:a"), "ids": ["test:a", "test:b"]}
+        self.demarrer(arbre=noeud("test:result", enfants=[flexible, noeud("test:a")]))
+        premier, second = "test:world|3|64|0", "test:world|4|64|0"
+        self.client.step(
+            tampon=[premier, second],
+            stock_tampons={premier: {"test:a": 1}, second: {"test:b": 1}},
+        )
+        r = self.rafraichir([coffre(12, item="test:a", n=1)])
+        self.assertEqual(r["coffres"], [])
+        self.assertEqual(r["selection"], {})

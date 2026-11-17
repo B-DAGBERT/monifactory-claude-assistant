@@ -33,10 +33,11 @@ class ScanRefreshTests(unittest.TestCase):
         self.assertIn("versionAppliquee", tick)
         self.assertIn("appliquer();", tick)
 
-    def test_open_chest_counts_its_real_slots_first(self):
+    def test_open_chest_uses_live_slots_before_other_ordinary_chests(self):
         recherche = source("RechercheEmi")
         retrait = corps(recherche, "private static List<PlanRetrait.Prise> retraitDirect(")
-        self.assertLess(retrait.index("new ArrayList<>(locaux)"), retrait.index("stocksConnus("))
+        self.assertIn("CoffreTampon.pilesHorsMenu()", retrait)
+        self.assertLess(retrait.index("tous.addAll(debut, locaux)"), retrait.index("stocksConnus("))
         disponibles = corps(recherche, "public static Map<String, Integer> resultatsDisponibles()")
         self.assertIn("RetraitCoffre.coffreOuvert(", disponibles)
         panneau = corps(source("AideCoffre"), "public static void avantRendu(")
@@ -56,9 +57,11 @@ class ScanRefreshTests(unittest.TestCase):
     def test_buffer_beam_is_independent_of_ordinary_search_results(self):
         reperage = source("Reperage")
         rendu = corps(reperage, "public static void rendu(RenderLevelStageEvent event)")
-        self.assertIn("rechercheActive ? CoffreTampon.positionRepere() : null", rendu)
-        self.assertIn("hasChunkAt(tampon)", rendu)
-        self.assertIn("if (tampon == null && reperes.isEmpty())", rendu)
+        self.assertIn("rechercheActive ? CoffreTampon.positionsRepere()", rendu)
+        self.assertIn("if (coffresTampons.isEmpty() && reperes.isEmpty())", rendu)
+        self.assertLess(
+            rendu.index("for (BlockPos position : coffresTampons)"), rendu.index("faisceauTampon(")
+        )
         self.assertLess(rendu.index("faisceauTampon("), rendu.index("if (reperes.isEmpty())"))
         self.assertIn(
             "CoffreTampon.selectionne(", corps(reperage, "private static boolean visible(")

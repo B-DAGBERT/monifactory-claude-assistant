@@ -2,6 +2,7 @@ package fr.assistantia.compat.emi;
 
 import com.mojang.logging.LogUtils;
 import dev.emi.emi.api.stack.EmiStack;
+import fr.assistantia.CoffreTampon;
 import fr.assistantia.DispositionCoffre;
 import fr.assistantia.DispositionCoffre.Disposition;
 import fr.assistantia.InventaireJoueur;
@@ -39,7 +40,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * terminal, réservé auprès d'EMI, et dont l'appui comme le relâchement ne vont jamais au terminal.
  */
 final class TerminalMe {
-    private record Entree(long serial, EmiStack pile, int quantite) {}
+    private record Entree(long serial, Object cle, ItemStack pile, int quantite) {}
 
     private record Lot(long serial, ItemStack pile, int quantite) {}
 
@@ -63,6 +64,7 @@ final class TerminalMe {
             AbstractContainerMenu menu,
             InstantaneArbreEmi arbre,
             long inventaire,
+            long tampon,
             int menuRevision,
             List<Entree> stock,
             long lots,
@@ -136,12 +138,28 @@ final class TerminalMe {
         return menu != null;
     }
 
-    static List<PlanRetrait.Stock<EmiStack>> stock() {
+    static List<PlanRetrait.Stock<ItemStack>> stock() {
         if (vue == null || vue.menu() != courant() || !InventaireJoueur.disponible())
             return List.of();
-        return vue.stock().stream()
+        return stocks(vue.stock());
+    }
+
+    private static List<PlanRetrait.Stock<ItemStack>> stocks(List<Entree> entrees) {
+        return entrees.stream()
                 .map(e -> new PlanRetrait.Stock<>(e.pile(), e.quantite(), false))
                 .toList();
+    }
+
+    private static boolean memeStock(List<Entree> avant, List<Entree> apres) {
+        if (avant.size() != apres.size()) return false;
+        for (int i = 0; i < avant.size(); i++) {
+            var a = avant.get(i);
+            var b = apres.get(i);
+            if (a.serial() != b.serial()
+                    || a.quantite() != b.quantite()
+                    || !a.cle().equals(b.cle())) return false;
+        }
+        return true;
     }
 
     private static List<Entree> lire(AbstractContainerMenu actif, InstantaneArbreEmi arbre)
@@ -163,11 +181,10 @@ final class TerminalMe {
             if (choix == null) continue;
             long serial = (long) ACCES.serial().invoke(e);
             if (serial == -1 || !vus.add(serial)) continue;
-            var pile =
-                    ComparaisonEmi.pourInventaire(
-                            EmiStack.of((ItemStack) ACCES.pile().invoke(cle)));
-            if (choix.stream().anyMatch(v -> ComparaisonEmi.meme(pile, v)))
-                result.add(new Entree(serial, pile, (int) Math.min(1_000_000L, n)));
+            var pile = (ItemStack) ACCES.pile().invoke(cle);
+            var emi = ComparaisonEmi.pourInventaire(EmiStack.of(pile));
+            if (choix.stream().anyMatch(v -> ComparaisonEmi.meme(emi, v)))
+                result.add(new Entree(serial, cle, pile, (int) Math.min(1_000_000L, n)));
         }
         result.sort(java.util.Comparator.comparingLong(Entree::serial));
         return List.copyOf(result);
@@ -187,37 +204,40 @@ final class TerminalMe {
         }
         var instantane = InstantaneArbreEmi.lire(tree);
         var stock = lire(actif, instantane);
-        long revision = InventaireJoueur.revision(), lots = MachinesEmi.revisionLotsProduction();
+        long revision = InventaireJoueur.revision(),
+                revisionTampon = CoffreTampon.revision(),
+                lots = MachinesEmi.revisionLotsProduction();
         if (vue != null
                 && vue.menu() == actif
                 && vue.arbre() == instantane
                 && vue.inventaire() == revision
+                && vue.tampon() == revisionTampon
                 && vue.menuRevision() == actif.getStateId()
                 && vue.lots() == lots
-                && vue.stock().equals(stock)) return;
-        var personnels = InventaireArbreEmi.personnel();
-        var virtuels = InventaireArbreEmi.stocksVirtuels(personnels);
-        var physiques = new ArrayList<PlanRetrait.Stock<EmiStack>>();
-        for (var pile : personnels.inventory.values())
-            physiques.add(
-                    new PlanRetrait.Stock<>(
-                            pile, (int) Math.min(1_000_000L, pile.getAmount()), true));
+                && memeStock(vue.stock(), stock)) return;
+        var personnels = InventaireArbreEmi.physiques(InventaireArbreEmi.personnel());
+        var pilesTampon = CoffreTampon.piles();
+        var tampon = InventaireArbreEmi.stockTampon(pilesTampon);
+        var stockMe = InventaireArbreEmi.horsTampon(stocks(stock), pilesTampon);
+        var virtuels = InventaireArbreEmi.stocksVirtuels(personnels, tampon, stockMe);
+        var physiques = new ArrayList<>(personnels);
+        physiques.addAll(tampon);
         physiques.addAll(virtuels);
         int debut = physiques.size();
-        for (var e : stock) physiques.add(new PlanRetrait.Stock<>(e.pile(), e.quantite(), false));
+        physiques.addAll(stockMe);
         var retraits = new ArrayList<Lot>();
-        if (!stock.isEmpty())
+        if (stockMe.stream().anyMatch(s -> s.quantite() > 0))
             for (var prise :
                     PlanMachines.retraits(instantane.machines(), instantane.lots(), physiques)) {
                 var entree = stock.get(prise.index() - debut);
-                retraits.add(
-                        new Lot(entree.serial(), entree.pile().getItemStack(), prise.quantite()));
+                retraits.add(new Lot(entree.serial(), entree.pile(), prise.quantite()));
             }
         vue =
                 new Vue(
                         actif,
                         instantane,
                         revision,
+                        revisionTampon,
                         actif.getStateId(),
                         stock,
                         lots,

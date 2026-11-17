@@ -35,22 +35,39 @@ STUBS.update(
      public net.minecraft.world.entity.player.Player player=new net.minecraft.world.entity.player.Player();
      public net.minecraft.world.phys.HitResult hitResult;public net.minecraft.client.multiplayer.ClientPacketListener getConnection(){return connection;}}""",
         "net.minecraft.client.multiplayer.ClientPacketListener": "public class ClientPacketListener {}",
-        "net.minecraft.client.multiplayer.ClientLevel": """public class ClientLevel {
-     public final java.util.Map<net.minecraft.core.BlockPos,net.minecraft.world.level.block.entity.BlockEntity> blocks=new java.util.HashMap<>();
-     public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(net.minecraft.core.BlockPos p){return blocks.get(p);}
-     public State getBlockState(net.minecraft.core.BlockPos p){return new State();}
-     public boolean hasChunkAt(net.minecraft.core.BlockPos p){return true;}public Dim dimension(){return new Dim();}
-     public boolean isClientSide(){return true;}
-     public record Dim(){public String location(){return "test:world";}}
-     public record State(){public Object getBlock(){return new net.minecraft.world.level.block.ChestBlock();}
-      public boolean hasProperty(Object p){return false;}
-      public net.minecraft.world.level.block.state.properties.ChestType getValue(Object p){return net.minecraft.world.level.block.state.properties.ChestType.SINGLE;}}}""",
+        "net.minecraft.client.multiplayer.ClientLevel": """
+import java.util.*;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.properties.ChestType;
+
+public class ClientLevel {
+    private static final ChestBlock CHEST = new ChestBlock();
+    public final Map<BlockPos, BlockEntity> blocks = new HashMap<>();
+    public final Map<BlockPos, ChestType> types = new HashMap<>();
+    public final Set<BlockPos> unloaded = new HashSet<>();
+
+    public BlockEntity getBlockEntity(BlockPos pos) { return blocks.get(pos); }
+    public State getBlockState(BlockPos pos) { return new State(types.getOrDefault(pos, ChestType.SINGLE)); }
+    public boolean hasChunkAt(BlockPos pos) { return !unloaded.contains(pos); }
+    public Dim dimension() { return new Dim(); }
+    public boolean isClientSide() { return true; }
+    public record Dim() { public String location() { return "test:world"; } }
+    public record State(ChestType type) {
+        public Object getBlock() { return CHEST; }
+        public boolean hasProperty(Object property) { return true; }
+        public ChestType getValue(Object property) { return type; }
+    }
+}""",
         "net.minecraft.core.BlockPos": """public record BlockPos(int getX,int getY,int getZ) {
-     public BlockPos immutable(){return this;}public BlockPos relative(Object d){throw new AssertionError("single chest");}}""",
+     public BlockPos immutable(){return this;}
+     public BlockPos relative(int x){return new BlockPos(getX+x,getY,getZ);}}""",
         "net.minecraft.world.level.block.entity.BlockEntity": "public class BlockEntity {}",
         "net.minecraft.world.level.block.ChestBlock": """public class ChestBlock {
-     public static Object getConnectedDirection(Object state){return null;}}""",
-        "net.minecraft.world.level.block.state.properties.ChestType": "public enum ChestType {SINGLE}",
+     public static int getConnectedDirection(net.minecraft.client.multiplayer.ClientLevel.State state){
+         return state.type() == net.minecraft.world.level.block.state.properties.ChestType.LEFT ? 1 : -1;}}""",
+        "net.minecraft.world.level.block.state.properties.ChestType": "public enum ChestType {SINGLE, LEFT, RIGHT}",
         "net.minecraft.world.level.block.state.properties.BlockStateProperties": """public class BlockStateProperties {
      public static final Object CHEST_TYPE=new Object();}""",
         "net.minecraft.world.phys.HitResult": "public class HitResult {public enum Type{BLOCK} public Type getType(){return Type.BLOCK;}}",
@@ -86,15 +103,21 @@ HARNESS = """package fr.assistantia;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.item.*;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 
 public class CoffreTamponTest {
+    private static final Minecraft MC = Minecraft.getInstance();
+
     public static class StorageMenu extends AbstractContainerMenu {
         private final BlockPos position;
 
@@ -104,64 +127,137 @@ public class CoffreTamponTest {
 
     static void tick() { CoffreTampon.tick(new TickEvent.ClientTickEvent()); }
     static int stock() { return CoffreTampon.piles().stream().mapToInt(ItemStack::getCount).sum(); }
+    static int stockOutsideMenu() { return CoffreTampon.pilesHorsMenu().stream().mapToInt(ItemStack::getCount).sum(); }
 
-    public static void main(String[] args) {
-        var mc = Minecraft.getInstance();
-        var pos = new BlockPos(7, 90, -4);
-        var other = new BlockPos(7, 91, -4);
-        mc.level.blocks.put(pos, new BlockEntity());
-        mc.level.blocks.put(other, new BlockEntity());
-        var screen = new AbstractContainerScreen<>(new StorageMenu(pos));
-        mc.player.containerMenu = screen.getMenu();
+    static void toggle(BlockPos pos) {
+        MC.hitResult = new BlockHitResult(pos);
+        CoffreTampon.basculer(MC);
+    }
+
+    static AbstractContainerScreen<?> open(AbstractContainerMenu menu) {
+        MC.player.containerMenu = menu;
+        var screen = new AbstractContainerScreen<>(menu);
         CoffreTampon.ouvrir(new ScreenEvent.Init.Post(screen));
-        var stored = new ItemStack(new Item("test:iron"), 5);
-        RetraitCoffre.piles = List.of(stored);
-        tick();
-        assert stock() == 0 : "before initialization";
-        StockProduction.initialise = true;
-        tick();
-        mc.player.containerMenu = new AbstractContainerMenu();
+        return screen;
+    }
+
+    static AbstractContainerScreen<?> openChest(BlockPos pos) {
+        CoffreTampon.clic(new PlayerInteractEvent.RightClickBlock(MC.level, MC.player, pos));
+        return open(new ChestMenu());
+    }
+
+    static void close(AbstractContainerScreen<?> screen) {
+        MC.player.containerMenu = new AbstractContainerMenu();
         CoffreTampon.fermer(new ScreenEvent.Closing(screen));
         tick();
-        mc.hitResult = new BlockHitResult(pos);
-        CoffreTampon.basculer(mc);
-        assert stock() == 5 : "reuse the last authorized menu when selecting after close";
-        assert CoffreTampon.positionRepere().equals(pos);
-        assert CoffreTampon.selectionne("test:world", 7, 90, -4);
-        assert !CoffreTampon.selectionne("test:world", 7, 91, -4);
+    }
 
-        mc.player.containerMenu = new StorageMenu(pos);
-        var reopened = new AbstractContainerScreen<>(mc.player.containerMenu);
-        CoffreTampon.ouvrir(new ScreenEvent.Init.Post(reopened));
+    public static void main(String[] args) {
+        var pos = new BlockPos(7, 90, -4);
+        var left = new BlockPos(10, 90, -4);
+        var right = left.relative(1);
+        for (var block : List.of(pos, left, right)) MC.level.blocks.put(block, new BlockEntity());
+        MC.level.types.put(left, ChestType.LEFT);
+        MC.level.types.put(right, ChestType.RIGHT);
+
+        var screen = open(new StorageMenu(pos));
+        var item = new Item("test:iron");
+        var stored = new ItemStack(item, 5);
+        RetraitCoffre.piles = List.of(stored);
+        StockProduction.initialise = true;
+        tick();
+        close(screen);
+        toggle(pos);
+        assert stock() == 5 : "reuse the last authorized menu when selecting after close";
+        assert CoffreTampon.positionsRepere().equals(List.of(pos));
+        assert CoffreTampon.selectionne("test:world", 7, 90, -4);
+        assert !CoffreTampon.selectionne("test:another_world", 7, 90, -4);
+
+        toggle(right);
+        assert stock() == 5 : "marking a second chest keeps existing stock";
+        assert CoffreTampon.positionsRepere().equals(List.of(pos, right));
+        assert CoffreTampon.selectionne("test:world", 10, 90, -4);
+        assert CoffreTampon.selectionne("test:world", 11, 90, -4);
+        assert !CoffreTampon.contient("test:world", 10, 90, -4);
+        var doubleChest = openChest(left);
+        assert CoffreTampon.menuObserve() : "the other half identifies the same marked menu";
+        RetraitCoffre.piles = List.of(new ItemStack(item, 13));
+        StockProduction.initialise = false;
+        tick();
+        assert stock() == 5 : "wait for native initialization";
+        StockProduction.initialise = true;
+        tick();
+        assert stock() == 18 && stockOutsideMenu() == 5 : "omit only the double chest's snapshot";
+        assert CoffreTampon.contient("test:world", 10, 90, -4);
+        assert CoffreTampon.contient("test:world", 11, 90, -4);
+        var revision = CoffreTampon.revision();
+        tick();
+        assert CoffreTampon.revision() == revision : "unchanged snapshots keep the revision";
+        close(doubleChest);
+        assert !CoffreTampon.menuObserve() && stockOutsideMenu() == 18;
+        toggle(left);
+        assert stock() == 5 && CoffreTampon.positionsRepere().equals(List.of(pos));
+        assert !CoffreTampon.selectionne("test:world", 11, 90, -4);
+        toggle(left);
+        assert stock() == 18 : "reselecting a recently observed double chest counts it once";
+
+        var reopened = open(new StorageMenu(pos));
+        assert stockOutsideMenu() == 13;
+        RetraitCoffre.piles = List.of(stored);
         stored.count = 8;
         tick();
-        assert stock() == 8 : "deposit into a live native menu";
+        assert stock() == 21 && stockOutsideMenu() == 13 : "deposit into a live native menu";
         stored.count = 3;
         tick();
-        assert stock() == 3 : "withdrawal updates the exact amount";
+        assert stock() == 16 && stockOutsideMenu() == 13 : "withdrawal updates just that chest";
         RetraitCoffre.retrait = true;
-        mc.player.containerMenu = new AbstractContainerMenu();
-        CoffreTampon.fermer(new ScreenEvent.Closing(reopened));
-        assert stock() == 0 : "escape during transfer invalidates the cached stock";
-        assert CoffreTampon.positionRepere().equals(pos) : "selection remains visible";
+        close(reopened);
+        assert stock() == 13 : "escape during transfer invalidates only the affected snapshot";
+        assert CoffreTampon.positionsRepere().size() == 2 : "selections remain visible";
         RetraitCoffre.retrait = false;
-        CoffreTampon.basculer(mc);
-        CoffreTampon.basculer(mc);
-        assert stock() == 0 : "the invalidated estimate cannot be reused";
-        mc.player.containerMenu = new StorageMenu(pos);
-        CoffreTampon.ouvrir(new ScreenEvent.Init.Post(new AbstractContainerScreen<>(mc.player.containerMenu)));
+        toggle(pos);
+        toggle(pos);
+        assert stock() == 13 : "the invalidated snapshot cannot be reused";
+        reopened = open(new StorageMenu(pos));
         tick();
-        assert stock() == 3 : "a new native observation restores the authoritative stock";
-        mc.level.blocks.put(pos, new BlockEntity());
+        assert stock() == 16 : "a native observation restores the authoritative stock";
+        close(reopened);
+
+        MC.level.unloaded.add(right);
         tick();
-        assert stock() == 0 && CoffreTampon.positionRepere() == null : "replacement clears old stock";
+        assert stock() == 3 && CoffreTampon.positionsRepere().equals(List.of(pos));
+        MC.level.unloaded.clear();
+        assert stock() == 3 : "loading a chunk does not resurface its stale snapshot";
+        var reopenedDouble = openChest(right);
+        RetraitCoffre.piles = List.of(new ItemStack(item, 13));
+        tick();
+        close(reopenedDouble);
+        assert stock() == 16 && CoffreTampon.positionsRepere().size() == 2;
+
+        MC.level.types.put(left, ChestType.SINGLE);
+        tick();
+        assert stock() == 3 && CoffreTampon.positionsRepere().equals(List.of(pos)) : "split double";
+        MC.level.blocks.put(pos, new BlockEntity());
+        tick();
+        assert stock() == 0 && CoffreTampon.positionsRepere().isEmpty() : "replacement clears its stock";
+
+        toggle(pos);
+        reopened = open(new StorageMenu(pos));
+        tick();
+        assert stock() == 13;
+        close(reopened);
+        MC.connection = new ClientPacketListener();
+        assert stock() == 0 && CoffreTampon.positionsRepere().isEmpty() : "session scopes snapshots";
+        tick();
+        toggle(pos);
+        assert stock() == 0 && CoffreTampon.positionsRepere().equals(List.of(pos));
     }
 }
 """
 
 
 class BufferChestTests(unittest.TestCase):
-    def test_native_position_cached_selection_and_deposit(self):
+    def test_native_menu_lifecycle_for_multiple_marked_chests(self):
         java, javac = shutil.which("java"), shutil.which("javac")
         if not java or not javac:
             self.skipTest("JDK 17 requis")

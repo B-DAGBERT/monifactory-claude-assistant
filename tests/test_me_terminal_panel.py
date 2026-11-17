@@ -59,6 +59,18 @@ class MeTerminalPanelTests(unittest.TestCase):
         terminer = corps(self.terminal, "private static void terminer(String texte)")
         self.assertIn("actualiser();", terminer)
 
+    def test_panel_allocates_buffer_before_withdrawable_me_entries(self):
+        actualiser = corps(self.terminal, "private static void actualiser()")
+        self.assertIn("vue.tampon() == revisionTampon", actualiser)
+        self.assertIn("InventaireArbreEmi.horsTampon(stocks(stock), pilesTampon)", actualiser)
+        self.assertLess(
+            actualiser.index("physiques.addAll(tampon)"),
+            actualiser.index("int debut = physiques.size()"),
+        )
+        self.assertIn("physiques.addAll(stockMe)", actualiser)
+        self.assertIn("stock.get(prise.index() - debut)", actualiser)
+        self.assertIn("new Lot(entree.serial(), entree.pile(), prise.quantite())", actualiser)
+
     def test_crafting_panel_avoids_the_me_panel(self):
         self.assertIn("PanneauAssistant.poser(affiche, disposition.cadre());", self.terminal)
         self.assertIn("PanneauAssistant.occupeeEtPanneau(ecranActuel)", source("AideEcran"))

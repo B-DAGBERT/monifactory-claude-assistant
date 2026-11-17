@@ -2,12 +2,14 @@ package fr.assistantia.compat.emi;
 
 import dev.emi.emi.api.recipe.EmiPlayerInventory;
 import dev.emi.emi.api.stack.EmiStack;
-import fr.assistantia.InventaireJoueur;
 import fr.assistantia.CoffreTampon;
+import fr.assistantia.InventaireJoueur;
 import fr.assistantia.PlanRetrait;
 import fr.assistantia.ReceptionLots;
 import java.util.*;
 import net.minecraft.client.Minecraft;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
@@ -19,6 +21,12 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * Stock de calcul de l'arbre uniquement. Les remplisseurs et transferts gardent leurs vraies cases.
  */
 public final class InventaireArbreEmi {
+    private record Variante(Object objet, CompoundTag nbt, Tag capacites) {
+        Variante(ItemStack pile) {
+            this(pile.getItem(), pile.getTag(), pile.save(new CompoundTag()).get("ForgeCaps"));
+        }
+    }
+
     private static String precedent = "";
     private static Object ecran, connexion;
     private static int ticks;
@@ -38,10 +46,10 @@ public final class InventaireArbreEmi {
         var mc = Minecraft.getInstance();
         if (mc.player == null || !InventaireJoueur.disponible()) return natif;
         var resultat = personnel();
-        var stockMe = TerminalMe.stock();
-        var tampon = stockMe.isEmpty() ? CoffreTampon.piles() : List.<ItemStack>of();
-        for (var pile : tampon) ajouter(resultat, EmiStack.of(pile.copy()));
-        var reservations = stocksVirtuels(resultat, tampon);
+        var pilesTampon = CoffreTampon.piles();
+        var tampon = stockTampon(pilesTampon);
+        var stockMe = horsTampon(TerminalMe.stock(), pilesTampon);
+        var reservations = stocksVirtuels(physiques(resultat), tampon, stockMe);
         if (InventaireJoueur.sacs().isEmpty()
                 && stockMe.isEmpty()
                 && tampon.isEmpty()
@@ -56,13 +64,9 @@ public final class InventaireArbreEmi {
                 resultat.inventory.merge(
                         copie, copie, (a, b) -> a.getAmount() >= b.getAmount() ? a : b);
             }
-        for (var stock : stockMe)
-            ajouter(resultat, stock.objet().copy().setAmount(stock.quantite()));
-        for (var reserve : reservations) {
-            var pile = ComparaisonEmi.pourInventaire(reserve.objet()).setAmount(reserve.quantite());
-            resultat.inventory.merge(
-                    pile, pile, (a, b) -> a.copy().setAmount(a.getAmount() + b.getAmount()));
-        }
+        ajouter(resultat, tampon);
+        ajouter(resultat, stockMe);
+        ajouter(resultat, reservations);
         ORIGINES.put(resultat, natif);
         return resultat;
     }
@@ -80,21 +84,57 @@ public final class InventaireArbreEmi {
         return grilles;
     }
 
-    static List<PlanRetrait.Stock<EmiStack>> stocksVirtuels(EmiPlayerInventory personnels) {
-        return stocksVirtuels(personnels, List.of());
+    static List<PlanRetrait.Stock<EmiStack>> stockTampon(List<ItemStack> tampon) {
+        return tampon.stream()
+                .map(p -> new PlanRetrait.Stock<>(EmiStack.of(p), p.getCount(), true))
+                .toList();
     }
 
-    private static List<PlanRetrait.Stock<EmiStack>> stocksVirtuels(
-            EmiPlayerInventory personnels, List<ItemStack> tampon) {
-        var physiques =
-                personnels.inventory.values().stream()
-                        .map(
-                                s ->
-                                        new PlanRetrait.Stock<>(
-                                                s.copy(),
-                                                (int) Math.min(1_000_000L, s.getAmount()),
-                                                true))
-                        .toList();
+    /** Le terminal agrège ses bus de stockage. Conserver seulement l'excédent ME par variante. */
+    static List<PlanRetrait.Stock<EmiStack>> horsTampon(
+            List<PlanRetrait.Stock<ItemStack>> stockMe, List<ItemStack> tampon) {
+        if (stockMe.isEmpty()) return List.of();
+        var doublons = new HashMap<Variante, Long>();
+        for (var pile : tampon)
+            doublons.merge(new Variante(pile), (long) pile.getCount(), Long::sum);
+        var resultat = new ArrayList<PlanRetrait.Stock<EmiStack>>(stockMe.size());
+        for (var stock : stockMe) {
+            int quantite = stock.quantite();
+            if (!doublons.isEmpty()) {
+                var variante = new Variante(stock.objet());
+                long commun = Math.min(quantite, doublons.getOrDefault(variante, 0L));
+                if (commun > 0) {
+                    doublons.merge(variante, -commun, Long::sum);
+                    quantite -= (int) commun;
+                }
+            }
+            // Conserver les indices des entrées AE2, même quand une entrée est couverte.
+            resultat.add(
+                    new PlanRetrait.Stock<>(
+                            ComparaisonEmi.pourInventaire(EmiStack.of(stock.objet())),
+                            quantite,
+                            false));
+        }
+        return List.copyOf(resultat);
+    }
+
+    static List<PlanRetrait.Stock<EmiStack>> physiques(EmiPlayerInventory personnels) {
+        return personnels.inventory.values().stream()
+                .map(
+                        s ->
+                                new PlanRetrait.Stock<>(
+                                        s, (int) Math.min(1_000_000L, s.getAmount()), true))
+                .toList();
+    }
+
+    static List<PlanRetrait.Stock<EmiStack>> stocksVirtuels(
+            List<PlanRetrait.Stock<EmiStack>> personnels,
+            List<PlanRetrait.Stock<EmiStack>> tampon,
+            List<PlanRetrait.Stock<EmiStack>> stockMe) {
+        var observes = new ArrayList<>(tampon);
+        observes.addAll(stockMe);
+        var physiques = new ArrayList<>(personnels);
+        physiques.addAll(observes);
         var finaux =
                 CycleArbreEmi.credits().stream()
                         .map(
@@ -102,15 +142,7 @@ public final class InventaireArbreEmi {
                                         new PlanRetrait.Stock<>(
                                                 EmiStack.of(c.objet()), c.quantite(), true))
                         .toList();
-        var creditFinal =
-                sansTampon(
-                        finaux,
-                        tampon.stream()
-                                .map(
-                                        p ->
-                                                new PlanRetrait.Stock<>(
-                                                        EmiStack.of(p), p.getCount(), false))
-                                .toList());
+        var creditFinal = sansStockObserve(finaux, observes);
         var resultat = new ArrayList<>(MachinesEmi.reservationsArbre());
         resultat.addAll(creditFinal);
         resultat.addAll(MachinesEmi.creditsAcquis(physiques, creditFinal));
@@ -123,9 +155,14 @@ public final class InventaireArbreEmi {
     /** Les crédits de cible représentent ce qui a quitté les poches, parfois vers le tampon. */
     static List<PlanRetrait.Stock<EmiStack>> sansTampon(
             List<PlanRetrait.Stock<EmiStack>> credits, List<PlanRetrait.Stock<EmiStack>> tampon) {
-        return tampon.isEmpty()
+        return sansStockObserve(credits, tampon);
+    }
+
+    private static List<PlanRetrait.Stock<EmiStack>> sansStockObserve(
+            List<PlanRetrait.Stock<EmiStack>> credits, List<PlanRetrait.Stock<EmiStack>> stock) {
+        return stock.isEmpty()
                 ? credits
-                : ReceptionLots.credits(credits, tampon, List.of(), ComparaisonEmi::meme);
+                : ReceptionLots.credits(credits, stock, List.of(), ComparaisonEmi::meme);
     }
 
     public static EmiPlayerInventory composer(List<ItemStack> personnels, List<ItemStack> grilles) {
@@ -157,6 +194,13 @@ public final class InventaireArbreEmi {
                 cle, cle, (a, b) -> a.copy().setAmount(a.getAmount() + b.getAmount()));
     }
 
+    private static void ajouter(
+            EmiPlayerInventory inventaire, List<PlanRetrait.Stock<EmiStack>> stocks) {
+        for (var stock : stocks)
+            if (stock.quantite() > 0)
+                ajouter(inventaire, stock.objet().copy().setAmount(stock.quantite()));
+    }
+
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || ++ticks % 10 != 0) return;
@@ -172,18 +216,13 @@ public final class InventaireArbreEmi {
             }
             if (!InventaireJoueur.disponible()) return;
             var personnels = personnel();
-            var tampon = TerminalMe.stock().isEmpty() ? CoffreTampon.piles() : List.<ItemStack>of();
-            for (var pile : tampon) ajouter(personnels, EmiStack.of(pile.copy()));
-            var reservations = stocksVirtuels(personnels, tampon);
-            var physiques =
-                    personnels.inventory.values().stream()
-                            .map(
-                                    s ->
-                                            new PlanRetrait.Stock<>(
-                                                    s.copy(),
-                                                    (int) Math.min(1_000_000L, s.getAmount()),
-                                                    true))
-                            .toList();
+            var pilesTampon = CoffreTampon.piles();
+            var tampon = stockTampon(pilesTampon);
+            var stockMe = horsTampon(TerminalMe.stock(), pilesTampon);
+            var reservations = stocksVirtuels(physiques(personnels), tampon, stockMe);
+            ajouter(personnels, tampon);
+            ajouter(personnels, stockMe);
+            var physiques = physiques(personnels);
             boolean plisChanges = PLIS.actualiser(arbre, physiques, reservations);
             String cle =
                     CoffreTampon.revision()

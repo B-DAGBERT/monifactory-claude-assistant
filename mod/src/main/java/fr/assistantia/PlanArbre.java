@@ -20,6 +20,15 @@ public final class PlanArbre {
             long lots,
             List<PlanRetrait.Stock<T>> stocks,
             Function<Set<String>, Predicate<T>> accepte) {
+        return calculer(racine, lots, stocks, accepte, 0);
+    }
+
+    static <T> Resultat calculer(
+            ArbreCollecte.Noeud racine,
+            long lots,
+            List<PlanRetrait.Stock<T>> stocks,
+            Function<Set<String>, Predicate<T>> accepte,
+            int finPrioritaire) {
         List<PlanRetrait.Stock<T>> reserves = new ArrayList<>(stocks);
         int[] retraits = new int[stocks.size()];
         List<MemoireCollecte.Ingredient> manquants = new ArrayList<>();
@@ -46,7 +55,7 @@ public final class PlanArbre {
                                 accepte.apply(node.variantes()),
                                 node.variantes().isEmpty() ? 0 : quantite));
             }
-            var allocation = PlanRetrait.calculer(reserves, besoins);
+            var allocation = PlanRetrait.calculer(reserves, besoins, finPrioritaire);
             for (int i = 0; i < reserves.size(); i++) {
                 var stock = reserves.get(i);
                 int utilise = allocation.utilises().get(i);

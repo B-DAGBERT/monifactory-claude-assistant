@@ -52,8 +52,8 @@ public class CoffreTampon {
 """,
     "fr.assistantia.compat.emi.TerminalMe": """
 class TerminalMe {
- static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> stock = java.util.List.of();
- static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> stock(){return stock;}
+ static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> stock = java.util.List.of();
+ static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> stock(){return stock;}
 }
 """,
     "fr.assistantia.compat.emi.CoffresArbreEmi": """

@@ -109,7 +109,7 @@ public class InventaireArbreEmiTest {
         var classeMe = Class.forName("fr.assistantia.compat.emi.TerminalMe");
         var champMe = classeMe.getDeclaredField("stock");
         champMe.setAccessible(true);
-        champMe.set(null, List.of(new PlanRetrait.Stock<>(EmiStack.of(s("iron", 2)), 100, false)));
+        champMe.set(null, List.of(new PlanRetrait.Stock<>(s("iron", 2), 100, false)));
         var terminal = InventaireArbreEmi.completer(original);
         assert n(terminal, "iron") == 102 && n(original, "iron") == 2;
         assert n(InventaireArbreEmi.completer(terminal), "iron") == 102;
@@ -125,6 +125,46 @@ public class InventaireArbreEmiTest {
         CycleArbreEmi.acquis = List.of(new PlanRetrait.Stock<>(s("iron", 4), 4, true));
         assert n(InventaireArbreEmi.completer(original), "iron") == 7
                 : "des produits déjà crédités et rangés dans le tampon comptent une fois";
+        var outilTampon = s("outil", 1);
+        var outilMe = s("outil", 1);
+        tag = new net.minecraft.nbt.CompoundTag();
+        tag.putInt("charge", 1);
+        outilTampon.setCaps(tag);
+        tag = new net.minecraft.nbt.CompoundTag();
+        tag.putInt("charge", 2);
+        outilMe.setCaps(tag);
+        CoffreTampon.piles = List.of(s("iron", 3), s("iron", 2), s("copper", 4), a, outilTampon);
+        CoffreTampon.revision++;
+        champMe.set(
+                null,
+                List.of(
+                        new PlanRetrait.Stock<>(s("iron", 1), 4, false),
+                        new PlanRetrait.Stock<>(s("iron", 1), 4, false),
+                        new PlanRetrait.Stock<>(s("gold", 1), 6, false),
+                        new PlanRetrait.Stock<>(b, 2, false),
+                        new PlanRetrait.Stock<>(outilMe, 1, false)));
+        var reunis = InventaireArbreEmi.completer(original);
+        assert n(reunis, "iron") == 10 : "les piles équivalentes du tampon et du ME se recoupent";
+        assert n(reunis, "copper") == 4 && n(reunis, "gold") == 6
+                : "les stocks de variantes absentes de l'autre source s'ajoutent";
+        assert n(reunis, "circuit") == 3 : "des NBT différents restent deux variantes";
+        assert n(reunis, "outil") == 2 : "les capacités Forge distinctes ne se recoupent pas";
+        assert n(InventaireArbreEmi.completer(reunis), "iron") == 10;
+        MachinesEmi.obtenus = List.of(new PlanRetrait.Stock<>(EmiStack.of(s("iron", 7)), 7, true));
+        MachinesEmi.reservations =
+                List.of(new PlanRetrait.Stock<>(EmiStack.of(s("iron", 1)), 1, true));
+        assert n(InventaireArbreEmi.completer(original), "iron") == 11
+                : "les réceptions ne doublent pas le relevé et la réservation reste comptée";
+        MachinesEmi.obtenus = MachinesEmi.reservations = List.of();
+        tick();
+        assert n(EmiFavorites.last, "iron") == 10 && n(EmiFavorites.last, "copper") == 4;
+        champMe.set(null, List.of(new PlanRetrait.Stock<>(s("iron", 1), 3, false)));
+        tick();
+        assert n(EmiFavorites.last, "iron") == 7 && n(EmiFavorites.last, "gold") == 0
+                : "le stock tampon le plus élevé reste visible et la quantité ME rafraîchit EMI";
+        champMe.set(null, List.of());
+        assert n(InventaireArbreEmi.completer(reunis), "iron") == 7
+                : "la fermeture du terminal conserve le tampon";
         CycleArbreEmi.acquis = List.of();
         CoffreTampon.piles = List.of();
         CoffreTampon.revision++;

@@ -20,7 +20,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 /**
  * Les coffres qui contiennent ce que tu cherches (« trouve-moi mes torches ») : un contour cyan qui
  * pulse, visible à travers les murs, et au-dessus ce qu'il y a dedans (« Torch ×18 »), lisible même
- * de loin. Le coffre tampon a un faisceau violet dédié pendant le repérage.
+ * de loin. Chaque coffre tampon a un faisceau violet dédié pendant le repérage.
  */
 public final class Reperage {
     private static final float[] COULEUR_TAMPON = {0.74F, 0.42F, 1F};
@@ -41,15 +41,19 @@ public final class Reperage {
         if (mc.level == null || mc.player == null) return;
         boolean rechercheActive = RechercheEmi.actif(); // une fois par image, pas par coffre
         var reperes = rechercheActive ? RechercheEmi.reperes() : Pont.reperes();
-        BlockPos tampon = rechercheActive ? CoffreTampon.positionRepere() : null;
-        if (tampon != null && !mc.level.hasChunkAt(tampon)) tampon = null;
-        if (tampon == null && reperes.isEmpty()) return;
+        var coffresTampons = rechercheActive ? CoffreTampon.positionsRepere() : List.<BlockPos>of();
+        if (coffresTampons.isEmpty() && reperes.isEmpty()) return;
         Vec3 camera = event.getCamera().getPosition();
         PoseStack pose = event.getPoseStack();
         MultiBufferSource.BufferSource tampons = TAMPONS;
-        if (tampon != null)
+        for (BlockPos position : coffresTampons)
             faisceauTampon(
-                    pose, tampons, camera, tampon, event.getPartialTick(), mc.level.getGameTime());
+                    pose,
+                    tampons,
+                    camera,
+                    position,
+                    event.getPartialTick(),
+                    mc.level.getGameTime());
         if (reperes.isEmpty()) return;
         String dimension = mc.level.dimension().location().toString();
         float pulsation = (float) (0.65 + 0.35 * Math.sin(System.currentTimeMillis() / 220.0));

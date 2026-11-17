@@ -33,29 +33,32 @@ Avec une recette suivie, les cases utiles du backpack ouvert sont encadrées en 
 indique la quantité **À sortir** pour une fabrication après déduction des objets dans les poches.
 Les cases des poches, filtres et upgrades gardent leur affichage natif.
 
-## Coffre tampon
+## Coffres tampons
 
 Dans **Options → Contrôles → Assistant IA**, assigne une touche à **Choisir / désélectionner le coffre tampon**.
-Vise un coffre ou un tonneau et presse la touche. Si tu viens de l’ouvrir, son relevé est repris
-immédiatement. Sinon ouvre-le une fois pour relever son contenu. Tu peux rouvrir un coffre double
-par l’une ou l’autre moitié. Le même raccourci sur le coffre choisi retire la sélection.
+Vise un coffre ou un tonneau et presse la touche. Répète sur chaque coffre à ajouter. Si tu viens
+de l’ouvrir, son relevé est repris immédiatement. Sinon ouvre-le une fois pour relever son contenu.
+Les deux moitiés d’un coffre double comptent pour un seul tampon. La même touche sur un coffre
+déjà marqué retire ce coffre de la sélection.
 
-Le relevé entre dans le calcul de l’arbre EMI et du plan **Recette**. Une étape peut indiquer
-**Dans le coffre tampon**. Avec **Repérage** sur **ON**, un faisceau violet indique le tampon.
-Les résultats de recherche ordinaires l’ignorent. En ouvrant le coffre, tu peux utiliser
-**Prendre / Tout** si **Repérage** est actif. Dans Sophisticated Storage, retire à la main les objets
-des cases exclues du tri. Le dernier contenu relevé sert au calcul après fermeture. Rouvre le coffre
-après une modification automatique et sélectionne-le de nouveau après reconnexion ou changement de
-dimension. Quand le terminal ME fournit un stock à EMI, ce dernier couvre aussi les conteneurs que
-le réseau expose via ses bus de stockage.
+Les relevés entrent dans le calcul de l’arbre EMI et du plan **Recette**. Avec **Repérage** sur
+**ON**, un faisceau violet indique chaque tampon et les coffres ordinaires proposent seulement les
+quantités qui manquent encore. Tu peux utiliser **Prendre / Tout** dans un tampon ouvert. Dans
+Sophisticated Storage, retire à la main les objets des cases exclues du tri. Rouvre le coffre après
+une modification automatique. Sélectionne tes coffres de nouveau après reconnexion ou changement de
+dimension.
 
 ## Terminal ME
 
 Ouvre un terminal de stockage ou de fabrication AE2 avec un **Recipe Tree** sélectionné.
 L’arbre EMI compte les objets que le terminal annonce en stock, même avec un filtre de
-recherche. Le panneau **Réseau ME** a le même aspect que la **Collecte** des coffres et se
+recherche, et garde les relevés des tampons. Pour une même variante présente dans les deux sources,
+il retient la plus grande quantité. Le terminal fournit un total par variante, qui peut déjà inclure
+les tampons accessibles par un bus de stockage.
+
+Le panneau **Réseau ME** a le même aspect que la **Collecte** des coffres et se
 place hors du terminal ; EMI range ses listes autour de lui. Il montre chaque objet à retirer
-avec sa quantité et le total « N à prendre ». Le calcul déduit tes poches et ton sac, puis
+avec sa quantité et le total « N à prendre ». Le calcul déduit tes poches, ton sac et tes tampons, puis
 prend les composants déjà prêts avant de chercher les matières de leur branche.
 
 Un simple clic suffit : **Tout** retire tout ce qui manque à l’arbre, **Prendre** seulement

@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
@@ -30,6 +31,7 @@ public final class RechercheEmi {
     private static Set<String> resultatsPrets = Set.of();
     private static JsonObject derniereVue;
     private static Map<String, Integer> quantites = Map.of(), fabricationsPrecedentes = Map.of();
+    private static Map<String, Integer> portes = Map.of(), resultatsTampons = Map.of();
 
     /** Nombre d'objets à sortir de chaque conteneur surligné (position du premier bloc). */
     private static Map<String, Integer> aSortir = Map.of();
@@ -108,21 +110,24 @@ public final class RechercheEmi {
 
     public static Map<String, Integer> resultatsDisponibles() {
         if (!actif() || collecte == null || !InventaireJoueur.synchronise()) return Map.of();
-        Map<String, Integer> resultats = new HashMap<>();
+        Map<String, Integer> tampons = new HashMap<>(resultatsTampons);
+        Map<String, Integer> autres = new HashMap<>();
         quantites.forEach(
                 (id, n) -> {
-                    if (collecte.enFabrication(id)) resultats.put(id, n);
+                    if (collecte.enFabrication(id)) autres.put(id, n);
                 });
         // Le coffre ouvert compte tout de suite, sans attendre le relevé du serveur : le lot
-        // passe « À récupérer » avant que le joueur ne prenne son résultat.
+        // passe « À récupérer » avant le retrait. L'ouverture peut relire la même source que
+        // le cache, donc son stock complète seulement le groupe de coffres auquel il appartient.
         Map<String, Integer> ici = new HashMap<>();
         for (var item : RetraitCoffre.coffreOuvert()) {
-            var id = ForgeRegistries.ITEMS.getKey(item.getItem());
-            if (id != null && collecte.enFabrication(id.toString()))
-                ici.merge(id.toString(), item.getCount(), Integer::sum);
+            String id = identifiant(item);
+            if (collecte.enFabrication(id)) ajouter(ici, id, item.getCount());
         }
-        ici.forEach((id, n) -> resultats.merge(id, n, Math::max));
-        return Map.copyOf(resultats);
+        var groupeOuvert = CoffreTampon.menuObserve() ? tampons : autres;
+        ici.forEach((id, n) -> groupeOuvert.merge(id, n, Math::max));
+        autres.forEach((id, n) -> ajouter(tampons, id, n));
+        return Map.copyOf(tampons);
     }
 
     public static boolean resultatPret(Pont.Repere repere) {
@@ -169,11 +174,20 @@ public final class RechercheEmi {
         actualiserVue();
         var suivi = collecte;
         if (suivi == null || locaux.isEmpty()) return List.of();
-        List<PlanRetrait.Stock<String>> tous = new ArrayList<>(locaux);
+        boolean tamponOuvert = CoffreTampon.menuObserve();
+        var tampons =
+                stocksTampons(tamponOuvert ? CoffreTampon.pilesHorsMenu() : CoffreTampon.piles());
+        List<PlanRetrait.Stock<String>> tous = new ArrayList<>(tampons);
+        int debut = tamponOuvert ? 0 : tampons.size();
+        tous.addAll(debut, locaux);
         tous.addAll(stocksConnus(ouvert));
         List<PlanRetrait.Prise> prises = new ArrayList<>();
-        for (var prise : suivi.dansCoffres(tous))
-            if (prise.index() < locaux.size()) prises.add(prise);
+        int nombrePilesTampons = tampons.size() + (tamponOuvert ? locaux.size() : 0);
+        for (var prise : suivi.dansCoffres(tous, nombrePilesTampons, portes)) {
+            int index = prise.index() - debut;
+            if (index >= 0 && index < locaux.size())
+                prises.add(new PlanRetrait.Prise(index, prise.quantite()));
+        }
         return List.copyOf(prises);
     }
 
@@ -248,7 +262,15 @@ public final class RechercheEmi {
         fabricationsPrecedentes = cumul;
         collecte.reserver(Emi.reservationsFabrication());
         collecte.outilsMachines(Emi.outilsMachines());
-        Set<String> restants = collecte.actualiser(inventaire(), preuves);
+        var physiques = compter(InventaireJoueur.piles());
+        if (!portes.equals(physiques)) {
+            portes = physiques;
+            versionAppliquee = -1;
+        }
+        var inventaire = new HashMap<>(portes);
+        for (var credit : Emi.creditsFabrication())
+            ajouter(inventaire, identifiant(credit.objet()), credit.quantite());
+        Set<String> restants = collecte.actualiser(inventaire, preuves);
         if (collecte.version() != version) derniereVue = null;
         if (inventaireEnAttente || !restants.equals(demandes)) {
             inventaireEnAttente = false;
@@ -323,7 +345,7 @@ public final class RechercheEmi {
         // Invalider les quotas de l'ancien arbre. Le dernier relevé reste : ses coffres sont
         // recomptés pour le nouvel arbre dès que ses besoins sont connus.
         objets = Set.of();
-        quantites = Map.of();
+        quantites = resultatsTampons = Map.of();
         aSortir = Map.of();
         reperes = List.of();
         resultatsPrets = Set.of();
@@ -334,22 +356,22 @@ public final class RechercheEmi {
         actualiserCollecte();
     }
 
-    private static Map<String, Integer> inventaire() {
-        Map<String, Integer> stock = new HashMap<>();
-        var joueur = Minecraft.getInstance().player;
-        if (joueur != null) {
-            for (var item : InventaireJoueur.piles()) {
-                if (item.isEmpty() || !conforme.test(item)) continue;
-                var id = ForgeRegistries.ITEMS.getKey(item.getItem());
-                if (id != null) stock.merge(id.toString(), item.getCount(), Integer::sum);
-            }
-            for (var credit : Emi.creditsFabrication()) {
-                if (!conforme.test(credit.objet())) continue;
-                var id = ForgeRegistries.ITEMS.getKey(credit.objet().getItem());
-                if (id != null) stock.merge(id.toString(), credit.quantite(), Integer::sum);
-            }
-        }
+    private static Map<String, Integer> compter(List<net.minecraft.world.item.ItemStack> piles) {
+        Map<String, Integer> stock = new LinkedHashMap<>();
+        for (var pile : piles) ajouter(stock, identifiant(pile), pile.getCount());
         return stock;
+    }
+
+    private static void ajouter(Map<String, Integer> stock, String id, int nombre) {
+        if (!id.isEmpty())
+            stock.merge(id, nombre, (a, b) -> (int) Math.min(Integer.MAX_VALUE, (long) a + b));
+    }
+
+    private static List<PlanRetrait.Stock<String>> stocksTampons(
+            List<net.minecraft.world.item.ItemStack> piles) {
+        return compter(piles).entrySet().stream()
+                .map(e -> new PlanRetrait.Stock<>(e.getKey(), e.getValue(), false))
+                .toList();
     }
 
     private static void transmettre() {
@@ -406,7 +428,7 @@ public final class RechercheEmi {
         recette = contexte = "";
         attente = inventaireEnAttente = false;
         objets = demandes = Set.of();
-        quantites = Map.of();
+        quantites = portes = resultatsTampons = Map.of();
         aSortir = Map.of();
         reperes = List.of();
         resultatsPrets = Set.of();
@@ -441,12 +463,12 @@ public final class RechercheEmi {
             vider();
             return;
         }
-        if (++ticks % 2 == 0) actualiserCollecte();
+        if (++ticks % 2 == 0 || CoffreTampon.revision() != versionTamponAppliquee)
+            actualiserCollecte();
         actualiserVue();
         // Une acquisition (résultat pris à la main, objet rangé) refait la sélection tout de suite.
         var suivi = collecte;
         if (suivi != null
-                && releve != null
                 && (suivi.version() != versionAppliquee
                         || CoffreTampon.revision() != versionTamponAppliquee)
                 && !RetraitCoffre.occupe()) appliquer();
@@ -540,7 +562,8 @@ public final class RechercheEmi {
         revision++;
         var r = releve;
         Map<String, List<Pont.Repere>> positions = r == null ? Map.of() : horsTampon(r);
-        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
+        var tampons = stocksTampons(CoffreTampon.piles());
+        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>(tampons);
         List<String> groupes = new ArrayList<>();
         if (r != null)
             for (int i = 0; i < r.stocks().size(); i++) {
@@ -553,16 +576,26 @@ public final class RechercheEmi {
         Set<String> utiles = new java.util.LinkedHashSet<>(),
                 visibles = new java.util.LinkedHashSet<>();
         Map<String, Integer> selection = new HashMap<>(), parGroupe = new HashMap<>();
+        Map<String, Integer> dansTampons = new HashMap<>();
         Set<String> groupesPrets = new java.util.LinkedHashSet<>();
         for (var prise :
-                stocks.isEmpty() ? List.<PlanRetrait.Prise>of() : suivi.dansCoffres(stocks)) {
-            selection.merge(stocks.get(prise.index()).objet(), prise.quantite(), Integer::sum);
-            parGroupe.merge(groupes.get(prise.index()), prise.quantite(), Integer::sum);
-            utiles.add(stocks.get(prise.index()).objet());
-            visibles.add(groupes.get(prise.index()));
-            if (suivi.enFabrication(stocks.get(prise.index()).objet()))
-                groupesPrets.add(groupes.get(prise.index()));
+                stocks.isEmpty()
+                        ? List.<PlanRetrait.Prise>of()
+                        : suivi.dansCoffres(stocks, tampons.size(), portes)) {
+            String id = stocks.get(prise.index()).objet();
+            int index = prise.index() - tampons.size();
+            if (index < 0) {
+                if (suivi.enFabrication(id)) dansTampons.merge(id, prise.quantite(), Integer::sum);
+                continue;
+            }
+            String groupe = groupes.get(index);
+            selection.merge(id, prise.quantite(), Integer::sum);
+            parGroupe.merge(groupe, prise.quantite(), Integer::sum);
+            utiles.add(id);
+            visibles.add(groupe);
+            if (suivi.enFabrication(id)) groupesPrets.add(groupe);
         }
+        resultatsTampons = Map.copyOf(dansTampons);
         List<Pont.Repere> coffres = new ArrayList<>();
         for (String groupe : visibles) coffres.addAll(positions.get(groupe));
         objets = Set.copyOf(utiles);

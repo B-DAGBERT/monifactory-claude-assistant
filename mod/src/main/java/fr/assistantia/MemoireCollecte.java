@@ -63,7 +63,21 @@ public final class MemoireCollecte {
     }
 
     private List<PlanRetrait.Stock<String>> stocksPlanifies() {
+        return stocksPlanifies(Map.of(), Map.of());
+    }
+
+    private List<PlanRetrait.Stock<String>> stocksPlanifies(
+            Map<String, Integer> portes, Map<String, Integer> tampons) {
         var credits = new LinkedHashMap<>(observes);
+        // Un objet rangé dans un tampon a pu être déjà observé dans les poches. Seule
+        // la partie qui dépasse les poches actuelles peut recouvrir ce stock physique.
+        tampons.forEach(
+                (id, n) ->
+                        credits.put(
+                                id,
+                                Math.max(
+                                        portes.getOrDefault(id, 0),
+                                        credits.getOrDefault(id, 0) - n)));
         outilsMachines.forEach((id, n) -> credits.merge(id, n, Math::max));
         if (arbre != null && !reserves.isEmpty())
             deduireReservations(arbre, credits, new LinkedHashSet<>());
@@ -165,13 +179,30 @@ public final class MemoireCollecte {
 
     /** Réserves connues : composants d'abord, sans créditer un objet simplement repéré. */
     public List<PlanRetrait.Prise> dansCoffres(List<PlanRetrait.Stock<String>> coffres) {
-        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>(stocksPlanifies());
+        return dansCoffres(coffres, 0, Map.of());
+    }
+
+    /** Les premières piles sont des tampons physiques à allouer avant les autres coffres. */
+    List<PlanRetrait.Prise> dansCoffres(
+            List<PlanRetrait.Stock<String>> coffres,
+            int nombreTampons,
+            Map<String, Integer> portes) {
+        Map<String, Integer> tampons = new LinkedHashMap<>();
+        for (var stock : coffres.subList(0, nombreTampons))
+            tampons.merge(
+                    stock.objet(),
+                    stock.quantite(),
+                    (a, b) -> (int) Math.min(Integer.MAX_VALUE, (long) a + b));
+        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>(stocksPlanifies(portes, tampons));
         int offset = stocks.size();
+        int finPrioritaire = nombreTampons == 0 ? 0 : offset + nombreTampons;
         stocks.addAll(coffres);
         var prises =
                 arbre == null
-                        ? PlanRetrait.calculer(stocks, besoins).prises()
-                        : PlanArbre.calculer(arbre, lots, stocks, ids -> ids::contains).prises();
+                        ? PlanRetrait.calculer(stocks, besoins, finPrioritaire).prises()
+                        : PlanArbre.calculer(
+                                        arbre, lots, stocks, ids -> ids::contains, finPrioritaire)
+                                .prises();
         // Allocation physique unique : la part du lot attendu utilise seulement ce qui
         // n'a pas déjà été retenu pour les branches encore à fabriquer.
         Map<Integer, Integer> retenus = new LinkedHashMap<>();
@@ -196,7 +227,7 @@ public final class MemoireCollecte {
                                             new PlanRetrait.Besoin<String>(
                                                     e.getKey()::equals, e.getValue()))
                             .toList();
-            for (var prise : PlanRetrait.calculer(disponibles, resultats).prises())
+            for (var prise : PlanRetrait.calculer(disponibles, resultats, nombreTampons).prises())
                 retenus.merge(prise.index(), prise.quantite(), Integer::sum);
         }
         return retenus.entrySet().stream()

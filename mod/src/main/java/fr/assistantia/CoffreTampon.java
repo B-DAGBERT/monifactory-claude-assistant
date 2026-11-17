@@ -1,6 +1,8 @@
 package fr.assistantia;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -27,20 +29,32 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 /** Stock de planification relevé dans un menu ouvert avec l'accès natif du joueur. */
 public final class CoffreTampon {
+    private static final long DUREE_RELEVE = 60_000_000_000L;
+
     private record Bloc(BlockPos position, BlockEntity entite, BlockPos associe) {
         boolean identique(ClientLevel niveau) {
             return niveau.getBlockEntity(position) == entite
-                    && java.util.Objects.equals(associe, autreMoitie(niveau, position));
+                    && Objects.equals(associe, autreMoitie(niveau, position));
         }
     }
 
     private record Cible(ClientPacketListener connexion, ClientLevel niveau, List<Bloc> blocs) {
-        boolean contexte(Minecraft mc) {
-            return niveau == mc.level && connexion == mc.getConnection();
+        boolean valide(Minecraft mc) {
+            return mc.player != null
+                    && niveau == mc.level
+                    && connexion == mc.getConnection()
+                    && !modifie();
         }
 
         boolean contient(BlockPos position) {
             return blocs.stream().anyMatch(b -> b.position().equals(position));
+        }
+
+        boolean contient(String dimension, long x, long y, long z) {
+            return niveau.dimension().location().toString().equals(dimension)
+                    && blocs.stream()
+                            .map(Bloc::position)
+                            .anyMatch(p -> p.getX() == x && p.getY() == y && p.getZ() == z);
         }
 
         boolean charge() {
@@ -53,41 +67,64 @@ public final class CoffreTampon {
         }
 
         boolean memeCoffre(Cible autre) {
-            return autre != null
-                    && niveau == autre.niveau
+            return niveau == autre.niveau
                     && connexion == autre.connexion
                     && blocs.size() == autre.blocs.size()
                     && blocs.containsAll(autre.blocs);
         }
     }
 
-    private record Interaction(ClientLevel niveau, BlockPos position, long date) {}
+    private record Interaction(
+            ClientPacketListener connexion, ClientLevel niveau, BlockPos position, long date) {}
 
     private record Ouverture(AbstractContainerMenu menu, Cible coffre) {}
 
-    private record Releve(Cible coffre, List<ItemStack> piles) {}
+    private static final class Suivi {
+        private final Cible coffre;
+        // null si aucun menu synchronisé ne confirme le contenu courant.
+        private List<ItemStack> piles;
+        private long observeLe;
 
-    private static Cible cible;
+        private Suivi(Cible coffre) {
+            this.coffre = coffre;
+        }
+
+        private boolean actualiser(List<ItemStack> stock) {
+            observeLe = System.nanoTime();
+            if (piles != null && memesPiles(piles, stock)) return false;
+            piles = stock.stream().map(ItemStack::copy).toList();
+            return true;
+        }
+
+        private boolean disponible(Minecraft mc) {
+            return piles != null && coffre.valide(mc) && coffre.charge();
+        }
+    }
+
+    private static final List<Suivi> TAMPONS = new ArrayList<>();
     private static Ouverture ouverture;
     private static Interaction interaction;
-    private static Releve precedent;
-    private static long observeLe;
-    private static boolean releve;
-    private static List<ItemStack> piles = List.of();
+    private static Suivi precedent;
     private static long revision;
 
     private CoffreTampon() {}
 
     public static void basculer(Minecraft mc) {
-        if (mc.level == null || mc.getConnection() == null) return;
+        if (mc.player == null || mc.level == null || mc.getConnection() == null) return;
         if (!(mc.hitResult instanceof BlockHitResult hit)
                 || hit.getType() != HitResult.Type.BLOCK) {
             message(mc, "Vise un coffre ou un tonneau.");
             return;
         }
+        nettoyer(mc);
         BlockPos pos = hit.getBlockPos();
-        if (selectionActive() && cible.contient(pos)) {
-            effacer();
+        var tampon = TAMPONS.stream().filter(t -> t.coffre.contient(pos)).findFirst().orElse(null);
+        if (tampon != null) {
+            TAMPONS.remove(tampon);
+            if (tampon.piles != null
+                    && (precedent == null || tampon.observeLe - precedent.observeLe > 0))
+                precedent = tampon;
+            revision++;
             message(mc, "Coffre tampon désélectionné.");
             return;
         }
@@ -96,15 +133,17 @@ public final class CoffreTampon {
             message(mc, "Vise un coffre ou un tonneau compatible dont les blocs sont chargés.");
             return;
         }
-        effacer();
-        cible = nouvelle;
         revision++;
         if (precedent != null
-                && cible.memeCoffre(precedent.coffre())
-                && System.nanoTime() - observeLe <= 60_000_000_000L) {
-            actualiser(precedent.piles(), true);
+                && nouvelle.memeCoffre(precedent.coffre)
+                && System.nanoTime() - precedent.observeLe <= DUREE_RELEVE) {
+            TAMPONS.add(precedent);
+            precedent = null;
             message(mc, "Coffre tampon sélectionné.");
-        } else message(mc, "Coffre tampon sélectionné. Ouvre-le pour relever son contenu.");
+        } else {
+            TAMPONS.add(new Suivi(nouvelle));
+            message(mc, "Coffre tampon sélectionné. Ouvre-le pour relever son contenu.");
+        }
     }
 
     private static Cible identifier(Minecraft mc, BlockPos pos) {
@@ -144,7 +183,12 @@ public final class CoffreTampon {
     public static void clic(PlayerInteractEvent.RightClickBlock event) {
         var mc = Minecraft.getInstance();
         if (event.getLevel().isClientSide() && event.getEntity() == mc.player)
-            interaction = new Interaction(mc.level, event.getPos().immutable(), System.nanoTime());
+            interaction =
+                    new Interaction(
+                            mc.getConnection(),
+                            mc.level,
+                            event.getPos().immutable(),
+                            System.nanoTime());
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -169,6 +213,7 @@ public final class CoffreTampon {
         if (menu instanceof ChestMenu || menu instanceof ShulkerBoxMenu)
             return entree != null
                             && entree.niveau() == mc.level
+                            && entree.connexion() == mc.getConnection()
                             && System.nanoTime() - entree.date() <= 5_000_000_000L
                     ? entree.position()
                     : null;
@@ -187,19 +232,18 @@ public final class CoffreTampon {
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         var mc = Minecraft.getInstance();
-        if (cible != null) {
-            if (!cible.contexte(mc) || mc.player == null || cible.modifie()) effacer();
-            else if (!cible.charge()) actualiser(List.of(), false);
-        }
-        if (precedent != null
-                && (!precedent.coffre().contexte(mc)
-                        || !precedent.coffre().charge()
-                        || precedent.coffre().modifie())) precedent = null;
+        nettoyer(mc);
         if (!menuCourant(mc)) {
             ouverture = null;
             return;
         }
         if (!RetraitCoffre.occupe()) releverMenu();
+    }
+
+    private static void nettoyer(Minecraft mc) {
+        if (TAMPONS.removeIf(t -> !t.coffre.valide(mc))) revision++;
+        for (var tampon : TAMPONS) if (!tampon.coffre.charge()) invalider(tampon);
+        if (precedent != null && !precedent.disponible(mc)) precedent = null;
     }
 
     @SubscribeEvent
@@ -208,11 +252,12 @@ public final class CoffreTampon {
         if (ouverture == null
                 || !(event.getScreen() instanceof AbstractContainerScreen<?> ecran)
                 || ecran.getMenu() != ouverture.menu()
-                || !ouverture.coffre().contexte(mc)) return;
+                || !ouverture.coffre().valide(mc)) return;
         // Échap peut avoir déjà rendu son menu d'inventaire au joueur.
         if (RetraitCoffre.occupe()) {
-            if (ouverture.coffre().memeCoffre(cible)) actualiser(List.of(), false);
-            if (precedent != null && ouverture.coffre().memeCoffre(precedent.coffre()))
+            var tampon = tampon(ouverture.coffre());
+            if (tampon != null) invalider(tampon);
+            if (precedent != null && ouverture.coffre().memeCoffre(precedent.coffre))
                 precedent = null;
         } else if (menuCourant(mc)) releverMenu();
     }
@@ -221,9 +266,8 @@ public final class CoffreTampon {
         return ouverture != null
                 && mc.player != null
                 && mc.player.containerMenu == ouverture.menu()
-                && ouverture.coffre().contexte(mc)
-                && ouverture.coffre().charge()
-                && !ouverture.coffre().modifie();
+                && ouverture.coffre().valide(mc)
+                && ouverture.coffre().charge();
     }
 
     private static void releverMenu() {
@@ -231,12 +275,16 @@ public final class CoffreTampon {
         var stock = RetraitCoffre.pilesTampon(ouverture.menu());
         if (stock == null) return;
         var coffre = ouverture.coffre();
-        if (precedent == null
-                || !coffre.memeCoffre(precedent.coffre())
-                || !memesPiles(precedent.piles(), stock))
-            precedent = new Releve(coffre, stock.stream().map(ItemStack::copy).toList());
-        observeLe = System.nanoTime();
-        if (coffre.memeCoffre(cible)) actualiser(precedent.piles(), true);
+        var tampon = tampon(coffre);
+        if (tampon == null) {
+            if (precedent == null || !coffre.memeCoffre(precedent.coffre))
+                precedent = new Suivi(coffre);
+            precedent.actualiser(stock);
+            return;
+        }
+        boolean premier = tampon.piles == null;
+        if (tampon.actualiser(stock)) revision++;
+        if (premier) message(Minecraft.getInstance(), "Contenu du coffre tampon relevé.");
     }
 
     private static boolean memesPiles(List<ItemStack> a, List<ItemStack> b) {
@@ -245,23 +293,22 @@ public final class CoffreTampon {
         return true;
     }
 
-    private static void actualiser(List<ItemStack> stock, boolean connu) {
-        if (releve == connu && memesPiles(piles, stock)) return;
-        boolean premier = !releve && connu;
-        piles = stock;
-        releve = connu;
+    private static void invalider(Suivi tampon) {
+        if (tampon.piles == null) return;
+        tampon.piles = null;
         revision++;
-        if (premier) message(Minecraft.getInstance(), "Contenu du coffre tampon relevé.");
     }
 
-    private static void effacer() {
-        if (cible != null) revision++;
-        cible = null;
-        actualiser(List.of(), false);
+    private static Suivi tampon(Cible coffre) {
+        return TAMPONS.stream().filter(t -> t.coffre.memeCoffre(coffre)).findFirst().orElse(null);
+    }
+
+    private static Suivi tamponOuvert(Minecraft mc) {
+        return menuCourant(mc) ? tampon(ouverture.coffre()) : null;
     }
 
     public static boolean menuObserve() {
-        return menuCourant(Minecraft.getInstance()) && ouverture.coffre().memeCoffre(cible);
+        return tamponOuvert(Minecraft.getInstance()) != null;
     }
 
     public static long revision() {
@@ -269,33 +316,46 @@ public final class CoffreTampon {
     }
 
     public static List<ItemStack> piles() {
-        return disponible() ? piles : List.of();
+        return piles(Minecraft.getInstance(), null);
+    }
+
+    /** Relevés des autres tampons quand les cases du menu ouvert sont comptées en direct. */
+    static List<ItemStack> pilesHorsMenu() {
+        var mc = Minecraft.getInstance();
+        return piles(mc, tamponOuvert(mc));
+    }
+
+    private static List<ItemStack> piles(Minecraft mc, Suivi exclu) {
+        return TAMPONS.stream()
+                .filter(t -> t != exclu && t.disponible(mc))
+                .flatMap(t -> t.piles.stream())
+                .toList();
     }
 
     public static boolean contient(String dimension, long x, long y, long z) {
-        return disponible() && selectionne(dimension, x, y, z);
+        var mc = Minecraft.getInstance();
+        return TAMPONS.stream()
+                .anyMatch(t -> t.coffre.contient(dimension, x, y, z) && t.disponible(mc));
     }
 
     static boolean selectionActive() {
-        return cible != null && cible.contexte(Minecraft.getInstance());
+        var mc = Minecraft.getInstance();
+        return TAMPONS.stream().anyMatch(t -> t.coffre.valide(mc));
     }
 
-    static BlockPos positionRepere() {
-        if (!selectionActive() || !cible.charge() || cible.modifie()) return null;
-        return cible.blocs().get(0).position();
+    static List<BlockPos> positionsRepere() {
+        var mc = Minecraft.getInstance();
+        return TAMPONS.stream()
+                .filter(t -> t.coffre.charge() && t.coffre.valide(mc))
+                .map(t -> t.coffre.blocs().get(0).position())
+                .toList();
     }
 
     /** La position est exclue du repérage dès la sélection, avant le relevé du contenu. */
     public static boolean selectionne(String dimension, long x, long y, long z) {
-        return selectionActive()
-                && cible.niveau().dimension().location().toString().equals(dimension)
-                && cible.blocs().stream()
-                        .map(Bloc::position)
-                        .anyMatch(p -> p.getX() == x && p.getY() == y && p.getZ() == z);
-    }
-
-    private static boolean disponible() {
-        return releve && selectionActive() && cible.charge() && !cible.modifie();
+        var mc = Minecraft.getInstance();
+        return TAMPONS.stream()
+                .anyMatch(t -> t.coffre.contient(dimension, x, y, z) && t.coffre.valide(mc));
     }
 
     private static void message(Minecraft mc, String texte) {
