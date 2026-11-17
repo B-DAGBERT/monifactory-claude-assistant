@@ -5,6 +5,7 @@ import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.recipe.EmiRecipeCategory;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.CoffresConnus;
+import fr.assistantia.CoffreTampon;
 import fr.assistantia.InventaireJoueur;
 import fr.assistantia.Pont;
 import java.util.ArrayList;
@@ -70,7 +71,11 @@ final class PossessionsRecette {
     private static int ligne = -1, pause, centreX, centreZ;
     private static Object sourceBase, connexion;
     private static Map<String, Long> stock = Map.of();
-    private static long revision, revisionCoffres = -1, signatureInventaire, revisionCalculee = -1;
+    private static long revision,
+            revisionCoffres = -1,
+            revisionTampon = -1,
+            signatureInventaire,
+            revisionCalculee = -1;
     private static Map<String, Integer> lotsConnus = Map.of(), outilsConnus = Map.of();
     private static List<String> gtPosees = List.of(), gtRangees = List.of();
     private static long tensionMax;
@@ -102,7 +107,7 @@ final class PossessionsRecette {
         pause = 0;
         stock = Map.of();
         signatureInventaire = 0;
-        revisionCoffres = -1;
+        revisionCoffres = revisionTampon = -1;
         lotsConnus = outilsConnus = Map.of();
         sourceBase = null;
         revision++;
@@ -185,18 +190,32 @@ final class PossessionsRecette {
         }
         var coffres = CoffresConnus.etat();
         long signature = signature(InventaireJoueur.piles());
+        long tampon = CoffreTampon.revision();
         var lots = MachinesEmi.reservationsObjets();
         var outils = MachinesEmi.outilsObjets();
         if (signature == signatureInventaire
                 && coffres.revision() == revisionCoffres
+                && tampon == revisionTampon
                 && lots.equals(lotsConnus)
                 && outils.equals(outilsConnus)) return;
         if (coffres.revision() != revisionCoffres) recomposerPosees();
         signatureInventaire = signature;
         revisionCoffres = coffres.revision();
+        revisionTampon = tampon;
         lotsConnus = lots;
         outilsConnus = outils;
         Map<String, Long> totaux = new HashMap<>(coffres.objets());
+        for (var coffre : coffres.conteneurs())
+            if (CoffreTampon.contient(coffre.dimension(), coffre.x(), coffre.y(), coffre.z()))
+                coffre.objets()
+                        .forEach(
+                                (id, n) ->
+                                        totaux.computeIfPresent(
+                                                id, (k, total) -> total > n ? total - n : null));
+        for (var pile : CoffreTampon.piles()) {
+            var id = ForgeRegistries.ITEMS.getKey(pile.getItem());
+            if (id != null) totaux.merge(id.toString(), (long) pile.getCount(), Long::sum);
+        }
         for (ItemStack pile : InventaireJoueur.piles()) {
             if (pile.isEmpty()) continue;
             var id = ForgeRegistries.ITEMS.getKey(pile.getItem());

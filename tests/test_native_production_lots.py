@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = (
     "initial",
     "partial_cancel",
+    "manual_completion",
     "complete_move",
     "extension",
     "stock_changed",

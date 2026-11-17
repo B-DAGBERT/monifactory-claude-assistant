@@ -3,7 +3,9 @@ package fr.assistantia.compat.emi;
 import dev.emi.emi.api.recipe.EmiPlayerInventory;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.InventaireJoueur;
+import fr.assistantia.CoffreTampon;
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.ReceptionLots;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.inventory.CraftingContainer;
@@ -37,9 +39,12 @@ public final class InventaireArbreEmi {
         if (mc.player == null || !InventaireJoueur.disponible()) return natif;
         var resultat = personnel();
         var stockMe = TerminalMe.stock();
-        var reservations = stocksVirtuels(resultat);
+        var tampon = stockMe.isEmpty() ? CoffreTampon.piles() : List.<ItemStack>of();
+        for (var pile : tampon) ajouter(resultat, EmiStack.of(pile.copy()));
+        var reservations = stocksVirtuels(resultat, tampon);
         if (InventaireJoueur.sacs().isEmpty()
                 && stockMe.isEmpty()
+                && tampon.isEmpty()
                 && reservations.isEmpty()
                 && resultat.inventory.values().stream()
                         .noneMatch(pile -> pile.getKey() instanceof Fluid)) return natif;
@@ -76,6 +81,11 @@ public final class InventaireArbreEmi {
     }
 
     static List<PlanRetrait.Stock<EmiStack>> stocksVirtuels(EmiPlayerInventory personnels) {
+        return stocksVirtuels(personnels, List.of());
+    }
+
+    private static List<PlanRetrait.Stock<EmiStack>> stocksVirtuels(
+            EmiPlayerInventory personnels, List<ItemStack> tampon) {
         var physiques =
                 personnels.inventory.values().stream()
                         .map(
@@ -92,13 +102,30 @@ public final class InventaireArbreEmi {
                                         new PlanRetrait.Stock<>(
                                                 EmiStack.of(c.objet()), c.quantite(), true))
                         .toList();
+        var creditFinal =
+                sansTampon(
+                        finaux,
+                        tampon.stream()
+                                .map(
+                                        p ->
+                                                new PlanRetrait.Stock<>(
+                                                        EmiStack.of(p), p.getCount(), false))
+                                .toList());
         var resultat = new ArrayList<>(MachinesEmi.reservationsArbre());
-        resultat.addAll(finaux);
-        resultat.addAll(MachinesEmi.creditsAcquis(physiques, finaux));
+        resultat.addAll(creditFinal);
+        resultat.addAll(MachinesEmi.creditsAcquis(physiques, creditFinal));
         var deja = new ArrayList<>(physiques);
         deja.addAll(resultat);
         resultat.addAll(MachinesEmi.completerOutils(deja));
         return List.copyOf(resultat);
+    }
+
+    /** Les crédits de cible représentent ce qui a quitté les poches, parfois vers le tampon. */
+    static List<PlanRetrait.Stock<EmiStack>> sansTampon(
+            List<PlanRetrait.Stock<EmiStack>> credits, List<PlanRetrait.Stock<EmiStack>> tampon) {
+        return tampon.isEmpty()
+                ? credits
+                : ReceptionLots.credits(credits, tampon, List.of(), ComparaisonEmi::meme);
     }
 
     public static EmiPlayerInventory composer(List<ItemStack> personnels, List<ItemStack> grilles) {
@@ -145,7 +172,9 @@ public final class InventaireArbreEmi {
             }
             if (!InventaireJoueur.disponible()) return;
             var personnels = personnel();
-            var reservations = stocksVirtuels(personnels);
+            var tampon = TerminalMe.stock().isEmpty() ? CoffreTampon.piles() : List.<ItemStack>of();
+            for (var pile : tampon) ajouter(personnels, EmiStack.of(pile.copy()));
+            var reservations = stocksVirtuels(personnels, tampon);
             var physiques =
                     personnels.inventory.values().stream()
                             .map(
@@ -157,7 +186,9 @@ public final class InventaireArbreEmi {
                             .toList();
             boolean plisChanges = PLIS.actualiser(arbre, physiques, reservations);
             String cle =
-                    personnels.inventory.values().stream()
+                    CoffreTampon.revision()
+                            + "|"
+                            + personnels.inventory.values().stream()
                                     .map(s -> s.getId() + "|" + s.getNbt() + "|" + s.getAmount())
                                     .sorted()
                                     .toList()

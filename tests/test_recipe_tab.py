@@ -491,6 +491,9 @@ class RecipeTabScreenTests(unittest.TestCase):
 
 
 MEMORY_STUBS = {
+    "fr.assistantia.CoffreTampon": """public class CoffreTampon {
+ public static long revision(){return 0;}
+ public static boolean contient(String dimension,long x,long y,long z){return false;}}""",
     "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft I=new Minecraft();public static Minecraft getInstance(){return I;}
  public Niveau level;public Joueur player;public Object getConnection(){return null;}
  public static class Pos {public int x,z;public int getX(){return x;}public int getZ(){return z;}}
@@ -515,6 +518,7 @@ public class CoffresConnusTest {
   var lu=CoffresConnus.analyser(JsonParser.parseString(json).getAsJsonObject());
   assert lu.objets().get("minecraft:redstone")==8L:"large chest halves counted once (latest) plus nether barrel: "+lu.objets();
   assert lu.objets().get("gtceu:lv_bender")==1L;
+  assert lu.conteneurs().stream().anyMatch(c->c.x()==2 && c.y()==64 && c.z()==0);
   assert !lu.objets().containsKey("minecraft:diamond"):"outdated memory version ignored";
   assert lu.machines().equals(java.util.Set.of("gtceu:lv_alloy_smelter"));
   var vide=CoffresConnus.analyser(new JsonObject());

@@ -115,6 +115,21 @@ public class InventaireArbreEmiTest {
         assert n(InventaireArbreEmi.completer(terminal), "iron") == 102;
         champMe.set(null, List.of());
         assert InventaireArbreEmi.completer(terminal) == original;
+        // Le tampon couvre EMI sans devenir une case d'inventaire ou un résultat reçu.
+        CoffreTampon.piles = List.of(s("iron", 5));
+        CoffreTampon.revision++;
+        assert n(InventaireArbreEmi.completer(original), "iron") == 7;
+        assert n(original, "iron") == 2 && InventaireJoueur.piles.size() == 1;
+        tick();
+        assert n(EmiFavorites.last, "iron") == 7;
+        CycleArbreEmi.acquis = List.of(new PlanRetrait.Stock<>(s("iron", 4), 4, true));
+        assert n(InventaireArbreEmi.completer(original), "iron") == 7
+                : "des produits déjà crédités et rangés dans le tampon comptent une fois";
+        CycleArbreEmi.acquis = List.of();
+        CoffreTampon.piles = List.of();
+        CoffreTampon.revision++;
+        tick();
+        assert n(EmiFavorites.last, "iron") == 2;
         // Le fluide porté existe même sans sac ni lot. Un seau vide ne crée aucun stock.
         var drum = s("steel_drum", 1);
         var volume = new net.minecraft.nbt.CompoundTag();

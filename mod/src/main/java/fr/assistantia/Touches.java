@@ -36,11 +36,19 @@ public final class Touches {
                     GLFW.GLFW_KEY_I,
                     "key.categories.assistantia");
 
+    public static final KeyMapping COFFRE_TAMPON =
+            new KeyMapping(
+                    "key.assistantia.coffre_tampon",
+                    InputConstants.Type.KEYSYM,
+                    InputConstants.UNKNOWN.getValue(),
+                    "key.categories.assistantia");
+
     private Touches() {}
 
     public static void enregistrer(RegisterKeyMappingsEvent event) {
         event.register(OUVRIR);
         event.register(INFO);
+        event.register(COFFRE_TAMPON);
         TouchesMac.enregistrer(event);
     }
 
@@ -56,6 +64,9 @@ public final class Touches {
             if (mc.screen == null && mc.player != null) {
                 mc.setScreen(new EcranAssistant());
             }
+        }
+        while (COFFRE_TAMPON.consumeClick()) {
+            if (mc.screen == null && mc.player != null) CoffreTampon.basculer(mc);
         }
         while (INFO.consumeClick()) {
             if (mc.screen == null && mc.player != null) {

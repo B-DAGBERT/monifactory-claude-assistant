@@ -329,6 +329,21 @@ public final class MachinesEmi {
         if (!EnvoiMachine.occupe() && lots.annuler(id)) actualiserArbre();
     }
 
+    static boolean terminerLot(int id) {
+        var mc = Minecraft.getInstance();
+        Object actuel = actif();
+        if (EnvoiMachine.occupe()
+                || mc.player == null
+                || mc.level == null
+                || actuel == null
+                || actuel != arbre
+                || connexion != mc.getConnection()
+                || !dimension.equals(mc.level.dimension().location().toString())
+                || !lots.terminer(id, arbre)) return false;
+        actualiserArbre();
+        return true;
+    }
+
     public static void recalculer() {
         if (EnvoiMachine.occupe()) return;
         calculPrecedent = "";
@@ -398,10 +413,13 @@ public final class MachinesEmi {
                                 lot.fois(),
                                 lot.suivi().etat().texte,
                                 lot.suivi().annulable(),
-                                lot.suivi().totalRecu()
-                                        + "/"
-                                        + lot.suivi().total()
-                                        + " récupérés · "
+                                (lot.suivi().termineManuellement()
+                                                ? "Marqué terminé manuellement"
+                                                : lot.suivi().totalRecu()
+                                                        + "/"
+                                                        + lot.suivi().total()
+                                                        + " récupérés")
+                                        + " · "
                                         + lot.lieu(),
                                 2));
         lignes.sort(java.util.Comparator.comparingInt(Ligne::groupe));
@@ -481,7 +499,7 @@ public final class MachinesEmi {
                 .toList();
     }
 
-    /** Historique acquis du craft courant, sans doublon avec les poches ni les cibles finales. */
+    /** Avancement du craft courant, sans doublon avec les poches ni les cibles finales. */
     public static List<PlanRetrait.Stock<EmiStack>> creditsAcquis(
             List<PlanRetrait.Stock<EmiStack>> physiques,
             List<PlanRetrait.Stock<EmiStack>> dejaCredites) {
@@ -491,13 +509,8 @@ public final class MachinesEmi {
                 || mc.level == null
                 || connexion != mc.getConnection()
                 || !dimension.equals(mc.level.dimension().location().toString())) return List.of();
-        var acquis =
-                lots.actifs().stream()
-                        .flatMap(l -> l.suivi().obtenus().stream())
-                        .filter(s -> !s.objet().getItemStack().isEmpty())
-                        .toList();
         return fr.assistantia.ReceptionLots.credits(
-                acquis, physiques, dejaCredites, ComparaisonEmi::meme);
+                lots.avancement(arbre), physiques, dejaCredites, ComparaisonEmi::meme);
     }
 
     /** Acquis hors des poches partagés avec le scan, sans les remettre dans les lots attendus. */
@@ -511,10 +524,11 @@ public final class MachinesEmi {
                                                 EmiStack.of(c.objet()), c.quantite(), true))
                         .toList();
         var resultat = new ArrayList<>(finaux);
-        for (var credit : creditsAcquis(inventaire(), deja))
-            resultat.add(
-                    new PlanRetrait.Stock<>(
-                            credit.objet().getItemStack(), credit.quantite(), true));
+        for (var credit : creditsAcquis(inventaire(), deja)) {
+            var item = credit.objet().getItemStack();
+            if (!item.isEmpty())
+                resultat.add(new PlanRetrait.Stock<>(item, credit.quantite(), true));
+        }
         return List.copyOf(resultat);
     }
 
@@ -760,7 +774,8 @@ public final class MachinesEmi {
                 calculPrecedent = "";
                 instantane = vue;
             }
-            var stock = inventaire();
+            var personnels = inventaire();
+            var stock = new ArrayList<>(personnels);
             var finaux =
                     CycleArbreEmi.credits().stream()
                             .map(
@@ -779,21 +794,36 @@ public final class MachinesEmi {
                             + "|"
                             + fr.assistantia.CoffresConnus.etat().revision()
                             + "|"
-                            + fr.assistantia.CoffresConnus.zone();
+                            + fr.assistantia.CoffresConnus.zone()
+                            + "|"
+                            + fr.assistantia.CoffreTampon.revision();
             if (cle.equals(calculPrecedent)) return;
             calculPrecedent = cle;
             // Les réceptions sorties des poches gardent un crédit de travail accompli.
             // Les quantités restantes seules restent réservées et recherchées en jaune.
-            List<PlanRetrait.Stock<EmiStack>> horsPoches = new ArrayList<>(credites);
-            horsPoches.addAll(finaux);
-            for (var lot : lots.actifs()) {
-                stock.addAll(lot.suivi().restants());
-                horsPoches.addAll(lot.suivi().restants());
-            }
+            var attendus =
+                    lots.actifs().stream().flatMap(lot -> lot.suivi().restants().stream()).toList();
+            stock.addAll(attendus);
             toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
+            var tampon = AnalyseRecette.stockTampon();
+            var creditFinalUtile = finaux;
+            var creditsUtiles = credites;
+            if (!tampon.isEmpty()) {
+                stock = new ArrayList<>(personnels);
+                stock.addAll(tampon);
+                creditFinalUtile = InventaireArbreEmi.sansTampon(finaux, tampon);
+                creditsUtiles = creditsAcquis(stock, creditFinalUtile);
+                stock.addAll(creditsUtiles);
+                stock.addAll(creditFinalUtile);
+                stock.addAll(completerOutils(stock));
+                stock.addAll(attendus);
+            }
+            var horsPoches = new ArrayList<>(creditsUtiles);
+            horsPoches.addAll(creditFinalUtile);
+            horsPoches.addAll(attendus);
             var coffres = stockCoffres(vue, horsPoches);
-            if (coffres.isEmpty()) utiles = toutes;
+            if (tampon.isEmpty() && coffres.isEmpty()) utiles = toutes;
             else {
                 stock.addAll(coffres);
                 utiles = PlanMachines.calculer(vue.machines(), vue.lots(), stock);

@@ -33,6 +33,20 @@ Avec une recette suivie, les cases utiles du backpack ouvert sont encadrées en 
 indique la quantité **À sortir** pour une fabrication après déduction des objets dans les poches.
 Les cases des poches, filtres et upgrades gardent leur affichage natif.
 
+## Coffre tampon
+
+Dans **Options → Contrôles → Assistant IA**, assigne une touche à **Choisir / désélectionner le coffre tampon**.
+Vise un coffre ou un tonneau, presse la touche, puis ouvre le conteneur pour relever son contenu.
+Tu peux viser l’autre moitié d’un coffre double pour le rouvrir. Le même raccourci sur le coffre choisi
+retire la sélection.
+
+Le relevé entre dans le calcul de l’arbre EMI et du plan **Recette**. Une étape peut indiquer
+**Dans le coffre tampon**. Reprends les objets à la main ou utilise **Prendre / Tout** dans le
+coffre ouvert avec **Repérage**. Le dernier contenu relevé sert au calcul après fermeture. Rouvre le
+coffre après une modification automatique et sélectionne-le de nouveau après reconnexion ou changement
+de dimension. Quand le terminal ME fournit un stock à EMI, ce dernier couvre aussi les conteneurs que
+le réseau expose via ses bus de stockage.
+
 ## Terminal ME
 
 Ouvre un terminal de stockage ou de fabrication AE2 avec un **Recipe Tree** sélectionné.
@@ -94,6 +108,11 @@ L’ordre se réactualise avec les données utiles. La sélection reste attaché
 L’onglet **Y → Recette** numérote le plan avec le même calcul d’ordre, et les machines entourées en rouge affichent ces numéros. Il compte une machine posée comme disponible sans l’ouvrir et la mémoire des coffres comme stock à récupérer : ses rangs peuvent donc différer légèrement des groupes du suivi, qui exige le menu natif. Voir [l’ordonnancement](ordonnancement-machines.md#onglet-recette-et-repères-dans-le-monde).
 
 ## Suivi et reprise
+
+Dans **Suivi**, sélectionne un lot de machine en cours puis clique sur **Terminer** quand sa
+fabrication est finie. Cette validation clôt tout le lot et retire les sorties de la liste des
+attentes. L’arbre EMI en cours en tient compte. Les réceptions constatées restent enregistrées
+séparément.
 
 Le bouton **Suivi** est placé à côté de **Repérage**, en bas d’EMI. Dans le panneau d’une machine, **En cours de craft** permet directement de déclarer le lot sélectionné. Chaque ligne affiche le produit, le nombre de fabrications et son état :
 

@@ -34,12 +34,14 @@ public final class OrdreMachines {
     /** Débuts des raisons précises, lus par l'onglet Recette pour son texte court. */
     public static final String DU_SAC = "À sortir du backpack : ",
             D_UN_COFFRE = "À prendre dans un coffre : ",
+            DU_TAMPON = "À prendre dans le coffre tampon : ",
             A_REPRENDRE = "À reprendre en main : ";
 
     public enum Origine {
         POCHES,
         MACHINE,
         SAC,
+        TAMPON,
         COFFRE,
         DEPLACER
     }
@@ -513,28 +515,32 @@ public final class OrdreMachines {
         String provenance(List<Regle<T>> regles) {
             Set<String> sac = new LinkedHashSet<>(),
                     ailleurs = new LinkedHashSet<>(),
-                    coffre = new LinkedHashSet<>();
+                    coffre = new LinkedHashSet<>(),
+                    tampon = new LinkedHashSet<>();
             for (var regle : regles) {
                 if (regle.quantite() == 0) continue;
                 var sources = correspondances.computeIfAbsent(regle, this::sources);
-                long direct = 0, enSac = 0, enCoffre = 0, autre = 0;
+                long direct = 0, enSac = 0, enCoffre = 0, enTampon = 0, autre = 0;
                 for (int i = sources.nextSetBit(0); i >= 0; i = sources.nextSetBit(i + 1)) {
                     long q = Math.max(0, stock.get(i).stock().quantite());
                     switch (stock.get(i).origine()) {
                         case POCHES, MACHINE -> direct += q;
                         case SAC -> enSac += q;
                         case COFFRE -> enCoffre += q;
+                        case TAMPON -> enTampon += q;
                         case DEPLACER -> autre += q;
                     }
                 }
                 if (direct >= regle.quantite()) continue;
                 if (enSac > 0) sac.add(regle.nom());
                 else if (autre > 0) ailleurs.add(regle.nom());
+                else if (enTampon > 0) tampon.add(regle.nom());
                 else if (enCoffre > 0) coffre.add(regle.nom());
             }
             List<String> parties = new ArrayList<>();
             if (!sac.isEmpty()) parties.add(DU_SAC + String.join(", ", sac));
             if (!ailleurs.isEmpty()) parties.add(A_REPRENDRE + String.join(", ", ailleurs));
+            if (!tampon.isEmpty()) parties.add(DU_TAMPON + String.join(", ", tampon));
             if (!coffre.isEmpty()) parties.add(D_UN_COFFRE + String.join(", ", coffre));
             return parties.isEmpty() ? A_RECUPERER : String.join(" · ", parties);
         }

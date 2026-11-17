@@ -20,7 +20,7 @@ public final class LotFabrication<T> {
     private final List<PlanRetrait.Stock<T>> attendu;
     private int[] recus;
     private final BiPredicate<T, T> meme;
-    private boolean annule, disponible, receptionNonAttribuee;
+    private boolean annule, termineManuellement, disponible, receptionNonAttribuee;
 
     public LotFabrication(List<PlanRetrait.Stock<T>> attendu, BiPredicate<T, T> meme) {
         this.attendu = new ArrayList<>(attendu);
@@ -30,7 +30,7 @@ public final class LotFabrication<T> {
 
     /** Agrandir le lot choisi conserve ses réceptions réelles et son identité dans le suivi. */
     public boolean ajouter(List<PlanRetrait.Stock<T>> supplement) {
-        if (annule) return false;
+        if (annule || termineManuellement) return false;
         for (var pile : supplement) {
             if (pile.quantite() <= 0) continue;
             int index = -1;
@@ -73,7 +73,7 @@ public final class LotFabrication<T> {
     }
 
     public List<PlanRetrait.Stock<T>> restants() {
-        if (annule) return List.of();
+        if (annule || termineManuellement) return List.of();
         List<PlanRetrait.Stock<T>> reste = new ArrayList<>();
         for (int i = 0; i < recus.length; i++)
             if (recus[i] < attendu.get(i).quantite())
@@ -96,7 +96,7 @@ public final class LotFabrication<T> {
 
     public List<PlanRetrait.Stock<T>> recevoir(
             List<PlanRetrait.Stock<T>> gains, boolean origineProuvee) {
-        if (annule) return gains;
+        if (annule || termineManuellement) return gains;
         List<PlanRetrait.Stock<T>> nonUtilises = new ArrayList<>();
         for (var gain : gains) {
             int reste = gain.quantite();
@@ -117,11 +117,22 @@ public final class LotFabrication<T> {
     }
 
     public void annuler() {
-        annule = true;
+        if (annulable()) annule = true;
+    }
+
+    /** La déclaration clôt le lot sans fabriquer de preuve de réception. */
+    public boolean terminerManuellement() {
+        if (!annulable()) return false;
+        termineManuellement = true;
+        return true;
+    }
+
+    public boolean termineManuellement() {
+        return termineManuellement;
     }
 
     public boolean annulable() {
-        return !annule && totalRecu() < total();
+        return !annule && !termineManuellement && totalRecu() < total();
     }
 
     public int total() {
@@ -134,7 +145,7 @@ public final class LotFabrication<T> {
 
     public Etat etat() {
         if (annule) return Etat.ANNULE;
-        if (total() > 0 && totalRecu() >= total()) return Etat.TERMINE;
+        if (termineManuellement || total() > 0 && totalRecu() >= total()) return Etat.TERMINE;
         return disponible ? Etat.A_RECUPERER : Etat.EN_MACHINE;
     }
 }

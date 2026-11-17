@@ -25,6 +25,7 @@ final class SuiviLotsEmi {
     private final Runnable changement;
     private final Supplier<Object> provenance;
     private final java.util.Map<Integer, Object> origines = new java.util.HashMap<>();
+    private final java.util.Map<Integer, Object> arbresTermines = new java.util.HashMap<>();
     private List<PlanRetrait.Stock<EmiStack>> inventaireAssimile;
     private final ReceptionManuelle<EmiStack> receptionManuelle =
             new ReceptionManuelle<>(ComparaisonEmi::meme);
@@ -106,6 +107,7 @@ final class SuiviLotsEmi {
     void vider() {
         lots.clear();
         origines.clear();
+        arbresTermines.clear();
         inventaireAssimile = null;
         oublierInterface();
         receptionManuelle.vider();
@@ -120,6 +122,29 @@ final class SuiviLotsEmi {
                 return true;
             }
         return false;
+    }
+
+    boolean terminer(int id, Object arbre) {
+        if (arbre == null) return false;
+        for (var lot : lots)
+            if (lot.id() == id && lot.suivi().terminerManuellement()) {
+                arbresTermines.put(id, arbre);
+                modifie();
+                return true;
+            }
+        return false;
+    }
+
+    /** Les sorties confirmées par le joueur comptent uniquement pour le calcul de cet arbre. */
+    List<PlanRetrait.Stock<EmiStack>> avancement(Object arbre) {
+        return lots.stream()
+                .flatMap(
+                        lot ->
+                                arbre != null && arbresTermines.get(lot.id()) == arbre
+                                        ? lot.suivi().attendus().stream()
+                                        : lot.suivi().obtenus().stream()
+                                                .filter(s -> !s.objet().getItemStack().isEmpty()))
+                .toList();
     }
 
     boolean completer(int id, EmiRecipe recette, int supplement) {

@@ -64,7 +64,7 @@ public final class CoffresConnus {
 
     /** Un coffre retenu, position connue, avec son contenu. */
     public record Conteneur(
-            String dimension, long x, long z, String bloc, Map<String, Long> objets) {}
+            String dimension, long x, long y, long z, String bloc, Map<String, Long> objets) {}
 
     /** Rayon, en blocs à l'horizontale, des coffres que le plan compte comme à portée. */
     public static final int RAYON_PLAN = 256;
@@ -72,7 +72,7 @@ public final class CoffresConnus {
     private static final Etat VIDE =
             new Etat(null, ABSENT, ABSENT, Map.of(), Set.of(), List.of(), 0, false);
 
-    private record CleProches(long revision, String zone) {}
+    private record CleProches(long revision, long tampon, String zone) {}
 
     private static CleProches cleProches;
     private static Map<String, Long> proches = Map.of(), enMachines = Map.of();
@@ -136,11 +136,23 @@ public final class CoffresConnus {
             cleProches = null;
             return;
         }
-        var cle = new CleProches(etat.revision(), zone());
+        var cle = new CleProches(etat.revision(), CoffreTampon.revision(), zone());
         if (cle.equals(cleProches)) return;
         var pos = mc.player.blockPosition();
         String dimension = mc.level.dimension().location().toString();
-        proches = proches(etat.conteneurs(), dimension, pos.getX(), pos.getZ(), RAYON_PLAN, false);
+        proches =
+                proches(
+                        etat.conteneurs().stream()
+                                .filter(
+                                        c ->
+                                                !CoffreTampon.contient(
+                                                        c.dimension(), c.x(), c.y(), c.z()))
+                                .toList(),
+                        dimension,
+                        pos.getX(),
+                        pos.getZ(),
+                        RAYON_PLAN,
+                        false);
         enMachines =
                 proches(etat.conteneurs(), dimension, pos.getX(), pos.getZ(), RAYON_PLAN, true);
         cleProches = cle;
@@ -320,7 +332,8 @@ public final class CoffresConnus {
             }
             if (r.cle() != null && !contenu.isEmpty())
                 conteneurs.add(
-                        new Conteneur(r.dimension(), r.x(), r.z(), r.bloc(), Map.copyOf(contenu)));
+                        new Conteneur(
+                                r.dimension(), r.x(), r.y(), r.z(), r.bloc(), Map.copyOf(contenu)));
         }
         Set<String> machines = new HashSet<>();
         for (var json : new JsonObject[] {memoire, fusion}) {

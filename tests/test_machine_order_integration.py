@@ -52,6 +52,10 @@ STUBS.update(
  public static boolean synced=true;public static java.util.List<net.minecraft.world.item.ItemStack> bags=java.util.List.of();
  public static boolean disponible(){return synced;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return bags;}}""",
         "fr.assistantia.Pont": """public class Pont {public static net.minecraft.world.item.ItemStack objet(String id){return new net.minecraft.world.item.ItemStack(id,1);}}""",
+        "fr.assistantia.CoffreTampon": """public class CoffreTampon {
+ public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
+ public static boolean menuObserve(){return false;}
+ public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}}""",
         "fr.assistantia.StockProduction": """public class StockProduction {
  public static com.google.gson.JsonObject packet;public static int reads;
  public static com.google.gson.JsonObject capturer(long t){reads++;return packet;}}""",

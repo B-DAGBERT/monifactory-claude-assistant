@@ -7,6 +7,7 @@ import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.ArbreEmi;
 import fr.assistantia.CoffresConnus;
+import fr.assistantia.CoffreTampon;
 import fr.assistantia.InventaireJoueur;
 import fr.assistantia.LotFabrication;
 import fr.assistantia.OrdreMachines;
@@ -808,6 +809,8 @@ public final class AnalyseRecette {
                         + "|"
                         + CoffresConnus.zone()
                         + "|"
+                        + CoffreTampon.revision()
+                        + "|"
                         + lotsEnMarche()
                         + "|"
                         + InventaireJoueur.disponible();
@@ -844,6 +847,7 @@ public final class AnalyseRecette {
                 // récupérer : comme pour la surbrillance des machines d'un arbre suivi.
                 var stock = stockEmi();
                 stock.addAll(MachinesEmi.stockCoffres(vue, List.of()));
+                stock.addAll(stockTampon());
                 operations = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             }
         } catch (RuntimeException e) {
@@ -921,6 +925,12 @@ public final class AnalyseRecette {
         planAttente = "";
         cleReperes = null;
         sale = true;
+    }
+
+    static List<PlanRetrait.Stock<EmiStack>> stockTampon() {
+        return CoffreTampon.piles().stream()
+                .map(p -> new PlanRetrait.Stock<>(EmiStack.of(p), p.getCount(), false))
+                .toList();
     }
 
     /** Stock de calcul des besoins quand l'arbre n'est pas suivi : poches, sac et contenants. */
@@ -1330,6 +1340,7 @@ public final class AnalyseRecette {
     private static boolean provenance(String raison) {
         return raison.startsWith(OrdreMachines.DU_SAC)
                 || raison.startsWith(OrdreMachines.D_UN_COFFRE)
+                || raison.startsWith(OrdreMachines.DU_TAMPON)
                 || raison.startsWith(OrdreMachines.A_REPRENDRE);
     }
 
@@ -1347,6 +1358,7 @@ public final class AnalyseRecette {
                     ? "Backpack + coffre"
                     : "Dans ton backpack";
         if (raison.startsWith(OrdreMachines.A_REPRENDRE)) return "À reprendre en main";
+        if (raison.startsWith(OrdreMachines.DU_TAMPON)) return "Dans le coffre tampon";
         if (raison.startsWith(OrdreMachines.D_UN_COFFRE)) return "Dans un coffre";
         if (raison.startsWith(OrdreMachines.A_RECUPERER)) return "À sortir (sac, coffre)";
         if (raison.startsWith("Dépendance cyclique")) return "Cycle dans l’arbre";

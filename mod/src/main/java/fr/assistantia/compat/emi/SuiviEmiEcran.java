@@ -29,7 +29,7 @@ public final class SuiviEmiEcran extends Screen {
     private boolean replisChoisis;
     private int debut, selection = -1, hauteur;
     private long actualise, dernierClic;
-    private BoutonTheme recalculer, annuler, voir, deplier;
+    private BoutonTheme recalculer, annuler, terminer, voir, deplier;
     private String message = "", probleme = "";
     private final BarreDefilement barre = new BarreDefilement();
     private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
@@ -97,7 +97,16 @@ public final class SuiviEmiEcran extends Screen {
                                             actualiserBoutons();
                                         })
                                 .zone(droite - replier, y, replier));
-        int recette = largeur("Recette");
+        String texteAction = font.width(DECLARER) >= font.width(ANNULER) ? DECLARER : ANNULER;
+        int[] largeurs =
+                Theme.largeursRangee(
+                        font,
+                        List.of("Recette", texteAction, "Terminer", "Retour"),
+                        droite - x,
+                        Theme.ECART);
+        int largeurRecette = largeurs[0], largeurAction = largeurs[1];
+        int xAction = x + largeurRecette + Theme.ECART;
+        int xTerminer = xAction + largeurAction + Theme.ECART;
         voir =
                 addRenderableWidget(
                         BoutonTheme.creer(
@@ -114,12 +123,7 @@ public final class SuiviEmiEcran extends Screen {
                                                 recetteAffichee = minecraft.screen;
                                             }
                                         })
-                                .zone(x, basBoutons, recette));
-        int retour = largeur("Retour");
-        int action =
-                Math.min(
-                        Math.max(largeur(DECLARER), largeur(ANNULER)),
-                        droite - retour - x - recette - 2 * Theme.ECART);
+                                .zone(x, basBoutons, largeurRecette));
         annuler =
                 addRenderableWidget(
                         BoutonTheme.creer(
@@ -146,10 +150,35 @@ public final class SuiviEmiEcran extends Screen {
                                             actualise = 0;
                                             selectionRendue = null;
                                         })
-                                .zone(x + recette + Theme.ECART, basBoutons, action));
+                                .zone(xAction, basBoutons, largeurAction));
+        terminer =
+                addRenderableWidget(
+                        BoutonTheme.creer(
+                                        "Terminer",
+                                        b -> {
+                                            var affichee = selectionRendue;
+                                            var ligne = pourAction();
+                                            if (ligne == null
+                                                    || ligne.lot() <= 0
+                                                    || !ligne.annulable()) return;
+                                            if (ligne.fois() != affichee.fois()) {
+                                                message =
+                                                        "La quantité du lot a changé · vérifie la ligne.";
+                                                return;
+                                            }
+                                            if (!clicPossible()
+                                                    || !MachinesEmi.terminerLot(ligne.lot()))
+                                                return;
+                                            actualise = 0;
+                                            selectionRendue = null;
+                                            message = "Lot marqué terminé";
+                                        })
+                                .zone(xTerminer, basBoutons, largeurs[2])
+                                .infobulle("Marquer ce lot terminé dans l’arbre EMI."));
+
         addRenderableWidget(
                 BoutonTheme.creer("Retour", b -> onClose())
-                        .zone(droite - retour, basBoutons, retour));
+                        .zone(droite - largeurs[3], basBoutons, largeurs[3]));
         rendus = List.of();
         selectionRendue = null;
         actualise = 0;
@@ -325,6 +354,8 @@ public final class SuiviEmiEcran extends Screen {
                         && (declaration
                                 ? MachinesEmi.declarables(ligne.recette()) > 0
                                 : ligne.annulable());
+        terminer.visible = visible && !declaration && ligne.annulable();
+        terminer.active = terminer.visible && actif && !EnvoiMachine.occupe();
         deplier.active = !lignes.isEmpty();
         deplier.texte(replisPresents() ? "Tout déplier" : "Tout replier");
     }

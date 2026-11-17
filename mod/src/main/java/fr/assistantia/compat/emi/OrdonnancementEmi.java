@@ -4,6 +4,7 @@ import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.InventaireJoueur;
+import fr.assistantia.CoffreTampon;
 import fr.assistantia.OrdreMachines;
 import fr.assistantia.PlanMachines;
 import fr.assistantia.PlanRetrait;
@@ -272,7 +273,10 @@ final class OrdonnancementEmi {
         var resultat = new ArrayList<OrdreMachines.StockSource<Objet>>();
         var mc = Minecraft.getInstance();
         if (mc.player == null) return List.of();
-        var coffre = StockProduction.capturer(System.currentTimeMillis());
+        var coffre =
+                CoffreTampon.menuObserve()
+                        ? null
+                        : StockProduction.capturer(System.currentTimeMillis());
         for (var pile : mc.player.getInventory().items)
             ajouter(resultat, pile, OrdreMachines.Origine.POCHES, false, operations);
         if (coffre == null) {
@@ -299,6 +303,12 @@ final class OrdonnancementEmi {
                 }
             }
         }
+        for (var pile : CoffreTampon.piles())
+            resultat.add(
+                    new OrdreMachines.StockSource<>(
+                            new PlanRetrait.Stock<>(
+                                    new Objet(EmiStack.of(pile), false), pile.getCount(), false),
+                            OrdreMachines.Origine.TAMPON));
         ajouter(
                 resultat,
                 mc.player.containerMenu.getCarried(),

@@ -112,6 +112,11 @@ final class ProjectionLotsEmi {
                         limites.add("Lots d'un autre arbre ou contexte non attribué exclus.");
                         continue;
                     }
+                    if (lot.suivi().termineManuellement()) {
+                        limites.add(
+                                "Lots terminés manuellement exclus du calcul faute de réception prouvée.");
+                        continue;
+                    }
                     if (lot.suivi().receptionNonAttribuee()) {
                         limites.add(
                                 "Lots avec réception sans preuve de transfert exact exclus du calcul (corrélation locale seulement).");

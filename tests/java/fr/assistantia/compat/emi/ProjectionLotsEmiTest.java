@@ -166,6 +166,38 @@ public final class ProjectionLotsEmiTest {
             assert quantity(cancelled, "recus", "test:plate") == 3;
             assert quantity(cancelled, "annules", "test:plate") == 7;
             assert cancelled.getAsJsonArray("restants").isEmpty();
+        } else if (scenario.equals("manual_completion")) {
+            receiveExplicitModel(owner, 3);
+            long revision = owner.revision();
+            assert owner.terminer(id, TREE);
+            assert owner.revision() == revision + 1;
+            assert !owner.terminer(id, TREE) && !owner.annuler(id);
+            assert !owner.completer(id, recipe, 2);
+            var lot = owner.actifs().get(0).suivi();
+            assert lot.etat() == fr.assistantia.LotFabrication.Etat.TERMINE;
+            assert lot.termineManuellement() && lot.restants().isEmpty();
+            assert owner.avancement(TREE).get(0).quantite() == 10;
+            assert owner.avancement(new Object()).get(0).quantite() == 3;
+            assert lot.obtenus().get(0).quantite() == 3;
+            var physiques = List.of(stock(item("test:plate", 4), 4));
+            var credit =
+                    fr.assistantia.ReceptionLots.credits(
+                            owner.avancement(TREE), physiques, List.of(), ComparaisonEmi::meme);
+            assert credit.size() == 1 && credit.get(0).quantite() == 6
+                    : "les exemplaires portés couvrent une partie du travail confirmé";
+
+            var gain = List.of(stock(item("test:plate", 7), 7));
+            assert lot.recevoir(gain).equals(gain) && lot.totalRecu() == 3;
+            var view = project(owner);
+            assert view.getAsJsonArray("lots").isEmpty();
+            assert view.getAsJsonArray("limites").toString().contains("terminés manuellement");
+            var fluide = EmiStack.of(new Fluid("test:acid"), null, 100);
+            int fluideId = owner.ajouter(recipe(fluide), 2, new BlockPos(0, 64, 0));
+            assert owner.terminer(fluideId, TREE);
+            assert owner.avancement(TREE).stream()
+                    .anyMatch(s -> s.objet().getItemStack().isEmpty() && s.quantite() == 200);
+            assert owner.avancement(new Object()).stream()
+                    .noneMatch(s -> s.objet().getItemStack().isEmpty());
         } else if (scenario.equals("complete_move")) {
             receiveExplicitModel(owner, 10);
             var complete = only(project(owner));
