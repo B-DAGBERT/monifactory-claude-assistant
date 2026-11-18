@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.function.Function;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -26,6 +27,7 @@ public final class RechercheEmi {
     private static MemoireCollecte collecte;
     private static java.util.function.Predicate<net.minecraft.world.item.ItemStack> conforme =
             s -> false;
+    private static Function<ItemStack, RessourceCollecte> fluide = s -> null;
     private static int ticks, reessais;
     private static Object connexion;
     private static Set<String> objets = Set.of(), demandes = Set.of();
@@ -53,6 +55,7 @@ public final class RechercheEmi {
     private static Map<String, List<Pont.Repere>> positionsFiltrees;
     private static long revisionFiltre;
     private static long versionAppliquee = -1, versionTamponAppliquee = -1, revision;
+    private static long revisionPortes = -1, revisionDemandeTampon = -1;
     private static boolean annoncer;
 
     private RechercheEmi() {}
@@ -155,8 +158,8 @@ public final class RechercheEmi {
             net.minecraft.world.inventory.AbstractContainerMenu menu,
             net.minecraft.core.BlockPos ouvert) {
         if (!pret() || CoffreTampon.menuExclu()) return new RetraitCoffre.Plan(List.of(), 0);
-        return RetraitCoffre.planRecherche(
-                menu, locaux -> retraitDirect(locaux, ouvert), RechercheEmi::identifiant);
+        return RetraitCoffre.planRessources(
+                menu, locaux -> retraitDirect(locaux, ouvert), RechercheEmi::ressource);
     }
 
     /** L'identifiant compté par le scan, ou "" pour une variante refusée (NBT, autre forme). */
@@ -164,6 +167,13 @@ public final class RechercheEmi {
         if (item.isEmpty() || !conforme.test(item)) return "";
         var id = ForgeRegistries.ITEMS.getKey(item.getItem());
         return id == null ? "" : id.toString();
+    }
+
+    private static RessourceCollecte ressource(ItemStack item) {
+        String id = identifiant(item);
+        // Si une branche demande le contenant comme objet, sa pile n'est comptée qu'une fois.
+        if (!id.isEmpty() && collecte.tous().contains(id)) return new RessourceCollecte(id, 1);
+        return fluide.apply(item);
     }
 
     /**
@@ -274,16 +284,29 @@ public final class RechercheEmi {
         fabricationsPrecedentes = cumul;
         collecte.reserver(Emi.reservationsFabrication());
         collecte.outilsMachines(Emi.outilsMachines());
-        var physiques = compter(InventaireJoueur.pilesFabrication());
-        if (!portes.equals(physiques)) {
-            portes = physiques;
-            versionAppliquee = -1;
+        long vuePortee = InventaireJoueur.revisionFabrication();
+        boolean stockChange = false;
+        if (revisionPortes != vuePortee) {
+            revisionPortes = vuePortee;
+            var physiques = compter(InventaireJoueur.pilesFabrication());
+            if (!portes.equals(physiques)) {
+                portes = physiques;
+                versionAppliquee = -1;
+                stockChange = true;
+            }
         }
         var inventaire = new HashMap<>(portes);
         for (var credit : Emi.creditsFabrication())
             ajouter(inventaire, identifiant(credit.objet()), credit.quantite());
-        Set<String> restants = collecte.actualiser(inventaire, preuves);
-        if (collecte.version() != version) derniereVue = null;
+        collecte.actualiser(inventaire, preuves);
+        boolean suiviChange = collecte.version() != version;
+        if (suiviChange) derniereVue = null;
+        long tampon = CoffreTampon.revision();
+        if (!inventaireEnAttente && !stockChange && !suiviChange && tampon == revisionDemandeTampon)
+            return;
+        revisionDemandeTampon = tampon;
+        Set<String> restants =
+                collecte.manquantsApresTampons(stocksTampons(CoffreTampon.piles()), portes);
         if (inventaireEnAttente || !restants.equals(demandes)) {
             inventaireEnAttente = false;
             demandes = restants;
@@ -303,6 +326,14 @@ public final class RechercheEmi {
             String id,
             MemoireCollecte suivi,
             java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte) {
+        basculer(id, suivi, accepte, s -> null);
+    }
+
+    public static void basculer(
+            String id,
+            MemoireCollecte suivi,
+            java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte,
+            Function<ItemStack, RessourceCollecte> lireFluide) {
         Set<String> ingredients = suivi.tous();
         long now = horloge.getAsLong();
         if (now - dernierClic < 650) return;
@@ -318,8 +349,7 @@ public final class RechercheEmi {
         }
         if (mc.level == null || mc.player == null || !Filons.synchroniserMonde()) return;
         if (ingredients.isEmpty()) {
-            informer(
-                    "Cette recette n’a pas d’ingrédient objet à chercher (les fluides ne sont pas suivis).");
+            informer("Cette recette n’a pas d’ingrédient à chercher.");
             return;
         }
         if (ingredients.size() > 4096) {
@@ -337,6 +367,7 @@ public final class RechercheEmi {
         sacsInclus = SacsFabrication.actif();
         fabricationsPrecedentes = Emi.fabricationsConfirmees();
         conforme = accepte;
+        fluide = lireFluide;
         inventaireEnAttente = true;
         demandes = Set.of();
         actualiserCollecte();
@@ -346,6 +377,14 @@ public final class RechercheEmi {
             MemoireCollecte suivi,
             java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte,
             boolean conserver) {
+        recalculer(suivi, accepte, s -> null, conserver);
+    }
+
+    public static void recalculer(
+            MemoireCollecte suivi,
+            java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte,
+            Function<ItemStack, RessourceCollecte> lireFluide,
+            boolean conserver) {
         if (!actif()) return;
         RetraitCoffre.arreter();
         AideCoffre.vider();
@@ -353,6 +392,7 @@ public final class RechercheEmi {
         collecte = suivi;
         fabricationsPrecedentes = Emi.fabricationsConfirmees();
         conforme = accepte;
+        fluide = lireFluide;
         invaliderSelection();
         fin = horloge.getAsLong() + 600_000;
         actualiserCollecte();
@@ -370,12 +410,16 @@ public final class RechercheEmi {
         resultatsPrets = Set.of();
         derniereVue = null;
         versionAppliquee = -1;
+        revisionPortes = revisionDemandeTampon = -1;
         revision++;
     }
 
     private static Map<String, Integer> compter(List<net.minecraft.world.item.ItemStack> piles) {
         Map<String, Integer> stock = new LinkedHashMap<>();
-        for (var pile : piles) ajouter(stock, identifiant(pile), pile.getCount());
+        for (var pile : piles) {
+            var unite = ressource(pile);
+            if (unite != null) ajouter(stock, unite.id(), unite.quantite(pile.getCount()));
+        }
         return stock;
     }
 
@@ -404,9 +448,11 @@ public final class RechercheEmi {
         long now = horloge.getAsLong();
         numero = Math.max(now, numero + 1);
         envoye = now;
-        attente = !demandes.isEmpty();
+        var objetsDemandes =
+                demandes.stream().filter(id -> !RessourceCollecte.estFluide(id)).toList();
+        attente = !objetsDemandes.isEmpty();
         // Annoncer seulement une recherche qui demande des objets encore jamais relevés.
-        annoncer |= releve == null || !releve.objets().containsAll(demandes);
+        annoncer |= attente && (releve == null || !releve.objets().containsAll(objetsDemandes));
         // Garder le dernier relevé, limité aux objets encore demandés : panneau, contours et lots
         // restent justes pendant l'aller-retour, au lieu de disparaître une à deux secondes. Une
         // réponse à une demande plus ancienne reste rejetée grâce à son numéro.
@@ -420,12 +466,12 @@ public final class RechercheEmi {
         demande.addProperty("dimension", dimension);
         demande.addProperty("fin", fin / 1000.0);
         JsonArray items = new JsonArray();
-        demandes.stream().sorted().forEach(items::add);
+        objetsDemandes.stream().sorted().forEach(items::add);
         demande.add("objets", items);
         if (!Pont.envoyerRechercheEmi(demande)) {
             if (reessais == 0) informer("Recherche non transmise · nouvel essai automatique.");
             // Garder la demande en attente, sans restaurer une ancienne sélection.
-            attente = !demandes.isEmpty();
+            attente = !objetsDemandes.isEmpty();
         }
         if (demandes.isEmpty())
             informer("Ingrédients récupérés : repérage terminé pour cette recherche.");
@@ -453,10 +499,12 @@ public final class RechercheEmi {
         releve = null;
         positionsFiltrees = null;
         versionAppliquee = -1;
+        revisionPortes = revisionDemandeTampon = -1;
         annoncer = false;
         revision++;
         collecte = null;
         conforme = s -> false;
+        fluide = s -> null;
     }
 
     private static void informer(String message) {

@@ -111,6 +111,66 @@ public final class RetraitCoffreTest {
         assert CollecteCoffreFixture.plan(menu, root, 1).total() == 0;
     }
 
+    private static RetraitCoffre.Plan planLiquide(int millibuckets, int emportes) {
+        return RetraitCoffre.planRessources(
+                menu,
+                stocks -> {
+                    var disponibles = new java.util.ArrayList<>(stocks);
+                    disponibles.add(new PlanRetrait.Stock<>("fluide|test:lava", emportes, true));
+                    return PlanRetrait.calculer(
+                                    disponibles,
+                                    List.of(
+                                            new PlanRetrait.Besoin<>(
+                                                    "fluide|test:lava"::equals, millibuckets)))
+                            .prises();
+                },
+                pile ->
+                        switch (pile.id) {
+                            case "lava_bucket" -> new RessourceCollecte("fluide|test:lava", 1000);
+                            case "water_bucket" -> new RessourceCollecte("fluide|test:water", 1000);
+                            default -> new RessourceCollecte(pile.id, 1);
+                        });
+    }
+
+    private static Slot contenant(String item, boolean accessible) {
+        var slot = new Slot(new Object(), menu.slots.size());
+        slot.item = new ItemStack(item, 1);
+        slot.pickup = accessible;
+        menu.slots.add(slot);
+        return slot;
+    }
+
+    private static void collecterLesContenantsEntiers() throws Exception {
+        setup(0, 0);
+        var inaccessible = contenant("lava_bucket", false);
+        var autreFluide = contenant("water_bucket", true);
+        var seauVide = contenant("bucket", true);
+        var premier = contenant("lava_bucket", true);
+        var second = contenant("lava_bucket", true);
+        var reserve = contenant("lava_bucket", true);
+
+        assert planLiquide(1500, 1000).total() == 1 : "déduire le volume porté avant le retrait";
+        assert planLiquide(1500, 2000).total() == 0 : "besoin intégralement couvert";
+        var plan = planLiquide(1500, 0);
+        assert plan.total() == 2 : "1 500 mB demandent deux seaux de 1 000 mB";
+        assert plan.objets().size() == 1 && plan.objets().get(0).id.equals("lava_bucket");
+        assert plan.lots().stream()
+                .map(RetraitCoffre.Lot::source)
+                .toList()
+                .equals(List.of(premier, second));
+        assert RetraitCoffre.lancer(screen, plan.pour(new ItemStack("lava_bucket", 1)));
+        finish();
+        assert premier.item.isEmpty() && second.item.isEmpty();
+        assert reserve.item.getCount() == 1 && inaccessible.item.getCount() == 1;
+        assert autreFluide.item.getCount() == 1 && seauVide.item.getCount() == 1;
+        assert menu.carried.isEmpty();
+        assert menu.slots.subList(1, 4).stream()
+                        .filter(s -> s.item.id.equals("lava_bucket"))
+                        .mapToInt(s -> s.item.getCount())
+                        .sum()
+                == 2;
+    }
+
     private static void synchronization() throws Exception {
         setup(1000, 0);
         menu.slots.get(3).item = new ItemStack("electric_drill", 1);
@@ -179,6 +239,7 @@ public final class RetraitCoffreTest {
         synchronization();
         treeSelection();
         componentBeforeMaterials();
+        collecterLesContenantsEntiers();
         setup(1000, 0);
         assert RetraitCoffre.lancer(screen, plan(130));
         tick();

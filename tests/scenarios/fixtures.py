@@ -35,8 +35,10 @@ import java.util.*;
 import net.minecraft.world.item.ItemStack;
 public class InventaireJoueur {
  static boolean sync=true;
+ static long revision;
  static List<ItemStack> items=List.of(),sac=List.of();
  public static boolean fabricationSynchronisee(){return !SacsFabrication.actif()||sync;}
+ public static long revisionFabrication(){return revision;}
  public static List<ItemStack> pilesFabrication(){return SacsFabrication.actif()?piles():items;}
  public static List<ItemStack> piles(){var stock=new ArrayList<>(items);stock.addAll(sac);return stock;}
 }
@@ -95,14 +97,22 @@ public class RetraitCoffre {public static boolean busy;public static Map<String,
  public static List<net.minecraft.world.item.ItemStack> coffreOuvert(){
   if(locaux==null||CoffreTampon.ouvert.isEmpty())return List.of();
   return locaux.entrySet().stream().map(e->new net.minecraft.world.item.ItemStack(e.getKey(),e.getValue())).toList();}
- public static Plan planRecherche(net.minecraft.world.inventory.AbstractContainerMenu menu,
+ public static Plan planRessources(net.minecraft.world.inventory.AbstractContainerMenu menu,
  java.util.function.Function<List<PlanRetrait.Stock<String>>,List<PlanRetrait.Prise>> selectionner,
- java.util.function.Function<net.minecraft.world.item.ItemStack,String> id){
- var stock=new ArrayList<PlanRetrait.Stock<String>>();
- if(locaux!=null)locaux.forEach((item,n)->stock.add(new PlanRetrait.Stock<>(item,n,false)));
+ java.util.function.Function<net.minecraft.world.item.ItemStack,RessourceCollecte> identifier){
+ var piles=new ArrayList<net.minecraft.world.item.ItemStack>();
+ if(locaux!=null)locaux.forEach((item,n)->piles.add(new net.minecraft.world.item.ItemStack(item,n)));
  else for(var c:Pont.liste(Pont.reply,"coffres"))
-  for(var e:c.getAsJsonObject().getAsJsonObject("objets").entrySet())stock.add(new PlanRetrait.Stock<>(e.getKey(),e.getValue().getAsInt(),false));
- var result=new HashMap<String,Integer>();for(var p:selectionner.apply(stock))result.merge(stock.get(p.index()).objet(),p.quantite(),Integer::sum);
+  for(var e:c.getAsJsonObject().getAsJsonObject("objets").entrySet())piles.add(new net.minecraft.world.item.ItemStack(e.getKey(),e.getValue().getAsInt()));
+ var objets=new ArrayList<net.minecraft.world.item.ItemStack>();
+ var ressources=new ArrayList<RessourceCollecte>();
+ var stock=new ArrayList<PlanRetrait.Stock<String>>();
+ for(var pile:piles){
+  var r=identifier.apply(pile);if(r==null)continue;
+  objets.add(pile);ressources.add(r);stock.add(new PlanRetrait.Stock<>(r.id(),r.quantite(pile.getCount()),false));
+ }
+ var result=new HashMap<String,Integer>();
+ for(var p:selectionner.apply(stock))result.merge(objets.get(p.index()).item(),ressources.get(p.index()).contenants(p.quantite()),Integer::sum);
  selection=Map.copyOf(result);return new Plan(List.of(),0);}}
 """,
 }
@@ -122,14 +132,25 @@ public final class ParcoursCoffres {
  static long temps=1_000_000;
  static final List<LotFabrication<String>> lots=new ArrayList<>();
  static final ReceptionManuelle<String> receptions=new ReceptionManuelle<>(String::equals);
+ static Map<String,RessourceCollecte> fluides=Map.of();
  static List<PlanRetrait.Stock<String>> stock(){return InventaireJoueur.piles().stream().map(s->new PlanRetrait.Stock<>(s.item(),s.count(),true)).toList();}
  static List<ItemStack> piles(JsonObject j){var items=new ArrayList<ItemStack>();for(var e:j.entrySet())if(e.getValue().getAsInt()>0)items.add(new ItemStack(e.getKey(),e.getValue().getAsInt()));return List.copyOf(items);}
  static ArbreCollecte.Noeud arbre(JsonObject j){var children=new ArrayList<ArbreCollecte.Noeud>();for(var n:Pont.liste(j,"enfants"))children.add(arbre(n.getAsJsonObject()));
   var ids=new LinkedHashSet<String>();for(var n:Pont.liste(j,"ids"))ids.add(n.getAsString());return new ArbreCollecte.Noeud(ids,(long)Pont.nombre(j,"quantite",1),(long)Pont.nombre(j,"production",1),j.has("outil")&&j.get("outil").getAsBoolean(),children);}
  static JsonObject appliquer(JsonObject j)throws Exception {
   var mc=Minecraft.getInstance();if(j.has("temps"))temps=j.get("temps").getAsLong();else temps++;
+  var anciens=InventaireJoueur.items;var ancienSac=InventaireJoueur.sac;
   if(j.has("inventaire"))InventaireJoueur.items=piles(j.getAsJsonObject("inventaire"));
   if(j.has("sac"))InventaireJoueur.sac=piles(j.getAsJsonObject("sac"));
+  if(!anciens.equals(InventaireJoueur.items)||!ancienSac.equals(InventaireJoueur.sac))InventaireJoueur.revision++;
+  if(j.has("contenants")){
+   var contenus=new HashMap<String,RessourceCollecte>();
+   for(var e:j.getAsJsonObject("contenants").entrySet()){
+    var valeur=e.getValue().getAsJsonArray();
+    contenus.put(e.getKey(),new RessourceCollecte(valeur.get(0).getAsString(),valeur.get(1).getAsInt()));
+   }
+   fluides=Map.copyOf(contenus);
+  }
   if(j.has("compte_sac"))SacsFabrication.actif=j.get("compte_sac").getAsBoolean();
   if(j.has("outils")){var m=new HashMap<String,Integer>();for(var e:j.getAsJsonObject("outils").entrySet())m.put(e.getKey(),e.getValue().getAsInt());Emi.outils=Map.copyOf(m);}
   if(j.has("sync"))InventaireJoueur.sync=j.get("sync").getAsBoolean();
@@ -163,7 +184,7 @@ public final class ParcoursCoffres {
   if(InventaireJoueur.sync){var gains=receptions.actualiser(stock(),List.of());ReceptionLots.repartir(gains,lots.stream().map(l->new ReceptionLots.Source<>(l,(java.util.function.Predicate<String>)s->true)).toList());}
   var reserves=new HashMap<String,Integer>();var recus=new ArrayList<PlanRetrait.Stock<String>>();for(var l:lots){for(var s:l.restants())reserves.merge(s.objet(),s.quantite(),Integer::sum);recus.addAll(l.obtenus());}Emi.reservations=Map.copyOf(reserves);
   Emi.credits=ReceptionLots.credits(recus,stock(),List.of(),String::equals).stream().map(s->new PlanRetrait.Stock<>(new ItemStack(s.objet(),s.quantite()),s.quantite(),true)).toList();
-  if(j.has("arbre")){receptions.initialiser(stock());RechercheEmi.basculer("assistantia:coffres_arbre",new MemoireCollecte(arbre(j.getAsJsonObject("arbre")),1),s->true);}
+  if(j.has("arbre")){receptions.initialiser(stock());RechercheEmi.basculer("assistantia:coffres_arbre",new MemoireCollecte(arbre(j.getAsJsonObject("arbre")),1),s->true,s->fluides.get(s.item()));}
   if(j.has("arreter")&&j.get("arreter").getAsBoolean())RechercheEmi.arreter();
   var tick=new TickEvent.ClientTickEvent(TickEvent.Phase.END);RechercheEmi.tick(tick);RechercheEmi.tick(tick);
   RetraitCoffre.locaux=null;
@@ -277,6 +298,7 @@ class ContratJava:
         harness.write_text(HARNESS)
         names = [
             "RechercheEmi",
+            "RessourceCollecte",
             "MemoireCollecte",
             "ArbreCollecte",
             "PlanArbre",

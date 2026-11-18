@@ -1,9 +1,13 @@
 package fr.assistantia.compat.emi;
 
 import dev.emi.emi.api.stack.*;
+import fr.assistantia.MemoireCollecte;
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.RessourceCollecte;
 import java.util.*;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
 
 public final class PlisFabricationEmiTest {
     public enum FoldState {
@@ -41,7 +45,31 @@ public final class PlisFabricationEmiTest {
         return new PlanRetrait.Stock<>(EmiStack.of(new ItemStack(id, n)), n, true);
     }
 
+    private static void verifierProjectionFluide() throws Exception {
+        var liquide = new Node("", 1500);
+        liquide.ingredient = EmiStack.of(new Fluid("test:rubber"), null, 1500);
+        var composant = new Node("test:component", 1, liquide);
+        var tree = new Tree(new Node("test:machine", 1, composant));
+        var vue = InstantaneArbreEmi.lire(tree);
+        String cle = RessourceCollecte.cleFluide("test:rubber", null);
+        assert vue.collecte().enfants().get(0).enfants().get(0).variantes().equals(Set.of(cle));
+        var collecte = new MemoireCollecte(vue.collecte(), vue.lots());
+        assert collecte.actualiser(Map.of()).contains(cle);
+        var bidon = new ItemStack("test:drum", 2);
+        var contenu = new CompoundTag();
+        contenu.putInt("volume", 750);
+        bidon.setTag(contenu);
+        var ressource = vue.fluide(bidon);
+        assert ressource != null && ressource.id().equals(cle) && ressource.parObjet() == 750;
+        contenu.putString("fluide", "test:water");
+        assert vue.fluide(bidon) == null : "même contenant, autre liquide";
+        assert vue.fluide(new ItemStack("test:drum", 1)) == null : "contenant vide";
+        assert !collecte.actualiser(Map.of("test:component", 1)).contains(cle)
+                : "un composant déjà disponible évite la collecte du liquide de sa recette";
+    }
+
     public static void main(String[] args) throws Exception {
+        verifierProjectionFluide();
         var plis = new PlisFabricationEmi();
         var piece = new Node("piece", 2, new Node("plate", 4));
         var tree = new Tree(new Node("machine", 1, piece));

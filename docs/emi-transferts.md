@@ -16,7 +16,7 @@ Les contours, les objets surlignés et les boutons de retrait utilisent la même
 
 Quand le scan est actif, il suit automatiquement les modifications de recettes, de branches et de quantités, au plus toutes les 500 ms hors transfert. Les acquisitions pertinentes de la même cible et les lots en machine sont conservés. Choisir une autre cible remet les crédits de collecte à zéro, en gardant le stock réel et les lots encore en cours. **Suivi → Recalculer** permet aussi de forcer une relecture. Cette actualisation ne réactive jamais un scan arrêté. Ouvrir un coffre actualise son contenu mémorisé. Arrêter le scan retire les contours et le panneau **Collecte**. Un arbre simplement consulté n’autorise aucun retrait.
 
-La mémoire des coffres distingue les identifiants des objets, pas leurs variantes NBT. Dans le coffre ouvert, le retrait vérifie aussi les variantes EMI, avec une exception pour le NBT factice du Programmed Circuit. Un coffre peut donc être signalé sans proposer de retrait si la variante est incompatible. La recherche ne suit pas les fluides. Un stock inaccessible ou périmé ne crée jamais d’objet : les retraits sont bornés par les vraies cases du coffre ouvert.
+La mémoire des coffres distingue les identifiants des objets, pas leurs variantes NBT. Dans le coffre ouvert, le retrait vérifie aussi les variantes EMI, avec une exception pour le NBT factice du Programmed Circuit. Un coffre peut donc être signalé sans proposer de retrait si la variante est incompatible. **Collecte** lit les mB des seaux, cellules et fûts compatibles Forge dans les cases du coffre ouvert. Le liquide déjà porté, y compris dans un backpack pris en compte, ou relevé dans un tampon réduit le besoin. Les boutons prennent le nombre minimal de contenants entiers. Les relevés mémorisés des coffres ordinaires ne garantissent aucun volume. Un stock inaccessible ou périmé ne crée jamais d’objet : les retraits sont bornés par les vraies cases du coffre ouvert.
 
 ## Objets dans le backpack
 
@@ -61,7 +61,8 @@ contenu de sa dernière ouverture aussi longtemps que le coffre reste identifié
 dans la même connexion et dimension. Le relevé se met à jour si tu ajoutes ou retires des
 objets dans le menu ouvert. Un déchargement du chunk écarte l’ancien contenu jusqu’à une
 nouvelle observation. Si l’identité du bloc a changé, sélectionne à nouveau le coffre.
-Chaque tampon reste exclu du repérage des coffres ordinaires.
+Chaque tampon reste exclu du repérage des coffres ordinaires. Le scan cherche dans ces
+coffres uniquement le complément après déduction du stock des tampons.
 
 Tu peux utiliser **Prendre / Tout** dans un tampon ouvert. Dans Sophisticated Storage, retire à la
 main les objets des cases exclues du tri. Sélectionne tes coffres de nouveau après reconnexion ou
@@ -187,7 +188,7 @@ Les résultats déclarés **En cours de craft** couvrent temporairement leurs in
 
 **Annuler le lot** libère la réservation dans le suivi. Cette action ne déplace pas les objets déjà envoyés et ne stoppe pas physiquement la machine. Vérifier son contenu avant d’envoyer un autre lot.
 
-Les sorties sont observées quand l’interface native est ouverte. Le suivi reconnaît les objets repris et les fluides repris dans les contenants de l’inventaire ou du curseur. Une sortie transférée automatiquement vers un coffre ou un tuyau ne prouve pas une récupération personnelle ; annuler sa réservation si nécessaire. Seules les sorties garanties sont réservées, pas les résultats aléatoires. Les lots survivent aux modifications de l’arbre actif. Arrêter l’arbre, changer de dimension ou se déconnecter efface les réservations locales. Elles ne sont pas restaurées au redémarrage.
+Les sorties sont observées quand l’interface native est ouverte. Le suivi reconnaît les retraits directs par clic, Maj-clic ou raccourci de barre rapide, ainsi que les fluides repris dans un contenant. Si une sortie passe par un coffre, un hopper ou le réseau ME, **Réception à confirmer** indique combien d’objets correspondants sont déjà sur toi. Quand tu as récupéré toute la sortie, sélectionne la ligne et clique sur **Terminer**. Seules les sorties garanties sont réservées, pas les résultats aléatoires. Les lots survivent aux modifications de l’arbre actif. Arrêter l’arbre, changer de dimension ou se déconnecter efface les réservations locales. Elles ne sont pas restaurées au redémarrage.
 
 Les composants transformés remplacent leur crédit de matières premières : quatre lingots devenus deux plaques ne restent pas disponibles comme lingots pour les plaques suivantes. Un moule ou outil partagé n’est planifié qu’une fois, même dans des branches de profondeurs différentes.
 

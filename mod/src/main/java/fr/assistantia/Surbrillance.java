@@ -23,8 +23,10 @@ public final class Surbrillance {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> ecran)) {
             return;
         }
-        boolean recherche = RechercheEmi.actif() || Pont.rechercheActive();
+        boolean emi = RechercheEmi.actif();
+        boolean recherche = emi || Pont.rechercheActive();
         if (!recherche || CoffreTampon.menuExclu()) return;
+        boolean coffre = emi && AideCoffre.actif(ecran);
         int alpha = (int) (0x60 + 0x50 * Math.sin(System.currentTimeMillis() / 220.0)) << 24;
         GuiGraphics g = event.getGuiGraphics();
         g.pose().pushPose();
@@ -39,9 +41,9 @@ public final class Surbrillance {
             }
             int x = ecran.getGuiLeft() + slot.x;
             int y = ecran.getGuiTop() + slot.y;
-            if (RechercheEmi.actif()
-                    ? RechercheEmi.cherche(id.toString())
-                    : recherche && Pont.cherche(id.toString())) {
+            if (coffre
+                    ? AideCoffre.aPrendre(slot)
+                    : emi ? RechercheEmi.cherche(id.toString()) : Pont.cherche(id.toString())) {
                 g.fill(x, y, x + 16, y + 16, alpha | CYAN);
                 g.renderOutline(x - 1, y - 1, 18, 18, Theme.CYAN);
             }

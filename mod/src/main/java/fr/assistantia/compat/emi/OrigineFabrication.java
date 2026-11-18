@@ -114,20 +114,41 @@ public final class OrigineFabrication {
                 || CoffresArbreEmi.arbreActif() == null
                 || joueur.containerMenu.containerId != conteneur) return;
         if (type != ClickType.QUICK_MOVE
-                && (type != ClickType.PICKUP
-                        || bouton < 0
-                        || bouton > 1
-                        || !joueur.containerMenu.getCarried().isEmpty())) return;
+                && !(type == ClickType.PICKUP && bouton >= 0 && bouton <= 1)
+                && !(type == ClickType.SWAP && (bouton >= 0 && bouton <= 8 || bouton == 40)))
+            return;
         observer(joueur.containerMenu);
         for (var slot : slotsSortie) {
             if (slot.index != index || !slot.isActive() || !slot.mayPickup(joueur)) continue;
             var pile = slot.getItem();
             if (pile.isEmpty()) return;
             int n = pile.getCount();
-            receptionSortie.autoriser(
-                    pile.copy(), type == ClickType.PICKUP && bouton == 1 ? (n + 1) / 2 : n);
+            if (type == ClickType.PICKUP) {
+                var curseur = joueur.containerMenu.getCarried();
+                if (!curseur.isEmpty()) {
+                    if (!ItemStack.isSameItemSameTags(pile, curseur)) return;
+                    n = Math.min(n, curseur.getMaxStackSize() - curseur.getCount());
+                } else if (bouton == 1) {
+                    n = (n + 1) / 2;
+                }
+            }
+            if (n > 0) {
+                if (!receptionSortie.enAttente())
+                    receptionSortie.preparerGeste(precedent, sortieActuelle());
+                receptionSortie.autoriser(pile.copy(), n);
+            }
             return;
         }
+    }
+
+    private static List<PlanRetrait.Stock<ItemStack>> sortieActuelle() {
+        List<PlanRetrait.Stock<ItemStack>> resultat = new ArrayList<>();
+        for (Slot slot : slotsSortie)
+            if (slot.isActive() && !slot.getItem().isEmpty())
+                resultat.add(
+                        new PlanRetrait.Stock<>(
+                                slot.getItem().copy(), slot.getItem().getCount(), true));
+        return resultat;
     }
 
     public static void actualiser(List<PlanRetrait.Stock<ItemStack>> inventaire) {
@@ -137,12 +158,7 @@ public final class OrigineFabrication {
             return;
         }
         observer(player.containerMenu);
-        List<PlanRetrait.Stock<ItemStack>> maintenant = new ArrayList<>();
-        for (Slot slot : slotsSortie)
-            if (slot.isActive() && !slot.getItem().isEmpty())
-                maintenant.add(
-                        new PlanRetrait.Stock<>(
-                                slot.getItem().copy(), slot.getItem().getCount(), true));
+        var maintenant = sortieActuelle();
         List<PlanRetrait.Stock<ItemStack>> gains = new ArrayList<>();
         List<ItemStack> vus = new ArrayList<>();
         if (!crafts.isEmpty()) {

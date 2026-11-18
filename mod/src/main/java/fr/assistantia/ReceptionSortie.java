@@ -41,6 +41,17 @@ public final class ReceptionSortie<T> {
             gestes.add(new Mouvement<>(objet, quantite, tick + 1));
     }
 
+    /** La première action peut précéder le relevé périodique du menu. */
+    public void preparerGeste(
+            List<PlanRetrait.Stock<T>> maintenant, List<PlanRetrait.Stock<T>> disponibles) {
+        if (!gesteRequis || enAttente()) return;
+        stock = List.copyOf(maintenant);
+        sorties = List.copyOf(disponibles);
+        gains.clear();
+        retraits.clear();
+        initialise = true;
+    }
+
     public List<PlanRetrait.Stock<T>> gestesEnCours() {
         return gestes.stream()
                 .filter(g -> g.quantite > 0)

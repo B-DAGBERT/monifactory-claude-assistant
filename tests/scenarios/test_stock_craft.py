@@ -188,6 +188,7 @@ class StockCraftTests(unittest.TestCase):
             for nom in (
                 "PlanRetrait.java",
                 "RetraitCoffre.java",
+                "RessourceCollecte.java",
                 "ArbreCollecte.java",
                 "MemoireCollecte.java",
                 "PlanArbre.java",

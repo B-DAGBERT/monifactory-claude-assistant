@@ -127,8 +127,18 @@ public final class RetraitCoffre {
             java.util.function.Function<List<PlanRetrait.Stock<String>>, List<PlanRetrait.Prise>>
                     selection,
             java.util.function.Function<ItemStack, String> identifiant) {
+        return planRessources(
+                m, selection, item -> new RessourceCollecte(identifiant.apply(item), 1));
+    }
+
+    public static Plan planRessources(
+            AbstractContainerMenu m,
+            java.util.function.Function<List<PlanRetrait.Stock<String>>, List<PlanRetrait.Prise>>
+                    selection,
+            java.util.function.Function<ItemStack, RessourceCollecte> ressource) {
         var joueur = Minecraft.getInstance().player;
         List<Slot> slots = new ArrayList<>();
+        List<RessourceCollecte> unites = new ArrayList<>();
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
         if (joueur != null && estCoffre(m))
             for (Slot slot : m.slots) {
@@ -136,15 +146,22 @@ public final class RetraitCoffre {
                         || !slot.hasItem()
                         || !source(m, slot)
                         || !slot.mayPickup(joueur)) continue;
-                slots.add(slot);
                 var objet = slot.getItem();
+                var unite = ressource.apply(objet);
+                if (unite == null) continue;
+                slots.add(slot);
+                unites.add(unite);
                 stocks.add(
-                        new PlanRetrait.Stock<>(identifiant.apply(objet), objet.getCount(), false));
+                        new PlanRetrait.Stock<>(
+                                unite.id(), unite.quantite(objet.getCount()), false));
             }
         List<Lot> lots = new ArrayList<>();
         for (var prise : selection.apply(stocks)) {
             Slot slot = slots.get(prise.index());
-            int n = Math.min(prise.quantite(), slot.getItem().getCount());
+            int n =
+                    Math.min(
+                            unites.get(prise.index()).contenants(prise.quantite()),
+                            slot.getItem().getCount());
             if (n > 0) lots.add(new Lot(slot, slot.getItem().copy(), n));
         }
         return new Plan(List.copyOf(lots), 0);

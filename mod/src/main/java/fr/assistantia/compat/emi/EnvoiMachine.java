@@ -80,19 +80,26 @@ public final class EnvoiMachine {
             Runnable succes,
             IntConsumer partiel) {}
 
-    private record EtatMachine(List<ItemStack> objets, List<FluidStack> fluides) {
+    private record EtatMachine(
+            List<ItemStack> objets, List<FluidStack> fluides, int entrees, int cuvesEntree) {
         static EtatMachine relever(
                 AbstractContainerMenu menu, GregTechMachines.Interface ui, boolean sorties) {
             try {
-                var cases = new ArrayList<>(ui.entrees());
+                var cases = new ArrayList<>(ui.entrees().stream().filter(Slot::isActive).toList());
                 var cuves = new ArrayList<>(ui.cuves());
+                int entrees = cases.size(), cuvesEntree = cuves.size();
                 if (sorties) {
-                    cases.addAll(GregTechMachines.sorties(menu));
+                    cases.addAll(
+                            GregTechMachines.sorties(menu).stream()
+                                    .filter(Slot::isActive)
+                                    .toList());
                     cuves.addAll(GregTechMachines.cuvesSortie(menu));
                 }
                 return new EtatMachine(
-                        cases.stream().filter(Slot::isActive).map(s -> s.getItem().copy()).toList(),
-                        cuves.stream().map(GregTechMachines.Cuve::contenu).toList());
+                        cases.stream().map(s -> s.getItem().copy()).toList(),
+                        cuves.stream().map(GregTechMachines.Cuve::contenu).toList(),
+                        entrees,
+                        cuvesEntree);
             } catch (ReflectiveOperationException | RuntimeException e) {
                 return null;
             }
@@ -100,6 +107,8 @@ public final class EnvoiMachine {
 
         boolean compare(EtatMachine autre, boolean exact) {
             if (autre == null
+                    || entrees != autre.entrees
+                    || cuvesEntree != autre.cuvesEntree
                     || objets.size() != autre.objets.size()
                     || fluides.size() != autre.fluides.size()) return false;
             for (int i = 0; i < objets.size(); i++) {
@@ -121,18 +130,26 @@ public final class EnvoiMachine {
             return true;
         }
 
+        EtatMachine sansSorties() {
+            return new EtatMachine(
+                    objets.subList(0, entrees),
+                    fluides.subList(0, cuvesEntree),
+                    entrees,
+                    cuvesEntree);
+        }
+
         EtatMachine avecObjet(int index, ItemStack pile) {
             if (index < 0) return null;
             var simule = new ArrayList<>(objets);
             simule.set(index, pile.copy());
-            return new EtatMachine(simule, fluides);
+            return new EtatMachine(simule, fluides, entrees, cuvesEntree);
         }
 
         EtatMachine avecFluide(int index, FluidStack fluide) {
             if (index < 0) return null;
             var simule = new ArrayList<>(fluides);
             simule.set(index, fluide.copy());
-            return new EtatMachine(objets, simule);
+            return new EtatMachine(objets, simule, entrees, cuvesEntree);
         }
     }
 
@@ -142,20 +159,38 @@ public final class EnvoiMachine {
             int emplacement,
             ItemStack source,
             ItemStack restant,
-            ItemStack retour) {
+            ItemStack retour,
+            long quantitePersonnelle,
+            boolean depotObjet) {
         boolean reconciliee(Entrees entrees) {
             if (avant == null) return false;
             var reel = EtatMachine.relever(entrees.menu(), entrees.ui(), true);
             for (var slot : entrees.joueurs()) {
                 if (slot.getContainerSlot() != emplacement) continue;
                 var pile = slot.getItem();
-                return avant.compare(reel, true) && meme(pile, source)
+                if (avant.compare(reel, true) && meme(pile, source)
                         || arrivee != null
                                 && arrivee.compare(reel, true)
-                                && (meme(pile, restant) || retour != null && meme(pile, retour));
+                                && (meme(pile, restant) || retour != null && meme(pile, retour)))
+                    return true;
+                break;
             }
-            return false;
+            // Un dépôt objet rejeté peut avoir été rangé dans d'autres cases entre-temps.
+            // Ne tolérer qu'une baisse des anciennes sorties, jamais une nouvelle production.
+            return depotObjet
+                    && reel != null
+                    && avant.sansSorties().compare(reel.sansSorties(), true)
+                    && reel.compare(avant, false)
+                    && quantitePersonnelle == compterPoches(entrees.joueurs(), source);
         }
+    }
+
+    private static long compterPoches(List<Slot> slots, ItemStack variante) {
+        return slots.stream()
+                .map(Slot::getItem)
+                .filter(pile -> !pile.isEmpty() && ItemStack.isSameItemSameTags(pile, variante))
+                .mapToLong(ItemStack::getCount)
+                .sum();
     }
 
     private record Livraison(String nom, int quantite, boolean fluide) {}
@@ -190,6 +225,13 @@ public final class EnvoiMachine {
                                     EtatMachine.relever(entrees.menu(), entrees.ui(), false),
                                     false))) return false;
             return tentative == null || tentative.reconciliee(entrees);
+        }
+
+        Reprise sansTentative() {
+            return tentative == null
+                    ? this
+                    : new Reprise(
+                            recette, livraisons, dernierDepot, null, cycles, consommationAmbigue);
         }
     }
 
@@ -389,6 +431,7 @@ public final class EnvoiMachine {
             var entrees = lireEntrees(menu, recipe, ui);
             if (reprise != null && !reprise.autorisee(entrees, recipe))
                 return decrireReprise(vide("Reprise à vérifier dans la machine"), reprise);
+            if (reprise != null) reprise = reprise.sansTentative();
             Plan dernier = vide("Ingrédients manquants");
             for (int n = borneObjets(entrees, recipe, Math.min(64, demande)); n >= 1; n--) {
                 dernier = calculer(entrees, recipe, arbre, n, null);
@@ -791,6 +834,19 @@ public final class EnvoiMachine {
                 Livraison livraison,
                 java.util.function.UnaryOperator<EtatMachine> arrivee) {
             var avant = EtatMachine.relever(menu, ui, true);
+            long quantitePersonnelle =
+                    livraison.fluide()
+                            ? 0
+                            : compterPoches(
+                                    menu.slots.stream()
+                                            .filter(EnvoiMachine::personnel)
+                                            .filter(Slot::isActive)
+                                            .filter(
+                                                    s ->
+                                                            s.mayPickup(
+                                                                    Minecraft.getInstance().player))
+                                            .toList(),
+                                    source);
             tentative =
                     new Tentative(
                             avant,
@@ -798,7 +854,9 @@ public final class EnvoiMachine {
                             src.getContainerSlot(),
                             source.copy(),
                             restant.copy(),
-                            retour == null ? null : retour.copy());
+                            retour == null ? null : retour.copy(),
+                            quantitePersonnelle,
+                            !livraison.fluide());
             this.livraison = livraison;
         }
 

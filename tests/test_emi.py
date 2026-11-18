@@ -155,6 +155,7 @@ class EmiTests(unittest.TestCase):
                         for dependency in (
                             "PlanRetrait",
                             "MemoireCollecte",
+                            "RessourceCollecte",
                             "ArbreCollecte",
                             "PlanArbre",
                         )

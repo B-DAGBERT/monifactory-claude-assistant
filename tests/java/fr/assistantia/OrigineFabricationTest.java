@@ -13,12 +13,42 @@ public class OrigineFabricationTest {
     }
 
     private static void cliquer(Minecraft mc, Slot output) {
+        cliquer(mc, output, ClickType.QUICK_MOVE, 0);
+    }
+
+    private static void cliquer(Minecraft mc, Slot output, ClickType type, int bouton) {
         OrigineFabrication.clicSortie(
-                mc.player.containerMenu.containerId,
-                output.index,
-                0,
-                ClickType.QUICK_MOVE,
-                mc.player);
+                mc.player.containerMenu.containerId, output.index, bouton, type, mc.player);
+    }
+
+    private static void retraitsDepuisLaSortie(Minecraft mc, Slot output) {
+        OrigineFabrication.vider();
+        mc.player.containerMenu = new ChestMenu();
+        output.item = s(3).objet();
+        OrigineFabrication.actualiser(List.of());
+        cliquer(mc, output, ClickType.SWAP, 4);
+        output.item = ItemStack.EMPTY;
+        OrigineFabrication.actualiser(List.of(s(3)));
+        assert OrigineFabrication.provenances().machine().objets().get(0).quantite() == 3
+                : "touche de barre rapide : seul le retrait réel de trois unités est validé";
+        OrigineFabrication.actualiser(List.of(s(3)));
+        assert OrigineFabrication.receptions().isEmpty() : "retrait déjà compté";
+
+        OrigineFabrication.vider();
+        OrigineFabrication.actualiser(List.of(s(63)));
+        mc.player.containerMenu = new ChestMenu();
+        mc.player.containerMenu.carried = s(63).objet();
+        output.item = s(3).objet();
+        cliquer(mc, output, ClickType.PICKUP, 0);
+        output.item = s(2).objet();
+        mc.player.containerMenu.carried = s(64).objet();
+        OrigineFabrication.actualiser(List.of(s(64)));
+        assert OrigineFabrication.provenances().machine().objets().get(0).quantite() == 1
+                : "premier clic dans le menu avec une pile compatible au curseur";
+        output.item = s(1).objet();
+        OrigineFabrication.actualiser(List.of(s(65)));
+        assert OrigineFabrication.receptions().isEmpty() : "aucun crédit hors du clic observé";
+        mc.player.containerMenu.carried = ItemStack.EMPTY;
     }
 
     public static void main(String[] args) {
@@ -130,6 +160,7 @@ public class OrigineFabricationTest {
         output.item = new ItemStack("plate", 1);
         OrigineFabrication.actualiser(List.of(s(2)));
         assert OrigineFabrication.receptions().isEmpty();
+        retraitsDepuisLaSortie(mc, output);
         OrigineFabrication.vider();
         GregTechMachines.outputSlots = List.of();
         GregTechMachines.ui = null;

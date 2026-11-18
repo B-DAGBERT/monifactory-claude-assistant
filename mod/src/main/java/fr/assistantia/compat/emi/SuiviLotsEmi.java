@@ -92,6 +92,44 @@ final class SuiviLotsEmi {
         return lecture;
     }
 
+    /** Depuis un coffre ou ME, on sait ce qui est porté, pas de quelle machine ça provient. */
+    java.util.Map<Integer, Integer> aConfirmer() {
+        var aVerifier = lots.stream().filter(l -> !l.manuel() && l.suivi().annulable()).toList();
+        if (aVerifier.isEmpty()) return java.util.Map.of();
+        var disponibles = new ArrayList<>(inventaire.get());
+        if (disponibles.isEmpty()) return java.util.Map.of();
+        var recus =
+                lots.stream()
+                        .flatMap(
+                                l ->
+                                        (l.suivi().termineManuellement()
+                                                        ? l.suivi().attendus()
+                                                        : l.suivi().obtenus())
+                                                .stream())
+                        .map(SuiviLotsEmi::besoin)
+                        .toList();
+        PlanRetrait.reserver(disponibles, recus, 0, null);
+
+        List<PlanRetrait.Besoin<EmiStack>> demandes = new ArrayList<>();
+        List<Integer> ids = new ArrayList<>();
+        for (var lot : aVerifier)
+            for (var restant : lot.suivi().restants())
+                if (!restant.objet().getItemStack().isEmpty()) {
+                    demandes.add(besoin(restant));
+                    ids.add(lot.id());
+                }
+        var quantites = PlanRetrait.calculer(disponibles, demandes).fournis();
+        var resultat = new java.util.HashMap<Integer, Integer>();
+        for (int i = 0; i < ids.size(); i++)
+            if (quantites.get(i) > 0) resultat.merge(ids.get(i), quantites.get(i), Integer::sum);
+        return resultat;
+    }
+
+    private static PlanRetrait.Besoin<EmiStack> besoin(PlanRetrait.Stock<EmiStack> sortie) {
+        return new PlanRetrait.Besoin<>(
+                pile -> ComparaisonEmi.meme(pile, sortie.objet()), sortie.quantite());
+    }
+
     long revision() {
         return revision;
     }

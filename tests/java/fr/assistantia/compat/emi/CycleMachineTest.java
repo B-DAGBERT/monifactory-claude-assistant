@@ -380,12 +380,15 @@ public final class CycleMachineTest {
     }
 
     private void reprendreApresInterruption(String scenario) throws ReflectiveOperationException {
+        boolean trie = scenario.equals("reprise-apres-tri");
+        boolean nouvelleSortie = scenario.equals("reprise-nouvelle-sortie");
         var recette = new EmiRecipe(List.of(item(ETAIN, 2), item(MOULE, 1)), List.of());
         recette.outputs = List.of(item(PLAQUE, 1));
         var premiere = menu.slots.get(3);
         var seconde = menu.slots.get(4);
         premiere.item = new ItemStack(ETAIN, 2);
         seconde.item = new ItemStack(MOULE, 1);
+        if (trie || nouvelleSortie) sortie.item = new ItemStack(PLAQUE, 1);
         envoyer(EnvoiMachine.preparer(ecran, recette, 1));
         assert EnvoiMachine.diagnostic()
                 .equals(new EnvoiMachine.Diagnostic("test:recipe", "en_cours", "aucun"));
@@ -398,12 +401,14 @@ public final class CycleMachineTest {
         boolean consomme = scenario.equals("reprise-consommation-incertaine");
         boolean ajout = scenario.equals("reprise-entree-modifiee");
         boolean clicPerime = scenario.equals("reprise-clic-perime");
-        if (corrige || incertain) {
+        boolean tentative = corrige || incertain || trie || nouvelleSortie;
+        if (tentative) {
             var nouveauDepot = new TickEvent.ClientTickEvent();
             EnvoiMachine.tick(nouveauDepot);
             assert moule.getItem().is(MOULE) && seconde.getItem().isEmpty();
             moule.item = ItemStack.EMPTY;
             if (corrige) seconde.item = new ItemStack(MOULE, 1);
+            if (trie || nouvelleSortie) menu.slots.get(5).item = new ItemStack(MOULE, 1);
         } else mc.screen = null;
         attendreFinEnvoi();
         assert suivi.actifs().isEmpty() && EnvoiMachine.statut().contains("1 dépôt confirmé");
@@ -412,24 +417,28 @@ public final class CycleMachineTest {
                         new EnvoiMachine.Diagnostic(
                                 "test:recipe",
                                 "interrompu",
-                                corrige || incertain ? "confirmation_absente" : "contexte_change"));
+                                tentative ? "confirmation_absente" : "contexte_change"));
         int clicsAvant = mc.gameMode.clicks;
         var menuRouvre = new AbstractContainerScreen<>(menu);
         mc.screen = menuRouvre;
         if (contexte) mc.level = new Object();
         if (consomme) entree.item = ItemStack.EMPTY;
         if (ajout) entree.item.setCount(3);
+        if (trie) sortie.item = ItemStack.EMPTY;
+        if (nouvelleSortie) sortie.item.setCount(2);
         var reprise = EnvoiMachine.preparer(menuRouvre, recette, 1);
         assert reprise.details().stream().anyMatch(s -> s.contains("Déposé") && s.contains(ETAIN))
                         != contexte
                 : "le relevé ne change pas de dimension";
-        if (incertain || consomme) {
+        if (incertain || consomme || nouvelleSortie) {
             assert !reprise.possible() && reprise.probleme().contains("à vérifier");
-            assert reprise.details().contains("Dernier dépôt non confirmé") == incertain;
+            assert reprise.details().contains("Dernier dépôt non confirmé")
+                    == (incertain || nouvelleSortie);
             assert mc.gameMode.clicks == clicsAvant;
             return;
         }
         assert reprise.possible() : reprise.probleme();
+        assert !reprise.details().contains("Dernier dépôt non confirmé");
         assert mc.gameMode.clicks == clicsAvant : "aucun rejeu à l'ouverture";
         rendreClicDisponible();
         if (clicPerime) entree.item = ItemStack.EMPTY;
@@ -449,6 +458,7 @@ public final class CycleMachineTest {
         attendreFinEnvoi();
         assert lot().fois() == 1 && entree.getItem().getCount() == (ajout ? 3 : 2);
         assert moule.getItem().getCount() == 1 && seconde.getItem().isEmpty();
+        if (trie) assert menu.slots.get(5).getItem().isEmpty();
         assert mc.gameMode.clicks == clicsAvant + 2 : "seul le complément est transféré";
         assert EnvoiMachine.diagnostic()
                 .equals(new EnvoiMachine.Diagnostic("test:recipe", "reussi", "aucun"));
@@ -928,6 +938,20 @@ public final class CycleMachineTest {
                 == (ajouterSurplus ? 65 : Math.min(demande, 64)) - 16;
     }
 
+    private void receptionDepuisAutreStock() {
+        var recette = new EmiRecipe(List.of(item(ETAIN, 1)), List.of());
+        recette.outputs = List.of(item(PLAQUE, 1));
+        int premier = suivi.ajouter(recette, 3, GregTechMachines.ui.position());
+        int second = suivi.ajouter(recette, 3, GregTechMachines.ui.position());
+        assert suivi.aConfirmer().isEmpty();
+        menu.slots.get(3).item = new ItemStack(PLAQUE, 4);
+        synchroniser();
+        assert suivi.aConfirmer().equals(java.util.Map.of(premier, 3, second, 1));
+        assert suivi.actifs().stream().allMatch(l -> l.suivi().totalRecu() == 0);
+        assert suivi.terminer(premier, ArbreEmi.tree);
+        assert suivi.aConfirmer().equals(java.util.Map.of(second, 1));
+    }
+
     public static void main(String[] args) throws Exception {
         var fixture = new CycleMachineTest();
         String scenario = args[0];
@@ -975,6 +999,8 @@ public final class CycleMachineTest {
                     "absorption-ancien-demarrage" -> fixture.absorptionAvantDepotSuivant(scenario);
             case "reprise-apres-premier-depot",
                     "reprise-serveur-corrige",
+                    "reprise-apres-tri",
+                    "reprise-nouvelle-sortie",
                     "reprise-incertaine",
                     "reprise-consommation-incertaine",
                     "reprise-entree-modifiee",
@@ -982,6 +1008,7 @@ public final class CycleMachineTest {
                     "reprise-nouveau-contexte" -> fixture.reprendreApresInterruption(scenario);
             case "reprise-cycle-prouve" -> fixture.reprendreApresCycleProuve();
             case "deux-lots" -> fixture.deuxLots();
+            case "reception-autre-stock" -> fixture.receptionDepuisAutreStock();
             case "63" -> fixture.lotLimite(63, false);
             case "64" -> fixture.lotLimite(64, false);
             case "65" -> fixture.lotLimite(65, false);

@@ -2,6 +2,7 @@ package fr.assistantia.compat.emi;
 
 import fr.assistantia.ArbreCollecte;
 import fr.assistantia.ArbreEmi;
+import fr.assistantia.RessourceCollecte;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -38,7 +39,8 @@ public final class MatieresArbreEmi {
     private static void visiter(ArbreCollecte.Noeud noeud, Set<String> ids, int profondeur) {
         if (noeud == null || profondeur > 128 || ids.size() > 4096) return;
         if (noeud.enfants().isEmpty()) {
-            if (!noeud.reutilisable()) ids.addAll(noeud.variantes());
+            if (!noeud.reutilisable())
+                for (var id : noeud.variantes()) if (!RessourceCollecte.estFluide(id)) ids.add(id);
             return;
         }
         for (var enfant : noeud.enfants()) visiter(enfant, ids, profondeur + 1);

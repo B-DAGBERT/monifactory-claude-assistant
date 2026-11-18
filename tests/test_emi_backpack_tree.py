@@ -83,8 +83,9 @@ public class FluidUtil {
  }
  public static java.util.Optional<Content> getFluidContained(ItemStack s){
   var tag=s.getTag();
+  var liquide=tag==null?"":tag.getString("fluide");
   return tag==null||tag.getInt("volume")==0?java.util.Optional.empty()
-   :java.util.Optional.of(new Content(new Fluid("test:rubber"),null,tag.getInt("volume")));
+   :java.util.Optional.of(new Content(new Fluid(liquide.isEmpty()?"test:rubber":liquide),null,tag.getInt("volume")));
  }
 }
 """,
@@ -175,6 +176,7 @@ def compiler_contrats(directory):
         str(ROOT / name)
         for name in (
             "mod/src/main/java/fr/assistantia/PlanRetrait.java",
+            "mod/src/main/java/fr/assistantia/RessourceCollecte.java",
             "mod/src/main/java/fr/assistantia/LotFabrication.java",
             "mod/src/main/java/fr/assistantia/ReceptionLots.java",
             "mod/src/main/java/fr/assistantia/PlanMachines.java",

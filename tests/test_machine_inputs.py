@@ -12,7 +12,9 @@ from test_me_terminal_panel import corps
 
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = dict(CHEST_STUBS)
-STUBS["net.minecraft.world.inventory.ClickType"] = "public enum ClickType {PICKUP, QUICK_MOVE}"
+STUBS["net.minecraft.world.inventory.ClickType"] = (
+    "public enum ClickType {PICKUP, QUICK_MOVE, SWAP}"
+)
 STUBS["net.minecraft.world.item.Item"] = (
     "public class Item {public boolean canBeDepleted(){return false;}}"
 )
@@ -310,6 +312,7 @@ class MachineInputTests(unittest.TestCase):
             str(ROOT / "mod/src/main/java/fr/assistantia" / f"{name}.java")
             for name in (
                 "PlanRetrait",
+                "RessourceCollecte",
                 "PlanArbre",
                 "ArbreCollecte",
                 "MemoireCollecte",
@@ -378,7 +381,11 @@ class MachineInputTests(unittest.TestCase):
 
     def test_machine_cycle_from_confirmed_send_to_partial_and_final_receipt(self):
         self.rejouer_cycle(
-            "objets-puis-cuves", "poches-puis-sortie", "annulation-reception-partielle", "deux-lots"
+            "objets-puis-cuves",
+            "poches-puis-sortie",
+            "annulation-reception-partielle",
+            "deux-lots",
+            "reception-autre-stock",
         )
 
     def test_sac_retrait_me_machine_demarrage_immediat_un_seul_lot(self):
@@ -431,6 +438,8 @@ class MachineInputTests(unittest.TestCase):
         self.rejouer_cycle(
             "reprise-apres-premier-depot",
             "reprise-serveur-corrige",
+            "reprise-apres-tri",
+            "reprise-nouvelle-sortie",
             "reprise-incertaine",
             "reprise-consommation-incertaine",
             "reprise-entree-modifiee",

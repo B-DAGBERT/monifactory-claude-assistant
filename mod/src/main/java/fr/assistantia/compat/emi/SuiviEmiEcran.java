@@ -394,7 +394,7 @@ public final class SuiviEmiEcran extends Screen {
                 .infobulle(
                         fini
                                 ? "Retirer la ligne du suivi et garder son avancement EMI."
-                                : "Marquer ce lot terminé dans l’arbre EMI.");
+                                : "Si tu as récupéré toute la sortie, confirme la fin du lot ici.");
         statutLot.visible = lot && (fini || ligne.annulable());
         statutLot.active = statutLot.visible && actif && !EnvoiMachine.occupe();
         deplier.active = !lignes.isEmpty();

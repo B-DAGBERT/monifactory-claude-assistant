@@ -14,13 +14,16 @@ STUBS = {
  public final String id;public int count,tag;public ItemStack(String id,int count){this.id=id;this.count=count;}
  public ItemStack(String id){this(id,1);}public String getItem(){return id;}
  public boolean isEmpty(){return count<=0;}public int getCount(){return count;}
+ public int getMaxStackSize(){return 64;}
  public ItemStack copy(){var s=new ItemStack(id,count);s.tag=tag;return s;}
  public static boolean isSameItemSameTags(ItemStack a,ItemStack b){comparisons++;return a.id.equals(b.id)&&a.tag==b.tag;}}
 """,
     "net.minecraft.core.BlockPos": "public record BlockPos(int x,int y,int z) {public BlockPos immutable(){return this;}}",
-    "net.minecraft.world.inventory.ClickType": "public enum ClickType {PICKUP, QUICK_MOVE}",
+    "net.minecraft.world.inventory.ClickType": "public enum ClickType {PICKUP, QUICK_MOVE, SWAP}",
     "net.minecraft.world.inventory.AbstractContainerMenu": """public class AbstractContainerMenu {
- public int containerId=1;public net.minecraft.world.item.ItemStack getCarried(){return net.minecraft.world.item.ItemStack.EMPTY;}
+ public int containerId=1;
+ public net.minecraft.world.item.ItemStack carried=net.minecraft.world.item.ItemStack.EMPTY;
+ public net.minecraft.world.item.ItemStack getCarried(){return carried;}
 }""",
     "net.minecraft.world.inventory.ChestMenu": "public class ChestMenu extends AbstractContainerMenu {}",
     "net.minecraft.world.inventory.Slot": """public class Slot {

@@ -5,12 +5,15 @@ import fr.assistantia.DispositionCoffre.Libelles;
 import fr.assistantia.DispositionCoffre.Zone;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
@@ -26,6 +29,7 @@ public final class AideCoffre {
     private static Zone occupee;
     private static Disposition disposition;
     private static RetraitCoffre.Plan plan = new RetraitCoffre.Plan(List.of(), 0);
+    private static Set<Slot> aPrendre = Set.of();
     private static List<ItemStack> objets = List.of();
     private static ItemStack choisi = ItemStack.EMPTY;
     private static long actualise, signature, revision;
@@ -50,6 +54,7 @@ public final class AideCoffre {
 
     public static void vider() {
         plan = new RetraitCoffre.Plan(List.of(), 0);
+        aPrendre = Set.of();
         objets = List.of();
         choisi = ItemStack.EMPTY;
         disposition = null;
@@ -63,16 +68,24 @@ public final class AideCoffre {
     }
 
     /** Coffre ouvert, réglage actif et arbre EMI en cours ; sinon le panneau disparaît. */
-    private static boolean actif(Screen screen) {
+    static boolean actif(Screen screen) {
         if (screen != ecran || ecran == null) return false;
         if (Pont.retraitCoffres() && RechercheEmi.actif()) return true;
         if (disposition != null || !objets.isEmpty()) vider();
         return false;
     }
 
+    static boolean aPrendre(Slot slot) {
+        return aPrendre.contains(slot);
+    }
+
     private static void actualiser() {
         occupee = PanneauAssistant.occupee(ecran);
         plan = Emi.retraitArbre(ecran);
+        aPrendre =
+                plan.lots().stream()
+                        .map(RetraitCoffre.Lot::source)
+                        .collect(Collectors.toUnmodifiableSet());
         objets = plan.objets();
         if (objets.stream().noneMatch(i -> ItemStack.isSameItemSameTags(i, choisi)))
             choisi = objets.isEmpty() ? ItemStack.EMPTY : objets.get(0);

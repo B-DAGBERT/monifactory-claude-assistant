@@ -70,6 +70,7 @@ class RecipeEngineTests(unittest.TestCase):
                 "ArbreCollecte",
                 "PlanArbre",
                 "MemoireCollecte",
+                "RessourceCollecte",
             )
         ]
         sources += [

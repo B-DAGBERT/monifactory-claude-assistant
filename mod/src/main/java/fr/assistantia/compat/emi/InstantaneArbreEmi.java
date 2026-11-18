@@ -5,6 +5,7 @@ import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.ArbreCollecte;
 import fr.assistantia.PlanMachines;
+import fr.assistantia.RessourceCollecte;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -14,6 +15,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraftforge.fluids.FluidUtil;
 
 /** Une lecture de l'arbre natif pour le scan des coffres et le plan des machines. */
 public record InstantaneArbreEmi(
@@ -21,6 +24,7 @@ public record InstantaneArbreEmi(
         PlanMachines.Noeud<EmiStack, EmiRecipe> machines,
         long lots,
         List<EmiStack> variantes,
+        List<EmiStack> fluides,
         List<String> cles,
         List<String> cible) {
 
@@ -137,7 +141,8 @@ public record InstantaneArbreEmi(
                             lecture.collecte(),
                             lecture.machines(),
                             lots,
-                            List.copyOf(variantes),
+                            variantes.stream().filter(s -> !(s.getKey() instanceof Fluid)).toList(),
+                            variantes.stream().filter(s -> s.getKey() instanceof Fluid).toList(),
                             cles(variantes),
                             cles(cible.getEmiStacks()));
             derniereStructure = List.copyOf(structure);
@@ -162,6 +167,21 @@ public record InstantaneArbreEmi(
     boolean accepte(ItemStack item) {
         var pile = EmiStack.of(item);
         return variantes.stream().anyMatch(v -> ComparaisonEmi.meme(pile, v));
+    }
+
+    RessourceCollecte fluide(ItemStack objet) {
+        if (fluides.isEmpty()) return null;
+        var fluide = FluidUtil.getFluidContained(objet).orElse(null);
+        if (fluide == null || fluide.isEmpty()) return null;
+        var reel = EmiStack.of(fluide.getFluid(), fluide.getTag(), fluide.getAmount());
+        for (var attendu : fluides)
+            if (ComparaisonEmi.meme(reel, attendu))
+                return new RessourceCollecte(cleFluide(attendu), fluide.getAmount());
+        return null;
+    }
+
+    private static String cleFluide(EmiStack pile) {
+        return RessourceCollecte.cleFluide(pile.getId().toString(), pile.getNbt());
     }
 
     private static List<String> cles(List<EmiStack> stacks) {
@@ -214,7 +234,14 @@ public record InstantaneArbreEmi(
                 var item = pile.getItemStack();
                 var copie = pile.copy();
                 variantesMachine.add(copie);
-                if (item.isEmpty()) continue;
+                if (item.isEmpty()) {
+                    if (copie.getKey() instanceof Fluid) {
+                        ids.add(cleFluide(copie));
+                        variantesCollecte.add(copie);
+                        outil = false;
+                    }
+                    continue;
+                }
                 ids.add(copie.getId().toString());
                 variantesCollecte.add(copie);
                 outil &=

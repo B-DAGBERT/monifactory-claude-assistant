@@ -103,6 +103,7 @@ public final class MachinesEmi {
     private static final java.util.Map<Object, java.util.Map<EmiRecipe, Boolean>> compatibilites =
             new java.util.WeakHashMap<>();
     private static boolean erreurSignalee, erreurInterfaceSignalee;
+    static final String RECEPTION_A_CONFIRMER = "Réception à confirmer";
 
     public record Ligne(
             int lot,
@@ -427,24 +428,24 @@ public final class MachinesEmi {
                                 problemeOrdre,
                                 3));
         }
+        var aConfirmer = lots.aConfirmer();
         for (var lot : lots.actifs())
-            if (lots.visibleDansSuivi(lot))
+            if (lots.visibleDansSuivi(lot)) {
+                int porte = aConfirmer.getOrDefault(lot.id(), 0);
+                var suivi = lot.suivi();
+                String detail = suivi.totalRecu() + "/" + suivi.total() + " récupérés";
+                if (suivi.termineManuellement()) detail = "Marqué terminé manuellement";
+                else if (porte > 0) detail += " · " + porte + " sur toi";
                 lignes.add(
                         new Ligne(
                                 lot.id(),
                                 lot.recette(),
                                 lot.fois(),
-                                lot.suivi().etat().texte,
-                                lot.suivi().annulable(),
-                                (lot.suivi().termineManuellement()
-                                                ? "Marqué terminé manuellement"
-                                                : lot.suivi().totalRecu()
-                                                        + "/"
-                                                        + lot.suivi().total()
-                                                        + " récupérés")
-                                        + " · "
-                                        + lot.lieu(),
+                                porte > 0 ? RECEPTION_A_CONFIRMER : suivi.etat().texte,
+                                suivi.annulable(),
+                                detail + " · " + lot.lieu(),
                                 2));
+            }
         lignes.sort(java.util.Comparator.comparingInt(Ligne::groupe));
         return List.copyOf(lignes);
     }

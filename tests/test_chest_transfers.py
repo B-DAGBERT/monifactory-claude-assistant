@@ -135,6 +135,7 @@ class ChestTransferTests(unittest.TestCase):
                 for name in (
                     "PlanRetrait",
                     "RetraitCoffre",
+                    "RessourceCollecte",
                     "ArbreCollecte",
                     "MemoireCollecte",
                     "PlanArbre",

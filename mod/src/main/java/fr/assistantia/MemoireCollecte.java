@@ -201,13 +201,7 @@ public final class MemoireCollecte {
             List<PlanRetrait.Stock<String>> coffres,
             int nombreTampons,
             Map<String, Integer> portes) {
-        Map<String, Integer> tampons = new LinkedHashMap<>();
-        for (var stock : coffres.subList(0, nombreTampons))
-            tampons.merge(
-                    stock.objet(),
-                    stock.quantite(),
-                    (a, b) -> (int) Math.min(Integer.MAX_VALUE, (long) a + b));
-        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>(stocksPlanifies(portes, tampons));
+        var stocks = prevoirAvecTampons(coffres.subList(0, nombreTampons), portes);
         int offset = stocks.size();
         int finPrioritaire = nombreTampons == 0 ? 0 : offset + nombreTampons;
         stocks.addAll(coffres);
@@ -247,6 +241,33 @@ public final class MemoireCollecte {
         return retenus.entrySet().stream()
                 .map(e -> new PlanRetrait.Prise(e.getKey(), e.getValue()))
                 .toList();
+    }
+
+    private ArrayList<PlanRetrait.Stock<String>> prevoirAvecTampons(
+            List<PlanRetrait.Stock<String>> piles, Map<String, Integer> portes) {
+        Map<String, Integer> tampons = new LinkedHashMap<>();
+        for (var stock : piles)
+            tampons.merge(
+                    stock.objet(),
+                    stock.quantite(),
+                    (a, b) -> (int) Math.min(Integer.MAX_VALUE, (long) a + b));
+        return new ArrayList<>(stocksPlanifies(portes, tampons));
+    }
+
+    /** Les tampons couvrent d'abord les besoins, sans devenir des coffres ordinaires à chercher. */
+    Set<String> manquantsApresTampons(
+            List<PlanRetrait.Stock<String>> tampons, Map<String, Integer> portes) {
+        if (arbre == null || tampons.isEmpty()) return restants;
+        var stocks = prevoirAvecTampons(tampons, portes);
+        stocks.addAll(tampons);
+        return manquantsArbre(stocks);
+    }
+
+    private Set<String> manquantsArbre(List<PlanRetrait.Stock<String>> stocks) {
+        var allocation = PlanArbre.calculer(arbre, lots, stocks, ids -> ids::contains);
+        Set<String> manquants = new LinkedHashSet<>();
+        for (var ingredient : allocation.manquants()) manquants.addAll(ingredient.variantes());
+        return avecFabrications(manquants);
     }
 
     /** Les résultats attendus restent recherchables, même si leurs branches EMI sont pliées. */
@@ -289,6 +310,10 @@ public final class MemoireCollecte {
     }
 
     private void crediter(String id, Map<String, Integer> actuel, Map<String, Integer> preuves) {
+        if (RessourceCollecte.estFluide(id)) {
+            observes.put(id, Math.max(0, actuel.getOrDefault(id, 0)));
+            return;
+        }
         int gain = Math.max(0, preuves.getOrDefault(id, 0));
         int credit = (int) Math.min(1_000_000L, (long) observes.getOrDefault(id, 0) + gain);
         observes.put(id, Math.max(credit, Math.max(0, actuel.getOrDefault(id, 0))));
@@ -346,10 +371,7 @@ public final class MemoireCollecte {
         for (String id : tous) if (!credites.contains(id)) crediter(id, inventaire, preuves);
         List<PlanRetrait.Stock<String>> stocks = stocksPlanifies();
         if (arbre != null) {
-            var allocation = PlanArbre.calculer(arbre, lots, stocks, ids -> ids::contains);
-            Set<String> manquants = new LinkedHashSet<>();
-            for (var ingredient : allocation.manquants()) manquants.addAll(ingredient.variantes());
-            restants = avecFabrications(manquants);
+            restants = manquantsArbre(stocks);
             return restants;
         }
         var allocation = PlanRetrait.calculer(stocks, besoins);

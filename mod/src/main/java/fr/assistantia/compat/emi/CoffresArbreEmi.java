@@ -42,6 +42,7 @@ public final class CoffresArbreEmi {
         RechercheEmi.recalculer(
                 new MemoireCollecte(vue.collecte(), vue.lots()),
                 vue::accepte,
+                vue::fluide,
                 dernierArbre != null && vue.cible().equals(dernierArbre.cible()));
         dernierArbre = vue;
     }
@@ -389,7 +390,7 @@ public final class CoffresArbreEmi {
             if (ArbreEmi.actif() == null) RechercheEmi.arreter();
             if (!ArbreEmi.activer()) return;
             RechercheEmi.basculer(
-                    ID, new MemoireCollecte(vue.collecte(), vue.lots()), vue::accepte);
+                    ID, new MemoireCollecte(vue.collecte(), vue.lots()), vue::accepte, vue::fluide);
             dernierArbre = vue;
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);

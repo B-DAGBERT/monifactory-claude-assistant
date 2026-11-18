@@ -48,6 +48,65 @@ class Parcours(ContratJava):
 
 
 class ScenariosBasiques(Parcours, unittest.TestCase):
+    def test_matiere_couverte_par_un_tampon_reste_proposee_dans_ce_tampon(self):
+        tampon = "test:world|3|64|0"
+        plaque = "test:plate"
+        self.client.step(tampon=[tampon], stock_tampons={tampon: {plaque: 2}})
+        recherche = self.demarrer(arbre=noeud(None, enfants=[noeud(plaque, 2)]))
+        self.assertTrue(recherche["actif"])
+        self.assertEqual(recherche["demande"]["objets"], [])
+        ordinaire = self.rafraichir(
+            [coffre(10, item=plaque, n=32)], ouvert=[10, 64, 0], locaux={plaque: 32}
+        )
+        self.assertEqual(ordinaire["coffres"], [])
+        self.assertEqual(ordinaire["selection"], {})
+        ouvert = self.client.step(ouvert=[3, 64, 0], locaux={plaque: 2})
+        self.assertEqual(ouvert["selection"], {plaque: 2})
+
+    def test_sapling_consomme_pour_un_composant_depose_dans_le_tampon(self):
+        sapling, composant = "minecraft:oak_sapling", "test:component"
+        tampon = "test:world|3|64|0"
+        arbre = noeud(None, enfants=[noeud(composant, enfants=[noeud(sapling)])])
+        self.client.step(inventaire={sapling: 1}, tampon=[tampon])
+        self.demarrer(arbre=arbre)
+        self.client.step(inventaire={composant: 1})
+        resultat = self.client.step(inventaire={}, stock_tampons={tampon: {composant: 1}})
+        self.assertEqual(resultat["demande"]["objets"], [])
+        ordinaire = self.rafraichir(
+            [coffre(10, item=sapling, n=16)], ouvert=[10, 64, 0], locaux={sapling: 16}
+        )
+        self.assertEqual(ordinaire["selection"], {})
+        self.assertEqual(ordinaire["coffres"], [])
+        self.assertEqual(
+            self.client.step(ouvert=[3, 64, 0], locaux={composant: 1})["selection"],
+            {composant: 1},
+        )
+
+    def test_liquide_du_coffre_collecte_selon_le_volume_manquant(self):
+        lave = "fluide|test:lava|null"
+        seau = "test:lava_bucket"
+        autre_seau = "test:water_bucket"
+        mold = "test:mold"
+        locaux = {seau: 3, autre_seau: 2, mold: 1}
+        self.client.step(
+            contenants={seau: [lave, 1000], autre_seau: ["fluide|test:water|null", 1000]}
+        )
+        debut = self.demarrer(arbre=noeud(None, enfants=[noeud(lave, 1500), noeud(mold)]))
+        self.assertEqual(debut["demande"]["objets"], [mold])
+        self.assertEqual(self.client.step(locaux=locaux)["selection"], {seau: 2, mold: 1})
+
+        avec_sac = self.client.step(sac={seau: 1}, locaux=locaux)
+        self.assertEqual(avec_sac["selection"], {seau: 1, mold: 1})
+        sans_sac = self.client.step(compte_sac=False, locaux=locaux)
+        self.assertEqual(sans_sac["selection"], {seau: 2, mold: 1})
+
+        tampon = "test:world|3|64|0"
+        couvert = self.client.step(
+            tampon=[tampon], stock_tampons={tampon: {seau: 2}}, locaux=locaux
+        )
+        self.assertEqual(couvert["selection"], {mold: 1})
+        self.assertEqual(couvert["demande"]["objets"], [mold])
+
     def test_option_sac_recalcule_le_reperage_actif(self):
         plaque = "test:plate"
         stockage = [coffre(3, item=plaque, n=8)]
