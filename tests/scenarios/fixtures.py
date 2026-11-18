@@ -222,13 +222,16 @@ class ContratJava:
     @classmethod
     def setUpClass(cls):
         home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
-        if not (home / "bin/javac").exists():
+        suffix = ".exe" if os.name == "nt" else ""
+        if not (home / f"bin/javac{suffix}").is_file():
             home = (
                 Path.home()
                 / "Documents/curseforge/minecraft/Install/runtime/java-runtime-gamma/mac-os-arm64/java-runtime-gamma/jre.bundle/Contents/Home"
             )
-        javac = str(home / "bin/javac") if (home / "bin/javac").exists() else shutil.which("javac")
-        cls.java = str(home / "bin/java") if (home / "bin/java").exists() else shutil.which("java")
+        compilateur = home / f"bin/javac{suffix}"
+        runtime = home / f"bin/java{suffix}"
+        javac = str(compilateur) if compilateur.is_file() else shutil.which("javac")
+        cls.java = str(runtime) if runtime.is_file() else shutil.which("java")
         if not javac or not cls.java:
             raise AssertionError("JDK 17 requis pour rejouer les scénarios")
         caches = [

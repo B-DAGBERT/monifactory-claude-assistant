@@ -127,65 +127,67 @@ public class EmiFavorites {public static int updates;public static dev.emi.emi.a
 }
 
 
+def compiler_contrats(directory):
+    """Compiler l’adaptateur EMI réel avec les contrats minimaux du jeu."""
+    java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
+    suffix = ".exe" if os.name == "nt" else ""
+    if not (java_home / f"bin/javac{suffix}").is_file():
+        java_home = (
+            Path.home()
+            / "Documents/curseforge/minecraft/Install/runtime/java-runtime-gamma/mac-os-arm64/java-runtime-gamma/jre.bundle/Contents/Home"
+        )
+    compilateur = java_home / f"bin/javac{suffix}"
+    runtime = java_home / f"bin/java{suffix}"
+    javac = str(compilateur) if compilateur.is_file() else shutil.which("javac")
+    java = str(runtime) if runtime.is_file() else shutil.which("java")
+    if not javac or not java:
+        raise unittest.SkipTest("JDK 17 required")
+    files = []
+    for name, text in STUBS.items():
+        package, _ = name.rsplit(".", 1)
+        path = Path(directory) / name.replace(".", "/")
+        path = path.with_suffix(".java")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"package {package};\n{text}", encoding="utf-8")
+        files.append(str(path))
+    files.extend(
+        str(ROOT / name)
+        for name in (
+            "mod/src/main/java/fr/assistantia/PlanRetrait.java",
+            "mod/src/main/java/fr/assistantia/LotFabrication.java",
+            "mod/src/main/java/fr/assistantia/ReceptionLots.java",
+            "mod/src/main/java/fr/assistantia/PlanMachines.java",
+            "mod/src/main/java/fr/assistantia/compat/emi/PlisFabricationEmi.java",
+            "mod/src/main/java/fr/assistantia/compat/emi/InventaireArbreEmi.java",
+            "mod/src/main/java/fr/assistantia/compat/emi/StockFabricationEmi.java",
+            "tests/java/fr/assistantia/compat/emi/PlisFabricationEmiTest.java",
+            "tests/java/fr/assistantia/compat/emi/ParcoursStockTest.java",
+            "tests/java/fr/assistantia/InventaireArbreEmiTest.java",
+        )
+    )
+    result = subprocess.run(
+        [javac, "-encoding", "UTF-8", "-d", directory, *files],
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    if result.returncode:
+        raise AssertionError(result.stdout + result.stderr)
+    return java
+
+
 class EmiBackpackTreeTests(unittest.TestCase):
     def test_closed_bag_native_tree_counts_and_refresh_without_fill_changes(self):
-        java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
-        if not (java_home / "bin/javac").exists():
-            java_home = (
-                Path.home()
-                / "Documents/curseforge/minecraft/Install/runtime/java-runtime-gamma/mac-os-arm64/java-runtime-gamma/jre.bundle/Contents/Home"
-            )
-        javac = (
-            str(java_home / "bin/javac")
-            if (java_home / "bin/javac").exists()
-            else shutil.which("javac")
-        )
-        java = (
-            str(java_home / "bin/java")
-            if (java_home / "bin/java").exists()
-            else shutil.which("java")
-        )
-        if not javac or not java:
-            self.skipTest("JDK 17 required")
         with tempfile.TemporaryDirectory() as directory:
-            files = []
-            for name, text in STUBS.items():
-                package, cls = name.rsplit(".", 1)
-                path = Path(directory) / name.replace(".", "/")
-                path = path.with_suffix(".java")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(f"package {package};\n{text}")
-                files.append(str(path))
-            files.extend(
-                str(ROOT / name)
-                for name in (
-                    "mod/src/main/java/fr/assistantia/PlanRetrait.java",
-                    "mod/src/main/java/fr/assistantia/LotFabrication.java",
-                    "mod/src/main/java/fr/assistantia/ReceptionLots.java",
-                    "mod/src/main/java/fr/assistantia/PlanMachines.java",
-                    "mod/src/main/java/fr/assistantia/compat/emi/PlisFabricationEmi.java",
-                    "mod/src/main/java/fr/assistantia/compat/emi/InventaireArbreEmi.java",
-                    "tests/java/fr/assistantia/compat/emi/PlisFabricationEmiTest.java",
-                    "tests/java/fr/assistantia/InventaireArbreEmiTest.java",
+            java = compiler_contrats(directory)
+            for contrat in (
+                "fr.assistantia.InventaireArbreEmiTest",
+                "fr.assistantia.compat.emi.PlisFabricationEmiTest",
+            ):
+                result = subprocess.run(
+                    [java, "-ea", "-cp", directory, contrat],
+                    text=True,
+                    capture_output=True,
+                    timeout=15,
                 )
-            )
-            result = subprocess.run(
-                [javac, "-encoding", "UTF-8", "-d", directory, *files],
-                text=True,
-                capture_output=True,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            result = subprocess.run(
-                [java, "-ea", "-cp", directory, "fr.assistantia.InventaireArbreEmiTest"],
-                text=True,
-                capture_output=True,
-                timeout=15,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            result = subprocess.run(
-                [java, "-ea", "-cp", directory, "fr.assistantia.compat.emi.PlisFabricationEmiTest"],
-                text=True,
-                capture_output=True,
-                timeout=15,
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

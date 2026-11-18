@@ -72,15 +72,7 @@ public final class PlanMachines {
                                                             .sum()
                                                     : 0L)
                             .toList();
-            var allocation = PlanRetrait.calculer(reserve, besoins);
-            for (int i = 0; i < reserve.size(); i++) {
-                var s = reserve.get(i);
-                int utilise = allocation.utilises().get(i);
-                if (prises != null && !s.inventaire()) prises[i] += utilise;
-                reserve.set(
-                        i,
-                        new PlanRetrait.Stock<>(s.objet(), s.quantite() - utilise, s.inventaire()));
-            }
+            var allocation = PlanRetrait.reserver(reserve, besoins, 0, prises);
             List<Demande<T, R>> suite = new ArrayList<>();
             for (int i = 0; i < niveau.size(); i++) {
                 var d = niveau.get(i);

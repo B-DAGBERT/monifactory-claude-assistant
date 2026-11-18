@@ -62,12 +62,71 @@ restent disponibles. La mise à jour de l’assistant depuis `main` fonctionne i
 de GitHub Actions.
 
 Les [scénarios EMI à la demande](scenarios.md) se lancent avec **Tester Mac.command**, **Tester.bat**
-ou `python -m monifactory_assistant.commands.scenarios basique|complexe|tous`.
+ou `python -m monifactory_assistant.commands.scenarios basique|complexe|parcours-stock|tous`.
 Ils compilent seulement les contrats Java temporaires, sans reconstruire ni installer le mod.
 Les rapports de chaque cas sont conservés dans `.runtime/scenarios/`.
 
 Les scénarios de mise à jour utilisent de vrais dépôts Git temporaires. Les tests des moteurs
 utilisent des CLI simulés : aucun compte IA ni appel facturé n’est nécessaire.
+
+## Vérification des parcours de stock
+
+Depuis la racine du dépôt, utiliser le Python de l’environnement de développement sur macOS
+ou Windows. Exécuter la suite avant de publier.
+
+```sh
+python -m monifactory_assistant.commands.scenarios tous
+```
+
+Pendant le développement, remplacer `tous` par `parcours-stock` pour rejouer seulement le
+scénario commun de stock. La suite complète inclut ce scénario.
+
+La commande rend un code de sortie non nul en cas d’échec, d’erreur ou de test ignoré. Le
+rapport dans `.runtime/scenarios/` donne le détail des cas. Les scénarios utilisent des
+conteneurs déterministes et les calculs du mod. Le rendu, les mixins effectivement chargés
+et les échanges avec le serveur se vérifient séparément dans Minecraft.
+
+Lorsqu’une mise à jour ajoute une source de stock ou change l’allocation, utiliser le même
+arbre et la même séquence de déplacements dans les parcours concernés. Chaque parcours doit
+vérifier ses propres résultats. Pour le tampon, vérifier les besoins affichés dans EMI, les
+quantités indiquées par Repérage, les retraits proposés par Réseau ME et les opérations proposées
+par Envoyer. Garder distincts le stock qui couvre le besoin, les sources accessibles au transfert
+et les sorties de lots encore attendues. Une nouvelle source doit préciser son identité, son
+actualisation et le traitement de ses doublons. Production garde ses preuves de cohérence
+propres pour présenter un stock comme physiquement attesté.
+
+`StockFabricationEmi` compose les stocks personnels, tampons et réseau avec les crédits et les
+sorties attendues pour EMI, le terminal et les machines. Le terminal conserve les indices de ses
+entrées natives. `PlanRetrait.reserver` alloue et débite les quantités d’un niveau de recette, pour
+le repérage comme pour le plan machine et le pliage EMI. Le repérage conserve ses observations
+par identifiant et sa mémoire de collecte.
+
+### Recette coffre tampon en jeu
+
+Utiliser une copie du pack avec une machine GregTech, un coffre tampon, un coffre ordinaire
+repérable et un terminal AE2. Noter la version du pack, le commit, le JAR chargé et le résultat
+de chaque parcours. Choisir un arbre EMI où la cible finale est absente et demande huit
+unités d’un même intermédiaire. Sélectionner une recette machine qui produit une unité de
+l’intermédiaire par opération. Mettre huit unités dans le coffre ordinaire et huit dans le
+réseau ME sur des stockages indépendants. Pour lire les quantités de repérage, activer
+**Repérage** avec le terminal fermé. Pour vérifier **Envoyer**, ouvrir la machine qui produit
+l’intermédiaire avec ses ingrédients dans l’inventaire.
+
+| État du scénario                                  | EMI hors terminal ME                               | Repérage                                      | Réseau ME                             | Envoyer                                                   |
+| ------------------------------------------------- | -------------------------------------------------- | --------------------------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| Trois unités portées, deux dans le tampon relevé  | Il reste trois unités de l’intermédiaire à couvrir | Le coffre ordinaire propose trois unités      | Le terminal propose trois unités      | La machine propose au maximum les trois opérations utiles |
+| Déplacer les trois unités portées vers le tampon  | Encore trois unités à couvrir                      | Encore trois à prendre                        | Encore trois à prendre                | Encore au maximum trois opérations utiles                 |
+| Ajouter trois unités au tampon et fermer son menu | Le besoin de l’intermédiaire est couvert           | Le coffre ordinaire ne propose plus cet objet | Le terminal ne propose plus cet objet | La machine ne propose plus de produire cet intermédiaire  |
+
+Pour tester le chevauchement avec AE2, refaire l’étape à cinq unités dans le tampon avec
+un réseau qui n’expose ces unités que par le bus de stockage du tampon. En ouvrant le
+terminal, les mêmes cinq unités couvrent toujours cinq besoins. Pour tester la durée de
+vie du relevé, se reconnecter et vérifier que l’ancienne sélection n’est plus active, puis
+sélectionner à nouveau le tampon et relever son contenu pour retrouver le calcul.
+
+Consigner les essais exécutés et les cas restant à vérifier. Le rapport automatisé sert de
+preuve pour les contrats de code. Le résultat en jeu couvre le pack, les menus et le serveur
+sur lesquels la recette a été rejouée.
 
 ## Livraison
 

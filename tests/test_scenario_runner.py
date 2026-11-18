@@ -50,7 +50,18 @@ class ScenarioRunnerTests(unittest.TestCase):
         self.assertEqual(len(noms), len(set(noms)))
         self.assertTrue(any("basique" in n for n in noms))
         self.assertTrue(any("complexe" in n for n in noms))
+        self.assertTrue(any("test_parcours_stock" in n for n in noms))
         self.assertTrue(any("MachineInputTests" in n for n in noms))
+
+    def test_parcours_stock_peut_se_lancer_seul(self):
+        with patch("monifactory_assistant.commands.scenarios.unittest.defaultTestLoader") as loader:
+            charger("parcours-stock")
+            noms = loader.loadTestsFromNames.call_args.args[0]
+        self.assertEqual(len(noms), 3)
+        self.assertIn("tests.scenarios.test_parcours_stock", noms)
+        self.assertTrue(any("MeTerminalPanelTests." in n for n in noms))
+        self.assertTrue(any("MachinePanelClickTests." in n for n in noms))
+        self.assertTrue(all("MachineInputTests" not in n for n in noms))
 
     def test_erreur_de_preparation_rapportee(self):
         class Cas(unittest.TestCase):

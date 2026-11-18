@@ -10,6 +10,7 @@ En ligne de commande, depuis le dépôt :
 ```sh
 .venv/bin/python -m monifactory_assistant.commands.scenarios basique
 .venv/bin/python -m monifactory_assistant.commands.scenarios complexe
+.venv/bin/python -m monifactory_assistant.commands.scenarios parcours-stock
 .venv/bin/python -m monifactory_assistant.commands.scenarios tous
 ```
 
@@ -47,6 +48,16 @@ Dix-neuf parcours ajoutent notamment :
   omis d’un relevé tronqué et les anciens relevés sans couverture conservent leurs coffres connus.
 
 Le contrat machine décrit plus haut est également exécuté. **Tous** le rejoue une seule fois.
+
+## Parcours stock
+
+Le même besoin de huit plaques est rejoué dans EMI, Repérage, Réseau ME et le calcul du panneau
+machine. Le scénario déplace les plaques entre les poches et le tampon, vérifie les quantités
+restantes et le chevauchement avec un bus AE2, puis rejoue une reconnexion. Un second cas garde
+une sortie attendue distincte du stock physique. **Tous** inclut ces deux cas.
+
+La [recette en jeu](developpement.md#recette-coffre-tampon-en-jeu) indique quoi vérifier dans les
+menus du pack et quoi relever pour la qualification.
 
 ## Résultats et limites
 

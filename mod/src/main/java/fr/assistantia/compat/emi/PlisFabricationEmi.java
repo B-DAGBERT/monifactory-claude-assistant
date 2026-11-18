@@ -71,16 +71,14 @@ final class PlisFabricationEmi {
                     outilsReserves.add(
                             outil ? disponible(attente, besoin, demande.quantite() - present) : 0);
                 }
-                var disponibles = PlanRetrait.calculer(reel, besoins);
-                debiter(reel, disponibles.utilises());
+                var disponibles = PlanRetrait.reserver(reel, besoins, 0, null);
                 var restants = new ArrayList<PlanRetrait.Besoin<EmiStack>>();
                 for (int i = 0; i < besoins.size(); i++)
                     restants.add(
                             new PlanRetrait.Besoin<>(
                                     besoins.get(i).accepte(),
                                     besoins.get(i).quantite() - disponibles.fournis().get(i)));
-                var reserves = PlanRetrait.calculer(attente, restants);
-                debiter(attente, reserves.utilises());
+                var reserves = PlanRetrait.reserver(attente, restants, 0, null);
                 var suite = new ArrayList<Demande>();
                 for (int i = 0; i < niveau.size(); i++) {
                     Object node = niveau.get(i).noeud();
@@ -162,12 +160,5 @@ final class PlisFabricationEmi {
         if (pli.champ().get(node) != pli.impose()) return false;
         pli.champ().set(node, pli.avant());
         return true;
-    }
-
-    private static void debiter(List<PlanRetrait.Stock<EmiStack>> stock, List<Integer> utilises) {
-        for (int i = 0; i < stock.size(); i++) {
-            var s = stock.get(i);
-            stock.set(i, new PlanRetrait.Stock<>(s.objet(), s.quantite() - utilises.get(i), true));
-        }
     }
 }

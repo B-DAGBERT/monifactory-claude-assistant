@@ -14,6 +14,11 @@ from monifactory_assistant.paths import ROOT
 SUITES = {
     "basique": ("tests.scenarios.test_basique",),
     "complexe": ("tests.scenarios.test_complexe",),
+    "parcours-stock": (
+        "tests.scenarios.test_parcours_stock",
+        "tests.test_me_terminal_panel.MeTerminalPanelTests.test_panel_allocates_buffer_before_withdrawable_me_entries",
+        "tests.test_machine_panel_click.MachinePanelClickTests.test_machine_send_uses_demand_after_buffer_allocation",
+    ),
 }
 MACHINES = "tests.test_machine_inputs.MachineInputTests"
 
@@ -47,8 +52,11 @@ def charger(nom):
     # Quelques tests historiques s'importent entre eux depuis le dossier tests.
     sys.path.insert(0, str(ROOT / "tests"))
     modules = [m for cle, valeurs in SUITES.items() if nom in (cle, "tous") for m in valeurs]
-    # Les deux parcours vérifient aussi les vrais clics objets/fluides et le circuit natif.
-    return unittest.defaultTestLoader.loadTestsFromNames([*modules, MACHINES])
+    # Les scénarios basiques et complexes vérifient aussi les clics objets/fluides et
+    # le circuit natif. Le contrôle du stock partagé peut se lancer seul.
+    if nom in ("basique", "complexe", "tous"):
+        modules.append(MACHINES)
+    return unittest.defaultTestLoader.loadTestsFromNames(modules)
 
 
 def rejouer(nom, suite, *, rapport=None, stream=None):

@@ -91,6 +91,22 @@ public final class PlanRetrait {
                 sources.stream().map(a -> (int) a.inverse.capacite).toList());
     }
 
+    /** Alloue et débite un niveau de l'arbre, en conservant l'origine de chaque pile. */
+    public static <T> Resultat reserver(
+            List<Stock<T>> reserves, List<Besoin<T>> besoins, int finPrioritaire, int[] retraits) {
+        var allocation = calculer(reserves, besoins, finPrioritaire);
+        for (int i = 0; i < reserves.size(); i++) {
+            var stock = reserves.get(i);
+            int utilise = allocation.utilises().get(i);
+            if (retraits != null && !stock.inventaire()) retraits[i] += utilise;
+            if (utilise > 0)
+                reserves.set(
+                        i,
+                        new Stock<>(stock.objet(), stock.quantite() - utilise, stock.inventaire()));
+        }
+        return allocation;
+    }
+
     private static long augmenter(List<List<Arc>> graphe, int fin) {
         long total = 0;
         while (true) {

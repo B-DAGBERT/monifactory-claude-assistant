@@ -7,7 +7,6 @@ import fr.assistantia.DispositionCoffre;
 import fr.assistantia.DispositionCoffre.Disposition;
 import fr.assistantia.InventaireJoueur;
 import fr.assistantia.PanneauAssistant;
-import fr.assistantia.PlanMachines;
 import fr.assistantia.PlanRetrait;
 import fr.assistantia.RelachementSouris;
 import fr.assistantia.Theme;
@@ -215,23 +214,15 @@ final class TerminalMe {
                 && vue.menuRevision() == actif.getStateId()
                 && vue.lots() == lots
                 && memeStock(vue.stock(), stock)) return;
-        var personnels = InventaireArbreEmi.physiques(InventaireArbreEmi.personnel());
-        var pilesTampon = CoffreTampon.piles();
-        var tampon = InventaireArbreEmi.stockTampon(pilesTampon);
-        var stockMe = InventaireArbreEmi.horsTampon(stocks(stock), pilesTampon);
-        var virtuels = InventaireArbreEmi.stocksVirtuels(personnels, tampon, stockMe);
-        var physiques = new ArrayList<>(personnels);
-        physiques.addAll(tampon);
-        physiques.addAll(virtuels);
-        int debut = physiques.size();
-        physiques.addAll(stockMe);
+        var couverture =
+                StockFabricationEmi.courant(
+                        InventaireArbreEmi.physiques(InventaireArbreEmi.personnel()),
+                        stocks(stock));
         var retraits = new ArrayList<Lot>();
-        if (stockMe.stream().anyMatch(s -> s.quantite() > 0))
-            for (var prise :
-                    PlanMachines.retraits(instantane.machines(), instantane.lots(), physiques)) {
-                var entree = stock.get(prise.index() - debut);
-                retraits.add(new Lot(entree.serial(), entree.pile(), prise.quantite()));
-            }
+        for (var prise : couverture.retraitsReseau(instantane.machines(), instantane.lots())) {
+            var entree = stock.get(prise.index());
+            retraits.add(new Lot(entree.serial(), entree.pile(), prise.quantite()));
+        }
         vue =
                 new Vue(
                         actif,

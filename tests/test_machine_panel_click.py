@@ -38,11 +38,8 @@ class MachinePanelClickTests(unittest.TestCase):
     def test_machine_send_uses_demand_after_buffer_allocation(self):
         machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
         arbre = corps(machines, "private static void actualiserArbre()")
-        demande = arbre.index("toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock)")
-        self.assertIn("var tampon = AnalyseRecette.stockTampon()", arbre[:demande])
-        self.assertIn("stock.addAll(tampon)", arbre[:demande])
-        self.assertIn("creditsAcquis(stock, creditFinal)", arbre[:demande])
-        self.assertIn("InventaireArbreEmi.sansTampon(finaux, tampon)", arbre[:demande])
+        demande = arbre.index("toutes = couverture.operations(vue.machines(), vue.lots())")
+        self.assertIn("StockFabricationEmi.pourMachines(inventaire())", arbre[:demande])
         self.assertIn("operations = toutes.stream()", arbre[demande:])
         self.assertIn("stockCoffres(vue, horsPoches)", arbre[demande:])
         interface = corps(machines, "private static void actualiserInterface()")

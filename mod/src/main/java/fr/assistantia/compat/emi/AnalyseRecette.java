@@ -928,9 +928,7 @@ public final class AnalyseRecette {
     }
 
     static List<PlanRetrait.Stock<EmiStack>> stockTampon() {
-        return CoffreTampon.piles().stream()
-                .map(p -> new PlanRetrait.Stock<>(EmiStack.of(p), p.getCount(), false))
-                .toList();
+        return StockFabricationEmi.tampons(CoffreTampon.piles(), false);
     }
 
     /** Stock de calcul des besoins quand l'arbre n'est pas suivi : poches, sac et contenants. */

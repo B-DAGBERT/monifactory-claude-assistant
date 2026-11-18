@@ -55,16 +55,7 @@ public final class PlanArbre {
                                 accepte.apply(node.variantes()),
                                 node.variantes().isEmpty() ? 0 : quantite));
             }
-            var allocation = PlanRetrait.calculer(reserves, besoins, finPrioritaire);
-            for (int i = 0; i < reserves.size(); i++) {
-                var stock = reserves.get(i);
-                int utilise = allocation.utilises().get(i);
-                if (!stock.inventaire()) retraits[i] += utilise;
-                reserves.set(
-                        i,
-                        new PlanRetrait.Stock<>(
-                                stock.objet(), stock.quantite() - utilise, stock.inventaire()));
-            }
+            var allocation = PlanRetrait.reserver(reserves, besoins, finPrioritaire, retraits);
             List<Demande> suite = new ArrayList<>();
             for (int i = 0; i < niveau.size(); i++) {
                 var node = niveau.get(i).noeud();

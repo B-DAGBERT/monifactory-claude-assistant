@@ -785,21 +785,8 @@ public final class MachinesEmi {
                 calculPrecedent = "";
                 instantane = vue;
             }
-            var tampon = AnalyseRecette.stockTampon();
-            var stock = inventaire();
-            stock.addAll(tampon);
-            var finaux =
-                    CycleArbreEmi.credits().stream()
-                            .map(
-                                    c ->
-                                            new PlanRetrait.Stock<>(
-                                                    EmiStack.of(c.objet()), c.quantite(), true))
-                            .toList();
-            var creditFinal = InventaireArbreEmi.sansTampon(finaux, tampon);
-            var credites = creditsAcquis(stock, creditFinal);
-            stock.addAll(credites);
-            stock.addAll(creditFinal);
-            stock.addAll(completerOutils(stock));
+            var couverture = StockFabricationEmi.pourMachines(inventaire());
+            var stock = couverture.couverture();
             String cle =
                     cleStock(stock)
                             + "|"
@@ -812,16 +799,10 @@ public final class MachinesEmi {
                             + fr.assistantia.CoffreTampon.revision();
             if (cle.equals(calculPrecedent)) return;
             calculPrecedent = cle;
-            // Les réceptions sorties des poches gardent un crédit de travail accompli.
-            // Les quantités restantes seules restent réservées et recherchées en jaune.
-            var attendus =
-                    lots.actifs().stream().flatMap(lot -> lot.suivi().restants().stream()).toList();
-            stock.addAll(attendus);
-            toutes = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
+            toutes = couverture.operations(vue.machines(), vue.lots());
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
-            var horsPoches = new ArrayList<>(credites);
-            horsPoches.addAll(creditFinal);
-            horsPoches.addAll(attendus);
+            var horsPoches = new ArrayList<>(couverture.credits());
+            horsPoches.addAll(couverture.attendus());
             var coffres = stockCoffres(vue, horsPoches);
             if (coffres.isEmpty()) utiles = toutes;
             else {
