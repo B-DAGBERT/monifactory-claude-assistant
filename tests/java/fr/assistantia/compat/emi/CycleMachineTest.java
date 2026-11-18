@@ -294,7 +294,8 @@ public final class CycleMachineTest {
         var recette = recettePlaques(1);
         var source = menu.slots.get(3);
         source.item = new ItemStack(ETAIN, 1);
-        boolean deuxEntrees = scenario.equals("sans-id-deux-entrees");
+        boolean rafale = scenario.startsWith("rafale-");
+        boolean deuxEntrees = rafale || scenario.equals("sans-id-deux-entrees");
         GregTechMachines.ui =
                 new GregTechMachines.Interface(
                         new Object(),
@@ -308,15 +309,23 @@ public final class CycleMachineTest {
         envoyer(EnvoiMachine.preparer(ecran, recette, 1));
         attendreDepot(source, 1);
         int clics = mc.gameMode.clicks;
+        if (rafale) {
+            GregTechMachines.recetteSynchronisee.accept(true);
+            if (scenario.equals("rafale-id-concurrent"))
+                GregTechMachines.recetteSynchronisee.accept(false);
+        }
         if (scenario.equals("sans-id-recette-concurrente")) {
             GregTechMachines.recetteActive = recettePlaques(1);
             EnvoiMachine.tick(new TickEvent.ClientTickEvent());
             GregTechMachines.recetteActive = null;
         }
         entree.item = ItemStack.EMPTY;
-        sortie.item = new ItemStack(PLAQUE, scenario.equals("sans-id-sortie-excedentaire") ? 2 : 1);
+        if (!scenario.equals("rafale-sortie-insuffisante"))
+            sortie.item =
+                    new ItemStack(PLAQUE, scenario.equals("sans-id-sortie-excedentaire") ? 2 : 1);
         attendreFinEnvoi();
-        if (scenario.equals("sans-id-cycle-court")) {
+        assert GregTechMachines.recetteSynchronisee == null : "écoute libérée";
+        if (scenario.equals("sans-id-cycle-court") || scenario.equals("rafale-id-attendu")) {
             assert lot().fois() == 1 && lot().suivi().totalRecu() == 0;
             assert mc.gameMode.clicks == clics : "dépôt acquitté sans clic supplémentaire";
         } else verifierEnvoiNonConfirme(clics);
@@ -744,7 +753,10 @@ public final class CycleMachineTest {
                     "sans-id-sortie-etrangere",
                     "sans-id-sortie-excedentaire",
                     "sans-id-recette-concurrente",
-                    "sans-id-deux-entrees" -> fixture.cycleSansIdentifiant(scenario);
+                    "sans-id-deux-entrees",
+                    "rafale-id-attendu",
+                    "rafale-id-concurrent",
+                    "rafale-sortie-insuffisante" -> fixture.cycleSansIdentifiant(scenario);
             case "absorption-avant-depot-suivant",
                     "absorption-avant-depot-suivant-autre",
                     "absorption-ancien-demarrage" -> fixture.absorptionAvantDepotSuivant(scenario);

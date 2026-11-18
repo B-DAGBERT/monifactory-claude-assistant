@@ -534,7 +534,8 @@ public final class EnvoiMachine {
         private LongSupplier bilanConsommation;
         private SortiesDepot sorties;
         private long fabricationsDemarrees, fabricationsSorties;
-        private boolean bilanNatifSimple, autreRecetteObservee;
+        private Runnable desabonner = () -> {};
+        private boolean bilanNatifSimple, autreRecetteObservee, recetteRecue;
 
         Depot(AbstractContainerMenu menu, GregTechMachines.Interface ui, EmiRecipe recette) {
             this.menu = menu;
@@ -592,6 +593,23 @@ public final class EnvoiMachine {
             } catch (ReflectiveOperationException | RuntimeException ignored) {
                 // L'interface peut ne pas exposer toutes les sorties. Le dépôt exact reste vérifié.
             }
+            if (sorties != null)
+                desabonner =
+                        GregTechMachines.ecouterRecette(ui.machine(), recette, this::recetteRecue);
+        }
+
+        private void recetteRecue(boolean attendue) {
+            recetteRecue = attendue;
+            if (!attendue) {
+                autreRecetteObservee = true;
+                fabricationsDemarrees = fabricationsSorties = 0;
+            }
+        }
+
+        @Override
+        public final void terminer() {
+            desabonner.run();
+            desabonner = () -> {};
         }
 
         @Override
@@ -599,10 +617,7 @@ public final class EnvoiMachine {
             if (bilanConsommation == null) return;
             var execution = GregTechMachines.execution(ui.machine(), recette);
             if (execution == null) return;
-            if (execution.autreRecette()) {
-                autreRecetteObservee = true;
-                fabricationsDemarrees = fabricationsSorties = 0;
-            }
+            if (execution.autreRecette()) recetteRecue(false);
             if (!execution.recetteAttendue()) return;
             try {
                 long fabrications = bilanConsommation.getAsLong();
@@ -625,8 +640,10 @@ public final class EnvoiMachine {
                 // La dernière sortie peut être synchronisée après la disparition de l'ID.
                 return fabrications == 1 && fabricationsDemarrees >= 1
                         || fabrications > 0
-                                && fabrications
-                                        <= Math.max(fabricationsDemarrees, fabricationsSorties)
+                                && (recetteRecue && !autreRecetteObservee
+                                        || fabrications
+                                                <= Math.max(
+                                                        fabricationsDemarrees, fabricationsSorties))
                                 && sorties != null
                                 && sorties.nouvellesSorties(fabrications)
                         // LDLib peut publier uniquement l'état final d'un cycle très court.
@@ -898,6 +915,7 @@ public final class EnvoiMachine {
                 succes = null;
             }
         } catch (Exception e) {
+            sequence.annuler("Envoi interrompu : vérifie les entrées de la machine");
             sequence = null;
             ecran = null;
             succes = null;

@@ -10,6 +10,8 @@ public final class SequenceEnvoi {
         default void observer() throws Exception {}
 
         boolean confirmee() throws Exception;
+
+        default void terminer() {}
     }
 
     private final List<Action> actions;
@@ -38,8 +40,10 @@ public final class SequenceEnvoi {
     }
 
     public void annuler(String raison) {
+        if (fin) return;
         fin = true;
         erreur = raison;
+        if (index < actions.size()) actions.get(index).terminer();
     }
 
     public void tick() {
@@ -60,6 +64,7 @@ public final class SequenceEnvoi {
             if (++attente < 5) return;
             stable = action.confirmee() ? stable + 1 : 0;
             if (stable >= 3) {
+                action.terminer();
                 index++;
                 envoyee = false;
             } else if (attente >= 80)
