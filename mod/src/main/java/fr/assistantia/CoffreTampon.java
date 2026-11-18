@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.LongSupplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -31,6 +32,16 @@ import net.minecraftforge.registries.ForgeRegistries;
 /** Rôles des coffres choisis par le joueur et relevés natifs des tampons. */
 public final class CoffreTampon {
     private static final long DUREE_RELEVE = 60_000_000_000L;
+    private static LongSupplier horloge = System::nanoTime;
+
+    enum EtatReleve {
+        DIRECT,
+        DERNIERE_OUVERTURE,
+        A_REVOIR,
+        NON_RELEVE
+    }
+
+    record Repere(BlockPos position, EtatReleve etat) {}
 
     private record Bloc(BlockPos position, BlockEntity entite, BlockPos associe) {
         boolean identique(ClientLevel niveau) {
@@ -92,20 +103,25 @@ public final class CoffreTampon {
         // null si aucun menu synchronisé ne confirme le contenu courant.
         private List<ItemStack> piles;
         private long observeLe;
+        private boolean dejaObserve;
 
         private Suivi(Cible coffre) {
             this.coffre = coffre;
         }
 
         private boolean actualiser(List<ItemStack> stock) {
-            observeLe = System.nanoTime();
+            observeLe = horloge.getAsLong();
+            dejaObserve = true;
             if (piles != null && memesPiles(piles, stock)) return false;
             piles = stock.stream().map(ItemStack::copy).toList();
             return true;
         }
 
-        private boolean disponible(Minecraft mc) {
-            return piles != null && coffre.valide(mc) && coffre.charge();
+        private boolean disponible(Minecraft mc, long maintenant) {
+            return piles != null
+                    && maintenant - observeLe < DUREE_RELEVE
+                    && coffre.valide(mc)
+                    && coffre.charge();
         }
     }
 
@@ -146,10 +162,10 @@ public final class CoffreTampon {
         revision++;
         if (precedent != null
                 && nouvelle.memeCoffre(precedent.coffre)
-                && System.nanoTime() - precedent.observeLe <= DUREE_RELEVE) {
+                && precedent.disponible(mc, horloge.getAsLong())) {
             TAMPONS.add(precedent);
             precedent = null;
-            message(mc, "Coffre tampon sélectionné.");
+            message(mc, "Coffre tampon sélectionné · relevé de la dernière ouverture.");
         } else {
             TAMPONS.add(new Suivi(nouvelle));
             message(mc, "Coffre tampon sélectionné. Ouvre-le pour relever son contenu.");
@@ -223,7 +239,7 @@ public final class CoffreTampon {
                             mc.getConnection(),
                             mc.level,
                             event.getPos().immutable(),
-                            System.nanoTime());
+                            horloge.getAsLong());
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -249,7 +265,7 @@ public final class CoffreTampon {
             return entree != null
                             && entree.niveau() == mc.level
                             && entree.connexion() == mc.getConnection()
-                            && System.nanoTime() - entree.date() <= 5_000_000_000L
+                            && horloge.getAsLong() - entree.date() <= 5_000_000_000L
                     ? entree.position()
                     : null;
         // Sophisticated synchronise la position du bloc avec son menu, y compris pour un double.
@@ -268,11 +284,12 @@ public final class CoffreTampon {
         if (event.phase != TickEvent.Phase.END) return;
         var mc = Minecraft.getInstance();
         nettoyer(mc);
-        if (!menuCourant(mc)) {
-            ouverture = null;
-            return;
-        }
-        if (!RetraitCoffre.occupe()) releverMenu();
+        if (!menuCourant(mc)) ouverture = null;
+        else if (!RetraitCoffre.occupe()) releverMenu();
+        long maintenant = horloge.getAsLong();
+        for (var tampon : TAMPONS)
+            if (tampon.piles != null && maintenant - tampon.observeLe >= DUREE_RELEVE)
+                invalider(tampon);
     }
 
     private static void nettoyer(Minecraft mc) {
@@ -291,7 +308,7 @@ public final class CoffreTampon {
             }
         }
         for (var tampon : TAMPONS) if (!tampon.coffre.charge()) invalider(tampon);
-        if (precedent != null && !precedent.disponible(mc)) precedent = null;
+        if (precedent != null && !precedent.disponible(mc, horloge.getAsLong())) precedent = null;
     }
 
     @SubscribeEvent
@@ -375,28 +392,39 @@ public final class CoffreTampon {
     }
 
     private static List<ItemStack> piles(Minecraft mc, Suivi exclu) {
+        long maintenant = horloge.getAsLong();
         return TAMPONS.stream()
-                .filter(t -> t != exclu && t.disponible(mc))
+                .filter(t -> t != exclu && t.disponible(mc, maintenant))
                 .flatMap(t -> t.piles.stream())
                 .toList();
-    }
-
-    public static boolean contient(String dimension, long x, long y, long z) {
-        var mc = Minecraft.getInstance();
-        return TAMPONS.stream()
-                .anyMatch(t -> t.coffre.contient(dimension, x, y, z) && t.disponible(mc));
     }
 
     static boolean filtrageActif() {
         return !TAMPONS.isEmpty() || !EXCLUS.isEmpty();
     }
 
-    static List<BlockPos> positionsRepere() {
+    static List<Repere> reperes() {
         var mc = Minecraft.getInstance();
+        var direct = tamponOuvert(mc);
+        long maintenant = horloge.getAsLong();
         return TAMPONS.stream()
                 .filter(t -> t.coffre.charge() && t.coffre.valide(mc))
-                .map(t -> t.coffre.blocs().get(0).position())
+                .map(
+                        t ->
+                                new Repere(
+                                        t.coffre.blocs().get(0).position(),
+                                        etat(t, direct, maintenant)))
                 .toList();
+    }
+
+    private static EtatReleve etat(Suivi tampon, Suivi direct, long maintenant) {
+        if (tampon.piles != null && maintenant - tampon.observeLe < DUREE_RELEVE)
+            return tampon == direct
+                            && !RetraitCoffre.occupe()
+                            && StockProduction.menuInitialise(ouverture.menu())
+                    ? EtatReleve.DIRECT
+                    : EtatReleve.DERNIERE_OUVERTURE;
+        return tampon.dejaObserve ? EtatReleve.A_REVOIR : EtatReleve.NON_RELEVE;
     }
 
     /** La position est exclue du repérage dès la sélection, avant le relevé du contenu. */

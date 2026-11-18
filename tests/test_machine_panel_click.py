@@ -35,6 +35,19 @@ class MachinePanelClickTests(unittest.TestCase):
         self.assertIn("Clic droit : voir la recette dans EMI", panneau)
         self.assertNotIn("Clic : ouvrir cette recette dans EMI", panneau)
 
+    def test_machine_panel_calculations_run_on_tick_and_are_revalidated_at_click(self):
+        machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
+        tick = corps(machines, "public static void tick(TickEvent.ClientTickEvent event)")
+        rendu = corps(machines, "public static void rendu(ScreenEvent.Render.Post")
+        self.assertLess(
+            tick.index("lots.actualiser();"), tick.index("if (panneau) actualiserInterface();")
+        )
+        self.assertNotIn("ScreenEvent.Render.Pre", machines)
+        self.assertNotIn("actualiserInterface()", rendu)
+        self.assertIn("contexteAffiche = contextePlan", rendu)
+        clic = corps(machines, "private static boolean selectionnerAffichee(")
+        self.assertLess(clic.index("actualiserInterface();"), clic.index("EnvoiMachine.preparer("))
+
     def test_machine_send_uses_demand_after_buffer_allocation(self):
         machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
         arbre = corps(machines, "private static void actualiserArbre()")

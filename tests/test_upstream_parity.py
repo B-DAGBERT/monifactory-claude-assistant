@@ -116,7 +116,7 @@ class ParityTests(unittest.TestCase):
             "App.on_error",  # retain the writer conflict until a successful reconnect
             "supervise",
             "build_mod_view",
-            "Storage.load",  # indexed neighbors preserve legacy newest-half rule; test_storage_memory.py
+            "Storage.load",  # one physical stock per proven pair; test_storage_memory.py
             "Storage.__init__",  # cache for the immutable export revision
             "Storage.as_text",  # format each distinct minute once; test_storage_snapshots.py
             "World.containers",  # independent adjacent storage and indexed grouping; test_emi_search.py
@@ -230,8 +230,14 @@ class ParityTests(unittest.TestCase):
         tested_action_guard_changes = {
             "App.run_actions",  # Closed model-action boundary; test_ai_action_guard.py.
         }
+        tested_storage_changes = {
+            "Storage.twins",  # Position evidence before treating two chests as halves.
+        }  # test_storage_memory.py and test_recipe_tab.py.
         tested_changes = (
-            tested_resilience_changes | tested_bridge_changes | tested_action_guard_changes
+            tested_resilience_changes
+            | tested_bridge_changes
+            | tested_action_guard_changes
+            | tested_storage_changes
         )
         compatibility_changes |= tested_changes
         checked = 0
@@ -246,7 +252,7 @@ class ParityTests(unittest.TestCase):
 
     def test_kubejs_gameplay_functions_preserved(self):
         path = "jeu/assistant_ia.js"
-        # Only the exchange and persistence entry points gained world validation.
+        # Compare the upstream functions outside the reviewed exchange and storage changes.
         pattern = re.compile(r"^function (\w+)\([^\n]*\) \{(?:[^\n]*\}$|\n.*?^\})", re.M | re.S)
         # ecrireEtat, ecrireQuetes, suivreConteneur and recevoirMonde also write only on change
         # (or debounced) and hand file work to the mod's writer thread; test_kubejs_exports.py.
@@ -254,6 +260,9 @@ class ParityTests(unittest.TestCase):
             "ecrireEtat",
             "ecrireQuetes",
             "chargerStockage",
+            # Export the other half from the opened block state; test_client_commands.py.
+            "surOuvertureEcran",
+            "lireConteneur",
             "chargerMinerais",
             "ecrireMinerais",
             # The mod tracks GregTech veins itself: no KubeJS ore relevé nor filons.json write then.

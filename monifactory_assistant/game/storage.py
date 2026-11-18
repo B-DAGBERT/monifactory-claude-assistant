@@ -62,35 +62,129 @@ def inventory_key(chest):
     return tuple(sorted(counts.items()))
 
 
-def grouped_containers(containers):
-    """Yield every physical position with its shared-stock key in linear neighbor lookups.
-
-    The legacy server snapshot has no vanilla chest half property. Only matching complete
-    inventories on adjacent supported chests can be inferred as a double chest. Drawers,
-    barrels and unknown storage retain independent stocks. A pair cannot absorb a third chest.
-    """
-    leaders = {}
-    paired = set()
-    for index, chest in enumerate(containers):
+def chest_twin(chest, here=None):
+    """None for unknown, () for a proven single, or the exact adjacent position."""
+    if not isinstance(chest, dict):
+        return None
+    twin, block = chest.get("jumeau"), chest.get("bloc")
+    if not isinstance(twin, list) or not isinstance(block, str) or block not in SHARED_CHESTS:
+        return None
+    if here is None:
         here = position(chest)
         if here is None:
-            continue
-        stock = "|".join(map(str, here))
+            return None
+    if not twin:
+        return ()
+    if len(twin) != 2 or any(
+        type(n) not in (int, float) or not -(2**31) <= n < 2**31 or n != int(n) for n in twin
+    ):
+        return None
+    dimension, x, y, z = here
+    vx, vz = map(int, twin)
+    return (dimension, vx, y, vz) if abs(vx - x) + abs(vz - z) == 1 else None
+
+
+def _neighbors(here):
+    dimension, x, y, z = here
+    return ((dimension, x + dx, y, z + dz) for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)))
+
+
+def _large(chest):
+    return str(chest.get("nom", "")).startswith("Large")
+
+
+def _shared_chest(chest):
+    block = chest.get("bloc")
+    return isinstance(block, str) and block in SHARED_CHESTS
+
+
+def _chest_pairs(entries):
+    """Match native halves first, then unambiguous legacy Large observations."""
+    pairs = {}
+    if not any(_shared_chest(chest) for here, chest in entries if here is not None):
+        return pairs, {}
+    latest = {}
+    for place, chest in entries:
+        if place is not None and (place not in latest or _date(chest) > _date(latest[place])):
+            latest[place] = chest
+    indexed = {here: chest for here, chest in latest.items() if _shared_chest(chest)}
+    hints = {place: chest_twin(chest, place) for place, chest in indexed.items()}
+
+    def pair(a, b):
+        if a not in pairs and b not in pairs:
+            pairs[a], pairs[b] = b, a
+
+    native_candidates, claims = {}, defaultdict(int)
+    for here, chest in indexed.items():
+        other = hints[here]
+        candidate = indexed.get(other)
+        if (
+            candidate is not None
+            and candidate.get("bloc") == chest.get("bloc")
+            and hints[other] in (None, here)
+        ):
+            native_candidates[here] = other
+            claims[other] += 1
+    for here, other in native_candidates.items():
+        if claims[other] == 1:
+            pair(here, other)
+
+    candidates = {}
+    for here, chest in indexed.items():
         block = chest.get("bloc")
-        if isinstance(block, str) and block in SHARED_CHESTS:
+        if (
+            hints[here] is not None
+            or not isinstance(block, str)
+            or block not in SHARED_CHESTS
+            or not _large(chest)
+        ):
+            continue
+        neighbors = [
+            there
+            for there in _neighbors(here)
+            if there in indexed
+            and hints[there] is None
+            and indexed[there].get("bloc") == block
+            and _large(indexed[there])
+        ]
+        if len(neighbors) == 1:
+            candidates[here] = neighbors[0]
+    for here, other in candidates.items():
+        if candidates.get(other) == here:
+            pair(here, other)
+    return pairs, hints
+
+
+def _grouped_containers(containers, *, legacy_server):
+    entries = [(position(chest), chest) for chest in containers]
+    pairs, hints = _chest_pairs(entries)
+    leaders = {}
+    paired = set()
+    for index, (here, chest) in enumerate(entries):
+        if here is None:
+            continue
+        other = pairs.get(here)
+        stock = "|".join(map(str, min(here, other) if other is not None else here))
+        block = chest.get("bloc")
+        # Old server packets omit the block's half. Keep the existing identical-inventory
+        # fallback for those untyped rows only. It cannot absorb a proven single or a third chest.
+        if (
+            legacy_server
+            and other is None
+            and hints.get(here) is None
+            and isinstance(block, str)
+            and block in SHARED_CHESTS
+        ):
             contents = inventory_key(chest)
-            if contents is not None:
-                dimension, x, y, z = here
-                candidates = []
-                for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                    candidate = leaders.get((dimension, x + dx, y, z + dz))
-                    if (
-                        candidate is not None
-                        and candidate[1] not in paired
-                        and candidate[2] == block
-                        and candidate[3] == contents
-                    ):
-                        candidates.append(candidate)
+            if contents is not None and not _large(chest):
+                candidates = [
+                    candidate
+                    for neighbor in _neighbors(here)
+                    if (candidate := leaders.get(neighbor)) is not None
+                    and candidate[1] not in paired
+                    and candidate[2] == block
+                    and candidate[3] == contents
+                ]
                 if candidates:
                     _, stock, _, _ = min(candidates, key=lambda c: c[0])
                     paired.add(stock)
@@ -99,47 +193,41 @@ def grouped_containers(containers):
         yield chest, stock
 
 
+def grouped_containers(containers):
+    """Yield every position and its stock key, including both inspectable halves."""
+    return _grouped_containers(containers, legacy_server=True)
+
+
+def _date(chest):
+    value = chest.get("t", 0)
+    return value if type(value) in (int, float) and math.isfinite(value) else 0
+
+
 def distinct_containers(containers):
+    newest = {}
+    for chest, stock in grouped_containers(containers):
+        prior = newest.get(stock)
+        if prior is None or _date(chest) > _date(prior):
+            newest[stock] = chest
+    return list(newest.values())
+
+
+def latest_remembered_containers(containers):
+    """Keep the newest observation of each compatible physical client chest."""
+    sorted_rows = sorted(containers, key=lambda c: -_date(c))
+    stock_by_row = {
+        id(chest): stock for chest, stock in _grouped_containers(sorted_rows, legacy_server=False)
+    }
     seen = set()
     result = []
-    for chest, stock in grouped_containers(containers):
-        if stock not in seen:
-            seen.add(stock)
-            result.append(chest)
-    return result
-
-
-def latest_remembered_containers(containers, twins):
-    """Keep the newest legacy client observations using the existing asymmetric rule.
-
-    A candidate named Large is hidden by any kept neighbor with the same block,
-    dimension and height, regardless of its content or its neighbor's display name.
-    Unlike server stock grouping, this must also replace stale, different inventories.
-    Nonstandard positions retain the original predicate instead of guessing their identity.
-    """
-    kept, nonstandard = [], []
-    occupied = set()
-    for chest in sorted(containers, key=lambda c: -c["t"]):
-        here = position(chest)
-        block = chest.get("bloc")
-        indexed = here is not None and isinstance(block, str)
-        if str(chest.get("nom", "")).startswith("Large"):
-            if indexed:
-                dimension, x, y, z = here
-                neighboring = any(
-                    (block, dimension, x + dx, y, z + dz) in occupied
-                    for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1))
-                )
-                if neighboring or any(twins(chest, other) for other in nonstandard):
-                    continue
-            elif any(twins(chest, other) for other in kept):
+    for chest in sorted_rows:
+        stock = stock_by_row.get(id(chest))
+        if stock is not None:
+            if stock in seen:
                 continue
-        kept.append(chest)
-        if indexed:
-            occupied.add((block, *here))
-        else:
-            nonstandard.append(chest)
-    return kept
+            seen.add(stock)
+        result.append(chest)
+    return result
 
 
 def _published_place(entry):
@@ -188,7 +276,12 @@ def known_chests(observations):
         if isinstance(name, str) and name:
             entry["nom"] = name
         entry.update(place)
+        if chest_twin(chest, here) is not None:
+            entry["jumeau"] = chest["jumeau"]
         entry["objets"] = [] if absorbed else [{"item": item, "n": n} for item, n in counts]
+        if absorbed:
+            # An empty alias suppresses old records at this location without replacing real stock.
+            entry["alias_stock"] = True
         containers.append(entry)
     machines = [
         place
@@ -225,11 +318,10 @@ class Storage:
             return None if path is not None and path.exists() else Storage([])
         # Les coffres mémorisés par une version plus ancienne du script du jeu sont faussés : ignorés
         containers = [c for c in data.get("conteneurs") or [] if c.get("v") == 2]
-        # Un grand coffre occupe deux blocs côte à côte : selon le côté ouvert, le jeu le mémorise à l'une
-        # ou l'autre position. On ne garde que la plus récente des deux.
+        # Un même inventaire peut être ouvert depuis deux positions.
         from monifactory_assistant.game.storage import latest_remembered_containers
 
-        kept = latest_remembered_containers(containers, Storage.twins)
+        kept = latest_remembered_containers(containers)
         return Storage(kept, containers, [m for m in data.get("machines") or [] if m.get("v") == 2])
 
     def placed(self):
@@ -245,13 +337,19 @@ class Storage:
 
     @staticmethod
     def twins(a, b):
-        """Les deux moitiés d'un même grand coffre."""
+        """Seulement une relation attestée pour les actions sur les positions physiques."""
+        from monifactory_assistant.game.storage import chest_twin, position
+
+        if a.get("bloc") != b.get("bloc"):
+            return False
+        place_a, place_b = position(a), position(b)
+        if place_a is None or place_b is None:
+            return False
+        twin_a, twin_b = chest_twin(a), chest_twin(b)
         return (
-            str(a.get("nom", "")).startswith("Large")
-            and a["bloc"] == b["bloc"]
-            and a["dimension"] == b["dimension"]
-            and a["y"] == b["y"]
-            and abs(a["x"] - b["x"]) + abs(a["z"] - b["z"]) == 1
+            twin_a == place_b
+            and twin_b in (None, place_a)
+            or (twin_b == place_a and twin_a in (None, place_b))
         )
 
     def totals(self):
@@ -313,7 +411,7 @@ class StorageMonitor:
 
     def __init__(self):
         self.client = self.storage = Storage([])
-        self.stamp = None
+        self.path = self.stamp = None
         self.server_blocks = self.merged_client = None
 
     def refresh(self, bridge, world):
@@ -322,8 +420,12 @@ class StorageMonitor:
             if hasattr(bridge, "data_path")
             else bridge.dir / "stockage.json"
         )
+        if path != self.path:
+            self.client = self.storage = Storage([])
+            self.path, self.stamp = path, None
+            self.server_blocks = self.merged_client = None
         if path is None:
-            return Storage([])
+            return self.storage
         try:
             stamp = file_stamp(path)
             if stamp != self.stamp:

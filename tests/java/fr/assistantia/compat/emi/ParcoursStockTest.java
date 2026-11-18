@@ -59,6 +59,7 @@ public final class ParcoursStockTest {
             int lingotsMe = Integer.parseInt(donnees[6]);
 
             InventaireJoueur.piles = piles(portes);
+            InventaireJoueur.revision++;
             client.player.items.clear();
             client.player.items.addAll(InventaireJoueur.piles);
             CoffreTampon.piles = piles(tampon);

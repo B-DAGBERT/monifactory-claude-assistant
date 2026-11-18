@@ -8,6 +8,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,6 +19,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,7 +36,7 @@ import net.minecraftforge.fml.loading.FMLPaths;
  * coffres_connus.json}, tiroirs et coffres jamais ouverts compris, jamais une copie du client).
  * Pour une même position, le relevé le plus récent gagne ; à date égale, celui du serveur. Donne
  * les totaux par objet et les blocs à interface connus. Les fichiers sont lus hors du thread de
- * rendu, seulement quand la date ou la taille de l'un d'eux change ; les variantes NBT ne sont pas
+ * rendu, seulement quand l’empreinte d’un fichier change ; les variantes NBT ne sont pas
  * distinguées, comme dans les mémoires elles-mêmes.
  */
 public final class CoffresConnus {
@@ -40,12 +44,22 @@ public final class CoffresConnus {
     private static final String MEMOIRE = "stockage.json", FUSION = "coffres_connus.json";
     private static final int VERSION = 2, MAX_OBJETS = 32768;
     private static final long INTERVALLE_MS = 3000;
+    private static final Set<String> TYPES_COFFRES_DOUBLES =
+            Set.of(
+                    "minecraft:chest",
+                    "minecraft:trapped_chest",
+                    "sophisticatedstorage:chest",
+                    "sophisticatedstorage:copper_chest",
+                    "sophisticatedstorage:iron_chest",
+                    "sophisticatedstorage:gold_chest",
+                    "sophisticatedstorage:diamond_chest",
+                    "sophisticatedstorage:netherite_chest");
     private static final int[][] VOISINS = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 
-    /** Date et taille d'un fichier ; {@link #ABSENT} quand il n'existe pas encore. */
-    public record Empreinte(long date, long taille) {}
+    /** Identité, taille et date d'un fichier. */
+    public record Empreinte(Object identite, FileTime date, long taille) {}
 
-    private static final Empreinte ABSENT = new Empreinte(-1, -1);
+    private static final Empreinte ABSENT = new Empreinte(null, null, -1);
 
     /**
      * Totaux mémorisés de tous les coffres connus, toutes dimensions ({@code objets}), et chaque
@@ -69,8 +83,9 @@ public final class CoffresConnus {
     /** Rayon, en blocs à l'horizontale, des coffres que le plan compte comme à portée. */
     public static final int RAYON_PLAN = 256;
 
-    private static final Etat VIDE =
-            new Etat(null, ABSENT, ABSENT, Map.of(), Set.of(), List.of(), 0, false);
+    private static Etat vide(Path dossier) {
+        return new Etat(dossier, ABSENT, ABSENT, Map.of(), Set.of(), List.of(), 0, false);
+    }
 
     private record CleProches(long revision, long tampon, String zone) {}
 
@@ -84,7 +99,7 @@ public final class CoffresConnus {
                         fil.setPriority(Thread.MIN_PRIORITY);
                         return fil;
                     });
-    private static final AtomicReference<Etat> ETAT = new AtomicReference<>(VIDE);
+    private static final AtomicReference<Etat> ETAT = new AtomicReference<>(vide(null));
     private static final AtomicLong REVISIONS = new AtomicLong();
     private static Future<?> lecture;
     private static long prochaine;
@@ -147,7 +162,7 @@ public final class CoffresConnus {
                                         c ->
                                                 !CoffreTampon.exclu(
                                                                 c.dimension(), c.x(), c.y(), c.z())
-                                                        && !CoffreTampon.contient(
+                                                        && !CoffreTampon.selectionne(
                                                                 c.dimension(), c.x(), c.y(), c.z()))
                                 .toList(),
                         dimension,
@@ -195,21 +210,20 @@ public final class CoffresConnus {
     /** Appelé à chaque tick client : programme au plus une lecture toutes les trois secondes. */
     public static void tick() {
         var mc = Minecraft.getInstance();
-        if (mc.level == null || mc.player == null) {
-            if (connexion != null || ETAT.get().pret()) ETAT.set(VIDE);
-            connexion = null;
-            return;
-        }
-        if (connexion != mc.getConnection()) {
-            connexion = mc.getConnection();
-            ETAT.set(VIDE);
+        boolean enJeu = mc.level != null && mc.player != null;
+        var lien = enJeu ? mc.getConnection() : null;
+        Path dossier = enJeu ? dossier() : null;
+        if (connexion != lien || !Objects.equals(dossier, ETAT.get().dossier())) {
+            connexion = lien;
+            // Un état vide neuf sert de génération. Un lecteur de l'ancienne connexion ne peut
+            // pas publier, même si les deux générations n'ont encore chargé aucun relevé.
+            ETAT.set(vide(dossier));
             prochaine = 0;
         }
+        if (dossier == null) return;
         long maintenant = System.currentTimeMillis();
         if (maintenant < prochaine || lecture != null && !lecture.isDone()) return;
         prochaine = maintenant + INTERVALLE_MS;
-        Path dossier = dossier();
-        if (dossier == null) return;
         var precedent = ETAT.get();
         try {
             lecture = LECTEUR.submit(() -> lire(dossier, precedent));
@@ -228,6 +242,7 @@ public final class CoffresConnus {
     }
 
     static void lire(Path dossier, Etat precedent) {
+        if (ETAT.get() != precedent) return;
         try {
             Path memoire = dossier.resolve(MEMOIRE), fusion = dossier.resolve(FUSION);
             var empreinteMemoire = empreinte(memoire);
@@ -242,6 +257,8 @@ public final class CoffresConnus {
                     analyser(
                             ABSENT.equals(empreinteMemoire) ? null : json(memoire),
                             ABSENT.equals(empreinteFusion) ? null : json(fusion));
+            if (!empreinteMemoire.equals(empreinte(memoire))
+                    || !empreinteFusion.equals(empreinte(fusion))) return;
             // Contenu inchangé (dates d'observation rafraîchies seulement) : même révision, pour
             // ne pas recalculer le plan de l'onglet Recette à chaque relevé du serveur.
             long revision =
@@ -273,10 +290,17 @@ public final class CoffresConnus {
     }
 
     private static Empreinte empreinte(Path fichier) throws IOException {
-        if (!Files.isRegularFile(fichier, LinkOption.NOFOLLOW_LINKS)) return ABSENT;
-        return new Empreinte(
-                Files.getLastModifiedTime(fichier, LinkOption.NOFOLLOW_LINKS).toMillis(),
-                Files.size(fichier));
+        try {
+            var attributs =
+                    Files.readAttributes(
+                            fichier, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            return attributs.isRegularFile()
+                    ? new Empreinte(
+                            attributs.fileKey(), attributs.lastModifiedTime(), attributs.size())
+                    : ABSENT;
+        } catch (NoSuchFileException absent) {
+            return ABSENT;
+        }
     }
 
     private static JsonObject json(Path fichier) throws IOException {
@@ -302,6 +326,8 @@ public final class CoffresConnus {
             long z,
             long t,
             boolean grand,
+            List<Long> jumeau,
+            boolean aliasStock,
             boolean fusion) {}
 
     /** Analyse pure de la seule mémoire du client. */
@@ -390,39 +416,96 @@ public final class CoffresConnus {
                 z,
                 entier(json, "t"),
                 chaine(json, "nom").startsWith("Large"),
+                complete && TYPES_COFFRES_DOUBLES.contains(bloc) ? jumeau(json, x, z) : null,
+                json.has("alias_stock")
+                        && json.get("alias_stock").isJsonPrimitive()
+                        && json.get("alias_stock").getAsJsonPrimitive().isBoolean()
+                        && json.get("alias_stock").getAsBoolean(),
                 fusion);
     }
 
     /**
-     * Un grand coffre occupe deux blocs voisins, mémorisés selon le côté ouvert : nom « Large… »
-     * côté client, nom du bloc (ou aucun) côté serveur. Du plus récent au plus ancien, un relevé
-     * voisin d'un relevé gardé du même bloc et à la même hauteur est écarté quand l'un des deux
-     * porte un nom en « Large… », quel qu'il soit.
+     * Les nouveaux relevés contiennent les coordonnées de l'autre moitié, ou une liste vide pour un
+     * coffre simple. Les anciens relevés ne s'apparient que lorsqu'une seule autre moitié "Large…"
+     * est plausible de chaque côté.
      */
     private static List<Releve> sansJumeaux(List<Releve> releves) {
         releves.sort(
-                Comparator.comparingLong(Releve::t)
-                        .reversed()
+                Comparator.comparing(Releve::aliasStock)
+                        .thenComparing(Comparator.comparingLong(Releve::t).reversed())
                         .thenComparing(r -> !r.fusion())); // tri stable : ordre des fichiers sinon
-        Map<String, Releve> gardes = new HashMap<>();
+        Map<String, Releve> places = new HashMap<>();
+        for (var r : releves)
+            if (TYPES_COFFRES_DOUBLES.contains(r.bloc())) places.put(cleBloc(r, 0, 0), r);
+        Map<String, Releve> candidats = new HashMap<>();
+        Map<String, Integer> demandes = new HashMap<>();
+        for (var r : releves) {
+            if (r.jumeau() == null || r.jumeau().isEmpty()) continue;
+            var voisin =
+                    places.get(cleBloc(r, r.jumeau().get(0) - r.x(), r.jumeau().get(1) - r.z()));
+            if (voisin != null
+                    && (voisin.jumeau() == null || voisin.jumeau().equals(List.of(r.x(), r.z())))) {
+                candidats.put(r.cle(), voisin);
+                demandes.merge(voisin.cle(), 1, Integer::sum);
+            }
+        }
+        Map<String, String> paires = new HashMap<>();
+        for (var r : releves) {
+            var voisin = candidats.get(r.cle());
+            if (voisin != null && demandes.get(voisin.cle()) == 1) apparier(paires, r, voisin);
+        }
+        for (var r : releves) {
+            var voisin = ancienJumeau(r, places);
+            if (voisin != null && ancienJumeau(voisin, places) == r) apparier(paires, r, voisin);
+        }
+        var masques = new HashSet<String>();
         List<Releve> resultat = new ArrayList<>();
         for (var r : releves) {
-            boolean jumeau = false;
-            for (int[] d : VOISINS) {
-                var voisin = gardes.get(cleBloc(r, d[0], d[1]));
-                if (voisin != null && (r.grand() || voisin.grand())) {
-                    jumeau = true;
-                    break;
-                }
-            }
-            if (jumeau) continue;
-            gardes.put(cleBloc(r, 0, 0), r);
+            if (masques.contains(r.cle())) continue;
             resultat.add(r);
+            String autre = paires.get(r.cle());
+            if (autre != null) masques.add(autre);
         }
         return resultat;
     }
 
-    private static String cleBloc(Releve r, int dx, int dz) {
+    private static void apparier(Map<String, String> paires, Releve a, Releve b) {
+        if (paires.containsKey(a.cle()) || paires.containsKey(b.cle())) return;
+        paires.put(a.cle(), b.cle());
+        paires.put(b.cle(), a.cle());
+    }
+
+    private static Releve ancienJumeau(Releve r, Map<String, Releve> places) {
+        if (r.jumeau() != null || !r.grand() || !TYPES_COFFRES_DOUBLES.contains(r.bloc()))
+            return null;
+        Releve candidat = null;
+        for (int[] d : VOISINS) {
+            var voisin = places.get(cleBloc(r, d[0], d[1]));
+            if (voisin == null || voisin.jumeau() != null || !voisin.grand()) continue;
+            if (candidat != null) return null;
+            candidat = voisin;
+        }
+        return candidat;
+    }
+
+    private static List<Long> jumeau(JsonObject objet, long x, long z) {
+        var valeur = objet.get("jumeau");
+        if (valeur == null || !valeur.isJsonArray()) return null;
+        var paire = valeur.getAsJsonArray();
+        if (paire.isEmpty()) return List.of();
+        if (paire.size() != 2 || !coordonnee(paire.get(0)) || !coordonnee(paire.get(1)))
+            return null;
+        long vx = paire.get(0).getAsLong(), vz = paire.get(1).getAsLong();
+        return Math.abs(vx - x) + Math.abs(vz - z) == 1 ? List.of(vx, vz) : null;
+    }
+
+    private static boolean coordonnee(JsonElement valeur) {
+        if (!valeur.isJsonPrimitive() || !valeur.getAsJsonPrimitive().isNumber()) return false;
+        double n = valeur.getAsDouble();
+        return n >= Integer.MIN_VALUE && n <= Integer.MAX_VALUE && n == Math.rint(n);
+    }
+
+    private static String cleBloc(Releve r, long dx, long dz) {
         return r.bloc()
                 + "|"
                 + r.dimension()

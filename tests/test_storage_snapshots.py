@@ -49,6 +49,34 @@ class StorageSnapshotTests(unittest.TestCase):
             new.replace(path)
             self.assertIsNot(monitor.refresh(bridge, world), second)
 
+    def test_unreadable_new_world_never_uses_previous_chests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path_a, path_b = (root / name / "stockage.json" for name in ("a", "b"))
+            path_a.parent.mkdir()
+            path_b.parent.mkdir()
+            path_a.write_text(
+                json.dumps(
+                    {"conteneurs": [{"v": 2, "objets": [{"item": "minecraft:redstone", "n": 5}]}]}
+                )
+            )
+            path_b.write_text('{"conteneurs":')
+
+            def read(_name):
+                try:
+                    return json.loads(bridge.path.read_text())
+                except (OSError, ValueError):
+                    return None
+
+            bridge = SimpleNamespace(path=path_a, data_path=lambda _: bridge.path, read=read)
+            world = SimpleNamespace(blocks={})
+            monitor = StorageMonitor()
+            self.assertEqual(monitor.refresh(bridge, world).totals(), {"minecraft:redstone": 5})
+            bridge.path = path_b
+            self.assertEqual(monitor.refresh(bridge, world).totals(), {})
+            path_b.write_text('{"conteneurs":[]}')
+            self.assertEqual(monitor.refresh(bridge, world).totals(), {})
+
     def test_stock_export_keeps_legacy_text_and_only_changes_at_the_next_minute(self):
         chest = {
             "x": 1,

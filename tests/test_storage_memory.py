@@ -1,4 +1,4 @@
-"""Legacy client stock de-duplication: newest half, exact order and bounded comparisons."""
+"""Client stock identity: newest half, exact positions and bounded grouping."""
 
 import ast
 import copy
@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from monifactory_assistant.game.snapshots import frame_value
+from monifactory_assistant.game.storage import SHARED_CHESTS, position
 from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,12 +51,43 @@ def chest(x, *, t=10, large=True, count=1, **extra):
     }
 
 
-def original(containers):
-    kept = []
-    for candidate in sorted(containers, key=lambda c: -c["t"]):
-        if not any(Storage.twins(candidate, other) for other in kept):
-            kept.append(candidate)
-    return kept
+def reference_legacy(containers):
+    ordered = sorted(containers, key=lambda c: -c["t"])
+    unique = {}
+    for chest in ordered:
+        place = position(chest)
+        if place is not None:
+            unique.setdefault(place, chest)
+
+    def candidates(here, chest):
+        dimension, x, y, z = here
+        return [
+            other
+            for other, row in unique.items()
+            if row["bloc"] == chest["bloc"]
+            and chest["bloc"] in SHARED_CHESTS
+            and chest["nom"].startswith("Large")
+            and row["nom"].startswith("Large")
+            and other[0] == dimension
+            and other[2] == y
+            and abs(other[1] - x) + abs(other[3] - z) == 1
+        ]
+
+    removed = set()
+    result = []
+    for chest in ordered:
+        place = position(chest)
+        if place is None:
+            result.append(chest)
+            continue
+        if place in removed:
+            continue
+        removed.add(place)
+        result.append(chest)
+        adjacent = candidates(place, chest)
+        if len(adjacent) == 1 and candidates(adjacent[0], unique[adjacent[0]]) == [place]:
+            removed.add(adjacent[0])
+    return result
 
 
 class StorageMemoryTests(unittest.TestCase):
@@ -73,10 +105,10 @@ class StorageMemoryTests(unittest.TestCase):
         self.assertEqual(result.raw, [older, newer])
         self.assertEqual(result.totals(), {"minecraft:iron_ingot": 7})
 
-    def test_name_rule_remains_asymmetric(self):
+    def test_simple_chest_is_not_a_legacy_large_half(self):
         small = chest(0, t=20, large=False)
         large = chest(1, t=10)
-        self.assertEqual(self.load([large, small]).containers, [small])
+        self.assertEqual(self.load([large, small]).containers, [small, large])
         small["t"], large["t"] = 10, 20
         self.assertEqual(self.load([small, large]).containers, [large, small])
         self.assertEqual(
@@ -84,18 +116,18 @@ class StorageMemoryTests(unittest.TestCase):
             {"minecraft:iron_ingot": 2},
         )
 
-    def test_equal_dates_keep_input_order_and_do_not_merge_same_position(self):
+    def test_equal_dates_keep_first_observation_for_the_same_stock(self):
         a, b = chest(0), chest(1)
         self.assertEqual(self.load([a, b]).containers, [a])
         self.assertEqual(self.load([b, a]).containers, [b])
         duplicate = chest(0, count=8)
-        self.assertEqual(self.load([a, duplicate]).containers, [a, duplicate])
+        self.assertEqual(self.load([a, duplicate]).containers, [a])
 
-    def test_three_neighbor_chain_preserves_legacy_kept_only_comparisons(self):
+    def test_ambiguous_legacy_chain_does_not_invent_a_pair(self):
         left, middle, right = chest(0, t=30), chest(1, t=20), chest(2, t=10)
-        self.assertEqual(self.load([left, middle, right]).containers, [left, right])
+        self.assertEqual(self.load([left, middle, right]).containers, [left, middle, right])
         middle["t"] = 40
-        self.assertEqual(self.load([left, middle, right]).containers, [middle])
+        self.assertEqual(self.load([left, middle, right]).containers, [middle, left, right])
 
     def test_all_four_neighbors_and_block_height_dimension_boundaries(self):
         for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
@@ -112,7 +144,7 @@ class StorageMemoryTests(unittest.TestCase):
         data = [chest(0, t=20), *neighbors]
         self.assertEqual(self.load(data).containers, data)
 
-    def test_nonstandard_coordinates_preserve_original_predicate(self):
+    def test_nonstandard_coordinates_keep_the_original_records(self):
         cases = [
             [chest(0.5, t=20), chest(1.5, t=10)],
             [chest(False, t=20), chest(1, t=10)],
@@ -121,7 +153,7 @@ class StorageMemoryTests(unittest.TestCase):
         ]
         for data in cases:
             with self.subTest(data=data):
-                self.assertEqual(self.load(data).containers, original(data))
+                self.assertEqual(self.load(data).containers, reference_legacy(data))
 
     def test_version_filter_machines_raw_order_and_input_are_preserved(self):
         data = [chest(2, v=1), chest(3, t=20), chest(0, t=10)]
@@ -139,7 +171,7 @@ class StorageMemoryTests(unittest.TestCase):
             (bridge.dir / "stockage.json").write_text('{"conteneurs":')
             self.assertIsNone(Storage.load(bridge))
 
-    def test_index_matches_historical_order_for_random_mixed_storage(self):
+    def test_index_matches_reference_for_random_legacy_stock(self):
         rng = random.Random(541)
         for _ in range(25):
             data = [
@@ -157,7 +189,7 @@ class StorageMemoryTests(unittest.TestCase):
                 )
                 for _ in range(200)
             ]
-            self.assertEqual(self.load(data).containers, original(data))
+            self.assertEqual(self.load(data).containers, reference_legacy(data))
 
     def test_ten_thousand_observations_do_not_compare_all_kept_chests(self):
         twins = Storage.twins

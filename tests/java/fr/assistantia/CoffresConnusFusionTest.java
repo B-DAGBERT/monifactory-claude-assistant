@@ -71,10 +71,10 @@ public final class CoffresConnusFusionTest {
         newestObservationWinsPerPosition();
         equalDatePrefersAssistantFile();
         newerEmptyObservationHidesOldContent();
-        largeChestTwinsAreSymmetric();
+        knownHalvesUseTheLatestObservation();
         machinesAreTheUnionOfBothFiles();
         missingSecondFileKeepsLegacyReading();
-        filesAreReadMergedAndKeptWhenUnreadable(Files.createTempDirectory("coffres-connus"));
+        filesAreReadMergedAndKeptWhenUnreadable(Files.createDirectory(Path.of(args[0], "coffres")));
         planCountsOnlyNearbyChestsOfTheSameDimension();
         System.out.println("PASS fusion coffres connus");
     }
@@ -208,14 +208,26 @@ public final class CoffresConnusFusionTest {
         verifier(vide.isEmpty(), "newer empty observation wins: " + vide);
     }
 
-    static void largeChestTwinsAreSymmetric() {
+    static String jumeau(String coffre, int x) {
+        return coffre.substring(0, coffre.length() - 1) + ",'jumeau':[" + x + ",0]}";
+    }
+
+    static void knownHalvesUseTheLatestObservation() {
         String chest = "minecraft:chest";
         // Newer server half (no Large name, no nom at all) hides the older client "Large Chest".
         var serveurRecent =
                 objets(
                         fichier(
                                 "",
-                                c(chest, "Large Chest", 11, 0, 400, o("minecraft:redstone", 2))),
+                                jumeau(
+                                        c(
+                                                chest,
+                                                "Large Chest",
+                                                11,
+                                                0,
+                                                400,
+                                                o("minecraft:redstone", 2)),
+                                        10)),
                         fichier("", c(chest, null, 10, 0, 500, o("minecraft:redstone", 6))));
         verifier(
                 serveurRecent.equals(Map.of("minecraft:redstone", 6L)),
@@ -223,7 +235,11 @@ public final class CoffresConnusFusionTest {
         // Newer client "Large Chest" hides the older server half, whichever file comes first.
         var clientRecent =
                 objets(
-                        fichier("", c(chest, "Large Chest", 21, 0, 900, o("minecraft:coal", 8))),
+                        fichier(
+                                "",
+                                jumeau(
+                                        c(chest, "Large Chest", 21, 0, 900, o("minecraft:coal", 8)),
+                                        20)),
                         fichier("", c(chest, "Chest", 20, 0, 100, o("minecraft:coal", 1))));
         verifier(
                 clientRecent.equals(Map.of("minecraft:coal", 8L)),
@@ -234,10 +250,26 @@ public final class CoffresConnusFusionTest {
                         fichier(
                                 "",
                                 c(chest, "Chest", 30, 0, 100, o("minecraft:coal", 1)),
-                                c(chest, "Large Chest", 31, 0, 900, o("minecraft:coal", 8))));
+                                jumeau(
+                                        c(chest, "Large Chest", 31, 0, 900, o("minecraft:coal", 8)),
+                                        30)));
         verifier(
                 memeFichier.equals(Map.of("minecraft:coal", 8L)),
                 "order independent: " + memeFichier);
+        var alias =
+                objets(
+                        fichier(
+                                "",
+                                jumeau(
+                                        c(chest, "Large Chest", 71, 0, 300, o("minecraft:coal", 2)),
+                                        70)),
+                        fichier(
+                                "",
+                                jumeau(c(chest, null, 71, 0, 301, o("minecraft:coal", 8)), 70),
+                                c(chest, null, 70, 0, 301, "")
+                                        .replace("}", ",'alias_stock':true}")));
+        // The current actual server observation wins over the synthetic empty second half.
+        verifier(alias.equals(Map.of("minecraft:coal", 8L)), "alias is not a reading: " + alias);
         // Two adjacent single chests (no Large name) and adjacent drawers stay independent.
         var independants =
                 objets(

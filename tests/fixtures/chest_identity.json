@@ -1,0 +1,328 @@
+[
+  {
+    "name": "legacy double with an independent neighbor",
+    "contents": [
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 1,
+        "y": 64,
+        "z": 0,
+        "t": 19,
+        "objets": [
+          {
+            "item": "minecraft:redstone",
+            "n": 8
+          }
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 2,
+        "y": 64,
+        "z": 0,
+        "t": 20,
+        "objets": [
+          {
+            "item": "minecraft:redstone",
+            "n": 5
+          }
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Chest",
+        "dimension": "minecraft:overworld",
+        "x": 3,
+        "y": 64,
+        "z": 0,
+        "t": 10,
+        "objets": [
+          {
+            "item": "minecraft:iron_ingot",
+            "n": 7
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "minecraft:redstone": 5,
+      "minecraft:iron_ingot": 7
+    }
+  },
+  {
+    "name": "native pair and proven single with identical items",
+    "contents": [
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 1,
+        "y": 64,
+        "z": 0,
+        "t": 19,
+        "objets": [
+          {
+            "item": "minecraft:redstone",
+            "n": 8
+          }
+        ],
+        "jumeau": [
+          2,
+          0
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 2,
+        "y": 64,
+        "z": 0,
+        "t": 20,
+        "objets": [
+          {
+            "item": "minecraft:redstone",
+            "n": 5
+          }
+        ],
+        "jumeau": [
+          1,
+          0
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 3,
+        "y": 64,
+        "z": 0,
+        "t": 10,
+        "objets": [
+          {
+            "item": "minecraft:redstone",
+            "n": 5
+          }
+        ],
+        "jumeau": []
+      }
+    ],
+    "expected": {
+      "minecraft:redstone": 10
+    }
+  },
+  {
+    "name": "native single distinct from older untyped named large",
+    "contents": [
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 1,
+        "y": 64,
+        "z": 0,
+        "t": 19,
+        "objets": [
+          {
+            "item": "minecraft:coal",
+            "n": 8
+          }
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 2,
+        "y": 64,
+        "z": 0,
+        "t": 20,
+        "objets": [
+          {
+            "item": "minecraft:coal",
+            "n": 5
+          }
+        ],
+        "jumeau": []
+      }
+    ],
+    "expected": {
+      "minecraft:coal": 13
+    }
+  },
+  {
+    "name": "newest observation of a double can be empty",
+    "contents": [
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 1,
+        "y": 64,
+        "z": 0,
+        "t": 19,
+        "objets": [
+          {
+            "item": "minecraft:coal",
+            "n": 8
+          }
+        ],
+        "jumeau": [
+          2,
+          0
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 2,
+        "y": 64,
+        "z": 0,
+        "t": 20,
+        "objets": [],
+        "jumeau": [
+          1,
+          0
+        ]
+      }
+    ],
+    "expected": {}
+  },
+  {
+    "name": "ambiguous legacy chain keeps all recorded positions",
+    "contents": [
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 1,
+        "y": 64,
+        "z": 0,
+        "t": 19,
+        "objets": [
+          {
+            "item": "minecraft:coal",
+            "n": 8
+          }
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 2,
+        "y": 64,
+        "z": 0,
+        "t": 20,
+        "objets": [
+          {
+            "item": "minecraft:coal",
+            "n": 5
+          }
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 3,
+        "y": 64,
+        "z": 0,
+        "t": 21,
+        "objets": [
+          {
+            "item": "minecraft:iron_ingot",
+            "n": 7
+          }
+        ]
+      }
+    ],
+    "expected": {
+      "minecraft:coal": 13,
+      "minecraft:iron_ingot": 7
+    }
+  },
+  {
+    "name": "contradictory native claims remain independent",
+    "contents": [
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 1,
+        "y": 64,
+        "z": 0,
+        "t": 19,
+        "objets": [
+          {
+            "item": "minecraft:redstone",
+            "n": 8
+          }
+        ],
+        "jumeau": [
+          2,
+          0
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Large Chest",
+        "dimension": "minecraft:overworld",
+        "x": 2,
+        "y": 64,
+        "z": 0,
+        "t": 20,
+        "objets": [
+          {
+            "item": "minecraft:redstone",
+            "n": 5
+          }
+        ]
+      },
+      {
+        "v": 2,
+        "bloc": "minecraft:chest",
+        "nom": "Chest",
+        "dimension": "minecraft:overworld",
+        "x": 3,
+        "y": 64,
+        "z": 0,
+        "t": 10,
+        "objets": [
+          {
+            "item": "minecraft:iron_ingot",
+            "n": 7
+          }
+        ],
+        "jumeau": [
+          2,
+          0
+        ]
+      }
+    ],
+    "expected": {
+      "minecraft:redstone": 13,
+      "minecraft:iron_ingot": 7
+    }
+  }
+]

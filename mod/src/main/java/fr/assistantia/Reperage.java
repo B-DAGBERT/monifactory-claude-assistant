@@ -41,12 +41,14 @@ public final class Reperage {
         if (mc.level == null || mc.player == null) return;
         boolean rechercheActive = RechercheEmi.actif(); // une fois par image, pas par coffre
         var reperes = rechercheActive ? RechercheEmi.reperes() : Pont.reperes();
-        var coffresTampons = rechercheActive ? CoffreTampon.positionsRepere() : List.<BlockPos>of();
+        var coffresTampons =
+                rechercheActive ? CoffreTampon.reperes() : List.<CoffreTampon.Repere>of();
         if (coffresTampons.isEmpty() && reperes.isEmpty()) return;
         Vec3 camera = event.getCamera().getPosition();
         PoseStack pose = event.getPoseStack();
         MultiBufferSource.BufferSource tampons = TAMPONS;
-        for (BlockPos position : coffresTampons)
+        for (var tampon : coffresTampons) {
+            BlockPos position = tampon.position();
             faisceauTampon(
                     pose,
                     tampons,
@@ -54,6 +56,29 @@ public final class Reperage {
                     position,
                     event.getPartialTick(),
                     mc.level.getGameTime());
+            var centre = Vec3.atCenterOf(position);
+            if (centre.distanceToSqr(camera) > 24 * 24) continue;
+            String statut =
+                    switch (tampon.etat()) {
+                        case DIRECT -> "";
+                        case DERNIERE_OUVERTURE -> "Tampon · dernier relevé";
+                        case A_REVOIR -> "Tampon · à revérifier";
+                        case NON_RELEVE -> "Tampon · à ouvrir";
+                    };
+            if (!statut.isEmpty())
+                texte(
+                        pose,
+                        tampons,
+                        mc.font,
+                        camera,
+                        centre.x,
+                        centre.y + 0.9,
+                        centre.z,
+                        statut,
+                        0xFFE1C5FF,
+                        0x70000000);
+        }
+        if (!coffresTampons.isEmpty()) tampons.endBatch();
         if (reperes.isEmpty()) return;
         String dimension = mc.level.dimension().location().toString();
         float pulsation = (float) (0.65 + 0.35 * Math.sin(System.currentTimeMillis() / 220.0));
@@ -157,7 +182,6 @@ public final class Reperage {
         } finally {
             pose.popPose();
         }
-        tampons.endBatch();
     }
 
     /**

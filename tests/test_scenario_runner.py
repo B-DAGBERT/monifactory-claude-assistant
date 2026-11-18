@@ -57,8 +57,16 @@ class ScenarioRunnerTests(unittest.TestCase):
         with patch("monifactory_assistant.commands.scenarios.unittest.defaultTestLoader") as loader:
             charger("parcours-stock")
             noms = loader.loadTestsFromNames.call_args.args[0]
-        self.assertEqual(len(noms), 3)
+        self.assertEqual(len(noms), len(set(noms)))
         self.assertIn("tests.scenarios.test_parcours_stock", noms)
+        self.assertTrue(
+            any("test_reads_are_scoped_to_the_active_connection_and_world" in n for n in noms)
+        )
+        self.assertTrue(
+            any("test_native_and_legacy_chest_identities_match_python" in n for n in noms)
+        )
+        self.assertTrue(any("BufferChestTests." in n for n in noms))
+        self.assertTrue(any("EmiBackpackTreeTests." in n for n in noms))
         self.assertTrue(any("MeTerminalPanelTests." in n for n in noms))
         self.assertTrue(any("MachinePanelClickTests." in n for n in noms))
         self.assertTrue(all("MachineInputTests" not in n for n in noms))

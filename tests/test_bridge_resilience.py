@@ -331,11 +331,13 @@ class ForgetChestDimensionTests(unittest.TestCase):
         )
 
     def test_nearby_and_double_chest_keep_the_existing_selection(self):
+        self.rows[1]["jumeau"] = [2, 3]
         other_half = {
             **self.rows[1],
             "cle": self.overworld + "|2|2|3",
             "x": 2,
             "nom": "Large Chest",
+            "jumeau": [1, 3],
         }
         self.rows.append(other_half)
         self.app.action_oublier_coffre({"proche": True})

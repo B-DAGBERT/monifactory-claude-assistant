@@ -18,16 +18,27 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * Stock de calcul de l'arbre uniquement. Les remplisseurs et transferts gardent leurs vraies cases.
  */
 public final class InventaireArbreEmi {
-    private static String precedent = "";
-    private static Object ecran, connexion;
+    private record Sources(
+            InstantaneArbreEmi arbre,
+            Object niveau,
+            Object connexion,
+            long inventaire,
+            long tampon,
+            long lots,
+            List<PlanRetrait.Stock<ItemStack>> reseau,
+            List<PlanRetrait.Stock<ItemStack>> credits,
+            List<PlanRetrait.Stock<EmiStack>> outils) {}
+
+    private static Sources precedent;
+    private static List<ItemStack> grillePrecedente = List.of();
+    private static Object ecran;
     private static int ticks;
     private static boolean erreurSignalee;
-    private static Object arbrePrecedent;
     private static final PlisFabricationEmi PLIS = new PlisFabricationEmi();
     private static final Map<EmiPlayerInventory, EmiPlayerInventory> ORIGINES = new WeakHashMap<>();
 
     public static void invalider() {
-        precedent = "";
+        precedent = null;
         ticks = 9;
     }
 
@@ -118,6 +129,13 @@ public final class InventaireArbreEmi {
                 ajouter(inventaire, stock.objet().copy().setAmount(stock.quantite()));
     }
 
+    private static boolean memeGrille(List<ItemStack> grille) {
+        if (grille.size() != grillePrecedente.size()) return false;
+        for (int i = 0; i < grille.size(); i++)
+            if (!ItemStack.matches(grille.get(i), grillePrecedente.get(i))) return false;
+        return true;
+    }
+
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || ++ticks % 10 != 0) return;
@@ -126,42 +144,39 @@ public final class InventaireArbreEmi {
         try {
             if (mc.player == null || mc.level == null || arbre == null) {
                 PLIS.actualiser(null, List.of(), List.of());
-                precedent = "";
-                connexion = arbrePrecedent = null;
+                precedent = null;
+                grillePrecedente = List.of();
                 ecran = null;
                 return;
             }
             if (!InventaireJoueur.disponible()) return;
-            var personnels = personnel();
-            var stock = StockFabricationEmi.courant(physiques(personnels), TerminalMe.stock());
-            var reservations = stock.virtuels();
-            ajouter(personnels, stock.tampon());
-            ajouter(personnels, stock.reseau());
-            boolean plisChanges = PLIS.actualiser(arbre, physiques(personnels), reservations);
-            String cle =
-                    CoffreTampon.revision()
-                            + "|"
-                            + personnels.inventory.values().stream()
-                                    .map(s -> s.getId() + "|" + s.getNbt() + "|" + s.getAmount())
-                                    .sorted()
-                                    .toList()
-                                    .toString()
-                            + "|"
-                            + reservations.stream()
-                                    .map(
-                                            s ->
-                                                    s.objet().getId()
-                                                            + "|"
-                                                            + s.objet().getNbt()
-                                                            + "|"
-                                                            + s.quantite())
-                                    .sorted()
-                                    .toList();
-            if (!plisChanges
-                    && cle.equals(precedent)
-                    && arbrePrecedent == arbre
-                    && ecran == mc.screen
-                    && connexion == mc.getConnection()) return;
+            var instantane = InstantaneArbreEmi.lire(arbre);
+            var reseau = TerminalMe.stock();
+            var sources =
+                    new Sources(
+                            instantane,
+                            mc.level,
+                            mc.getConnection(),
+                            InventaireJoueur.revision(),
+                            CoffreTampon.revision(),
+                            MachinesEmi.revisionLotsProduction(),
+                            reseau,
+                            CycleArbreEmi.credits(),
+                            MachinesEmi.outilsInstalles());
+            var grille = grilles();
+            boolean modifie = !sources.equals(precedent) || !memeGrille(grille);
+            boolean plisChanges;
+            if (modifie) {
+                var personnels = composer(InventaireJoueur.piles(), grille);
+                var stock = StockFabricationEmi.courant(physiques(personnels), reseau);
+                ajouter(personnels, stock.tampon());
+                ajouter(personnels, stock.reseau());
+                plisChanges = PLIS.actualiser(arbre, physiques(personnels), stock.virtuels());
+                grillePrecedente = grille.stream().map(ItemStack::copy).toList();
+            } else {
+                plisChanges = PLIS.surveiller();
+            }
+            if (!modifie && !plisChanges && ecran == mc.screen) return;
             // EMI n'invalide pas toujours sa liste lorsque seul le contenu du sac a changé.
             Class.forName("dev.emi.emi.runtime.EmiFavorites")
                     .getMethod("updateSynthetic", EmiPlayerInventory.class)
@@ -173,10 +188,8 @@ public final class InventaireArbreEmi {
             if (mc.screen != null
                     && mc.screen.getClass().getName().equals("dev.emi.emi.screen.BoMScreen"))
                 mc.screen.getClass().getMethod("recalculateTree").invoke(mc.screen);
-            precedent = cle;
-            arbrePrecedent = arbre;
+            precedent = sources;
             ecran = mc.screen;
-            connexion = mc.getConnection();
         } catch (ReflectiveOperationException | RuntimeException e) {
             if (!erreurSignalee) {
                 com.mojang.logging.LogUtils.getLogger()

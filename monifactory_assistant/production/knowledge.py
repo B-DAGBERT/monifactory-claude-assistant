@@ -16,7 +16,7 @@ from types import MappingProxyType
 
 from monifactory_assistant.game.storage import (
     SHARED_CHESTS,
-    Storage,
+    chest_twin,
     grouped_containers,
     inventory_key,
     latest_remembered_containers,
@@ -501,6 +501,8 @@ class _Builder:
                 value["items"] = _counts(record["objets"])
         else:
             kind = "storage"
+            if chest_twin(record) is not None:
+                value["jumeau"] = record["jumeau"]
             if "objets" in record and (not memory or record["objets"]):
                 value["items"] = _counts(record["objets"])
                 evidence = replace(evidence, completeness=Completeness.COMPLETE)
@@ -510,13 +512,13 @@ class _Builder:
         containers, machines = data.get("conteneurs"), data.get("machines", ())
         if not isinstance(containers, (list, tuple)) or not isinstance(machines, (list, tuple)):
             raise ValueError("Mémoire des coffres invalide.")
-        # Reuse the asymmetric legacy Large-chest replacement before geometric server grouping.
+        # The client memory keeps the newest observation of each physical chest.
         raw = [_plain(record) for record in containers]
         validated = [(record, self.stored_block(record, proof)) for record in raw]
         for record, _ in validated:
             if _timestamp(record.get("t")) is None:
                 raise ValueError("Date de coffre invalide.")
-        kept = {id(record) for record in latest_remembered_containers(raw, Storage.twins)}
+        kept = {id(record) for record in latest_remembered_containers(raw)}
         for record, observation in validated:
             if id(record) in kept:
                 self.rows.append(observation)
@@ -906,15 +908,26 @@ def _deduplicate_storage(rows):
                     {"item": item, "n": count} for item, count in observation.value["items"].items()
                 ],
                 "key": observation.key,
+                "t": proof.observed_at_ms or proof.received_at_ms,
+                "nom": observation.value.get("name", ""),
+                **(
+                    {"jumeau": list(observation.value["jumeau"])}
+                    if "jumeau" in observation.value
+                    else {}
+                ),
             }
         )
         by_key[observation.key] = observation
     # A chain/grid of identical neighboring chests has several possible pairings. The
     # legacy greedy grouping depends on scan order there, so V2 makes no stock allocation.
     located = {(chest["dimension"], chest["x"], chest["y"], chest["z"]): chest for chest in raw}
+    native = {here for here, chest in located.items() if chest_twin(chest) is not None}
+    native.update(
+        other for here in tuple(native) if (other := chest_twin(located[here])) in located
+    )
     neighbors = defaultdict(set)
     for here, chest in located.items():
-        if chest["bloc"] not in SHARED_CHESTS:
+        if here in native or chest["bloc"] not in SHARED_CHESTS:
             continue
         dim, x, y, z = here
         for dx, dz in ((-1, 0), (1, 0), (0, -1), (0, 1)):
@@ -922,6 +935,7 @@ def _deduplicate_storage(rows):
             candidate = located.get(other)
             if (
                 candidate is not None
+                and other not in native
                 and candidate["bloc"] == chest["bloc"]
                 and inventory_key(candidate) == inventory_key(chest)
             ):
@@ -942,7 +956,10 @@ def _deduplicate_storage(rows):
         row = by_key[located[here]["key"]]
         result.append(replace(row, value={**row.value, "identity_ambiguous": True}))
     for key, group in groups.items():
-        first = group[0]
+        first = max(
+            group,
+            key=lambda row: row.evidence[0].observed_at_ms or row.evidence[0].received_at_ms or 0,
+        )
         if len(group) == 1:
             result.append(first)
             continue

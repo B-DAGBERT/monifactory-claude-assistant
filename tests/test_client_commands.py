@@ -102,6 +102,53 @@ def command_scenarios():
     )
 
 
+def chest_identity_scenarios():
+    client = (ROOT / "jeu/assistant_ia.js").read_text(encoding="utf-8")
+    types = re.search(r"^const COFFRES_DOUBLES = .*?$", client, re.M)[0]
+    helper = client[client.index("function jumeauStockage(") : client.index("// À l'ouverture")]
+    return (
+        types
+        + "\n"
+        + helper
+        + """
+        function str(v) {return v == null ? '' : String(v);}
+        function block(type, x, z, kind, direction) {
+            return {
+                id: kind || 'minecraft:chest',
+                x: x, z: z,
+                properties: {
+                    get: function(key) {return key === 'type' ? type : (direction || 'north');}
+                }
+            };
+        }
+        function check(value, wanted, name) {
+            if (value === undefined || wanted === undefined) {
+                if (value !== wanted) throw Error(name);
+                return;
+            }
+            if (value.length !== wanted.length) throw Error(name);
+            for (let i = 0; i < value.length; i++) {
+                if (value[i] != wanted[i]) throw Error(name);
+            }
+        }
+        var left = block('left', 1, 0), right = block('right', 2, 0);
+        left.east = right; right.west = left;
+        check(jumeauStockage(left), [2, 0], 'left part');
+        check(jumeauStockage(right), [1, 0], 'right part');
+        right.east = block('single', 3, 0);
+        check(jumeauStockage(right.east), [], 'independent single');
+        check(jumeauStockage(right), [1, 0], 'third neighbor not included');
+        left.east = block('right', 2, 0, 'minecraft:chest', 'south');
+        check(jumeauStockage(left), undefined, 'conflicting facing not evidence');
+        left.east = block('single', 2, 0);
+        check(jumeauStockage(left), undefined, 'adjacent single not evidence');
+        check(jumeauStockage(block('single', 1, 0, 'minecraft:barrel')), undefined, 'barrel');
+        check(jumeauStockage(block('single', 1, 0, 'sophisticatedstorage:iron_chest')), [], 'Sophisticated');
+        'PASS';
+        """
+    )
+
+
 class ClientCommandTests(unittest.TestCase):
     def test_first_command_and_reloads_keep_old_commands_inert(self):
         node = shutil.which("node")
@@ -116,6 +163,19 @@ class ClientCommandTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(json.loads(result.stdout)), 13)
+
+    def test_native_double_chest_exports_exact_other_half(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node.js requis")
+        result = subprocess.run(
+            [node, "-"],
+            input=chest_identity_scenarios(),
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

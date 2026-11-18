@@ -16,6 +16,7 @@ final class PlisFabricationEmi {
     private final Map<Object, Pli> plis = new IdentityHashMap<>();
     private final Set<Object> ouvertsParJoueur = Collections.newSetFromMap(new IdentityHashMap<>());
     private Object arbre;
+    private Set<Object> necessaires = Collections.emptySet();
 
     boolean actualiser(
             Object courant,
@@ -29,7 +30,7 @@ final class PlisFabricationEmi {
             ouvertsParJoueur.clear();
             arbre = courant;
         }
-        Set<Object> necessaires = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<Object> candidats = Collections.newSetFromMap(new IdentityHashMap<>());
         if (courant != null && !reservations.isEmpty()) {
             Object racine = courant.getClass().getField("goal").get(courant);
             long lots = courant.getClass().getField("batches").getLong(courant);
@@ -92,7 +93,7 @@ final class PlisFabricationEmi {
                     Object raw = type.getField("children").get(node);
                     List<?> enfants = raw instanceof List<?> liste ? liste : List.of();
                     if (manque <= 0) {
-                        if (reserve > 0 && !enfants.isEmpty()) necessaires.add(node);
+                        if (reserve > 0 && !enfants.isEmpty()) candidats.add(node);
                         continue;
                     }
                     long production = Math.max(1, type.getField("divisor").getLong(node));
@@ -111,6 +112,13 @@ final class PlisFabricationEmi {
                 niveau = suite;
             }
         }
+        necessaires = candidats;
+        return surveiller() || change;
+    }
+
+    /** Observe les états d'affichage sans relire l'arbre ni réallouer les stocks. */
+    boolean surveiller() throws ReflectiveOperationException {
+        boolean change = false;
         for (var it = plis.entrySet().iterator(); it.hasNext(); ) {
             var e = it.next();
             if (!necessaires.contains(e.getKey())) {

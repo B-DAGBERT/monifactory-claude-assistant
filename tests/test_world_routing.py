@@ -330,7 +330,7 @@ class WorldRoutingTests(unittest.TestCase):
                         place("minecraft:barrel", "Barrel", 9, 9, []),
                         place("minecraft:chest", "Chest", 5, 5, sable),
                         # Seconde moitié : vide, pour ne pas compter deux fois le double coffre.
-                        place("minecraft:chest", "Chest", 6, 5, []),
+                        {**place("minecraft:chest", "Chest", 6, 5, []), "alias_stock": True},
                     ],
                     # Le client n'est jamais recopié : le mod lit stockage.json lui-même.
                     "machines": [

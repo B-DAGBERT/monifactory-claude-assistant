@@ -34,6 +34,7 @@ public class InventaireArbreEmiTest {
         mc.level = new Object();
         mc.player.items.add(s("iron", 2));
         InventaireJoueur.piles = List.of(s("iron", 2), s("plate", 192));
+        InventaireJoueur.revision++;
         var original = EmiPlayerInventory.of(mc.player);
         var ferme = InventaireArbreEmi.completer(original);
         assert n(ferme, "plate") == 192 && n(ferme, "iron") == 2
@@ -47,6 +48,7 @@ public class InventaireArbreEmiTest {
         // Les vraies cases de craft restent disponibles, le curseur est compté une seule fois.
         EmiPlayerInventory.cursor = s("plate", 3);
         InventaireJoueur.piles = List.of(s("plate", 195));
+        InventaireJoueur.revision++;
         var grille = new CraftingContainer(List.of(s("plate", 2)));
         mc.player.containerMenu.slots.add(new Slot(grille));
         mc.player.containerMenu.slots.add(new Slot(grille));
@@ -77,19 +79,33 @@ public class InventaireArbreEmiTest {
         assert EmiFavorites.updates == 1
                 && ecran.updates == 1
                 && n(EmiFavorites.last, "plate") == 195;
+        int lectures = net.minecraftforge.fluids.FluidUtil.lectures;
         tick();
         assert EmiFavorites.updates == 1 : "pas de recalcul en boucle du même relevé";
-        InventaireJoueur.piles = List.of(s("plate", 199));
+        assert net.minecraftforge.fluids.FluidUtil.lectures == lectures
+                : "les révisions stables court-circuitent la composition du stock";
+        var caseGrille = s("plate", 1);
+        mc.player.containerMenu.slots.add(new Slot(new CraftingContainer(List.of(caseGrille))));
         tick();
-        assert EmiFavorites.updates == 2
-                && ecran.updates == 2
+        assert n(EmiFavorites.last, "plate") == 196 : "la grille a sa propre observation";
+        caseGrille.setCount(2);
+        tick();
+        assert n(EmiFavorites.last, "plate") == 197
+                : "une case modifiée en place invalide le stock";
+        mc.player.containerMenu.slots.clear();
+        InventaireJoueur.piles = List.of(s("plate", 199));
+        InventaireJoueur.revision++;
+        tick();
+        assert EmiFavorites.updates == 4
+                && ecran.updates == 4
                 && n(EmiFavorites.last, "plate") == 199;
         mc.screen = null;
         tick();
-        assert EmiFavorites.updates == 3 : "fermeture prise en compte dans la liste latérale";
+        assert EmiFavorites.updates == 5 : "fermeture prise en compte dans la liste latérale";
         // Les fabrications en cours comptent dans le calcul EMI, jamais dans les vrais stocks.
         InventaireJoueur.sacs = List.of();
         InventaireJoueur.piles = List.of(s("iron", 2));
+        InventaireJoueur.revision++;
         MachinesEmi.reservations =
                 List.of(new PlanRetrait.Stock<>(EmiStack.of(s("machine", 2)), 2, true));
         var reserve = InventaireArbreEmi.completer(original);
@@ -98,7 +114,6 @@ public class InventaireArbreEmiTest {
                 : "le mixin favoris ne double pas les réservations déjà ajoutées";
         assert InventaireJoueur.piles.size() == 1 : "aucun crédit réel de fabrication";
         int changements = EmiFavorites.updates;
-        // Pas de faux MaterialTree dans ce test : le pliage est couvert séparément.
         MachinesEmi.reservations = List.of();
         assert InventaireArbreEmi.completer(reserve) == original
                 : "annulation : repartir du stock natif, sans résultats virtuels résiduels";
@@ -180,6 +195,7 @@ public class InventaireArbreEmiTest {
         volume.putInt("volume", 120);
         cell.setTag(volume);
         InventaireJoueur.piles = List.of(drum, cell, s("bucket", 3));
+        InventaireJoueur.revision++;
         var fluide = new net.minecraft.world.level.material.Fluid("test:rubber");
         var handler = new EmiPlayerInventory(List.of(EmiStack.of(fluide, null, 12_340)));
         var stock = InventaireArbreEmi.completer(handler);
@@ -193,10 +209,12 @@ public class InventaireArbreEmiTest {
         volume = new net.minecraft.nbt.CompoundTag();
         volume.putInt("volume", 3_000);
         drum.setTag(volume);
+        InventaireJoueur.revision++;
         tick();
         assert n(EmiFavorites.last, "test:rubber") == 3_240
                 : "le même contenant partiellement vidé rafraîchit EMI";
         InventaireJoueur.piles = List.of(s("iron", 2));
+        InventaireJoueur.revision++;
         // La réservation doit être testée sur un vrai contrat d'arbre, avec ses champs natifs.
         CoffresArbreEmi.arbre =
                 new PlisFabricationEmiTest.Tree(new PlisFabricationEmiTest.Node("machine", 2));
@@ -206,12 +224,14 @@ public class InventaireArbreEmiTest {
         assert n(InventaireArbreEmi.completer(original), "machine") == 2;
         assert n(original, "machine") == 0;
         InventaireJoueur.piles = List.of(s("iron", 2), s("machine", 1));
+        InventaireJoueur.revision++;
         assert n(InventaireArbreEmi.completer(original), "machine") == 2
                 : "un reçu revenu dans les poches n'est pas doublé";
         CycleArbreEmi.acquis = List.of(new PlanRetrait.Stock<>(s("machine", 1), 1, true));
         assert n(InventaireArbreEmi.completer(original), "machine") == 2
                 : "pas de doublon avec la progression finale";
         InventaireJoueur.piles = List.of(s("iron", 2));
+        InventaireJoueur.revision++;
         CycleArbreEmi.acquis = List.of(new PlanRetrait.Stock<>(s("machine", 2), 2, true));
         assert n(InventaireArbreEmi.completer(original), "machine") == 2;
         tick();

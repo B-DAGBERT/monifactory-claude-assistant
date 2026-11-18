@@ -26,12 +26,22 @@ public record InstantaneArbreEmi(
     private record Lecture(
             ArbreCollecte.Noeud collecte, PlanMachines.Noeud<EmiStack, EmiRecipe> machines) {}
 
+    private record NoeudLu(
+            Object noeud,
+            EmiRecipe recette,
+            long quantite,
+            long production,
+            boolean reutilisable,
+            List<String> variantes,
+            int enfants) {}
+
     private static final AtomicLong revision = new AtomicLong();
     private static final AtomicLong revisionStructure = new AtomicLong();
     private static volatile boolean notificationNative;
     private static Object dernierArbre, derniereRacine;
-    private static long derniereRevision, derniereLecture;
+    private static long derniereRevision, derniereRevisionStructure, derniereLecture;
     private static InstantaneArbreEmi dernier;
+    private static List<NoeudLu> derniereStructure = List.of();
 
     /** La reconstruction native des enfants peut se faire sur le même objet arbre. */
     public static void arbreModifie() {
@@ -64,7 +74,7 @@ public record InstantaneArbreEmi(
     static InstantaneArbreEmi lire(Object arbre) throws ReflectiveOperationException {
         var racine = arbre.getClass().getField("goal").get(arbre);
         long lots = arbre.getClass().getField("batches").getLong(arbre);
-        long version = revision.get();
+        long version = revision.get(), structureNative = revisionStructure.get();
         long maintenant = System.nanoTime();
         // Repli pour une version d'EMI sur laquelle le point d'injection serait indisponible.
         if (dernier != null
@@ -75,6 +85,7 @@ public record InstantaneArbreEmi(
                 && (notificationNative || maintenant - derniereLecture < 500_000_000L))
             return dernier;
         var variantes = new ArrayList<EmiStack>();
+        var structure = new ArrayList<NoeudLu>();
         var lecture =
                 lireNoeud(
                         racine,
@@ -82,19 +93,30 @@ public record InstantaneArbreEmi(
                         Collections.newSetFromMap(new IdentityHashMap<>()),
                         new int[] {0},
                         0,
-                        variantes);
-        var cible = (EmiIngredient) racine.getClass().getField("ingredient").get(racine);
-        dernier =
-                new InstantaneArbreEmi(
-                        lecture.collecte(),
-                        lecture.machines(),
-                        lots,
-                        List.copyOf(variantes),
-                        cles(variantes),
-                        cles(cible.getEmiStacks()));
+                        variantes,
+                        structure);
+        // Une relecture de secours ou du scan peut retrouver exactement le même plan.
+        // Garder son identité pour les retraits en cours, dont les quantités restent valables.
+        if (dernier == null
+                || dernierArbre != arbre
+                || dernier.lots() != lots
+                || derniereRevisionStructure != structureNative
+                || !derniereStructure.equals(structure)) {
+            var cible = (EmiIngredient) racine.getClass().getField("ingredient").get(racine);
+            dernier =
+                    new InstantaneArbreEmi(
+                            lecture.collecte(),
+                            lecture.machines(),
+                            lots,
+                            List.copyOf(variantes),
+                            cles(variantes),
+                            cles(cible.getEmiStacks()));
+            derniereStructure = List.copyOf(structure);
+        }
         dernierArbre = arbre;
         derniereRacine = racine;
         derniereRevision = version;
+        derniereRevisionStructure = structureNative;
         derniereLecture = maintenant;
         return dernier;
     }
@@ -123,7 +145,8 @@ public record InstantaneArbreEmi(
             Set<Object> chemin,
             int[] visites,
             int profondeur,
-            List<EmiStack> variantesCollecte)
+            List<EmiStack> variantesCollecte,
+            List<NoeudLu> structure)
             throws ReflectiveOperationException {
         if (node == null || profondeur > 128 || ++visites[0] > 4096 || !chemin.add(node))
             throw new IllegalArgumentException("Arbre EMI invalide ou trop grand");
@@ -164,12 +187,22 @@ public record InstantaneArbreEmi(
                                     chemin,
                                     visites,
                                     profondeur + 1,
-                                    variantesCollecte);
+                                    variantesCollecte,
+                                    structure);
                     if (lu == null) continue;
                     collecte.add(lu.collecte());
                     machines.add(lu.machines());
                 }
             }
+            structure.add(
+                    new NoeudLu(
+                            node,
+                            recette,
+                            quantite,
+                            production,
+                            reutilisable,
+                            cles(variantesMachine),
+                            machines.size()));
             return new Lecture(
                     new ArbreCollecte.Noeud(ids, quantite, production, reutilisable, collecte),
                     new PlanMachines.Noeud<>(

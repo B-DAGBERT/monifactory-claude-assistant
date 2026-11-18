@@ -50,17 +50,17 @@ class MeTerminalPanelTests(unittest.TestCase):
 
     def test_click_reads_the_terminal_again_and_can_take_one_item(self):
         lancer = corps(self.terminal, "private static void lancer(")
-        self.assertIn("actualiser();", lancer)
+        self.assertIn("actualiser(true);", lancer)
         self.assertIn("selection == null", lancer)
         self.assertIn("ItemStack.isSameItemSameTags(", lancer)
         self.assertNotIn("clique à nouveau", lancer)
 
     def test_end_of_withdrawal_refreshes_without_hiding_the_panel(self):
         terminer = corps(self.terminal, "private static void terminer(String texte)")
-        self.assertIn("actualiser();", terminer)
+        self.assertIn("actualiser(true);", terminer)
 
     def test_panel_allocates_buffer_before_withdrawable_me_entries(self):
-        actualiser = corps(self.terminal, "private static void actualiser()")
+        actualiser = corps(self.terminal, "private static void actualiser(boolean complet)")
         self.assertIn("vue.tampon() == revisionTampon", actualiser)
         self.assertIn("StockFabricationEmi.courant(", actualiser)
         self.assertIn(
@@ -68,6 +68,12 @@ class MeTerminalPanelTests(unittest.TestCase):
         )
         self.assertIn("stock.get(prise.index())", actualiser)
         self.assertIn("new Lot(entree.serial(), entree.pile(), prise.quantite())", actualiser)
+        lecture = corps(self.terminal, "private static List<Entree> lire(")
+        self.assertIn("entrees(repo, recherche.filtre(), complet)", lecture)
+        self.assertIn("ComparaisonEmi.meme(emi, v)", lecture)
+        entrees = corps(self.terminal, "private static Collection<?> entrees(")
+        self.assertIn("!complet && index != null", entrees)
+        self.assertIn("ACCES.entrees().invoke(repo)", entrees)
 
     def test_crafting_panel_avoids_the_me_panel(self):
         self.assertIn("PanneauAssistant.poser(affiche, disposition.cadre());", self.terminal)

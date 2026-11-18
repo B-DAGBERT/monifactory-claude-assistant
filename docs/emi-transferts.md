@@ -44,12 +44,16 @@ déjà marqué retire ce coffre de la sélection.
 Les relevés entrent dans le calcul de l’arbre EMI, du plan **Recette** et des quantités proposées
 par **Envoyer** dans les machines. Un résultat déjà couvert par les tampons retire les opérations
 correspondantes. Pour envoyer des ingrédients rangés dans un tampon, prends-les d’abord.
-Avec **Repérage** sur
-**ON**, un faisceau violet indique chaque tampon et les coffres ordinaires proposent seulement les
-quantités qui manquent encore. Tu peux utiliser **Prendre / Tout** dans un tampon ouvert. Dans
-Sophisticated Storage, retire à la main les objets des cases exclues du tri. Rouvre le coffre après
-une modification automatique. Sélectionne tes coffres de nouveau après reconnexion ou changement de
-dimension.
+Avec **Repérage** sur **ON**, le faisceau violet reste visible même quand le tampon est à revérifier.
+Le contenu d’un tampon fermé vient de sa dernière ouverture et entre dans le calcul pendant une
+minute. Ensuite, le repère indique **Tampon · à revérifier** et le plan recalcule le complément
+sans ce relevé. Rouvre le coffre pour reprendre le contenu synchronisé. Si un hopper ou le réseau ME
+a modifié le coffre depuis la dernière ouverture, rouvre-le pour actualiser le relevé tout de suite.
+Chaque tampon reste exclu du repérage des coffres ordinaires.
+
+Tu peux utiliser **Prendre / Tout** dans un tampon ouvert. Dans Sophisticated Storage, retire à la
+main les objets des cases exclues du tri. Sélectionne tes coffres de nouveau après reconnexion ou
+changement de dimension.
 
 Dans le même menu de contrôles, assigne une touche à **Exclure / réintégrer un coffre**.
 Vise le stockage et presse la touche pour le retirer des repères, du calcul des coffres

@@ -12,6 +12,12 @@ from tests.test_backpack_inventory import STUBS as BACKPACK_STUBS
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = {
     **BACKPACK_STUBS,
+    "net.minecraft.world.item.ItemStack": BACKPACK_STUBS[
+        "net.minecraft.world.item.ItemStack"
+    ].replace(
+        "public boolean hasTag()",
+        "public boolean isDamageableItem(){return false;}public boolean is(String item){return id.equals(item);}public boolean hasTag()",
+    ),
     "net.minecraft.world.entity.player.Player": """
 public class Player {
  public net.minecraft.world.inventory.AbstractContainerMenu containerMenu=new net.minecraft.world.inventory.AbstractContainerMenu();
@@ -39,7 +45,8 @@ public class TickEvent {public enum Phase {START,END} public static class Client
 """,
     "fr.assistantia.InventaireJoueur": """
 public class InventaireJoueur {public static boolean sync=true;public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
- public static java.util.List<net.minecraft.world.item.ItemStack> sacs;
+ public static java.util.List<net.minecraft.world.item.ItemStack> sacs;public static long revision;
+ public static long revision(){return revision;}
  public static boolean disponible(){return sync;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return sacs==null?piles:sacs;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}}
 """,
     "fr.assistantia.CoffreTampon": """
@@ -57,13 +64,14 @@ class TerminalMe {
 }
 """,
     "fr.assistantia.compat.emi.CoffresArbreEmi": """
-public class CoffresArbreEmi {public static Object arbre=new Object();public static Object arbreActif(){return arbre;}}
+public class CoffresArbreEmi {public static Object arbre=new PlisFabricationEmiTest.Tree(new PlisFabricationEmiTest.Node("machine",1));public static Object arbreActif(){return arbre;}}
 """,
     "net.minecraft.world.level.material.Fluid": "public record Fluid(String id) {}",
     "net.minecraftforge.fluids.FluidUtil": """
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
 public class FluidUtil {
+ public static int lectures;
  public record Content(Fluid getFluid, net.minecraft.nbt.CompoundTag getTag, int getAmount){
   public boolean isEmpty(){return getAmount<=0;}
  }
@@ -74,10 +82,12 @@ public class FluidUtil {
  }
 }
 """,
+    "dev.emi.emi.api.recipe.EmiRecipe": "public interface EmiRecipe {}",
     "dev.emi.emi.api.stack.EmiIngredient": "public interface EmiIngredient {java.util.List<EmiStack> getEmiStacks();}",
     "fr.assistantia.compat.emi.ComparaisonEmi": """
 public class ComparaisonEmi {public static dev.emi.emi.api.stack.EmiStack pourInventaire(dev.emi.emi.api.stack.EmiStack s){return s.copy();}
- public static boolean meme(dev.emi.emi.api.stack.EmiStack a,dev.emi.emi.api.stack.EmiStack b){return a.equals(b);}}
+ public static boolean meme(dev.emi.emi.api.stack.EmiStack a,dev.emi.emi.api.stack.EmiStack b){return a.equals(b);}
+ public static boolean circuitVirtuel(dev.emi.emi.api.recipe.EmiRecipe r,dev.emi.emi.api.stack.EmiIngredient i,boolean c){return false;}}
 """,
     "fr.assistantia.compat.emi.CycleArbreEmi": """
 public class CycleArbreEmi {public static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> acquis=java.util.List.of();
@@ -85,6 +95,9 @@ public class CycleArbreEmi {public static java.util.List<fr.assistantia.PlanRetr
 """,
     "fr.assistantia.compat.emi.MachinesEmi": """
 public class MachinesEmi {public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservations=java.util.List.of(),obtenus=java.util.List.of();
+ public static long revision;
+ public static long revisionLotsProduction(){return revision;}
+ public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> outilsInstalles(){return java.util.List.of();}
  public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> reservationsArbre(){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():reservations;}
  public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> completerOutils(java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> deja){return java.util.List.of();}
  public static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> creditsAcquis(java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> p,java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> c){return CoffresArbreEmi.arbreActif()==null?java.util.List.of():fr.assistantia.ReceptionLots.credits(obtenus,p,c,ComparaisonEmi::meme);}}
@@ -99,7 +112,7 @@ public class EmiStack implements EmiIngredient {private final ItemStack item;pri
  public EmiStack(ItemStack s){item=s.copy();key=s.id;n=s.getCount();}public static EmiStack of(ItemStack s){return new EmiStack(s);}
  private EmiStack(net.minecraft.world.level.material.Fluid fluid,long n){item=ItemStack.EMPTY;key=fluid;this.n=n;}
  public static EmiStack of(net.minecraft.world.level.material.Fluid fluid,net.minecraft.nbt.CompoundTag tag,long n){return new EmiStack(fluid,n);}
- public Object getKey(){return key;}
+ public Object getKey(){return key;}public EmiStack getRemainder(){return of(ItemStack.EMPTY);}public boolean isEmpty(){return n==0;}
  public EmiStack copy(){return key instanceof net.minecraft.world.level.material.Fluid f?new EmiStack(f,n):new EmiStack(item).setAmount(n);}public long getAmount(){return n;}
  public java.util.List<EmiStack> getEmiStacks(){return java.util.List.of(this);}public net.minecraft.nbt.CompoundTag getNbt(){return item.getTag();}
  public EmiStack setAmount(long value){n=value;return this;}
@@ -157,6 +170,10 @@ def compiler_contrats(directory):
             "mod/src/main/java/fr/assistantia/LotFabrication.java",
             "mod/src/main/java/fr/assistantia/ReceptionLots.java",
             "mod/src/main/java/fr/assistantia/PlanMachines.java",
+            "mod/src/main/java/fr/assistantia/ArbreCollecte.java",
+            "mod/src/main/java/fr/assistantia/MemoireCollecte.java",
+            "mod/src/main/java/fr/assistantia/PlanArbre.java",
+            "mod/src/main/java/fr/assistantia/compat/emi/InstantaneArbreEmi.java",
             "mod/src/main/java/fr/assistantia/compat/emi/PlisFabricationEmi.java",
             "mod/src/main/java/fr/assistantia/compat/emi/InventaireArbreEmi.java",
             "mod/src/main/java/fr/assistantia/compat/emi/StockFabricationEmi.java",

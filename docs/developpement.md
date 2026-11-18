@@ -101,6 +101,11 @@ entrées natives. `PlanRetrait.reserver` alloue et débite les quantités d’un
 le repérage comme pour le plan machine et le pliage EMI. Le repérage conserve ses observations
 par identifiant et sa mémoire de collecte.
 
+Les lectures asynchrones de `CoffresConnus` sont rattachées à l’état de la connexion et au
+dossier du monde. Le test bloque une lecture, change de monde puis débloque la lecture précédente.
+Le coffre double et le coffre simple voisin sont qualifiés avec les mêmes données côté Java et
+Python. Le relevé client ajoute l’autre moitié lue dans l’état du bloc quand elle est identifiable.
+
 ### Recette coffre tampon en jeu
 
 Utiliser une copie du pack avec une machine GregTech, un coffre tampon, un coffre ordinaire
@@ -123,6 +128,10 @@ un réseau qui n’expose ces unités que par le bus de stockage du tampon. En o
 terminal, les mêmes cinq unités couvrent toujours cinq besoins. Pour tester la durée de
 vie du relevé, se reconnecter et vérifier que l’ancienne sélection n’est plus active, puis
 sélectionner à nouveau le tampon et relever son contenu pour retrouver le calcul.
+
+Pour vérifier un relevé périmé, refermer le tampon, modifier le contenu avec un hopper, puis
+attendre une minute. Le repère indique **Tampon · à revérifier** et la quantité précédemment
+lue cesse de couvrir les besoins. Rouvrir le coffre et vérifier la nouvelle quantité.
 
 Consigner les essais exécutés et les cas restant à vérifier. Le rapport automatisé sert de
 preuve pour les contrats de code. Le résultat en jeu couvre le pack, les menus et le serveur
@@ -163,7 +172,7 @@ source de style et gardent une seule hauteur de bouton.
 - `MemoireCollecte` conserve les ingrédients acquis ; `PlanArbre` réserve les composants avant leurs enfants. `RetraitCoffre.planRecherche` applique les quotas aux cases réelles, sans déduire deux fois l’inventaire.
 - `SuiviFabrication` conserve les acquisitions finales et déduit les retours d’objets déjà sortis. `OrigineFabrication` rapproche les gains réels des événements de craft et des sorties natives ; ne jamais compter l’aperçu de résultat. `CycleArbreEmi` suit la durée de vie du craft et retire l’arbre d’EMI quand ses cibles finales sont obtenues ; il n’exporte plus `fabrication_emi.json`.
 - `LotFabrication` distingue réservation et récupération réelle. `ReceptionSortie` rapproche les notifications séparées des cuves et des contenants. `MachinesEmi` garde seulement les sorties encore attendues dans son stock réservé. `SuiviEmiEcran` regroupe les états, le recalcul et l’annulation ; annuler ne déplace aucun objet.
-- Les allocations de `MachinesEmi` sont invalidées par une modification de l’arbre, des stocks ou des lots. Le cache des compatibilités machine est également vidé lors d’un changement de contexte, toutes les 100 ticks et sur recalcul explicite.
+- Les allocations de `MachinesEmi` sont invalidées par une modification de l’arbre, des stocks ou des lots. Le panneau prépare son plan pendant le tick client et garde l’identité de l’arbre avec le résultat affiché. **Envoyer** reconstruit et valide le plan au clic. Le cache des compatibilités machine est également vidé lors d’un changement de contexte, toutes les 100 ticks et sur recalcul explicite.
 - `ConfigurationCircuit` lit les ingrédients natifs GregTech, y compris un `SizedIngredient`. Le réglage est contrôlé via `getCircuitInventory`, sans setter ni repli vers un circuit physique. `ComparaisonEmi.circuitVirtuel` ne retire que les catalyseurs circuits des recettes GT, jamais une cible racine ni un circuit consommé. Pour le stock natif EMI, les outils `IGTTool` conservent la comparaison par défaut ; leur matériau et leur type sont portés par l’Item. Les comparaisons explicites EMI restent inchangées.
 - `SequenceEnvoi` attend une confirmation stable avant l’action suivante. `EnvoiMachine` valide l’interface, les sources, les entrées et les cuves ; il n’effectue aucun nouvel essai automatique après un refus.
 
@@ -173,7 +182,11 @@ Les tests `test_emi.py`, `test_chest_transfers.py` et `test_machine_inputs.py` r
 
 `InventaireJoueur` est la source commune du scan, du suivi final et du plan machine. `compat/backpacks/SacsPortes` utilise les API natives de Sophisticated Backpacks de manière optionnelle : inventaires enregistrés (dont Curios), lecture du menu ouvert et requête de contenu d’un UUID porté. Le mixin client `ContenuSacMixin` observe la réponse native, y compris pour un sac vide ; aucune nouvelle extension serveur n’est requise.
 
-Une seule requête par sac reste en vol. Le relevé est lié à la révision des quantités personnelles ; une réponse précédant un déplacement ne peut pas valider le nouvel inventaire. Le cache est effacé à la déconnexion et limité aux sacs encore portés. `InventaireArbreEmi` raccorde cette vue aux deux calculs natifs d’EMI (Recipe Tree et favoris de fabrication) via des mixins optionnels. Il reconstruit le stock personnel avec les vraies grilles de craft, garde les fluides natifs et ne modifie jamais les inventaires des remplisseurs. Le relevé doit appartenir à la connexion actuelle. La liste est rafraîchie quand le stock change, sans réinitialiser la disposition des panneaux.
+Une seule requête par sac reste en vol. Le relevé est lié à la révision des quantités personnelles ; une réponse précédant un déplacement ne peut pas valider le nouvel inventaire. Le cache est effacé à la déconnexion et limité aux sacs encore portés. `InventaireArbreEmi` raccorde cette vue aux deux calculs natifs d’EMI (Recipe Tree et favoris de fabrication) via des mixins optionnels. Il reconstruit le stock personnel avec les vraies grilles de craft, garde les fluides natifs et ne modifie jamais les inventaires des remplisseurs. Le relevé doit appartenir à la connexion actuelle. La composition du stock et
+le pliage EMI reprennent après un changement d’arbre, d’observation, de grille ou de lot. Un
+contrôle léger préserve les ouvertures manuelles faites dans l’arbre. Le terminal ME utilise
+l’index d’ingrédients lorsqu’il est disponible et valide les variantes avec la comparaison EMI.
+Au clic, le terminal revient à la lecture complète du stock.
 
 Le fichier `inventaire_joueur.json` exporte une vue complète ; `game/inventory.py` la substitue au relevé KubeJS seulement si elle est synchronisée, récente et correspond au joueur et à la dimension. Ne jamais ajouter ces quantités à un autre relevé : cela compterait deux fois les poches. `InventaireJoueur` compare les cases à chaque tick sans copie, réécrit le fichier seulement à un changement (au plus deux fois par seconde) et confirme un relevé inchangé toutes les 2 s ; Python le juge récent pendant 5 s.
 

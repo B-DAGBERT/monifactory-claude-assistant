@@ -252,7 +252,7 @@ class World:
         observations = self._fusion(self.blocks.values(), [*storage.raw, *storage.machines])
         raw = [b for b in observations if b.get("etat") is None]
         machines = [b for b in observations if b.get("etat") is not None and not b.get("absent")]
-        return Storage(distinct_containers(c for c in raw if c.get("objets")), raw, machines)
+        return Storage([c for c in distinct_containers(raw) if c.get("objets")], raw, machines)
 
 
 def machine_status(m):

@@ -4,7 +4,12 @@ import math
 import re
 
 from monifactory_assistant.game.snapshots import file_stamp
-from monifactory_assistant.game.storage import grouped_containers, inventory_key, position
+from monifactory_assistant.game.storage import (
+    chest_twin,
+    grouped_containers,
+    inventory_key,
+    position,
+)
 
 ITEM = re.compile(r"[a-z0-9_.-]+:[a-z0-9_./-]+\Z")
 
@@ -39,6 +44,7 @@ def _timestamp(chest):
 def _stock_content(containers, dimension):
     """Describe the search input after fusion, omitting timestamps only when positions are unique."""
     content = {}
+    geometric = False
     for chest in containers:
         if not isinstance(chest, dict) or chest.get("dimension") != dimension:
             continue
@@ -50,8 +56,33 @@ def _stock_content(containers, dimension):
         block, items = chest.get("bloc", ""), inventory_key(chest)
         if not isinstance(block, str) or items is None:
             return None
+        hint = chest_twin(chest, coordinates) if "jumeau" in chest else None
+        large = str(chest.get("nom", "")).startswith("Large")
         content[coordinates] = (block, items)
+        if hint is not None or large:
+            content[coordinates] += (hint, large)
+            geometric |= bool(hint) or large
+    if geometric:
+        # Dates alone do not change the search. A different winning half can.
+        _, newest = _stock_groups(
+            chest
+            for chest in containers
+            if isinstance(chest, dict) and chest.get("dimension") == dimension
+        )
+        return tuple(content.items()), tuple(
+            (stock, position(chest)) for stock, chest in newest.items()
+        )
     return tuple(content.items())
+
+
+def _stock_groups(containers):
+    positions = list(grouped_containers(containers))
+    newest = {}
+    for chest, stock in positions:
+        previous = newest.get(stock)
+        if previous is None or _timestamp(chest) > _timestamp(previous):
+            newest[stock] = chest
+    return positions, newest
 
 
 def _matching_chests(containers, dimension, wanted):
@@ -68,12 +99,11 @@ def _matching_chests(containers, dimension, wanted):
 
         if previous is None or _timestamp(chest) >= _timestamp(previous):
             latest[coordinates] = chest
+    positions, newest = _stock_groups(latest.values())
     chests = []
-    for chest, stock in grouped_containers(latest.values()):
-        if chest.get("dimension") != dimension:
-            continue
+    for chest, stock in positions:
         hits = {}
-        items = chest.get("objets")
+        items = newest[stock].get("objets")
         for item in items if isinstance(items, list) else []:
             if not isinstance(item, dict):
                 continue

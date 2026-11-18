@@ -9,11 +9,12 @@
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 14  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_SCRIPT = 15  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
 const VERSION_RECETTES = 2 // export des recettes plus ancien : refait au chargement (2 : durée et EU/t des recettes GregTech)
 const RECETTES_PAR_TICK = 400
 const RECETTES_PAR_FICHIER = 15000
 const STOCKAGE = /chest|barrel|crate|drawer|shulker|storage|cabinet|drum|safe|backpack/
+const COFFRES_DOUBLES = /^(minecraft:(trapped_)?chest|sophisticatedstorage:((copper|iron|gold|diamond|netherite)_)?chest)$/
 const MINERAI = /_ore$/
 const MINERAIS_MAX = 3000            // blocs de minerai retenus au plus (les plus anciens sont oubliés)
 const CASES_INVENTAIRE_JOUEUR = 46   // écran de l'inventaire du joueur (aussi derrière le menu pause, le chat...)
@@ -405,6 +406,10 @@ function chargerStockage() {
       x: Number(c.get('x')), y: Number(c.get('y')), z: Number(c.get('z')), t: Number(c.get('t')),
       objets: liste(c.get('objets')).map(o => ({ item: str(o.get('item')), n: Number(o.get('n')) }))
     }
+    const jumeau = c.get('jumeau')
+    if (jumeau != null && (Array.isArray(jumeau) || typeof jumeau.isJsonArray == 'function' && jumeau.isJsonArray())) {
+      entree.jumeau = liste(jumeau).map(n => Number(n))
+    }
     stockage[entree.cle] = entree
   })
   liste(s.get('machines')).forEach(c => {
@@ -431,6 +436,28 @@ function chargerMinerais() {
   })
 }
 
+// État physique du bloc ouvert. Une liste vide prouve un coffre simple.
+function jumeauStockage(bloc) {
+  const id = str(bloc.id)
+  if (!COFFRES_DOUBLES.test(id)) return undefined
+  try {
+    let proprietes = bloc.properties
+    let type = str(proprietes.get('type'))
+    if (type === 'single') return []
+    if (type !== 'left' && type !== 'right') return undefined
+    let directions = ['north', 'east', 'south', 'west']
+    let direction = str(proprietes.get('facing'))
+    let face = directions.indexOf(direction)
+    if (face < 0) return undefined
+    let autre = bloc[directions[(face + (type === 'left' ? 1 : 3)) % 4]]
+    if (autre == null || str(autre.id) !== id) return undefined
+    let proprietesAutre = autre.properties
+    if (str(proprietesAutre.get('type')) !== (type === 'left' ? 'right' : 'left')
+        || str(proprietesAutre.get('facing')) !== direction) return undefined
+    return [Number(autre.x), Number(autre.z)]
+  } catch (e) { return undefined }
+}
+
 // À l'ouverture d'un écran : le bloc regardé est celui qu'on vient d'ouvrir (coffre, machine...)
 function surOuvertureEcran() {
   conteneur = null
@@ -441,7 +468,8 @@ function surOuvertureEcran() {
   const dimension = str(Client.level.dimension)
   conteneur = {
     cle: dimension + '|' + bloc.x + '|' + bloc.y + '|' + bloc.z, bloc: id, nom: texte(Client.screen.getTitle()),
-    dimension: dimension, x: Number(bloc.x), y: Number(bloc.y), z: Number(bloc.z), stockage: STOCKAGE.test(id)
+    dimension: dimension, x: Number(bloc.x), y: Number(bloc.y), z: Number(bloc.z), stockage: STOCKAGE.test(id),
+    jumeau: jumeauStockage(bloc)
   }
 }
 
@@ -482,12 +510,14 @@ function lireConteneur() {
   Object.keys(total).forEach(id => { if (total[id] > 0) objets.push({ item: id, n: total[id] }) })
   const signature = objets.map(o => o.item + ':' + o.n).sort().join(',')
   const ancien = stockage[conteneur.cle]
-  if (ancien != null && ancien.signature == signature) return   // rien n'a changé
+  if (ancien != null && ancien.signature == signature
+      && String(ancien.jumeau) === String(conteneur.jumeau)) return
   stockage[conteneur.cle] = {
     v: VERSION_STOCKAGE, signature: signature,
     cle: conteneur.cle, bloc: conteneur.bloc, nom: conteneur.nom, dimension: conteneur.dimension,
     x: conteneur.x, y: conteneur.y, z: conteneur.z, t: Date.now(), objets: objets
   }
+  if (conteneur.jumeau !== undefined) stockage[conteneur.cle].jumeau = conteneur.jumeau
   stockageModifie = true
 }
 

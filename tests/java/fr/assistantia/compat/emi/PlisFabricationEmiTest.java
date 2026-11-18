@@ -14,6 +14,7 @@ public final class PlisFabricationEmiTest {
 
     public static final class Node {
         public EmiIngredient ingredient;
+        public dev.emi.emi.api.recipe.EmiRecipe recipe;
         public long amount = 1, divisor = 1;
         public boolean catalyst;
         public float consumeChance = 1;
@@ -47,8 +48,19 @@ public final class PlisFabricationEmiTest {
         assert plis.actualiser(tree, List.of(), List.of(s("piece", 2)));
         assert piece.state == FoldState.COLLAPSED && tree.goal.state == FoldState.EXPANDED;
         assert piece.children.size() == 1 : "aucune recette ni branche supprimée";
-        assert !plis.actualiser(tree, List.of(), List.of(s("piece", 2)))
-                : "pas de recalcul inchangé";
+        assert !plis.surveiller() : "pas de correction sur une branche inchangée";
+        var instantane = InstantaneArbreEmi.lire(tree);
+        InstantaneArbreEmi.invalider();
+        assert InstantaneArbreEmi.lire(tree) == instantane
+                : "la relecture du même plan conserve l'identité de retrait";
+        piece.recipe = new dev.emi.emi.api.recipe.EmiRecipe() {};
+        InstantaneArbreEmi.invalider();
+        var recetteModifiee = InstantaneArbreEmi.lire(tree);
+        assert recetteModifiee != instantane : "une vraie recette change l'identité du retrait";
+        tree.batches = 2;
+        assert InstantaneArbreEmi.lire(tree) != recetteModifiee
+                : "une quantité modifiée invalide le plan de retrait";
+        tree.batches = 1;
         assert plis.actualiser(tree, List.of(), List.of());
         assert piece.state == FoldState.EXPANDED : "annulation restaure le pliage";
         plis.actualiser(tree, List.of(), List.of(s("piece", 1)));
@@ -78,7 +90,7 @@ public final class PlisFabricationEmiTest {
         piece.state = FoldState.EXPANDED;
         plis.actualiser(tree, List.of(), List.of(s("piece", 2)));
         piece.state = FoldState.EXPANDED;
-        plis.actualiser(tree, List.of(), List.of(s("piece", 2)));
+        assert !plis.surveiller() : "le choix manuel ne requiert aucun nouveau calcul";
         assert piece.state == FoldState.EXPANDED
                 : "le joueur peut examiner une fabrication en cours";
         plis.actualiser(tree, List.of(), List.of());

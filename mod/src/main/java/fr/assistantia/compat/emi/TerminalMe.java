@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -27,7 +28,9 @@ import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
@@ -50,6 +53,7 @@ final class TerminalMe {
             Method repo,
             Method powered,
             Method entrees,
+            Method parIngredient,
             Method cle,
             Method quantite,
             Method serial,
@@ -66,8 +70,14 @@ final class TerminalMe {
             long tampon,
             int menuRevision,
             List<Entree> stock,
+            List<PlanRetrait.Stock<ItemStack>> stockCalcul,
             long lots,
+            List<PlanRetrait.Stock<ItemStack>> credits,
+            List<PlanRetrait.Stock<EmiStack>> outils,
             List<Lot> retraits) {}
+
+    private record Recherche(
+            InstantaneArbreEmi arbre, Map<Object, List<EmiStack>> variantes, Ingredient filtre) {}
 
     private static final String NOM = "Réseau ME", RETRAIT = "Retrait… ";
     private static final String PRENDRE = "Prendre", TOUT = "Tout", ARRETER = "Arrêter";
@@ -82,6 +92,8 @@ final class TerminalMe {
     private static int page;
     private static long cleDisposition, placeLe;
     private static Vue vue;
+    private static Recherche recherche;
+    private static Class<?> indexIndisponible;
     private static AbstractContainerMenu menu;
     private static AbstractContainerScreen<?> ecran;
     private static InstantaneArbreEmi arbre;
@@ -110,6 +122,7 @@ final class TerminalMe {
                     menu.getMethod("getClientRepo"),
                     menu.getMethod("isPowered"),
                     repo.getMethod("getAllEntries"),
+                    methodeIndex(repo),
                     entree.getMethod("getWhat"),
                     entree.getMethod("getStoredAmount"),
                     entree.getMethod("getSerial"),
@@ -122,6 +135,14 @@ final class TerminalMe {
             return null;
         } catch (ReflectiveOperationException | LinkageError incompatible) {
             signaler(incompatible);
+            return null;
+        }
+    }
+
+    private static Method methodeIndex(Class<?> repo) {
+        try {
+            return repo.getMethod("getByIngredient", Ingredient.class);
+        } catch (NoSuchMethodException absent) {
             return null;
         }
     }
@@ -140,7 +161,7 @@ final class TerminalMe {
     static List<PlanRetrait.Stock<ItemStack>> stock() {
         if (vue == null || vue.menu() != courant() || !InventaireJoueur.disponible())
             return List.of();
-        return stocks(vue.stock());
+        return vue.stockCalcul();
     }
 
     private static List<PlanRetrait.Stock<ItemStack>> stocks(List<Entree> entrees) {
@@ -161,17 +182,49 @@ final class TerminalMe {
         return true;
     }
 
-    private static List<Entree> lire(AbstractContainerMenu actif, InstantaneArbreEmi arbre)
+    private static Recherche recherche(InstantaneArbreEmi arbre) {
+        if (recherche != null && recherche.arbre() == arbre) return recherche;
+        var variantes = new IdentityHashMap<Object, List<EmiStack>>();
+        for (var pile : arbre.variantes())
+            variantes.computeIfAbsent(pile.getKey(), k -> new ArrayList<>()).add(pile);
+        // Le filtre natif sélectionne les types d'objet. ComparaisonEmi valide ensuite les
+        // véritables variantes, les tags, l'usure et les autres règles propres aux recettes.
+        var items =
+                variantes.keySet().stream()
+                        .filter(Item.class::isInstance)
+                        .map(Item.class::cast)
+                        .toArray(Item[]::new);
+        recherche = new Recherche(arbre, variantes, Ingredient.of(items));
+        return recherche;
+    }
+
+    private static Collection<?> entrees(Object repo, Ingredient filtre, boolean complet)
+            throws ReflectiveOperationException {
+        var index = ACCES.parIngredient();
+        if (!complet && index != null && indexIndisponible != repo.getClass()) {
+            try {
+                if (index.invoke(repo, filtre) instanceof Collection<?> candidates)
+                    return candidates;
+            } catch (ReflectiveOperationException | RuntimeException incompatible) {
+                // Une variante AE2 peut exposer la méthode sans prendre en charge son index.
+            }
+            indexIndisponible = repo.getClass();
+        }
+        return (Collection<?>) ACCES.entrees().invoke(repo);
+    }
+
+    private static List<Entree> lire(
+            AbstractContainerMenu actif, InstantaneArbreEmi arbre, boolean complet)
             throws ReflectiveOperationException {
         if (!(boolean) ACCES.powered().invoke(actif)) return List.of();
         Object repo = ACCES.repo().invoke(actif);
         if (repo == null) return List.of();
-        var variantes = new IdentityHashMap<Object, List<EmiStack>>();
-        for (var pile : arbre.variantes())
-            variantes.computeIfAbsent(pile.getKey(), k -> new ArrayList<>()).add(pile);
+        var recherche = recherche(arbre);
+        var variantes = recherche.variantes();
+        if (variantes.isEmpty()) return List.of();
         var result = new ArrayList<Entree>();
         var vus = new HashSet<Long>();
-        for (Object e : (Collection<?>) ACCES.entrees().invoke(repo)) {
+        for (Object e : entrees(repo, recherche.filtre(), complet)) {
             long n = (long) ACCES.quantite().invoke(e);
             if (n <= 0) continue;
             Object cle = ACCES.cle().invoke(e);
@@ -193,31 +246,38 @@ final class TerminalMe {
         return fr.assistantia.ArbreEmi.consulte();
     }
 
-    private static void actualiser() throws ReflectiveOperationException {
+    private static void actualiser(boolean complet) throws ReflectiveOperationException {
         var actif = courant();
         Object tree = actif == null ? null : arbreCourant();
         if (tree == null || !InventaireJoueur.disponible()) {
             if (vue != null) InventaireArbreEmi.invalider();
             vue = null;
+            recherche = null;
             return;
         }
         var instantane = InstantaneArbreEmi.lire(tree);
-        var stock = lire(actif, instantane);
+        var stock = lire(actif, instantane, complet);
         long revision = InventaireJoueur.revision(),
                 revisionTampon = CoffreTampon.revision(),
                 lots = MachinesEmi.revisionLotsProduction();
-        if (vue != null
+        var credits = CycleArbreEmi.credits();
+        var outils = MachinesEmi.outilsInstalles();
+        boolean stockIdentique =
+                vue != null && vue.menu() == actif && memeStock(vue.stock(), stock);
+        if (!complet
+                && stockIdentique
                 && vue.menu() == actif
                 && vue.arbre() == instantane
                 && vue.inventaire() == revision
                 && vue.tampon() == revisionTampon
                 && vue.menuRevision() == actif.getStateId()
                 && vue.lots() == lots
-                && memeStock(vue.stock(), stock)) return;
+                && vue.credits().equals(credits)
+                && vue.outils().equals(outils)) return;
+        var stockCalcul = stockIdentique ? vue.stockCalcul() : stocks(stock);
         var couverture =
                 StockFabricationEmi.courant(
-                        InventaireArbreEmi.physiques(InventaireArbreEmi.personnel()),
-                        stocks(stock));
+                        InventaireArbreEmi.physiques(InventaireArbreEmi.personnel()), stockCalcul);
         var retraits = new ArrayList<Lot>();
         for (var prise : couverture.retraitsReseau(instantane.machines(), instantane.lots())) {
             var entree = stock.get(prise.index());
@@ -231,7 +291,10 @@ final class TerminalMe {
                         revisionTampon,
                         actif.getStateId(),
                         stock,
+                        stockCalcul,
                         lots,
+                        credits,
+                        outils,
                         List.copyOf(retraits));
         InventaireArbreEmi.invalider();
     }
@@ -495,7 +558,7 @@ final class TerminalMe {
             return;
         }
         try {
-            actualiser();
+            actualiser(true);
             var lots =
                     vue == null
                             ? List.<Lot>of()
@@ -530,7 +593,7 @@ final class TerminalMe {
         if (event.phase != TickEvent.Phase.END || ACCES == null) return;
         try {
             if (occupe()) avancer();
-            if (++ticks % 10 == 0 || vue != null && vue.menu() != courant()) actualiser();
+            if (++ticks % 10 == 0 || vue != null && vue.menu() != courant()) actualiser(false);
         } catch (ReflectiveOperationException | RuntimeException ex) {
             signaler(ex);
             if (occupe()) terminer("Retrait ME interrompu.");
@@ -650,7 +713,7 @@ final class TerminalMe {
         vue = null;
         ticks = 0;
         try { // Relevé refait tout de suite : le panneau passe au reste sans disparaître.
-            actualiser();
+            actualiser(true);
         } catch (ReflectiveOperationException | RuntimeException ex) {
             signaler(ex);
             vue = null;

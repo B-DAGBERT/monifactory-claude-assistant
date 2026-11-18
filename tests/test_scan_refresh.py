@@ -57,16 +57,17 @@ class ScanRefreshTests(unittest.TestCase):
     def test_buffer_beam_is_independent_of_ordinary_search_results(self):
         reperage = source("Reperage")
         rendu = corps(reperage, "public static void rendu(RenderLevelStageEvent event)")
-        self.assertIn("rechercheActive ? CoffreTampon.positionsRepere()", rendu)
+        self.assertIn("rechercheActive ? CoffreTampon.reperes()", rendu)
         self.assertIn("if (coffresTampons.isEmpty() && reperes.isEmpty())", rendu)
         self.assertLess(
-            rendu.index("for (BlockPos position : coffresTampons)"), rendu.index("faisceauTampon(")
+            rendu.index("for (var tampon : coffresTampons)"), rendu.index("faisceauTampon(")
         )
         self.assertLess(rendu.index("faisceauTampon("), rendu.index("if (reperes.isEmpty())"))
         self.assertIn(
             "CoffreTampon.selectionne(", corps(reperage, "private static boolean visible(")
         )
         self.assertIn("BeaconRenderer.renderBeaconBeam(", reperage)
+        self.assertIn('case A_REVOIR -> "Tampon · à revérifier"', rendu)
 
 
 if __name__ == "__main__":

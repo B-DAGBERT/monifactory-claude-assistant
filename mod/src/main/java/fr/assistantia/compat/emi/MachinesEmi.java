@@ -50,15 +50,19 @@ public final class MachinesEmi {
     private static List<PlanMachines.Operation<EmiRecipe>> affichees = List.of();
     private static Disposition dispositionAffichee;
     private static EmiRecipe recetteAffichee;
-    private static Object arbreAffiche;
-    private static long revisionAffichee, quantiteAffichee;
-    private static String contextePriorites = "", contexteAffiche = "";
+
+    private record ContextePanneau(Object arbre, long revision, long lots, String navigation) {}
+
+    private static ContextePanneau contextePlan, contexteAffiche;
     private static int pageAffichee;
     private static java.util.Map<EmiRecipe, OrdreMachines.Ligne<EmiRecipe>> prioritesLocales =
             java.util.Map.of();
     private static String problemeOrdre = "";
     private static EnvoiMachine.Plan plan;
+    private static final long INTERVALLE_PANNEAU = 500_000_000L;
     private static long actualise;
+    private static List<ItemStack> pilesConverties;
+    private static List<PlanRetrait.Stock<EmiStack>> inventaireEmi = List.of();
     private static final SuiviLotsEmi lots =
             new SuiviLotsEmi(
                     MachinesEmi::inventaire,
@@ -687,30 +691,23 @@ public final class MachinesEmi {
     }
 
     private static List<PlanRetrait.Stock<EmiStack>> inventaire() {
-        return inventaire(true);
-    }
-
-    private static List<PlanRetrait.Stock<EmiStack>> inventaire(boolean avecSacs) {
-        List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
-        var mc = Minecraft.getInstance();
-        if (mc.player == null) return stock;
-        for (ItemStack s :
-                avecSacs
-                        ? fr.assistantia.InventaireJoueur.piles()
-                        : mc.player.getInventory().items) {
-            if (s.isEmpty()) continue;
-            stock.add(new PlanRetrait.Stock<>(EmiStack.of(s), s.getCount(), true));
-            ItemStack un = s.copy();
-            un.setCount(1);
-            var fluid = FluidUtil.getFluidContained(un).orElse(null);
-            if (fluid != null && !fluid.isEmpty())
-                stock.add(
-                        new PlanRetrait.Stock<>(
-                                EmiStack.of(fluid.getFluid(), fluid.getTag(), fluid.getAmount()),
-                                PlanMachines.produit(fluid.getAmount(), s.getCount()),
-                                true));
+        if (!fr.assistantia.InventaireJoueur.disponible()) {
+            pilesConverties = null;
+            inventaireEmi = List.of();
+            return inventaireEmi;
         }
-        return stock;
+        // InventaireJoueur garde la même vue immuable tant que les piles restent identiques.
+        var piles = fr.assistantia.InventaireJoueur.piles();
+        if (piles == pilesConverties) return inventaireEmi;
+        List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
+        for (ItemStack pile : piles) {
+            if (pile.isEmpty()) continue;
+            stock.add(new PlanRetrait.Stock<>(EmiStack.of(pile), pile.getCount(), true));
+            ajouterFluide(stock, pile);
+        }
+        inventaireEmi = List.copyOf(stock);
+        pilesConverties = piles;
+        return inventaireEmi;
     }
 
     private static int compte(List<PlanRetrait.Stock<EmiStack>> stock, EmiStack objet) {
@@ -761,6 +758,8 @@ public final class MachinesEmi {
             affichees = List.of();
             dispositionAffichee = null;
             recetteAffichee = null;
+            contextePlan = contexteAffiche = null;
+            actualise = 0;
             prioritesLocales = java.util.Map.of();
             compatibilites.clear();
             if (current != null || connexion != mc.getConnection()) dernierTermine = false;
@@ -777,7 +776,7 @@ public final class MachinesEmi {
                 || mc.player == null
                 || mc.level == null
                 || EnvoiMachine.occupe()
-                || !fr.assistantia.InventaireJoueur.synchronise()) return;
+                || !fr.assistantia.InventaireJoueur.disponible()) return;
         try {
             var vue = InstantaneArbreEmi.lire(arbre);
             if (instantane != vue) {
@@ -826,8 +825,22 @@ public final class MachinesEmi {
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
-        if (actif() != arbre || ++ticks % 10 == 0) actualiserArbre();
+        var mc = Minecraft.getInstance();
+        Object courant = actif();
+        boolean panneau =
+                courant != null
+                        && affiche(mc.screen)
+                        && !EnvoiMachine.occupe()
+                        && (actualise == 0
+                                || courant != arbre
+                                || contextePlan != null
+                                        && contextePlan.revision()
+                                                != InstantaneArbreEmi.revisionStructureProduction()
+                                || System.nanoTime() - actualise >= INTERVALLE_PANNEAU);
+        boolean revoirArbre = ++ticks % 10 == 0;
+        if (courant != arbre || revoirArbre && !panneau) actualiserArbre();
         lots.actualiser();
+        if (panneau) actualiserInterface();
         AnalyseRecette.tick(); // onglet Recette : calcul incrémental borné, jamais pendant le rendu
         if (ticks % 100 == 0) compatibilites.clear();
         // Contours rouges et rangs seulement pendant le repérage : effacés dès son arrêt, relevés
@@ -839,7 +852,6 @@ public final class MachinesEmi {
             return;
         }
         if (ticks % 40 != 0 && !demarrage) return;
-        var mc = Minecraft.getInstance();
         // Seules les machines encore utiles brillent : rien quand les coffres ont déjà le résultat.
         var utilesGT = operationsUtiles;
         if (arbre == null || mc.level == null || mc.player == null || utilesGT.isEmpty()) {
@@ -907,11 +919,16 @@ public final class MachinesEmi {
         ecran = s;
         disposition = null;
         plan = null;
+        contextePlan = null;
         actualise = 0;
     }
 
     private static boolean affiche(Screen s) {
-        return s == ecran && ecran != null && actif() != null;
+        var player = Minecraft.getInstance().player;
+        return s == ecran
+                && ecran != null
+                && player != null
+                && player.containerMenu == ecran.getMenu();
     }
 
     private static PlanMachines.Operation<EmiRecipe> selection() {
@@ -920,8 +937,10 @@ public final class MachinesEmi {
 
     private static void actualiserInterface() {
         if (ecran == null || EnvoiMachine.occupe()) return;
-        actualise = System.currentTimeMillis();
+        contextePlan = null;
         actualiserArbre();
+        actualise = System.nanoTime();
+        if (instantane == null) return;
         try {
             var ui = GregTechMachines.ouvrir(ecran.getMenu());
             if (ui == null) {
@@ -981,6 +1000,12 @@ public final class MachinesEmi {
                     && (choix < page * disposition.parPage()
                             || choix >= (page + 1) * disposition.parPage()))
                 page = choix / disposition.parPage();
+            contextePlan =
+                    new ContextePanneau(
+                            arbre,
+                            InstantaneArbreEmi.revisionStructureProduction(),
+                            instantane.lots(),
+                            contexteSelection());
         } catch (ReflectiveOperationException | RuntimeException e) {
             // Un panneau indisponible ne doit jamais interrompre le rendu du jeu entier.
             disposition = null;
@@ -992,24 +1017,24 @@ public final class MachinesEmi {
                 erreurInterfaceSignalee = true;
             }
         }
-        contextePriorites = contexteSelection();
-        actualise = System.currentTimeMillis();
+    }
+
+    private static boolean planAffichable(Screen screen) {
+        return affiche(screen)
+                && disposition != null
+                && contextePlan != null
+                && contextePlan.arbre() == actif()
+                && contextePlan.revision() == InstantaneArbreEmi.revisionStructureProduction();
     }
 
     public static Zone zoneEmi(Screen screen) {
-        return affiche(screen) && disposition != null ? disposition.cadre() : null;
-    }
-
-    @SubscribeEvent
-    public static void avant(ScreenEvent.Render.Pre event) {
-        if (affiche(event.getScreen()) && System.currentTimeMillis() - actualise > 500)
-            actualiserInterface();
+        return planAffichable(screen) ? disposition.cadre() : null;
     }
 
     @SubscribeEvent
     public static void rendu(ScreenEvent.Render.Post event) {
         var selected = selection();
-        if (!affiche(event.getScreen()) || disposition == null || selected == null) {
+        if (!planAffichable(event.getScreen()) || selected == null) {
             affichees = List.of();
             dispositionAffichee = null;
             recetteAffichee = null;
@@ -1019,10 +1044,7 @@ public final class MachinesEmi {
         pageAffichee = page;
         dispositionAffichee = disposition;
         recetteAffichee = selected.recette();
-        arbreAffiche = actif();
-        revisionAffichee = InstantaneArbreEmi.revisionStructureProduction();
-        quantiteAffichee = instantane == null ? -1 : instantane.lots();
-        contexteAffiche = contextePriorites;
+        contexteAffiche = contextePlan;
         PanneauMachineEmi.afficher(
                 event,
                 new PanneauMachineEmi.Vue(
@@ -1157,10 +1179,11 @@ public final class MachinesEmi {
     private static boolean selectionnerAffichee(EmiRecipe recette) {
         var mc = Minecraft.getInstance();
         if (recette == null
-                || arbreAffiche != actif()
-                || revisionAffichee != InstantaneArbreEmi.revisionStructureProduction()
+                || contexteAffiche == null
+                || contexteAffiche.arbre() != actif()
+                || contexteAffiche.revision() != InstantaneArbreEmi.revisionStructureProduction()
                 || !quantiteAfficheeValide()
-                || !contexteAffiche.equals(contexteSelection())
+                || !contexteAffiche.navigation().equals(contexteSelection())
                 || mc.player == null
                 || ecran == null
                 || mc.player.containerMenu != ecran.getMenu()) {
@@ -1186,9 +1209,9 @@ public final class MachinesEmi {
 
     private static boolean quantiteAfficheeValide() {
         try {
-            return arbreAffiche != null
-                    && arbreAffiche.getClass().getField("batches").getLong(arbreAffiche)
-                            == quantiteAffichee;
+            var affiche = contexteAffiche.arbre();
+            return affiche.getClass().getField("batches").getLong(affiche)
+                    == contexteAffiche.lots();
         } catch (ReflectiveOperationException | RuntimeException error) {
             return false;
         }

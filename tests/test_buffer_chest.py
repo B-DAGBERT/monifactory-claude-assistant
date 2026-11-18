@@ -119,6 +119,7 @@ import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 
 public class CoffreTamponTest {
     private static final Minecraft MC = Minecraft.getInstance();
+    private static long maintenant = 100_000_000_000L;
 
     public static class StorageMenu extends AbstractContainerMenu {
         private final BlockPos position;
@@ -130,6 +131,15 @@ public class CoffreTamponTest {
     static void tick() { CoffreTampon.tick(new TickEvent.ClientTickEvent()); }
     static int stock() { return CoffreTampon.piles().stream().mapToInt(ItemStack::getCount).sum(); }
     static int stockOutsideMenu() { return CoffreTampon.pilesHorsMenu().stream().mapToInt(ItemStack::getCount).sum(); }
+
+    static List<BlockPos> positions() {
+        return CoffreTampon.reperes().stream().map(CoffreTampon.Repere::position).toList();
+    }
+
+    static CoffreTampon.EtatReleve etat(BlockPos pos) {
+        return CoffreTampon.reperes().stream().filter(r -> r.position().equals(pos))
+                .findFirst().orElseThrow().etat();
+    }
 
     static void toggle(BlockPos pos) {
         MC.hitResult = new BlockHitResult(pos);
@@ -159,7 +169,10 @@ public class CoffreTamponTest {
         tick();
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws ReflectiveOperationException {
+        var horloge = CoffreTampon.class.getDeclaredField("horloge");
+        horloge.setAccessible(true);
+        horloge.set(null, (java.util.function.LongSupplier) () -> maintenant);
         var pos = new BlockPos(7, 90, -4);
         var left = new BlockPos(10, 90, -4);
         var right = left.relative(1);
@@ -176,16 +189,16 @@ public class CoffreTamponTest {
         close(screen);
         toggle(pos);
         assert stock() == 5 : "reuse the last authorized menu when selecting after close";
-        assert CoffreTampon.positionsRepere().equals(List.of(pos));
+        assert positions().equals(List.of(pos));
         assert CoffreTampon.selectionne("test:world", 7, 90, -4);
         assert !CoffreTampon.selectionne("test:another_world", 7, 90, -4);
 
         toggle(right);
         assert stock() == 5 : "marking a second chest keeps existing stock";
-        assert CoffreTampon.positionsRepere().equals(List.of(pos, right));
+        assert positions().equals(List.of(pos, right));
         assert CoffreTampon.selectionne("test:world", 10, 90, -4);
         assert CoffreTampon.selectionne("test:world", 11, 90, -4);
-        assert !CoffreTampon.contient("test:world", 10, 90, -4);
+        assert etat(right) == CoffreTampon.EtatReleve.NON_RELEVE;
         var doubleChest = openChest(left);
         assert CoffreTampon.menuObserve() : "the other half identifies the same marked menu";
         RetraitCoffre.piles = List.of(new ItemStack(item, 13));
@@ -195,15 +208,14 @@ public class CoffreTamponTest {
         StockProduction.initialise = true;
         tick();
         assert stock() == 18 && stockOutsideMenu() == 5 : "omit only the double chest's snapshot";
-        assert CoffreTampon.contient("test:world", 10, 90, -4);
-        assert CoffreTampon.contient("test:world", 11, 90, -4);
+        assert etat(right) == CoffreTampon.EtatReleve.DIRECT;
         var revision = CoffreTampon.revision();
         tick();
         assert CoffreTampon.revision() == revision : "unchanged snapshots keep the revision";
         close(doubleChest);
         assert !CoffreTampon.menuObserve() && stockOutsideMenu() == 18;
         toggle(left);
-        assert stock() == 5 && CoffreTampon.positionsRepere().equals(List.of(pos));
+        assert stock() == 5 && positions().equals(List.of(pos));
         assert !CoffreTampon.selectionne("test:world", 11, 90, -4);
         toggle(left);
         assert stock() == 18 : "reselecting a recently observed double chest counts it once";
@@ -213,7 +225,7 @@ public class CoffreTamponTest {
         assert CoffreTampon.exclu("test:world", 10, 90, -4);
         assert CoffreTampon.exclu("test:world", 11, 90, -4);
         assert !CoffreTampon.exclu("test:another_world", 11, 90, -4);
-        assert CoffreTampon.positionsRepere().equals(List.of(pos));
+        assert positions().equals(List.of(pos));
         MC.level.unloaded.add(right);
         tick();
         MC.level.blocks.put(right, new BlockEntity());
@@ -245,7 +257,7 @@ public class CoffreTamponTest {
         RetraitCoffre.retrait = true;
         close(reopened);
         assert stock() == 13 : "escape during transfer invalidates only the affected snapshot";
-        assert CoffreTampon.positionsRepere().size() == 2 : "selections remain visible";
+        assert positions().size() == 2 : "selections remain visible";
         RetraitCoffre.retrait = false;
         toggle(pos);
         toggle(pos);
@@ -257,21 +269,21 @@ public class CoffreTamponTest {
 
         MC.level.unloaded.add(right);
         tick();
-        assert stock() == 3 && CoffreTampon.positionsRepere().equals(List.of(pos));
+        assert stock() == 3 && positions().equals(List.of(pos));
         MC.level.unloaded.clear();
         assert stock() == 3 : "loading a chunk does not resurface its stale snapshot";
         var reopenedDouble = openChest(right);
         RetraitCoffre.piles = List.of(new ItemStack(item, 13));
         tick();
         close(reopenedDouble);
-        assert stock() == 16 && CoffreTampon.positionsRepere().size() == 2;
+        assert stock() == 16 && positions().size() == 2;
 
         MC.level.types.put(left, ChestType.SINGLE);
         tick();
-        assert stock() == 3 && CoffreTampon.positionsRepere().equals(List.of(pos)) : "split double";
+        assert stock() == 3 && positions().equals(List.of(pos)) : "split double";
         MC.level.blocks.put(pos, new BlockEntity());
         tick();
-        assert stock() == 0 && CoffreTampon.positionsRepere().isEmpty() : "replacement clears its stock";
+        assert stock() == 0 && positions().isEmpty() : "replacement clears its stock";
 
         toggle(pos);
         reopened = open(new StorageMenu(pos));
@@ -279,10 +291,10 @@ public class CoffreTamponTest {
         assert stock() == 13;
         close(reopened);
         MC.connection = new ClientPacketListener();
-        assert stock() == 0 && CoffreTampon.positionsRepere().isEmpty() : "session scopes snapshots";
+        assert stock() == 0 && positions().isEmpty() : "session scopes snapshots";
         tick();
         toggle(pos);
-        assert stock() == 0 && CoffreTampon.positionsRepere().equals(List.of(pos));
+        assert stock() == 0 && positions().equals(List.of(pos));
         exclude(pos);
         assert CoffreTampon.exclu("test:world", 7, 90, -4);
         var ajoute = pos.relative(1);
@@ -300,6 +312,39 @@ public class CoffreTamponTest {
         MC.connection = new ClientPacketListener();
         tick();
         assert !CoffreTampon.exclu("test:world", 7, 90, -4);
+        verifierFraicheur(pos, item);
+    }
+
+    static void verifierFraicheur(BlockPos pos, Item item) {
+        toggle(pos);
+        var menu = open(new StorageMenu(pos));
+        RetraitCoffre.piles = List.of(new ItemStack(item, 5));
+        tick();
+        assert etat(pos) == CoffreTampon.EtatReleve.DIRECT && stock() == 5;
+        close(menu);
+        assert etat(pos) == CoffreTampon.EtatReleve.DERNIERE_OUVERTURE;
+        long derniereRevision = CoffreTampon.revision();
+        RetraitCoffre.piles = List.of(new ItemStack(item, 2)); // Changement sans menu observé.
+        maintenant += 59_000_000_000L;
+        tick();
+        assert stock() == 5 && CoffreTampon.revision() == derniereRevision;
+        maintenant += 1_000_000_000L;
+        tick();
+        assert stock() == 0 && etat(pos) == CoffreTampon.EtatReleve.A_REVOIR;
+        assert CoffreTampon.selectionne("test:world", 7, 90, -4);
+        assert CoffreTampon.revision() == derniereRevision + 1;
+        tick();
+        assert CoffreTampon.revision() == derniereRevision + 1 : "expiry is signalled once";
+
+        StockProduction.initialise = false;
+        menu = open(new StorageMenu(pos));
+        tick();
+        assert stock() == 0 && etat(pos) == CoffreTampon.EtatReleve.A_REVOIR;
+        StockProduction.initialise = true;
+        tick();
+        assert stock() == 2 && etat(pos) == CoffreTampon.EtatReleve.DIRECT;
+        close(menu);
+        assert stock() == 2 && etat(pos) == CoffreTampon.EtatReleve.DERNIERE_OUVERTURE;
     }
 }
 """

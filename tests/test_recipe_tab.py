@@ -1,6 +1,7 @@
 """Onglet Recette : moteur pur (chaînes, comparaison, rangs, « facile »), écran à 320 × 240
 avec des stubs Minecraft, et lecture de la mémoire des coffres. Aucun jeu ni EMI réel."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -494,16 +495,16 @@ MEMORY_STUBS = {
     "fr.assistantia.CoffreTampon": """public class CoffreTampon {
  public static long revision(){return 0;}
  public static boolean exclu(String dimension,long x,long y,long z){return false;}
- public static boolean contient(String dimension,long x,long y,long z){return false;}}""",
+ public static boolean selectionne(String dimension,long x,long y,long z){return false;}}""",
     "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft I=new Minecraft();public static Minecraft getInstance(){return I;}
- public Niveau level;public Joueur player;public Object getConnection(){return null;}
+ public Niveau level;public Joueur player;public Object connexion;public Object getConnection(){return connexion;}
  public static class Pos {public int x,z;public int getX(){return x;}public int getZ(){return z;}}
  public static class Joueur {public final Pos pos=new Pos();public Pos blockPosition(){return pos;}}
  public static class Cle {public String id="minecraft:overworld";public String location(){return id;}}
  public static class Niveau {public final Cle cle=new Cle();public Cle dimension(){return cle;}}}""",
-    "net.minecraftforge.fml.loading.FMLPaths": """public enum FMLPaths {GAMEDIR;public java.nio.file.Path get(){return java.nio.file.Path.of(".");}}""",
+    "net.minecraftforge.fml.loading.FMLPaths": """public enum FMLPaths {GAMEDIR;public static java.nio.file.Path racine=java.nio.file.Path.of(".");public java.nio.file.Path get(){return racine;}}""",
     "com.mojang.logging.LogUtils": """public class LogUtils {public static Log getLogger(){return new Log();}public static class Log {public void debug(String m,Throwable t){}}}""",
-    "fr.assistantia.IdentiteMonde": """public class IdentiteMonde {public static boolean isolation(){return false;}public static String monde(){return "";}}""",
+    "fr.assistantia.IdentiteMonde": """public class IdentiteMonde {public static String actif="";public static boolean isolation(){return !actif.isEmpty();}public static String monde(){return actif;}}""",
 }
 
 MEMORY_HARNESS = """package fr.assistantia;
@@ -531,7 +532,7 @@ public class CoffresConnusTest {
 
 
 class KnownChestMemoryTests(unittest.TestCase):
-    def run_harness(self, harness, name, expected):
+    def run_harness(self, harness, name, expected, *args):
         java, javac = jdk()
         gson = gson_jar()
         if not java or not javac or gson is None:
@@ -549,7 +550,15 @@ class KnownChestMemoryTests(unittest.TestCase):
                 classpath=str(gson),
             )
             result = subprocess.run(
-                [java, "-ea", "-cp", tmp + os.pathsep + str(gson), f"fr.assistantia.{name}"],
+                [
+                    java,
+                    "-ea",
+                    "-cp",
+                    tmp + os.pathsep + str(gson),
+                    f"fr.assistantia.{name}",
+                    tmp,
+                    *args,
+                ],
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -566,6 +575,28 @@ class KnownChestMemoryTests(unittest.TestCase):
             ROOT / "tests/java/fr/assistantia/CoffresConnusFusionTest.java",
             "CoffresConnusFusionTest",
             "PASS fusion coffres connus",
+        )
+
+    def test_reads_are_scoped_to_the_active_connection_and_world(self):
+        self.run_harness(
+            ROOT / "tests/java/fr/assistantia/CoffresConnusContexteTest.java",
+            "CoffresConnusContexteTest",
+            "PASS contexte coffres connus",
+        )
+
+    def test_native_and_legacy_chest_identities_match_python(self):
+        from monifactory_assistant.game.storage import Storage, latest_remembered_containers
+
+        fixture = ROOT / "tests/fixtures/chest_identity.json"
+        for case in json.loads(fixture.read_text(encoding="utf-8")):
+            with self.subTest(case=case["name"]):
+                kept = latest_remembered_containers(case["contents"])
+                self.assertEqual(Storage(kept).totals(), case["expected"])
+        self.run_harness(
+            ROOT / "tests/java/fr/assistantia/CoffresIdentiteTest.java",
+            "CoffresIdentiteTest",
+            "PASS identite coffres connus",
+            str(fixture),
         )
 
 

@@ -54,7 +54,9 @@ Le contrat machine décrit plus haut est également exécuté. **Tous** le rejou
 Le même besoin de huit plaques est rejoué dans EMI, Repérage, Réseau ME et le calcul du panneau
 machine. Le scénario déplace les plaques entre les poches et le tampon, vérifie les quantités
 restantes et le chevauchement avec un bus AE2, puis rejoue une reconnexion. Un second cas garde
-une sortie attendue distincte du stock physique. **Tous** inclut ces deux cas.
+une sortie attendue distincte du stock physique. Le parcours couvre aussi l’expiration d’un
+tampon, la lecture retardée après reconnexion, l’identité des doubles coffres et le
+rafraîchissement des panneaux. **Tous** inclut ces contrôles.
 
 La [recette en jeu](developpement.md#recette-coffre-tampon-en-jeu) indique quoi vérifier dans les
 menus du pack et quoi relever pour la qualification.
