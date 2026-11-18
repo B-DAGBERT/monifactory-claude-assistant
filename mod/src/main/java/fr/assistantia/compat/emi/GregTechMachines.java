@@ -249,7 +249,7 @@ public final class GregTechMachines {
                 || ((Number) appeler(logique, "getProgress")).intValue() > 0;
     }
 
-    record Execution(boolean active, boolean recetteAttendue) {}
+    record Execution(boolean active, boolean recetteAttendue, boolean autreRecette) {}
 
     /** La dernière recette reste parfois renseignée même lorsque la machine est au repos. */
     static Execution execution(Object machine, EmiRecipe attendue) {
@@ -259,11 +259,12 @@ public final class GregTechMachines {
             var derniere = appeler(logique, "getLastRecipe");
             var recette = recette(attendue);
             var id = recette == null ? null : recette.getClass().getField("id").get(recette);
+            var dernierId =
+                    derniere == null ? null : derniere.getClass().getField("id").get(derniere);
             return new Execution(
                     active,
-                    id != null
-                            && derniere != null
-                            && id.equals(derniere.getClass().getField("id").get(derniere)));
+                    id != null && id.equals(dernierId),
+                    id != null && dernierId != null && !id.equals(dernierId));
         } catch (ReflectiveOperationException | RuntimeException e) {
             return null;
         }

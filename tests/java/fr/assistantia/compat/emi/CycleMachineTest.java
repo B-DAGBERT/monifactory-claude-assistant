@@ -202,7 +202,9 @@ public final class CycleMachineTest {
     private void recetteDeuxTicks(String scenario) {
         var recette = recettePlaques(2);
         var source = menu.slots.get(3);
-        boolean deuxCycles = scenario.equals("recette-rapide-deux-cycles");
+        boolean sortieRetardee = scenario.startsWith("recette-rapide-sortie-retardee");
+        boolean autreRecette = scenario.equals("recette-rapide-sortie-retardee-id-change");
+        boolean deuxCycles = sortieRetardee || scenario.equals("recette-rapide-deux-cycles");
         int fois = deuxCycles || scenario.equals("recette-deux-ticks-entree-partielle") ? 2 : 1;
         source.item = new ItemStack(ETAIN, 2 * fois);
         sortie.item = new ItemStack(PLAQUE, 2);
@@ -220,7 +222,14 @@ public final class CycleMachineTest {
         int clics = mc.gameMode.clicks;
         boolean entreObservations = scenario.equals("recette-entre-observations");
         boolean sortieCorrigee = scenario.equals("sortie-corrigee-apres-observation");
-        if (entreObservations || sortieCorrigee || deuxCycles) {
+        if (sortieRetardee) {
+            GregTechMachines.busy = true;
+            sortie.item = new ItemStack(PLAQUE, 3);
+            EnvoiMachine.tick(new TickEvent.ClientTickEvent());
+            GregTechMachines.busy = false;
+            GregTechMachines.recetteActive = autreRecette ? recettePlaques(2) : null;
+            sortie.item = new ItemStack(PLAQUE, 4);
+        } else if (entreObservations || sortieCorrigee || deuxCycles) {
             sortie.item = new ItemStack(PLAQUE, deuxCycles ? 4 : 3);
             EnvoiMachine.tick(new TickEvent.ClientTickEvent());
             GregTechMachines.recetteActive = null;
@@ -232,7 +241,9 @@ public final class CycleMachineTest {
         if (scenario.equals("recette-deux-ticks-source-corrigee"))
             source.item = new ItemStack(ETAIN, 2);
         attendreFinEnvoi();
-        if (entreObservations || deuxCycles || scenario.equals("recette-deux-ticks")) {
+        if (entreObservations
+                || deuxCycles && !autreRecette
+                || scenario.equals("recette-deux-ticks")) {
             assert lot().fois() == fois;
             synchroniser();
             assert lot().suivi().totalRecu() == 0 : "aucune sortie n'a été récupérée";
@@ -757,6 +768,8 @@ public final class CycleMachineTest {
             case "recette-deux-ticks",
                     "recette-entre-observations",
                     "recette-rapide-deux-cycles",
+                    "recette-rapide-sortie-retardee",
+                    "recette-rapide-sortie-retardee-id-change",
                     "recette-deux-ticks-entree-partielle",
                     "recette-deux-ticks-autre",
                     "recette-deux-ticks-source-corrigee",

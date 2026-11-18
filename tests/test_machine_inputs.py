@@ -225,8 +225,8 @@ public class GregTechMachines {
     public static boolean compatible(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return true;}
     public static boolean occupe(Object m){return busy;}
     public static boolean enMarche(Object m){return busy;}
-    public record Execution(boolean active,boolean recetteAttendue) {}
-    public static Execution execution(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return new Execution(busy,recetteActive==r);}
+    public record Execution(boolean active,boolean recetteAttendue,boolean autreRecette) {}
+    public static Execution execution(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return new Execution(busy,recetteActive==r,recetteActive!=null&&recetteActive!=r);}
     public static int circuit(ItemStack s){return s.tag;}
     public static int circuitConfigure(Interface ui) throws ReflectiveOperationException {return machineCircuit!=-2?machineCircuit:ui.circuit() instanceof ItemStack s&&!s.isEmpty()?s.tag:-1;}
     public static void reglerCircuit(Object w,int v){throw new AssertionError("Le réglage machine ne doit pas être modifié");}
@@ -398,6 +398,8 @@ class MachineInputTests(unittest.TestCase):
             "recette-deux-ticks",
             "recette-entre-observations",
             "recette-rapide-deux-cycles",
+            "recette-rapide-sortie-retardee",
+            "recette-rapide-sortie-retardee-id-change",
             "recette-deux-ticks-entree-partielle",
             "recette-deux-ticks-autre",
             "recette-deux-ticks-source-corrigee",

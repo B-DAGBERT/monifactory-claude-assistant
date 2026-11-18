@@ -520,8 +520,7 @@ public final class EnvoiMachine {
         private final EmiRecipe recette;
         private LongSupplier bilanConsommation;
         private SortiesDepot sorties;
-        private boolean demarrageObserve;
-        private long fabricationsObservees;
+        private long fabricationsDemarrees, fabricationsSorties;
 
         Depot(AbstractContainerMenu menu, GregTechMachines.Interface ui, EmiRecipe recette) {
             this.menu = menu;
@@ -564,15 +563,18 @@ public final class EnvoiMachine {
         public final void observer() {
             if (bilanConsommation == null) return;
             var execution = GregTechMachines.execution(ui.machine(), recette);
-            if (execution == null || !execution.recetteAttendue()) return;
-            demarrageObserve |= execution.active();
+            if (execution == null) return;
+            if (execution.autreRecette()) fabricationsDemarrees = fabricationsSorties = 0;
+            if (!execution.recetteAttendue()) return;
             try {
-                // GregTech peut retirer le dernier ID dès le tick suivant la fin.
                 long fabrications = bilanConsommation.getAsLong();
-                if (sorties != null
-                        && fabrications > fabricationsObservees
+                if (execution.active())
+                    fabricationsDemarrees = Math.max(fabricationsDemarrees, fabrications);
+                // Au repos, la recette et la nouvelle sortie doivent être observées ensemble.
+                else if (sorties != null
+                        && fabrications > fabricationsSorties
                         && sorties.nouvellesSorties(fabrications))
-                    fabricationsObservees = fabrications;
+                    fabricationsSorties = fabrications;
             } catch (RuntimeException ignored) {
                 // Attendre un relevé de sortie exploitable.
             }
@@ -582,9 +584,12 @@ public final class EnvoiMachine {
             if (bilanConsommation == null) return false;
             try {
                 long fabrications = bilanConsommation.getAsLong();
-                return fabrications == 1 && demarrageObserve
+                // La dernière sortie peut être synchronisée après la disparition de l'ID.
+                return fabrications == 1 && fabricationsDemarrees >= 1
                         || fabrications > 0
-                                && fabrications <= fabricationsObservees
+                                && fabrications
+                                        <= Math.max(fabricationsDemarrees, fabricationsSorties)
+                                && sorties != null
                                 && sorties.nouvellesSorties(fabrications);
             } catch (RuntimeException e) {
                 return false;
