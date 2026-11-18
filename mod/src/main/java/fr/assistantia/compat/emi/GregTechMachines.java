@@ -2,6 +2,7 @@ package fr.assistantia.compat.emi;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -251,16 +252,17 @@ public final class GregTechMachines {
 
     record Execution(boolean active, boolean recetteAttendue, boolean autreRecette) {}
 
+    private static Object identifiantRecette(Object recette) throws ReflectiveOperationException {
+        return recette == null ? null : recette.getClass().getField("id").get(recette);
+    }
+
     /** La dernière recette reste parfois renseignée même lorsque la machine est au repos. */
     static Execution execution(Object machine, EmiRecipe attendue) {
         try {
             var logique = appeler(machine, "getRecipeLogic");
             boolean active = active(logique);
-            var derniere = appeler(logique, "getLastRecipe");
-            var recette = recette(attendue);
-            var id = recette == null ? null : recette.getClass().getField("id").get(recette);
-            var dernierId =
-                    derniere == null ? null : derniere.getClass().getField("id").get(derniere);
+            var id = identifiantRecette(recette(attendue));
+            var dernierId = identifiantRecette(appeler(logique, "getLastRecipe"));
             return new Execution(
                     active,
                     id != null && id.equals(dernierId),
@@ -268,6 +270,64 @@ public final class GregTechMachines {
         } catch (ReflectiveOperationException | RuntimeException e) {
             return null;
         }
+    }
+
+    /** Relève l'identité reçue avant qu'un autre paquet du même tick puisse l'effacer. */
+    static Runnable ecouterRecette(
+            Object machine, EmiRecipe attendue, Consumer<Boolean> reception) {
+        try {
+            var idAttendu = identifiantRecette(recette(attendue));
+            if (idAttendu != null) {
+                var logique = appeler(machine, "getRecipeLogic");
+                var chargeur = logique.getClass().getClassLoader();
+                var listener =
+                        Class.forName(
+                                "com.lowdragmc.lowdraglib.syncdata.IFieldUpdateListener",
+                                false,
+                                chargeur);
+                var abonnement =
+                        Class.forName(
+                                "com.lowdragmc.lowdraglib.syncdata.ISubscription", false, chargeur);
+                var desabonner = abonnement.getMethod("unsubscribe");
+                var abonner =
+                        logique.getClass()
+                                .getMethod("addSyncUpdateListener", String.class, listener);
+                var ecoute =
+                        Proxy.newProxyInstance(
+                                chargeur,
+                                new Class<?>[] {listener},
+                                (proxy, methode, args) ->
+                                        switch (methode.getName()) {
+                                            case "onFieldChanged" -> {
+                                                try {
+                                                    var id = identifiantRecette(args[1]);
+                                                    if (id != null)
+                                                        reception.accept(idAttendu.equals(id));
+                                                } catch (ReflectiveOperationException
+                                                        | RuntimeException ignored) {
+                                                    // Une trame illisible ne fournit aucune preuve.
+                                                }
+                                                yield null;
+                                            }
+                                            case "equals" -> proxy == args[0];
+                                            case "hashCode" -> System.identityHashCode(proxy);
+                                            default -> "Suivi du transfert GregTech";
+                                        });
+                var inscription = abonner.invoke(logique, "lastRecipe", ecoute);
+                return () -> {
+                    try {
+                        desabonner.invoke(inscription);
+                    } catch (ReflectiveOperationException
+                            | RuntimeException
+                            | LinkageError ignored) {
+                        // L'API optionnelle peut disparaître avant la fermeture.
+                    }
+                };
+            }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            // Les versions sans abonnement gardent les relevés ordinaires du menu.
+        }
+        return () -> {};
     }
 
     public static boolean occupe(Object machine) {

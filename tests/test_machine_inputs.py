@@ -227,6 +227,11 @@ public class GregTechMachines {
     public static boolean enMarche(Object m){return busy;}
     public record Execution(boolean active,boolean recetteAttendue,boolean autreRecette) {}
     public static Execution execution(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return new Execution(busy,recetteActive==r,recetteActive!=null&&recetteActive!=r);}
+    public static java.util.function.Consumer<Boolean> recetteSynchronisee;
+    static Runnable ecouterRecette(Object m,dev.emi.emi.api.recipe.EmiRecipe r,java.util.function.Consumer<Boolean> reception){
+        recetteSynchronisee=reception;
+        return ()->{if(recetteSynchronisee==reception)recetteSynchronisee=null;};
+    }
     public static int circuit(ItemStack s){return s.tag;}
     public static int circuitConfigure(Interface ui) throws ReflectiveOperationException {return machineCircuit!=-2?machineCircuit:ui.circuit() instanceof ItemStack s&&!s.isEmpty()?s.tag:-1;}
     public static void reglerCircuit(Object w,int v){throw new AssertionError("Le réglage machine ne doit pas être modifié");}
@@ -415,6 +420,19 @@ class MachineInputTests(unittest.TestCase):
             "absorption-avant-depot-suivant",
             "absorption-avant-depot-suivant-autre",
             "absorption-ancien-demarrage",
+        )
+
+    def test_machine_confirms_only_an_exact_isolated_cycle_without_a_recipe_frame(self):
+        self.rejouer_cycle(
+            "sans-id-cycle-court",
+            "sans-id-sortie-ancienne",
+            "sans-id-sortie-etrangere",
+            "sans-id-sortie-excedentaire",
+            "sans-id-recette-concurrente",
+            "sans-id-deux-entrees",
+            "rafale-id-attendu",
+            "rafale-id-concurrent",
+            "rafale-sortie-insuffisante",
         )
 
     def test_machine_circuit_changes_preserve_items_and_stop_unconfirmed_transfers(self):
