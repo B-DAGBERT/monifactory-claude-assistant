@@ -12,8 +12,6 @@ PANNEAUX = [
     "AideEcran",
     "BarreOutilsEmi",
     "DispositionCoffre",
-    "EcranSac",
-    "ListeSac",
     "PanneauAssistant",
     "Surbrillance",
     "compat/emi/CoffresArbreEmi",

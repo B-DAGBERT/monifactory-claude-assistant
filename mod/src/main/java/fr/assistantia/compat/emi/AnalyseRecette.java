@@ -181,7 +181,6 @@ public final class AnalyseRecette {
 
     private static Cle cle;
     private static ArbreRecette.Lecture lecture;
-    private static InstantaneArbreEmi instantane;
     private static ChaineRecette<EmiIngredient, EmiRecipe> evaluateur;
     private static final List<Analyse> analyses = new ArrayList<>();
     private static final ArrayDeque<Tache> taches = new ArrayDeque<>();
@@ -348,7 +347,6 @@ public final class AnalyseRecette {
     private static void oublier(boolean reperes) {
         cle = null;
         lecture = null;
-        instantane = null;
         evaluateur = null;
         analyses.clear();
         taches.clear();
@@ -392,7 +390,7 @@ public final class AnalyseRecette {
         if (!memeArbre) annulations.clear();
         try {
             lecture = ArbreRecette.lire(suivante.arbre());
-            instantane = InstantaneArbreEmi.lire(suivante.arbre());
+            InstantaneArbreEmi.lire(suivante.arbre());
         } catch (IllegalArgumentException limite) {
             // Bornes de lecture (profondeur, nombre de nœuds) ou cycle : une limite, pas une panne.
             arbreIllisible(
@@ -453,7 +451,7 @@ public final class AnalyseRecette {
         propositions = Map.of();
         try {
             lecture = ArbreRecette.lire(suivante.arbre());
-            instantane = InstantaneArbreEmi.lire(suivante.arbre());
+            InstantaneArbreEmi.lire(suivante.arbre());
         } catch (ReflectiveOperationException | RuntimeException illisible) {
             nouvelArbre(suivante); // lecture impossible : repartir proprement, avec son message
             return;
@@ -774,7 +772,6 @@ public final class AnalyseRecette {
             if (etapes.isEmpty()) attendre("Arbre EMI illisible pour le plan.");
             return false;
         }
-        instantane = vue;
         // Arbre suivi : reprendre les opérations du suivi (ses lots et ses crédits), y compris
         // après « Recalculer », seulement quand il a lu ce même instantané ; sinon attendre son
         // relevé, en gardant les étapes affichées.

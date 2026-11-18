@@ -381,12 +381,12 @@ public class OngletRecetteTest {
    case "absent"->{VueRecette.publier(null);Emi.present=false;var g=rendre(o,0,0);assert g.textes.stream().anyMatch(t->t.texte().contains("EMI n"));dansLaZone(g);
     Emi.present=true;g=rendre(o,0,0);assert g.textes.stream().anyMatch(t->t.texte().contains("EMI charge"));}
    case "sans-arbre"->{VueRecette.publier(VueRecette.vide(VueRecette.Etat.SANS_ARBRE,""));var g=rendre(o,0,0);
-    assert g.textes.stream().anyMatch(t->t.texte().contains("Choisis un objet"));dansLaZone(g);assert VueRecette.etapeSuivante()==null;}
+    assert g.textes.stream().anyMatch(t->t.texte().contains("Choisis un objet"));dansLaZone(g);assert VueRecette.courante().suivante()==null;}
    case "plan"->{VueRecette.publier(vue(3));var g=rendre(o,0,0);dansLaZone(g);
     assert texte(g,"Basic Electronic Circuit").y()<Y+16;assert g.textes.stream().anyMatch(t->t.texte().equals("3 étapes · 1 prête")):"header summary";
     assert g.textes.stream().anyMatch(t->t.texte().equals("★"));assert g.textes.stream().anyMatch(t->t.texte().contains("Very Long")&&t.texte().endsWith("…")):"long names cut";
     assert g.textes.stream().anyMatch(t->t.texte().equals("Plan"));assert g.scissors==1&&!g.clip;
-    assert VueRecette.etapeSuivante().titre().equals("★ Basic Bender");}
+    assert VueRecette.courante().suivante().titre().equals("★ Basic Bender");}
    case "appliquer"->{VueRecette.publier(vue(1));var g=rendre(o,0,0);var bouton=texte(g,"Appliquer");
     assert o.cliquer(bouton.x()+2,bouton.y()+2,0);assert appliquees.equals(List.of("id-1")):appliquees;
     assert o.cliquer(bouton.x()+2,bouton.y()+2,0);assert appliquees.size()==1:"double click ignored";
@@ -421,7 +421,7 @@ public class OngletRecetteTest {
     var g=rendre(o,0,0);dansLaZone(g);
     assert g.textes.stream().anyMatch(t->t.texte().startsWith("Plan non calcul")):"distinct state with its reason";
     assert g.textes.stream().noneMatch(t->t.texte().startsWith("Rien")):"never 'everything in stock' before the plan exists";
-    assert g.textes.stream().anyMatch(t->t.texte().equals("plan en attente"));assert VueRecette.etapeSuivante()==null:"HUD shows nothing";
+    assert g.textes.stream().anyMatch(t->t.texte().equals("plan en attente"));assert VueRecette.courante().suivante()==null:"no next step while the plan is pending";
     VueRecette.publier(new VueRecette(VueRecette.Etat.PRET,"",base.cible(),List.of(),List.of(),List.of(),List.of(),"","","","",3,null));
     g=rendre(o,0,0);assert g.textes.stream().anyMatch(t->t.texte().startsWith("Rien")):"computed empty plan";}
    case "masque"->{VueRecette.publier(vue(1));var g=rendre(o,0,0);var bouton=texte(g,"Appliquer");o.visible(false);

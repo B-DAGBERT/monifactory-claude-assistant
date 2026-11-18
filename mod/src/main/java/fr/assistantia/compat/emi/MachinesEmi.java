@@ -301,12 +301,6 @@ public final class MachinesEmi {
         return lots.revision();
     }
 
-    /** À utiliser au clic ou pour le défi natif ; aucune lecture par frame. */
-    public static String empreinteLotsProduction(
-            com.google.gson.JsonObject contexte, com.google.gson.JsonObject catalogue) {
-        return lotsProduction(contexte, catalogue).get("empreinte").getAsString();
-    }
-
     public static void termine() {
         dernierTermine = true;
     }

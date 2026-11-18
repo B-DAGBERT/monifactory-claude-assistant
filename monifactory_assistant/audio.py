@@ -135,20 +135,18 @@ class Transcriber:
             os.environ["PATH"] = folder + os.pathsep + os.environ.get("PATH", "")
         return True
 
-    def transcribe(self, audio, names=()):
-        """names : les noms d'objets du moment (ceux de l'objectif), donnés à Whisper pour qu'il les reconnaisse."""
+    def transcribe(self, audio):
         self.ready.wait()
         if self.model is None:
             raise RuntimeError(
                 f"Reconnaissance vocale indisponible ({self.error}). Tape ta question."
             )
-        hint = WHISPER_HINT + (" " + ", ".join(names)[:400] + "." if names else "")
         # Sur le processeur, une seule hypothèse à la fois (beam 1) : presque aussi juste, deux fois plus rapide
         segments, _ = self.model.transcribe(
             audio,
             language="fr",
             vad_filter=True,
-            initial_prompt=hint,
+            initial_prompt=WHISPER_HINT,
             beam_size=5 if self.gpu else 1,
             condition_on_previous_text=False,
             without_timestamps=True,

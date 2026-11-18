@@ -1,5 +1,6 @@
-> La version commune est maintenant sur **main**. Voir [installation.md](installation.md).
-> Ce document décrit le fonctionnement Codex. Pour installer ou migrer, suivre le guide commun ci-dessus.
+Ce document retrace le portage Codex et les premières versions du mod. Les procédures actuelles
+figurent dans [le guide d’installation](installation.md), [le suivi de la discussion](installation.md#suivre-la-discussion-dans-codex-en-lecture-seule)
+et [le guide des menus](utilisation.md).
 
 # Variante Codex — Mac et suivi des mises à jour
 

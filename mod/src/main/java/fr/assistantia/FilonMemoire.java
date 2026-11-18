@@ -403,10 +403,6 @@ public final class FilonMemoire {
 
         // ----- Fraîcheur -----
 
-        public long verificationAncienne() {
-            return verification;
-        }
-
         public String ageReleve(long maintenant) {
             if (verification <= 0) return "date inconnue";
             long minutes = Math.max(0, maintenant - verification) / 60000;
@@ -436,30 +432,6 @@ public final class FilonMemoire {
 
         public boolean present(long p) {
             return index.contient(p);
-        }
-
-        /** Minerai présent le plus proche, ou l'ancre. */
-        public Position destination(Position depuis) {
-            if (presents == 0 || !depuis.dimension().equals(ancre.dimension())) return ancre;
-            int meilleur = 0;
-            double d = Double.MAX_VALUE;
-            for (int i = 0; i < presents; i++) {
-                double e = distance2(positions[i], depuis.x(), depuis.y(), depuis.z());
-                if (e < d) {
-                    d = e;
-                    meilleur = i;
-                }
-            }
-            long p = positions[meilleur];
-            return new Position(ancre.dimension(), x(p), y(p), z(p));
-        }
-
-        /** Le joueur est à trois blocs d'un minerai restant. */
-        public boolean arrive(Position joueur) {
-            if (!joueur.dimension().equals(ancre.dimension())) return false;
-            for (int i = 0; i < presents; i++)
-                if (distance2(positions[i], joueur.x(), joueur.y(), joueur.z()) <= 9) return true;
-            return false;
         }
 
         /**
@@ -636,14 +608,6 @@ public final class FilonMemoire {
         return true;
     }
 
-    /** Gisement dont la boîte contient la position et qui mémorise déjà ce minerai. */
-    public Filon proprietaire(String dimension, long p) {
-        for (Filon f : filons.values())
-            if (f.presents > 0 && f.ancre.dimension().equals(dimension) && f.index.contient(p))
-                return f;
-        return null;
-    }
-
     /** Nouveau minerai présent ; refusé quand la mémoire est pleine. */
     public boolean ajouter(Filon f, long p, int type) {
         if (f.index.contient(p)) {
@@ -682,16 +646,6 @@ public final class FilonMemoire {
             f.ajouterPresent(p, type);
             presents++;
         }
-        revision++;
-    }
-
-    /** Oublie les minerais présents d'un gisement (les compteurs minés restent). */
-    public void oublierPresents(Filon f) {
-        presents -= f.presents;
-        f.presents = 0;
-        f.index.vider();
-        f.sections.vider();
-        f.revision++;
         revision++;
     }
 

@@ -141,6 +141,7 @@ class ChestTransferTests(unittest.TestCase):
                 )
             ]
             sources.append(str(ROOT / "tests/java/fr/assistantia/RetraitCoffreTest.java"))
+            sources.append(str(ROOT / "tests/java/fr/assistantia/CollecteCoffreFixture.java"))
             compiled = subprocess.run(
                 [javac, "-encoding", "UTF-8", "-d", directory, *sources],
                 capture_output=True,

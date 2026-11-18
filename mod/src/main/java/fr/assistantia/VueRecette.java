@@ -187,15 +187,6 @@ public record VueRecette(
         return a == null ? "EMI indisponible." : a.voir(id);
     }
 
-    /**
-     * Prochaine étape du plan pour le HUD, ou null quand il n'y a rien à faire. Lecture d'un champ
-     * déjà calculé : utilisable à chaque image.
-     */
-    public static EtapeSuivante etapeSuivante() {
-        var vue = courante;
-        return vue == null || vue.etat() != Etat.PRET ? null : vue.suivante();
-    }
-
     private static String texte(String valeur) {
         return valeur == null ? "" : valeur;
     }

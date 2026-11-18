@@ -324,17 +324,6 @@ class Storage:
         kept = latest_remembered_containers(containers)
         return Storage(kept, containers, [m for m in data.get("machines") or [] if m.get("v") == 2])
 
-    def placed(self):
-        """Nombre de machines posées, partagé pendant un cycle de rendu."""
-
-        def compute():
-            counts = defaultdict(int)
-            for m in self.machines:
-                counts[m["bloc"]] += 1
-            return counts
-
-        return frame_value(self, "machines", compute)
-
     @staticmethod
     def twins(a, b):
         """Seulement une relation attestée pour les actions sur les positions physiques."""
@@ -361,19 +350,6 @@ class Storage:
             return totals
 
         return frame_value(self, "stocks", compute)
-
-    def find(self, item, state):
-        """Quantité dans les coffres de la dimension du joueur, et le coffre le plus proche qui en contient."""
-        total, nearest, nearest_distance = 0, None, None
-        for c in self.containers:
-            count = sum(int(o["n"]) for o in c["objets"] if o["item"] == item)
-            if not count or c["dimension"] != state["dimension"]:
-                continue
-            total += count
-            distance = math.dist((c["x"], c["z"]), (state["x"], state["z"]))
-            if nearest is None or distance < nearest_distance:
-                nearest, nearest_distance = c, distance
-        return total, nearest
 
     def export_key(self):
         """Comparer ce qui sera exporté avant de formater les dates et les lignes."""

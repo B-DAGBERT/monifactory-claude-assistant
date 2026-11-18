@@ -19,24 +19,17 @@ import java.util.Set;
 
 /**
  * Accès à EMI (le JEI du pack) par réflexion : le mod se compile sans EMI et continue de marcher
- * sans lui. Remplir la grille d'un établi comme le bouton « + » d'EMI, ouvrir les recettes d'un
- * objet, ou l'arbre de fabrication d'EMI avec un objectif. Les noms viennent de l'API d'EMI 1.1
- * (dev.emi.emi).
+ * sans lui. L'adaptateur remplit la grille d'un établi comme le bouton « + » et ouvre les recettes
+ * d'un objet avec l'API d'EMI 1.1 (dev.emi.emi).
  */
 public final class Emi {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static boolean charge;
     private static boolean present;
     private static Method getRecipeManager,
-            getRecipe,
-            getRecipesByOutput,
             stackOf,
             displayRecipes,
-            viewRecipeTree,
             performFill,
-            getFirstValidHandler,
-            setGoal,
-            getCategory,
             categoryGetId,
             displayUses,
             getHoveredStack,
@@ -75,11 +68,8 @@ public final class Emi {
             Class<?> destination =
                     Class.forName("dev.emi.emi.api.recipe.handler.EmiCraftContext$Destination");
             getRecipeManager = api.getMethod("getRecipeManager");
-            getRecipe = gestion.getMethod("getRecipe", ResourceLocation.class);
-            getRecipesByOutput = gestion.getMethod("getRecipesByOutput", stack);
             stackOf = stack.getMethod("of", ItemStack.class);
             displayRecipes = api.getMethod("displayRecipes", ingredient);
-            viewRecipeTree = api.getMethod("viewRecipeTree");
             performFill =
                     remplisseur.getMethod(
                             "performFill",
@@ -88,10 +78,6 @@ public final class Emi {
                             type,
                             destination,
                             int.class);
-            getFirstValidHandler =
-                    remplisseur.getMethod(
-                            "getFirstValidHandler", recette, AbstractContainerScreen.class);
-            getCategory = recette.getMethod("getCategory");
             categoryGetId = categorie.getMethod("getId");
             displayUses = api.getMethod("displayUses", ingredient);
             getHoveredStack = api.getMethod("getHoveredStack", boolean.class);
@@ -111,11 +97,6 @@ public final class Emi {
             typeBouton = Enum.valueOf((Class) type, "FILL_BUTTON");
             destinationAucune = Enum.valueOf((Class) destination, "NONE");
             try {
-                setGoal = Class.forName("dev.emi.emi.bom.BoM").getMethod("setGoal", recette);
-            } catch (ReflectiveOperationException e) {
-                setGoal = null; // l'arbre d'EMI n'est pas indispensable
-            }
-            try {
                 isLoaded =
                         Class.forName("dev.emi.emi.runtime.EmiReloadManager").getMethod("isLoaded");
             } catch (ReflectiveOperationException e) {
@@ -133,100 +114,6 @@ public final class Emi {
 
     public static boolean present() {
         return pret();
-    }
-
-    /**
-     * Toutes les recettes de l'objet que l'écran ouvert sait remplir, dans l'ordre de préférence :
-     * celle donnée par l'assistant, puis celles de l'établi, puis les autres. Vide quand
-     * l'assistant le fait faire dans une machine : l'autre façon de le faire à l'établi est un
-     * pis-aller (le Mortar donne 1 Clay Dust d'un bloc de Clay, le Macerator 4).
-     */
-    public static List<Object> recettes(
-            String idRecette, ItemStack produit, AbstractContainerScreen<?> ecran) {
-        List<Object> liste = new ArrayList<>();
-        if (!pret()) {
-            return liste;
-        }
-        try {
-            Object gestion = getRecipeManager.invoke(null);
-            ResourceLocation id =
-                    idRecette == null || idRecette.isEmpty()
-                            ? null
-                            : ResourceLocation.tryParse(idRecette);
-            Object donnee = id == null ? null : getRecipe.invoke(gestion, id);
-            if (donnee != null) {
-                if (!remplissable(donnee, ecran)) {
-                    return liste;
-                }
-                liste.add(donnee);
-            }
-            List<Object> autres = new ArrayList<>();
-            for (Object r :
-                    (List<?>) getRecipesByOutput.invoke(gestion, stackOf.invoke(null, produit))) {
-                if (r == donnee || !remplissable(r, ecran)) {
-                    continue;
-                }
-                boolean etabli =
-                        "minecraft:crafting"
-                                .equals(
-                                        String.valueOf(
-                                                categoryGetId.invoke(getCategory.invoke(r))));
-                (etabli ? liste : autres).add(r);
-            }
-            liste.addAll(autres);
-        } catch (Throwable t) {
-            // EMI pas prêt : rien à proposer pour l'instant
-        }
-        return liste;
-    }
-
-    /**
-     * La recette EMI à utiliser : celle donnée par l'assistant si on la connaît, sinon une recette
-     * qui produit l'objet et que l'écran ouvert sait remplir (l'établi d'abord).
-     */
-    public static Object recette(
-            String idRecette, ItemStack produit, AbstractContainerScreen<?> ecran) {
-        if (!pret()) {
-            return null;
-        }
-        try {
-            Object gestion = getRecipeManager.invoke(null);
-            if (idRecette != null && !idRecette.isEmpty()) {
-                ResourceLocation id = ResourceLocation.tryParse(idRecette);
-                Object r = id == null ? null : getRecipe.invoke(gestion, id);
-                if (r != null && (ecran == null || remplissable(r, ecran))) {
-                    return r;
-                }
-            }
-            List<?> candidates =
-                    (List<?>) getRecipesByOutput.invoke(gestion, stackOf.invoke(null, produit));
-            Object premiere = null;
-            for (Object r : candidates) {
-                if (ecran != null && !remplissable(r, ecran)) {
-                    continue;
-                }
-                if ("minecraft:crafting"
-                        .equals(String.valueOf(categoryGetId.invoke(getCategory.invoke(r))))) {
-                    return r;
-                }
-                if (premiere == null) {
-                    premiere = r;
-                }
-            }
-            return premiere;
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    public static boolean remplissable(Object recette, AbstractContainerScreen<?> ecran) {
-        try {
-            return recette != null
-                    && (ecran != null && RetraitCoffre.estCoffre(ecran.getMenu())
-                            || getFirstValidHandler.invoke(null, recette, ecran) != null);
-        } catch (Throwable t) {
-            return false;
-        }
     }
 
     /**
@@ -492,25 +379,6 @@ public final class Emi {
         try {
             return pret() && (boolean) isSearchFocused.invoke(null);
         } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    /**
-     * Met l'objectif dans l'arbre de fabrication d'EMI et l'ouvre : EMI suit ce que le joueur a
-     * déjà.
-     */
-    public static boolean ouvrirArbre(String idRecette, ItemStack produit) {
-        Object r = recette(idRecette, produit, null);
-        if (r == null || setGoal == null) {
-            return false;
-        }
-        try {
-            setGoal.invoke(null, r);
-            viewRecipeTree.invoke(null);
-            return true;
-        } catch (Throwable t) {
-            LOGGER.warn("Assistant IA : arbre d'EMI non ouvert", t);
             return false;
         }
     }

@@ -104,6 +104,10 @@ choix.
 
 ## Backpack comme inventaire
 
+**Y → Réglages → Backpacks dans les crafts** permet d’ignorer le contenu des sacs lors du calcul
+des besoins. Le réglage s’applique à EMI, au Repérage, aux retraits ME et aux plans de fabrication.
+Il est activé par défaut et mémorisé sur le client.
+
 Le contenu des **Sophisticated Backpacks portés**, dans l’inventaire ou sur un emplacement **Curios**, compte dans l’arbre natif EMI et sa liste latérale, les besoins du scan, la planification des machines et l’onglet Recette. Un objet dans le backpack évite de le reprendre dans un coffre ou de planifier sa fabrication. Les sacs imbriqués sont suivis sans compter deux fois leur contenu.
 
 Le plan dit où aller chercher ce qui manque aux poches : « À sortir du backpack : Iron Ingot, Hammer », « À prendre dans un coffre : Coal » ou « À reprendre en main : … » (main secondaire, armure, curseur). La carte de l’étape affiche « Dans ton backpack », « Dans un coffre » ou « Backpack + coffre », et le panneau en jeu la phrase complète. Pendant la recherche dans les coffres (**Repérage ON**), chaque drawer surligné affiche le nombre d’objets à en sortir, tracé comme les numéros des machines ; un coffre n’en affiche pas, son bouton **Prendre** sort tout seul ce qu’il faut. Dans un coffre ouvert, les ingrédients qui ne se consomment pas (moules, presses, outils) encore demandés pulsent aussi en cyan. Un outil déjà installé dans une machine compte comme en place, jamais à chercher ni à fabriquer : moule vu dans une machine GregTech ouverte, ou presse dans un inscriber d’AE2 relevé par le serveur (un inscriber n’est jamais compté comme un coffre). Backpack ouvert, les cases à sortir sont entourées en or pour l’étape en cours (★), ou pour le produit choisi à l’instant dans le panneau d’une machine (pendant deux minutes). Un outil est reconnu quelle que soit son usure ou sa charge ; un outil d’un autre matériau reste un autre objet, sauf si la recette accepte plusieurs matériaux.
@@ -111,8 +115,9 @@ Le plan dit où aller chercher ce qui manque aux poches : « À sortir du backpa
 La synchronisation fonctionne aussi sac fermé, via le mod déjà installé, sans appel IA. Pendant un déplacement, **Lecture du sac…** indique que le mod attend un relevé cohérent. Un sac posé au sol ou rangé dans un coffre sort de l’inventaire personnel.
 
 Dans EMI, survole l’objet pour voir **Dans ton backpack × N** si ton sac contient cette variante.
-Lorsque tu suis une recette, ouvre ton backpack pour retrouver les cases encadrées en doré. Le survol
-d’une case indique **À sortir × N**. Ce nombre couvre une fabrication en tenant compte de tes poches.
+Avec l’option activée, ouvre ton backpack pour retrouver les cases utiles à la recette encadrées
+en doré. Le survol d’une case indique **À sortir × N**. Ce nombre couvre une fabrication en
+tenant compte de tes poches.
 Pour changer la recette suivie, sélectionne-la dans **Suivi** ou dans le panneau d’une machine.
 
 La barre près de Recipe Tree regroupe **Repérage OFF / ON** et **Suivi**. Si la place manque à côté de

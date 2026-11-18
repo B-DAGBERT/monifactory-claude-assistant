@@ -37,8 +37,9 @@ chaque poste. Les conversations, relevés de coffres et filons restent locaux.
 | Régler l’affichage et la luminosité       | **Y → Réglages**.                                                                                              |
 | Choisir les modèles et la réflexion       | **Y → Réglages → Modèles IA…**, choisir dans la liste puis **Appliquer** pour les prochaines demandes.         |
 
-Le contenu des **Sophisticated Backpacks portés** compte dans les besoins, EMI et l’avancement.
-Les boutons de transfert utilisent les cases accessibles : sortir les ingrédients du sac pour les envoyer.
+Le contenu des **Sophisticated Backpacks portés** compte par défaut dans les besoins de fabrication.
+**Y → Réglages → Backpacks dans les crafts** permet de le retirer du calcul.
+Pour envoyer les ingrédients d’un sac fermé, sors-les d’abord dans tes poches.
 **Filons → Scanner** parcourt tout le volume du filon et le compte restant suit le minage.
 Un minerai épuisé dans un filon (10 % ou moins restant) ne le fait plus sortir quand tu cherches ce minerai.
 **Vue**, **Blocs**, **Épaisseur**, **Intensité** et **Remplissage** règlent la surbrillance, sans
@@ -56,7 +57,7 @@ ont été retirés.
 - [Utilisation des menus, de l’onglet Recette et des filons](docs/utilisation.md)
 - [Collecte EMI, machines, backpack et limites du suivi](docs/emi-transferts.md)
 - [Ordre des fabrications, priorités et qualification shared.46](docs/ordonnancement-machines.md)
-- [Conversation Codex et panneau en lecture seule](docs/codex.md)
+- [Conversation Codex et panneau en lecture seule](docs/installation.md#suivre-la-discussion-dans-codex-en-lecture-seule)
 - [Partager une fonctionnalité avec un collègue](docs/collaboration.md)
 - [Scénarios EMI basiques et complexes à la demande](docs/scenarios.md)
 - [Production shared.45, preuves natives et qualification Mac/Windows](docs/qualification-v2-native-stock-lots.md)

@@ -11,10 +11,6 @@ public record BarreOutilsEmi(Zone scan, Zone suivi, Zone menu) {
 
     public record Zone(int x, int y, int largeur, int hauteur) {}
 
-    public static BarreOutilsEmi calculer(int x, int y, int place) {
-        return calculer(x, y, place, 80, 42, 48);
-    }
-
     public static BarreOutilsEmi calculer(int x, int y, int place, int scan, int suivi, int menu) {
         int disponible = Math.max(0, place);
         scan = Math.max(MINIMUM, scan);

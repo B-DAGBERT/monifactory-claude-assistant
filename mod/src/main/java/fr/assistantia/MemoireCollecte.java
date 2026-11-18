@@ -260,18 +260,6 @@ public final class MemoireCollecte {
         return Set.copyOf(result);
     }
 
-    /**
-     * Retrait borné par la sélection globale du scan, jamais par un nouvel arbre local au coffre.
-     */
-    public static List<PlanRetrait.Prise> retraitSelection(
-            List<PlanRetrait.Stock<String>> stocks, Map<String, Integer> selection) {
-        var besoins =
-                selection.entrySet().stream()
-                        .map(e -> new PlanRetrait.Besoin<String>(e.getKey()::equals, e.getValue()))
-                        .toList();
-        return PlanRetrait.calculer(stocks, besoins).prises();
-    }
-
     private void convertir(
             ArbreCollecte.Noeud node,
             Map<String, Integer> actuel,

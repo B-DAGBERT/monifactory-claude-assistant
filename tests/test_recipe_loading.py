@@ -26,9 +26,8 @@ class RecipeLoadingTests(unittest.TestCase):
         )
         self.game = GameController()
         self.game.bridge = SimpleNamespace(dir=self.path)
-        self.game.craftable = {"minecraft:stick"}
         self.game.recipe_index = RecipeIndex()
-        self.game.craftable_read = None
+        self.game.recipe_revision = None
         self.game.recipe_loading = False
         self.game.logged_errors = set()
         self.game.events = queue.Queue()
@@ -48,9 +47,9 @@ class RecipeLoadingTests(unittest.TestCase):
         self.assertEqual(event, "recipes_loaded")
         self.game.on_recipes_loaded(*args)
 
-    def test_retries_same_revision_after_io_failure_and_preserves_previous_indexes(self):
+    def test_retries_same_revision_after_io_failure_and_preserves_previous_index(self):
         previous = self.game.recipe_index
-        self.game.check_craftable()
+        self.game.check_recipes()
         with (
             patch(
                 "monifactory_assistant.application.game.RecipeIndex",
@@ -61,19 +60,18 @@ class RecipeLoadingTests(unittest.TestCase):
             self.publish()
             log.assert_called_once()
         self.assertIs(self.game.recipe_index, previous)
-        self.assertEqual(self.game.craftable, {"minecraft:stick"})
-        self.assertIsNone(self.game.craftable_read)
+        self.assertIsNone(self.game.recipe_revision)
 
-        self.game.check_craftable()
+        self.game.check_recipes()
         self.publish()
         self.assertIn("gtceu:plate", self.game.recipe_index.by_output)
-        self.assertEqual(self.game.craftable, {"gtceu:plate"})
-        self.game.check_craftable()
+        self.game.check_recipes()
         self.assertFalse(self.workers)
 
     def test_one_worker_and_no_publication_if_marker_changed_before_acceptance(self):
-        self.game.check_craftable()
-        self.game.check_craftable()
+        previous = self.game.recipe_index
+        self.game.check_recipes()
+        self.game.check_recipes()
         self.assertEqual(len(self.workers), 1)
         self.workers.pop(0)()
         event, *args = self.game.events.get_nowait()
@@ -88,19 +86,35 @@ class RecipeLoadingTests(unittest.TestCase):
         )
         self.assertEqual(event, "recipes_loaded")
         self.game.on_recipes_loaded(*args)
-        self.assertEqual(self.game.craftable, {"minecraft:stick"})
+        self.assertIs(self.game.recipe_index, previous)
 
-        self.game.check_craftable()
+        self.game.check_recipes()
         self.publish()
-        self.assertEqual(self.game.craftable, {"gtceu:rod"})
+        self.assertIn("gtceu:rod", self.game.recipe_index.by_output)
         self.assertNotIn("gtceu:plate", self.game.recipe_index.by_output)
 
     def test_new_native_machine_catalog_invalidates_the_existing_recipe_revision(self):
-        self.game.check_craftable()
+        self.game.check_recipes()
         self.publish()
+        self.assertEqual(self.game.recipe_index.about("gtceu:lv_bender"), "")
         (self.path / "machines_recettes.txt").write_text(
             "gtceu:bender | Bender | 1 recette | gtceu:lv_bender\n", encoding="utf-8"
         )
-        self.game.check_craftable()
+        self.game.check_recipes()
         self.publish()
-        self.assertEqual(self.game.recipe_index.machines["gtceu:bender"], ["gtceu:lv_bender"])
+        self.assertIn(
+            "« Bender » (gtceu:bender, 1 recettes)", self.game.recipe_index.about("gtceu:lv_bender")
+        )
+
+    def test_recipe_file_is_read_once_per_reload(self):
+        read_text = Path.read_text
+        reads = []
+
+        def track_read(path, *args, **kwargs):
+            reads.append(path)
+            return read_text(path, *args, **kwargs)
+
+        self.game.check_recipes()
+        with patch.object(Path, "read_text", track_read):
+            self.publish()
+        self.assertEqual(reads.count(self.catalog), 1)

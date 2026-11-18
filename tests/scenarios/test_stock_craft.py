@@ -195,6 +195,7 @@ class StockCraftTests(unittest.TestCase):
                 "compat/emi/AtelierEmi.java",
             )
         )
+        fichiers.append(str(CONTRAT.with_name("CollecteCoffreFixture.java")))
         compilation = subprocess.run(
             [javac, "-encoding", "UTF-8", "-d", cls.dossier, *fichiers, str(CONTRAT)],
             capture_output=True,

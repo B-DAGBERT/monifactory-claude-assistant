@@ -201,6 +201,13 @@ class ParityTests(unittest.TestCase):
             "App.action_valider_etape",
             "App.action_decocher_etape",
             "App.action_planifier_usine",
+            "load_craftable",
+            "RecipeIndex.__init__",  # the recipe-ID index used only by machines_for was removed
+            "RecipeIndex.machines_for",
+            "Storage.find",
+            "Storage.placed",
+            "App.check_quests",  # the quest journal remains, only the coach's unused timestamp was removed
+            "Transcriber.transcribe",  # the objective supplied its item names as context
         }
         compatibility_changes |= {
             "log",
@@ -219,11 +226,10 @@ class ParityTests(unittest.TestCase):
             "App.on_info_ready",
             "App.have",
             "Storage.totals",
-            "Storage.placed",
         }  # Atomic backup/recovery and render-scoped caching: test_reliability.py.
         tested_resilience_changes = {
             "main",  # report child startup failure to the supervisor; test_runtime_resilience.py
-            "App.check_craftable",  # publish only a complete current catalog; test_recipe_loading.py
+            "App.check_craftable",  # renamed check_recipes; test_recipe_loading.py
             "App.load_recipes",
             "App.describe_journal",  # retain usable records beside a damaged record; test_journal_tail.py
         }

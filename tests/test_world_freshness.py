@@ -138,7 +138,7 @@ class WorldFreshnessTests(unittest.TestCase):
         game.session_open = False
         game.bridge = SimpleNamespace(state=Mock(side_effect=[{"dimension": NETHER}, None]))
         game.root = Mock()
-        game.check_craftable = game.check_game = game.check_death = game.flush_coach = (
+        game.check_recipes = game.check_game = game.check_death = game.flush_coach = (
             game.refresh
         ) = Mock()
         self.world.update(frame(MACHINE, players=[PLAYER]))

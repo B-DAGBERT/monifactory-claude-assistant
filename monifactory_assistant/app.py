@@ -89,7 +89,7 @@ class App(GameController, ConversationController, InterfaceController):
         self.guide = None  # flèche demandée à la voix vers un lieu
         self.veins = []  # filons de minerai repérés
         self.veins_read = 0
-        self.craftable, self.craftable_read = set(), None  # objets qu'une recette du pack produit
+        self.recipe_revision = None
         self.recipe_loading = False
         self.recipe_index = RecipeIndex()  # recettes par objet, jointes aux questions
         self.info, self.info_pending = (
@@ -115,7 +115,6 @@ class App(GameController, ConversationController, InterfaceController):
         self.game_lost_at = 0
         self.previous_state = None
         self.coach_times, self.coach_queue = {}, []
-        self.last_progress = time.time()
         self.quests_read, self.quest_titles = 0, None
         self.known_machines = self.known_veins = None
         self.removed_chests = []  # coffres retirés de la mémoire : (heure, coffre, cassé tout seul ?)

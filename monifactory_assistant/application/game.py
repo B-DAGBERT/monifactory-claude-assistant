@@ -9,7 +9,7 @@ import traceback
 from datetime import datetime
 
 from monifactory_assistant.game.emi_search import RecipeChestSearch
-from monifactory_assistant.game.recipes import RecipeIndex, load_craftable
+from monifactory_assistant.game.recipes import RecipeIndex
 from monifactory_assistant.game.snapshots import file_stamp, frame_value
 from monifactory_assistant.game.storage import Storage, StorageMonitor, known_chests
 from monifactory_assistant.game.veins import find_veins, vein_files_stamp
@@ -106,7 +106,7 @@ class GameController:
             if self.game and (not state or self.game.get("dimension") != state.get("dimension")):
                 self.world.invalidate_live()
             self.game = state
-            self.check_craftable()
+            self.check_recipes()
             if state:
                 self.check_game(state)
                 self.check_death(state)
@@ -246,12 +246,12 @@ class GameController:
                 continue
         return "Journal récent de la partie :\n" + "\n".join(lines) if lines else ""
 
-    def check_craftable(self):
+    def check_recipes(self):
         """Relit les recettes quand le jeu les a réexportées, ou que le mod a écrit quelle machine fait quoi."""
         if self.recipe_loading:
             return
         changed = self.recipe_stamp()
-        if changed is not None and changed != self.craftable_read:
+        if changed is not None and changed != self.recipe_revision:
             self.recipe_loading = True
             try:
                 threading.Thread(target=self.load_recipes, args=(changed,), daemon=True).start()
@@ -267,7 +267,7 @@ class GameController:
     def load_recipes(self, stamp):
         folder = self.bridge.dir
         try:
-            loaded = load_craftable(folder), RecipeIndex(folder)
+            loaded = RecipeIndex(folder)
         except Exception:
             self.events.put(("recipes_loaded", stamp, None, traceback.format_exc()))
         else:
@@ -280,8 +280,8 @@ class GameController:
                 self.logged_errors.add(error)
                 log(error)
         elif self.recipe_stamp() == stamp:
-            self.craftable, self.recipe_index = loaded
-            self.craftable_read = stamp
+            self.recipe_index = loaded
+            self.recipe_revision = stamp
 
     def on_game_connected(self):
         if self.session_open:
@@ -301,7 +301,6 @@ class GameController:
         if self.quest_titles is not None:
             for title in sorted(titles - self.quest_titles):
                 self.journal("quête", title)
-                self.last_progress = time.time()
                 self.coach(
                     f"Quête terminée : {title.split(' > ')[-1]} !",
                     USEFUL,

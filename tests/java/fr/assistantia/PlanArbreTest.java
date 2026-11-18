@@ -187,14 +187,13 @@ public final class PlanArbreTest {
         // Le retrait doit utiliser exactement l'allocation globale, même ouvert dans le drawer de
         // fer.
         var global = List.of(stock("iron", 64, false), stock("casing", 2, false));
-        var selection = new java.util.HashMap<String, Integer>();
-        for (var prise : suivi.dansCoffres(global))
-            selection.merge(global.get(prise.index()).objet(), prise.quantite(), Integer::sum);
-        assert MemoireCollecte.retraitSelection(List.of(stock("iron", 64, false)), selection)
+        var prises = suivi.dansCoffres(global, 0, Map.of());
+        assert prises.stream()
+                        .filter(prise -> prise.index() == 0)
+                        .toList()
                         .equals(List.of(new PlanRetrait.Prise(0, 8)))
                 : "8 fers du scan, pas 24 du recalcul local";
-        assert MemoireCollecte.retraitSelection(List.of(stock("iron", 64, false)), Map.of())
-                .isEmpty();
+        assert suivi.dansCoffres(List.of(), 0, Map.of()).isEmpty();
         var crafted = node("part", 1, 1, false, hammer, node("iron", 2, 1, false));
         suivi = new MemoireCollecte(node("machine", 1, 1, false, crafted), 1);
         suivi.actualiser(Map.of("part", 1));

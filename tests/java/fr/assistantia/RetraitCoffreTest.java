@@ -1,6 +1,7 @@
 package fr.assistantia;
 
 import java.util.List;
+import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.ChestMenu;
@@ -32,8 +33,7 @@ public final class RetraitCoffreTest {
     }
 
     private static RetraitCoffre.Plan plan(int needed) {
-        return RetraitCoffre.plan(
-                menu, List.of(new PlanRetrait.Besoin<>(i -> i.id.equals("tin"), needed)));
+        return CollecteCoffreFixture.plan(menu, CollecteCoffreFixture.besoin("tin", needed), 1);
     }
 
     private static void tick() {
@@ -63,31 +63,21 @@ public final class RetraitCoffreTest {
         menu.slots.add(unrelated);
         var root =
                 new ArbreCollecte.Noeud(
-                        java.util.Set.of(),
+                        Set.of(),
                         1,
                         1,
                         false,
                         List.of(
-                                new ArbreCollecte.Noeud(
-                                        java.util.Set.of("tin"), 3, 1, false, List.of()),
-                                new ArbreCollecte.Noeud(
-                                        java.util.Set.of("copper"), 4, 1, false, List.of())));
-        var besoins =
-                ArbreCollecte.ingredients(root, 3).stream()
-                        .map(
-                                i ->
-                                        new PlanRetrait.Besoin<ItemStack>(
-                                                stack -> i.variantes().contains(stack.id),
-                                                i.quantite()))
-                        .toList();
-        var all = RetraitCoffre.plan(menu, besoins);
+                                CollecteCoffreFixture.besoin("tin", 3),
+                                CollecteCoffreFixture.besoin("copper", 4)));
+        var all = CollecteCoffreFixture.plan(menu, root, 3);
         assert all.total() == 19 : "9 étains moins 2 déjà possédés, 12 cuivres";
         assert all.objets().size() == 2 : "le sélecteur exclut les objets sans rapport";
         assert all.pour(new ItemStack("stone", 1)).total() == 0;
         assert RetraitCoffre.lancer(screen, all.pour(new ItemStack("tin", 1)));
         finish();
         assert owned() == 9 && copper.item.getCount() == 64;
-        var remaining = RetraitCoffre.plan(menu, besoins);
+        var remaining = CollecteCoffreFixture.plan(menu, root, 3);
         assert remaining.total() == 12 && remaining.objets().size() == 1;
         var debounce = RetraitCoffre.class.getDeclaredField("dernierClic");
         debounce.setAccessible(true);
@@ -95,12 +85,14 @@ public final class RetraitCoffreTest {
         assert RetraitCoffre.lancer(screen, remaining);
         finish();
         assert copper.item.getCount() == 52 && unrelated.item.getCount() == 64;
-        assert RetraitCoffre.plan(menu, besoins).total() == 0;
-        assert RetraitCoffre.plan(menu, List.of()).objets().isEmpty()
-                : "aucun arbre, aucun retrait";
-        var other =
-                List.of(new PlanRetrait.Besoin<ItemStack>(stack -> stack.id.equals("stone"), 5));
-        assert RetraitCoffre.plan(menu, other).total() == 5 : "changer d’arbre change les besoins";
+        assert CollecteCoffreFixture.plan(menu, root, 3).total() == 0;
+        assert RetraitCoffre.planRecherche(menu, stocks -> List.of(), stack -> stack.id)
+                        .objets()
+                        .isEmpty()
+                : "aucune allocation du scan, aucun retrait du coffre";
+        var other = CollecteCoffreFixture.besoin("stone", 5);
+        assert CollecteCoffreFixture.plan(menu, other, 1).total() == 5
+                : "changer d’arbre change les besoins";
     }
 
     private static void componentBeforeMaterials() throws Exception {
@@ -108,21 +100,15 @@ public final class RetraitCoffreTest {
         Slot casing = new Slot(new Object(), 4);
         casing.item = new ItemStack("casing", 1);
         menu.slots.add(casing);
-        var raw = new ArbreCollecte.Noeud(java.util.Set.of("tin"), 8, 1, false, List.of());
-        var component =
-                new ArbreCollecte.Noeud(java.util.Set.of("casing"), 1, 1, false, List.of(raw));
-        var root =
-                new ArbreCollecte.Noeud(
-                        java.util.Set.of("machine"), 1, 1, false, List.of(component));
-        var retrait =
-                RetraitCoffre.planArbre(menu, root, 1, ids -> stack -> ids.contains(stack.id));
+        var raw = CollecteCoffreFixture.besoin("tin", 8);
+        var component = new ArbreCollecte.Noeud(Set.of("casing"), 1, 1, false, List.of(raw));
+        var root = new ArbreCollecte.Noeud(Set.of("machine"), 1, 1, false, List.of(component));
+        var retrait = CollecteCoffreFixture.plan(menu, root, 1);
         assert retrait.total() == 1 && retrait.objets().get(0).id.equals("casing");
         assert RetraitCoffre.lancer(screen, retrait);
         finish();
         assert casing.item.isEmpty() && menu.slots.get(0).item.getCount() == 64;
-        assert RetraitCoffre.planArbre(menu, root, 1, ids -> stack -> ids.contains(stack.id))
-                        .total()
-                == 0;
+        assert CollecteCoffreFixture.plan(menu, root, 1).total() == 0;
     }
 
     private static void synchronization() throws Exception {
@@ -178,23 +164,15 @@ public final class RetraitCoffreTest {
 
     public static void main(String[] args) throws Exception {
         setup(64, 2);
-        var selection = java.util.Map.of("tin", 3);
-        var scan =
-                RetraitCoffre.planRecherche(
-                        menu,
-                        stocks -> MemoireCollecte.retraitSelection(stocks, selection),
-                        s -> s.id);
+        var besoin = CollecteCoffreFixture.besoin("tin", 5);
+        var scan = CollecteCoffreFixture.plan(menu, besoin, 1);
         assert scan.total() == 3 && scan.lots().get(0).source() == menu.slots.get(0)
                 : "le scan a déjà déduit l'inventaire, ne pas le déduire une seconde fois";
         assert RetraitCoffre.lancer(screen, scan);
         finish();
         assert owned() == 5;
         menu.slots.get(0).item.tag = 7;
-        var exact =
-                RetraitCoffre.planRecherche(
-                        menu,
-                        stocks -> MemoireCollecte.retraitSelection(stocks, selection),
-                        s -> s.tag == 42 ? s.id : "");
+        var exact = CollecteCoffreFixture.plan(menu, besoin, 1, s -> s.tag == 42 ? s.id : "");
         assert exact.total() == 0
                 : "le quota du scan ne rend pas une variante NBT incompatible acceptable";
 

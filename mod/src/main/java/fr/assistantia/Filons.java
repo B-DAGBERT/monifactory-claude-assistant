@@ -168,11 +168,6 @@ public final class Filons {
         return SCANS.containsKey(id);
     }
 
-    public static int avancement(String id) {
-        var f = memoire.filon(id);
-        return f == null ? 0 : f.avancementScan();
-    }
-
     /** Scans en cours dans la dimension du joueur. */
     public static int scansEnCours() {
         String dim = position().dimension();

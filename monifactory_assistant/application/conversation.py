@@ -230,7 +230,7 @@ class ConversationController:
         timing = {"début": time.time()}  # pour le journal : où passe le temps
         try:
             if audio is not None:
-                text = self.transcriber.transcribe(audio, ())
+                text = self.transcriber.transcribe(audio)
                 timing["transcrite"] = time.time()
                 if not text:
                     raise RuntimeError(

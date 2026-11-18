@@ -63,7 +63,7 @@ public class BridgeWorldScopeTest {
  }
  static void empty(){
   assert Pont.vue().size()==0;assert Pont.partie("ecran").size()==0;
-  assert Pont.besoins().isEmpty()&&Pont.cibles().isEmpty()&&Pont.reperes().isEmpty();
+  assert Pont.cibles().isEmpty()&&Pont.reperes().isEmpty();
   assert !Pont.rechercheActive()&&!Pont.cherche("minecraft:iron_ingot")&&!Pont.assistantActif();
  }
  public static void main(String[] args)throws Exception{

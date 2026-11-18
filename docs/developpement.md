@@ -304,6 +304,10 @@ vocale conserve ses imports lourds différés. Les modules de jeu peuvent être 
 capture, micro ou moteur IA.
 Les constantes de données utilisent toujours `paths.ROOT`, même après déplacement d’un module.
 
+Le rechargement Python lit chaque fichier de recettes une seule fois pour construire `RecipeIndex`.
+La nouvelle version de l’index est publiée lorsque la révision des fichiers correspond encore à
+celle du début de la lecture. Une lecture échouée garde le dernier index valide.
+
 Pour modifier une fonctionnalité, commencer par son contrôleur puis son calcul de domaine ;
 garder dans `app.py` uniquement l’initialisation, le branchement et le lancement. Les anciens
 noms de commandes, formats JSON, chemins, modèles et réglages sont conservés.
@@ -397,21 +401,20 @@ ainsi que les boutons globaux de masquage, de vidage et d’arrêt de scan.
 
 `BarreDefilement` centralise le calcul des pixels, le curseur, la molette et le glisser. Les réglages
 conservent leurs boutons fixes et limitent le rendu et les zones cliquables à la fenêtre visible.
-`EcranSac` utilise la même barre et une vue synchronisée des sacs portés. `ListeSac` regroupe les
-quantités par objet et NBT, sans modifier les piles sources. Les quantités non synchronisées sont
-masquées. La recherche et le regroupement sont mis en cache entre deux rafraîchissements.
+`IngredientsSac` utilise la vue synchronisée des sacs portés pour l’infobulle de localisation et
+les cases à sortir dans le sac ouvert. `SacsFabrication` conserve la préférence locale qui inclut
+ou retire ces objets du stock de calcul.
 `BarreOutilsEmi` utilise les largeurs mesurées avec la police du jeu. Les boutons ne sont ni tassés
 ni empilés sur les contrôles voisins. Si la rangée complète manque de place, un accès **Aide…**
-ouvre le menu des trois actions. `BoutonTheme`, qui remplace `BoutonOutilEmi`, conserve le clic, le
+ouvre **Repérage** et **Suivi**. `BoutonTheme`, qui remplace `BoutonOutilEmi`, conserve le clic, le
 focus clavier, les infobulles et la narration natifs ; le scan actif s’affiche en doré (`choisi`),
 sans soulignement d’état. Toutes les zones visibles, y compris le bouton compact, sont exclues
 d’EMI et interceptent le clic avant sa liste d’objets.
 
 `test_mining_ui.py` définit les scénarios des limites, modes Surface/Total, budgets cycliques,
-défilement, repli des boutons EMI, grosses piles, identités NBT, filtre, retour au parent,
-rechargement des réglages et échec d’enregistrement. Les scénarios de `FilonMemoireTest` vérifient aussi que le
-budget d’affichage conserve tous les blocs mémorisés. Ces tests sans GPU ne remplacent pas une
-vérification visuelle après redémarrage de Minecraft.
+défilement, repli des boutons EMI, rechargement des réglages et échec d’enregistrement.
+Les scénarios de `FilonMemoireTest` vérifient aussi que le budget d’affichage conserve tous les
+blocs mémorisés. La vérification visuelle se fait après redémarrage de Minecraft.
 
 ## Acquis après pose ou rangement (shared.34)
 

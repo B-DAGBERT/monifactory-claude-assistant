@@ -146,11 +146,6 @@ public final class RechercheEmi {
         return r.dimension() + "|" + r.x() + "|" + r.y() + "|" + r.z();
     }
 
-    public static RetraitCoffre.Plan retrait(
-            net.minecraft.world.inventory.AbstractContainerMenu menu) {
-        return retrait(menu, null);
-    }
-
     /**
      * Ce que le scan prend dans le coffre ouvert : son contenu réel d'abord, puis les autres
      * coffres connus, avec les mêmes crédits que les contours. Un résultat qui vient d'arriver dans

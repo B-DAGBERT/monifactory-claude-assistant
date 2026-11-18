@@ -244,12 +244,11 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
         from monifactory_assistant.game.storage import Storage
 
         stack = {"item": "iron", "n": 2}
-        storage = Storage([{"objets": [stack]}], machines=[{"bloc": "furnace"}])
+        storage = Storage([{"objets": [stack]}])
         app = SimpleNamespace(storage=storage)
         with render_frame(app):
             before = storage.totals()
             self.assertIs(storage.totals(), before)
-            self.assertIs(storage.placed(), storage.placed())
             stack["n"] = 7
             self.assertEqual(storage.totals()["iron"], 2)
         self.assertEqual(storage.totals()["iron"], 7)

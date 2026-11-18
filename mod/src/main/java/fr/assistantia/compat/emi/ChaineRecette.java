@@ -214,10 +214,6 @@ public final class ChaineRecette<K, R> {
         return connu == SANS_PRODUCTEUR ? null : (R) connu;
     }
 
-    public int memorises() {
-        return memoire.size();
-    }
-
     /** Ingrédients développés depuis la création : permet de borner le travail par tick. */
     public long expansions() {
         return expansions;

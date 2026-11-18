@@ -9,6 +9,7 @@ import dev.emi.emi.registry.EmiRecipeFiller;
 import fr.assistantia.compat.emi.CoffresArbreEmi;
 import fr.assistantia.compat.emi.MachinesEmi;
 import java.util.List;
+import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -148,8 +149,16 @@ public final class StockVersEtabliTest {
     }
 
     private RetraitCoffre.Plan plan(int etain, int caoutchouc) {
-        return RetraitCoffre.plan(
-                coffre, List.of(besoin(ETAIN, etain), besoin(CAOUTCHOUC, caoutchouc)));
+        var arbre =
+                new ArbreCollecte.Noeud(
+                        Set.of(),
+                        1,
+                        1,
+                        false,
+                        List.of(
+                                CollecteCoffreFixture.besoin(ETAIN, etain),
+                                CollecteCoffreFixture.besoin(CAOUTCHOUC, caoutchouc)));
+        return CollecteCoffreFixture.plan(coffre, arbre, 1);
     }
 
     private static PlanRetrait.Besoin<ItemStack> besoin(String id, int nombre) {
@@ -377,7 +386,9 @@ public final class StockVersEtabliTest {
                 "rangement sans perdre le progrès");
         ouvrirCoffre();
         verifier(
-                lancer(RetraitCoffre.plan(coffre, List.of(besoin(CABLE, 2)))),
+                lancer(
+                        CollecteCoffreFixture.plan(
+                                coffre, CollecteCoffreFixture.besoin(CABLE, 2), 1)),
                 "reprise du même produit");
         attendreRetrait();
         verifier(!suivre(suivi, 0) && credits(suivi) == 2, "la reprise ne double pas le crédit");

@@ -122,56 +122,24 @@ public final class RetraitCoffre {
         }
     }
 
-    private record Contenu(List<Slot> slots, List<PlanRetrait.Stock<ItemStack>> stocks) {}
-
-    private static Contenu contenu(AbstractContainerMenu m) {
-        var p = Minecraft.getInstance().player;
-        List<Slot> slots = new ArrayList<>();
-        List<PlanRetrait.Stock<ItemStack>> stocks = new ArrayList<>();
-        if (p != null && estCoffre(m))
-            for (Slot s : m.slots) {
-                if (!s.isActive()
-                        || !s.hasItem()
-                        || !(personnel(s) || source(m, s) && s.mayPickup(p))) continue;
-                slots.add(s);
-                stocks.add(
-                        new PlanRetrait.Stock<>(
-                                s.getItem().copy(), s.getItem().getCount(), personnel(s)));
-            }
-        return new Contenu(slots, stocks);
-    }
-
-    private static Plan convertir(Contenu contenu, List<PlanRetrait.Prise> prises, long manque) {
-        List<Lot> lots = new ArrayList<>();
-        for (var prise : prises) {
-            Slot s = contenu.slots().get(prise.index());
-            lots.add(new Lot(s, s.getItem().copy(), prise.quantite()));
-        }
-        return new Plan(List.copyOf(lots), manque);
-    }
-
-    public static Plan plan(AbstractContainerMenu m, List<PlanRetrait.Besoin<ItemStack>> besoins) {
-        var contenu = contenu(m);
-        var r = PlanRetrait.calculer(contenu.stocks(), besoins);
-        return convertir(contenu, r.prises(), r.manquants());
-    }
-
     public static Plan planRecherche(
             AbstractContainerMenu m,
             java.util.function.Function<List<PlanRetrait.Stock<String>>, List<PlanRetrait.Prise>>
                     selection,
             java.util.function.Function<ItemStack, String> identifiant) {
-        var contenu = contenu(m);
+        var joueur = Minecraft.getInstance().player;
         List<Slot> slots = new ArrayList<>();
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
-        for (Slot slot : contenu.slots())
-            if (!personnel(slot)) {
+        if (joueur != null && estCoffre(m))
+            for (Slot slot : m.slots) {
+                if (!slot.isActive()
+                        || !slot.hasItem()
+                        || !source(m, slot)
+                        || !slot.mayPickup(joueur)) continue;
                 slots.add(slot);
+                var objet = slot.getItem();
                 stocks.add(
-                        new PlanRetrait.Stock<>(
-                                identifiant.apply(slot.getItem()),
-                                slot.getItem().getCount(),
-                                false));
+                        new PlanRetrait.Stock<>(identifiant.apply(objet), objet.getCount(), false));
             }
         List<Lot> lots = new ArrayList<>();
         for (var prise : selection.apply(stocks)) {
@@ -180,21 +148,6 @@ public final class RetraitCoffre {
             if (n > 0) lots.add(new Lot(slot, slot.getItem().copy(), n));
         }
         return new Plan(List.copyOf(lots), 0);
-    }
-
-    public static Plan planArbre(
-            AbstractContainerMenu m,
-            ArbreCollecte.Noeud arbre,
-            long lots,
-            java.util.function.Function<
-                            java.util.Set<String>, java.util.function.Predicate<ItemStack>>
-                    accepte) {
-        var contenu = contenu(m);
-        var r = PlanArbre.calculer(arbre, lots, contenu.stocks(), accepte);
-        return convertir(
-                contenu,
-                r.prises(),
-                r.manquants().stream().mapToLong(MemoireCollecte.Ingredient::quantite).sum());
     }
 
     public static void arreter() {

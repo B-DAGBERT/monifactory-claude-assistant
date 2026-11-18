@@ -4,34 +4,6 @@ import re
 from collections import defaultdict
 
 
-def load_craftable(recipes_dir):
-    """Les objets qu'on fabrique à l'établi ou au four (d'après recettes_*.json), pour dire « à fabriquer »
-    plutôt que « à récolter » quand le plan n'a pas la recette. On ignore les recettes qui ne font que
-    transformer une matière qu'on récolte : un bloc vanilla au marteau (stone -> cobblestone) ou un bloc
-    qu'on vide (clay -> 4 clay_ball)."""
-    items = set()
-    for path in recipes_dir.glob("recettes_*.json"):
-        if path.stem == "recettes_info":
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            category, _, rest = line.strip().strip('",').partition(" | ")
-            if category not in ("minecraft:crafting", "minecraft:smelting"):
-                continue
-            inputs, _, outputs = rest.split(" | ")[0].partition(" => ")
-            inputs = inputs.split(" + ")
-            output = outputs.split(" + ")[0].split(" ")
-            materials = [i for i in inputs if not i.startswith("#")]
-            hammered = (
-                any("hammers" in i for i in inputs)
-                and len(materials) == 1
-                and materials[0].startswith("minecraft:")
-            )
-            if hammered or len(inputs) == 1 and len(output) == 2 and output[0] in ("4x", "9x"):
-                continue
-            items.add(output[-1])
-    return items
-
-
 class RecipeIndex:
     """Les recettes du pack rangées par objet produit et par catégorie, et les machines qui font chaque catégorie,
     pour donner à Codex ce qui concerne les objets cités dans une question : comment les fabriquer et, pour une
@@ -85,7 +57,6 @@ class RecipeIndex:
         self.by_name = defaultdict(set)  # « bronze_plate » -> {« gtceu:bronze_plate »}
         self.machine_of = defaultdict(list)  # machine -> [(catégorie, nom, nombre de recettes)]
         self.machines = defaultdict(list)  # catégorie -> machines qui la font
-        self.category_of = {}  # id de recette -> sa catégorie
         if recipes_dir is None:
             return
         for path in recipes_dir.glob("recettes_*.json"):
@@ -93,10 +64,7 @@ class RecipeIndex:
                 continue
             for line in path.read_text(encoding="utf-8").splitlines():
                 line = line.strip().strip('",')
-                parts = line.split(" | ")
-                self.by_category[parts[0]].append(line)
-                if len(parts) > 2:
-                    self.category_of[parts[2]] = parts[0]
+                self.by_category[line.partition(" | ")[0]].append(line)
                 outputs = line.partition(" => ")[2].split(" | ")[0]
                 for output in outputs.split(" + ")[:1]:
                     item = output.strip().split(" ")[-1]
@@ -116,29 +84,6 @@ class RecipeIndex:
                     self.machine_of[machine].append((category, name, count))
                     self.machines[category].append(machine)
                     self.by_name[machine.split(":")[-1]].add(machine)
-
-    def machines_for(self, recipe_id):
-        """La catégorie d'une recette et les machines qui la font (les moins chères d'abord : vapeur, puis LV...)."""
-        category = self.category_of.get(recipe_id or "")
-        tiers = ("lp_steam", "steam", "hp_steam", "primitive", "lv_", "mv_", "hv_")
-        machines = sorted(
-            self.machines.get(category, []),
-            key=lambda m: next(
-                (i for i, t in enumerate(tiers) if t in m.split(":")[-1]), len(tiers)
-            ),
-        )
-        if not machines and category and category.startswith("gtceu:"):
-            # Sans la liste du mod : les machines GregTech portent le nom de leur catégorie (gtceu:lp_steam_compressor)
-            kind = category.split(":")[1]
-            machines = [
-                m
-                for m in (
-                    f"gtceu:{t}{kind}"
-                    for t in ("lp_steam_", "hp_steam_", "lv_", "mv_", "hv_", "ev_")
-                )
-                if m in self.by_output
-            ]
-        return category, machines
 
     def items_in(self, text, limit=3):
         """Les objets du pack cités dans un texte (« Bronze Plate », « bronze plate »), les noms longs d'abord."""

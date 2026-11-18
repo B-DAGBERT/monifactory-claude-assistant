@@ -46,7 +46,7 @@ class RuntimeResilienceTests(unittest.TestCase):
         game.refresh = Mock(side_effect=[OSError("refresh failed"), None])
         game.game = None
         game.session_open = False
-        game.check_craftable = Mock()
+        game.check_recipes = Mock()
         game.flush_coach = Mock()
         with patch("monifactory_assistant.application.game.log") as log:
             game.watch_game()
@@ -55,7 +55,7 @@ class RuntimeResilienceTests(unittest.TestCase):
             resume()
         self.assertEqual(log.call_count, 2)
         self.assertEqual(game.refresh.call_count, 2)
-        game.check_craftable.assert_called_once()
+        game.check_recipes.assert_called_once()
         self.assertEqual(game.root.after.call_count, 2)
 
     def test_one_failed_event_leaves_next_event_for_next_poll(self):

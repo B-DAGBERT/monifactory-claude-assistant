@@ -252,14 +252,6 @@ public final class Pont {
                 });
     }
 
-    /**
-     * Les objets dont un objectif avait besoin. Les objectifs ont été retirés : toujours vide,
-     * conservé pour les appelants (tri des filons) jusqu'à leur remplacement.
-     */
-    public static Set<String> besoins() {
-        return Set.of();
-    }
-
     public static List<Cible> cibles() {
         verifierVue();
         return cibles;
