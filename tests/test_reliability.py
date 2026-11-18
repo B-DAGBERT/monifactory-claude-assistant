@@ -280,7 +280,7 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
 
     def test_render_duration_alone_does_not_rewrite_the_mod_view(self):
         app = InterfaceController()
-        app.bridge = SimpleNamespace(write=Mock())
+        app.bridge = SimpleNamespace(publish=Mock(return_value=True))
         app.last_mod_view = None
         timings = iter([1.2, 3.4, 5.0, 5.1])
         others = iter([1, 1, 1, 2])
@@ -298,15 +298,15 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
             for _ in range(4):
                 app.refresh_views()
         # Written on the first view and on a real change, not when only the timing moved.
-        self.assertEqual(app.bridge.write.call_count, 2)
-        written = app.bridge.write.call_args.args[1]
+        self.assertEqual(app.bridge.publish.call_count, 2)
+        written = app.bridge.publish.call_args.args[1]
         self.assertEqual(written["ecran"]["diagnostic"], {"rendu_ms": 5.1, "file": 2})
 
     def test_inventory_date_alone_waits_for_the_heartbeat(self):
         # etat.json is rewritten every 1-2 s with a new date: only the 5 s "vie" heartbeat (or a
         # real change) rewrites the view, which then carries the latest date for the mod's age.
         app = InterfaceController()
-        app.bridge = SimpleNamespace(write=Mock())
+        app.bridge = SimpleNamespace(publish=Mock(return_value=True))
         app.last_mod_view = None
         dates = iter([1_000, 2_000, 3_000, 4_000, 6_000, 7_000])
         heartbeats = iter([0, 0, 0, 0, 1, 1])
@@ -323,8 +323,8 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
         ):
             for _ in range(6):
                 app.refresh_views()
-        self.assertEqual(app.bridge.write.call_count, 2)
-        first, second = (call.args[1] for call in app.bridge.write.call_args_list)
+        self.assertEqual(app.bridge.publish.call_count, 2)
+        first, second = (call.args[1] for call in app.bridge.publish.call_args_list)
         self.assertEqual(first["ecran"]["diagnostic"]["inventaire_t"], 1_000)
         self.assertEqual(second["vie"], 1)
         self.assertEqual(second["ecran"]["diagnostic"]["inventaire_t"], 6_000)

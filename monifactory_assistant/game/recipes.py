@@ -1,5 +1,6 @@
 """Index local des recettes et des machines du pack."""
 
+import json
 import re
 from collections import defaultdict
 
@@ -10,6 +11,8 @@ class RecipeIndex:
     machine, ce qu'elle fait. Il n'a plus à le chercher lui-même (un aller-retour de 3 à 5 s de moins), et il sait
     à quoi sert une machine même quand ses recettes ne portent pas son nom (la Steam Foundry fait celles d'une autre
     catégorie)."""
+
+    OUTPUT = re.compile(r"(?:[0-9]+x )?([a-z0-9_.-]+:[a-z0-9_./-]+)(?: \([0-9]+%\))?")
 
     # Mots de la question qui ne sont jamais à eux seuls un nom d'objet
     IGNORED = {
@@ -59,18 +62,13 @@ class RecipeIndex:
         self.machines = defaultdict(list)  # catégorie -> machines qui la font
         if recipes_dir is None:
             return
-        for path in recipes_dir.glob("recettes_*.json"):
-            if path.stem == "recettes_info":
-                continue
-            for line in path.read_text(encoding="utf-8").splitlines():
-                line = line.strip().strip('",')
-                self.by_category[line.partition(" | ")[0]].append(line)
-                outputs = line.partition(" => ")[2].split(" | ")[0]
-                for output in outputs.split(" + ")[:1]:
-                    item = output.strip().split(" ")[-1]
-                    if ":" in item:
-                        self.by_output[item].append(line)
-                        self.by_name[item.split(":")[-1]].add(item)
+        for line in self.catalog_lines(recipes_dir):
+            self.by_category[line.partition(" | ")[0]].append(line)
+            outputs = line.partition(" => ")[2].split(" | ")[0]
+            matches = (self.OUTPUT.fullmatch(output.strip()) for output in outputs.split(" + "))
+            for item in dict.fromkeys(match[1] for match in matches if match):
+                self.by_output[item].append(line)
+                self.by_name[item.split(":")[-1]].add(item)
         machines = (
             recipes_dir / "machines_recettes.txt"
         )  # écrit par le mod : quelle machine fait quelles recettes
@@ -84,6 +82,41 @@ class RecipeIndex:
                     self.machine_of[machine].append((category, name, count))
                     self.machines[category].append(machine)
                     self.by_name[machine.split(":")[-1]].add(machine)
+
+    @staticmethod
+    def catalog_lines(folder):
+        manifest = json.loads((folder / "recettes_info.json").read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("Manifeste du catalogue recettes invalide")
+        parts, total = manifest.get("parties"), manifest.get("nombre")
+        if type(parts) is not int or not 1 <= parts <= 4096 or type(total) is not int or total <= 0:
+            raise ValueError("Nombre de recettes ou de parties invalide")
+        group, generation = manifest.get("groupe"), manifest.get("generation")
+        if manifest.get("version", 1) in (1, 2):
+            prefix = "recettes_"
+        elif (
+            manifest.get("version") == 3
+            and group in ("a", "b")
+            and isinstance(generation, str)
+            and generation
+        ):
+            prefix = f"recettes_{group}_"
+        else:
+            raise ValueError("Génération du catalogue recettes invalide")
+        count = 0
+        for part in range(parts):
+            data = json.loads((folder / f"{prefix}{part}.json").read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or (
+                generation is not None and data.get("generation") != generation
+            ):
+                raise ValueError("Partie de recette étrangère à la génération")
+            lines = data.get("recettes")
+            if not isinstance(lines, list) or any(not isinstance(line, str) for line in lines):
+                raise ValueError("Partie du catalogue recettes invalide")
+            count += len(lines)
+            yield from lines
+        if count != total:
+            raise ValueError("Catalogue recettes incomplet")
 
     def items_in(self, text, limit=3):
         """Les objets du pack cités dans un texte (« Bronze Plate », « bronze plate »), les noms longs d'abord."""

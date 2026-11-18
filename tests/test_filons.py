@@ -301,7 +301,7 @@ class FilonsTests(unittest.TestCase):
                 scope=scope,
                 data_path=lambda name, create=False: folder / name,
                 scope_valid=lambda s: True,
-                write_text=lambda *args: None,
+                publish_text=lambda *args: True,
             )
             storage = SimpleNamespace(
                 containers=[], raw=[], machines=[], export_key=lambda: 1, as_text=lambda: ""

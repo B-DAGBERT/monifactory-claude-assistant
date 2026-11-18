@@ -109,7 +109,13 @@ final class PanneauMachineEmi {
                         : recus + " récupérés";
         if (selected.fois() == 0) titre = etat + " · " + recus + " récupérés";
         String nom = occupe ? statut : etat;
-        PanneauAssistant.titre(g, font, d.titre(), nom, quantites);
+        String blocage =
+                occupe || selected.fois() <= 0
+                        ? ""
+                        : !synchronise
+                                ? "Synchronisation de l’inventaire"
+                                : plan == null ? "Vérification des entrées" : plan.probleme();
+        PanneauAssistant.titre(g, font, d.titre(), nom, blocage.isEmpty() ? quantites : blocage);
         List<Component> tooltip = null;
         for (int rang = 0; rang < d.parPage(); rang++) {
             int i = page * d.parPage() + rang;
@@ -230,8 +236,8 @@ final class PanneauMachineEmi {
                 tooltip.add(
                         Component.literal(
                                 "Une recette prioritaire utilise le même stock ; choisir celle-ci reste possible."));
+            if (!blocage.isEmpty() && synchronise) tooltip.add(Component.literal(blocage));
             if (plan != null) {
-                if (!plan.probleme().isEmpty()) tooltip.add(Component.literal(plan.probleme()));
                 if (circuit)
                     tooltip.add(
                             Component.literal(

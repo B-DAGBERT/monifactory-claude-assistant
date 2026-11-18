@@ -33,6 +33,19 @@ public final class EcranDiagnostic extends Screen {
         hautListe = fenetre.contenuY();
         basListe = Math.max(hautListe + Theme.LIGNE + 6, fenetre.basBoutons() - Theme.ECART);
         int lRetour = Theme.largeurBouton(font, "Retour", 120);
+        int lCopie =
+                Math.min(
+                        Theme.largeurBouton(font, "Copier le diagnostic", 120),
+                        Math.max(24, fenetre.contenuLargeur() - lRetour - Theme.ECART));
+        addRenderableWidget(
+                BoutonTheme.creer(
+                                "Copier le diagnostic",
+                                b -> {
+                                    if (minecraft != null)
+                                        minecraft.keyboardHandler.setClipboard(rapport());
+                                    b.setMessage(Component.literal("Diagnostic copié"));
+                                })
+                        .zone(fenetre.contenuX(), fenetre.basBoutons(), lCopie));
         addRenderableWidget(
                 BoutonTheme.creer("Retour", b -> onClose())
                         .zone(fenetre.contenuDroite() - lRetour, fenetre.basBoutons(), lRetour));
@@ -41,6 +54,30 @@ public final class EcranDiagnostic extends Screen {
 
     private void ajouter(List<String[]> paires, String libelle, String valeur) {
         paires.add(new String[] {libelle, valeur});
+    }
+
+    private static String versionMod() {
+        return ModList.get()
+                .getModContainerById("assistantia")
+                .map(m -> m.getModInfo().getVersion().toString())
+                .orElse("inconnue");
+    }
+
+    private static String rapport() {
+        String version = versionMod();
+        if (!version.matches("[a-zA-Z0-9._+-]{1,80}")) version = "inconnue";
+        String texte = "Monifactory Assistant " + version + "\n";
+        if (!Emi.present()) return texte + "EMI indisponible";
+        var diagnostic = fr.assistantia.compat.emi.EnvoiMachine.diagnostic();
+        String id = diagnostic.recette();
+        if (!id.matches("[a-z0-9_.-]+:[a-z0-9_./-]{1,180}")) id = "aucune";
+        return texte
+                + "Recette "
+                + id
+                + "\nTransfert "
+                + diagnostic.etat().replace('_', ' ')
+                + "\nMotif "
+                + diagnostic.motif().replace('_', ' ');
     }
 
     /** Âge du dernier relevé d'inventaire, compté ici à partir de sa date (ms). */
@@ -66,12 +103,7 @@ public final class EcranDiagnostic extends Screen {
                         ? ecran.getAsJsonObject("diagnostic")
                         : new JsonObject();
         List<String[]> paires = new ArrayList<>();
-        String version =
-                ModList.get()
-                        .getModContainerById("assistantia")
-                        .map(m -> m.getModInfo().getVersion().toString())
-                        .orElse("inconnue");
-        ajouter(paires, "Mod chargé", version);
+        ajouter(paires, "Mod chargé", versionMod());
         ajouter(
                 paires,
                 "Assistant",

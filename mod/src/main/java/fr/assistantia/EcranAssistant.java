@@ -71,10 +71,7 @@ public class EcranAssistant extends Screen {
 
     private final List<BoutonTheme> boutonsOnglets = new ArrayList<>();
 
-    /**
-     * Réglages changés à l'instant, affichés tout de suite sans attendre la réponse de l'assistant.
-     */
-    private static final Map<String, Boolean> REGLAGES_EN_ATTENTE = new HashMap<>();
+    private static final EtatReglages ETAT_REGLAGES = new EtatReglages();
 
     /** Les interrupteurs des réglages : dessinés dans la liste qui défile, hors des widgets. */
     private final Map<String, BoutonTheme> interrupteurs = new HashMap<>();
@@ -253,25 +250,49 @@ public class EcranAssistant extends Screen {
         onglet = Onglet.DISCUSSION;
     }
 
-    private void changerReglage(String cle, boolean valeur) {
+    private void changerReglage(String cle) {
         if (Fullbright.CLE.equals(cle)) {
-            Fullbright.regler(valeur);
+            Fullbright.regler(!Fullbright.actif());
             return;
         }
         if (SacsFabrication.CLE.equals(cle)) {
-            SacsFabrication.regler(valeur);
+            SacsFabrication.regler(!SacsFabrication.actif());
             return;
         }
+        JsonObject ecran = ecran();
+        boolean actif = Pont.assistantActif();
+        long maintenant = System.nanoTime() / 1_000_000;
+        observerReglages(ecran, actif, maintenant);
+        Boolean ancienne = EtatReglages.valeurPubliee(ecran, cle);
+        if (ancienne == null || !ETAT_REGLAGES.cliquer(cle, maintenant)) return;
+        boolean valeur = !ancienne;
         JsonObject demande = new JsonObject();
         demande.addProperty("type", "reglage");
         demande.addProperty("cle", cle);
         demande.addProperty("valeur", valeur);
-        Pont.envoyer(demande);
-        REGLAGES_EN_ATTENTE.put(cle, valeur);
+        if (!actif || !Pont.envoyer(demande)) {
+            ETAT_REGLAGES.echecEnvoi();
+            return;
+        }
+        ETAT_REGLAGES.envoyer(
+                cle,
+                valeur,
+                demande.get("n").getAsLong(),
+                Pont.texte(demande, "requete"),
+                maintenant);
     }
 
     private static JsonObject ecran() {
         return Pont.partie("ecran");
+    }
+
+    private void observerReglages(JsonObject ecran, boolean actif, long maintenant) {
+        ETAT_REGLAGES.observer(
+                new EtatReglages.Contexte(
+                        Pont.cleContexte(), this.minecraft.getConnection(), this.minecraft.level),
+                actif,
+                ecran,
+                maintenant);
     }
 
     @Override
@@ -354,6 +375,8 @@ public class EcranAssistant extends Screen {
         interrupteursVisibles.clear();
         JsonObject ecran = ecran();
         boolean actif = Pont.assistantActif();
+        if (onglet == Onglet.REGLAGES || ETAT_REGLAGES.enAttente())
+            observerReglages(ecran, actif, System.nanoTime() / 1_000_000);
         if (actif) lanceurInconnu = false;
         for (int i = 0; i < boutonsOnglets.size(); i++)
             boutonsOnglets.get(i).choisi(ONGLETS[i] == onglet); // ouvert : souligné, cliquable
@@ -410,7 +433,16 @@ public class EcranAssistant extends Screen {
             case FILONS -> filons.render(g, contenuX, y, largeur, basContenu, sourisX, sourisY);
             case BASE -> base.render(g, ecran, contenuX, y, largeur, basContenu, sourisX, sourisY);
             case REGLAGES -> reglages(
-                    g, ecran, contenuX, y, largeur, basContenu, sourisX, sourisY, partialTick);
+                    g,
+                    ecran,
+                    actif,
+                    contenuX,
+                    y,
+                    largeur,
+                    basContenu,
+                    sourisX,
+                    sourisY,
+                    partialTick);
             case DISCUSSION -> discussion.render(
                     g, ecran, contenuX, y, largeur, basContenu, sourisX, sourisY);
         }
@@ -421,6 +453,10 @@ public class EcranAssistant extends Screen {
 
     /** État de l'assistant : sur Base, Discussion, Réglages, et partout quand il est arrêté. */
     private Statut statut(JsonObject ecran, boolean actif) {
+        if (onglet == Onglet.REGLAGES && !ETAT_REGLAGES.information().isEmpty()) {
+            int couleur = ETAT_REGLAGES.enAttente() ? Theme.JAUNE : Theme.ROUGE;
+            return new Statut(ETAT_REGLAGES.information(), couleur, couleur);
+        }
         if (!actif) {
             if (Pont.relanceEnCours())
                 return new Statut("L’assistant démarre…", Theme.JAUNE, Theme.JAUNE);
@@ -476,24 +512,11 @@ public class EcranAssistant extends Screen {
 
     // ---------- Onglet Réglages ----------
 
-    /**
-     * La valeur affichée d'un réglage : celle qu'on vient de choisir, en attendant que l'assistant
-     * la confirme.
-     */
-    private boolean valeurReglage(String cle, boolean parDefaut) {
+    /** Seule la valeur locale ou publiée s'affiche ; l'attente est indiquée séparément. */
+    private boolean valeurReglage(String cle, JsonObject ligne) {
         if (Fullbright.CLE.equals(cle)) return Fullbright.actif();
         if (SacsFabrication.CLE.equals(cle)) return SacsFabrication.actif();
-        for (JsonElement e : Pont.liste(ecran(), "reglages")) {
-            if (e instanceof JsonObject r && cle.equals(Pont.texte(r, "cle"))) {
-                boolean valeur = Pont.vrai(r, "valeur");
-                Boolean choisi = REGLAGES_EN_ATTENTE.get(cle);
-                if (choisi != null && choisi == valeur) {
-                    REGLAGES_EN_ATTENTE.remove(cle); // confirmé
-                }
-                return choisi != null ? choisi : valeur;
-            }
-        }
-        return parDefaut;
+        return Pont.vrai(ligne, "valeur");
     }
 
     private BoutonTheme interrupteur(String cle) {
@@ -504,7 +527,7 @@ public class EcranAssistant extends Screen {
                                 DESACTIVE,
                                 b -> {
                                     if (this.minecraft != null && this.minecraft.player != null)
-                                        changerReglage(c, !valeurReglage(c, false));
+                                        changerReglage(c);
                                 }));
     }
 
@@ -522,6 +545,7 @@ public class EcranAssistant extends Screen {
     private void reglages(
             GuiGraphics g,
             JsonObject ecran,
+            boolean assistantActif,
             int x,
             int y,
             int largeur,
@@ -579,7 +603,7 @@ public class EcranAssistant extends Screen {
                 int hauteur = hauteurReglage(lignes);
                 if (cy + hauteur > hautReglages && cy < basReglages) {
                     String cle = Pont.texte(r, "cle");
-                    boolean active = valeurReglage(cle, false);
+                    boolean active = valeurReglage(cle, r);
                     Theme.carte(
                             g, x, cy, fin - x, hauteur, mx >= x && my >= cy && my < cy + hauteur);
                     Theme.texte(
@@ -606,6 +630,10 @@ public class EcranAssistant extends Screen {
                                             fin - marge - largeurInterrupteur,
                                             cy + (hauteur - Theme.BOUTON) / 2,
                                             largeurInterrupteur);
+                    bouton.active =
+                            Fullbright.CLE.equals(cle)
+                                    || SacsFabrication.CLE.equals(cle)
+                                    || assistantActif && !ETAT_REGLAGES.enAttente();
                     bouton.render(g, mx, my, partialTick);
                     interrupteursVisibles.add(new Interrupteur(bouton, cle));
                 }

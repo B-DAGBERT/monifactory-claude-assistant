@@ -12,6 +12,7 @@ from test_me_terminal_panel import corps
 
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = dict(CHEST_STUBS)
+STUBS["net.minecraft.world.inventory.ClickType"] = "public enum ClickType {PICKUP, QUICK_MOVE}"
 STUBS["net.minecraft.world.item.Item"] = (
     "public class Item {public boolean canBeDepleted(){return false;}}"
 )
@@ -45,6 +46,7 @@ STUBS["net.minecraft.client.Minecraft"] = (
     .replace(
         "public Object screen;",
         """public Object screen;
+        public Object level=new Object();
         public final Connection connection=new Connection();
         public Connection getConnection(){return connection;}
         public static class Connection {
@@ -145,6 +147,7 @@ public class EmiRecipe {
  public EmiRecipe(java.util.List<dev.emi.emi.api.stack.EmiIngredient> i,java.util.List<dev.emi.emi.api.stack.EmiIngredient> c){inputs=i;catalysts=c;}
  public java.util.List<dev.emi.emi.api.stack.EmiIngredient> getInputs(){return inputs;}
  public java.util.List<dev.emi.emi.api.stack.EmiIngredient> getCatalysts(){return catalysts;}
+ public String getId(){return "test:recipe";}
  public java.util.List<dev.emi.emi.api.stack.EmiStack> outputs=java.util.List.of();
  public java.util.List<dev.emi.emi.api.stack.EmiStack> getOutputs(){return outputs;}
 }
@@ -238,9 +241,11 @@ public class GregTechMachines {
     public static Object appeler(Object w,String name){return w;}
     public static class Cuve {
         public FluidTank tank=new FluidTank(16000);public int calls,lectures;
+        public Object widget(){return this;}
         public net.minecraftforge.fluids.FluidStack contenu(){return tank.getFluid().copy();}
         public FluidTank simulation(){lectures++;var t=new FluidTank(tank.capacity);t.setFluid(tank.getFluid().copy());return t;}
-        public boolean peutRemplirContenant(){return false;}
+        public boolean remplissable;
+        public boolean peutRemplirContenant() throws ReflectiveOperationException{return remplissable;}
         public void viderContenant(){calls++;var menu=net.minecraft.client.Minecraft.getInstance().player.containerMenu;var r=FluidUtil.tryEmptyContainer(menu.getCarried(),tank,Integer.MAX_VALUE,null,true);if(r.isSuccess())menu.carried=r.getResult();}
     }
 }
@@ -420,6 +425,18 @@ class MachineInputTests(unittest.TestCase):
             "absorption-avant-depot-suivant",
             "absorption-avant-depot-suivant-autre",
             "absorption-ancien-demarrage",
+        )
+
+    def test_machine_replans_explicitly_after_a_partial_send(self):
+        self.rejouer_cycle(
+            "reprise-apres-premier-depot",
+            "reprise-serveur-corrige",
+            "reprise-incertaine",
+            "reprise-consommation-incertaine",
+            "reprise-entree-modifiee",
+            "reprise-clic-perime",
+            "reprise-nouveau-contexte",
+            "reprise-cycle-prouve",
         )
 
     def test_machine_confirms_only_an_exact_isolated_cycle_without_a_recipe_frame(self):

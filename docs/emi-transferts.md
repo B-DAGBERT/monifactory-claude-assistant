@@ -56,11 +56,11 @@ déjà marqué retire ce coffre de la sélection.
 Les relevés entrent dans le calcul de l’arbre EMI, du plan **Recette** et des quantités proposées
 par **Envoyer** dans les machines. Un résultat déjà couvert par les tampons retire les opérations
 correspondantes. Pour envoyer des ingrédients rangés dans un tampon, prends-les d’abord.
-Avec **Repérage** sur **ON**, le faisceau violet reste visible même quand le tampon est à revérifier.
-Le contenu d’un tampon fermé vient de sa dernière ouverture et entre dans le calcul pendant une
-minute. Ensuite, le repère indique **Tampon · à revérifier** et le plan recalcule le complément
-sans ce relevé. Rouvre le coffre pour reprendre le contenu synchronisé. Si un hopper ou le réseau ME
-a modifié le coffre depuis la dernière ouverture, rouvre-le pour actualiser le relevé tout de suite.
+Avec **Repérage** sur **ON**, le faisceau violet identifie le tampon. Le calcul conserve le
+contenu de sa dernière ouverture aussi longtemps que le coffre reste identifié, chargé et
+dans la même connexion et dimension. Le relevé se met à jour si tu ajoutes ou retires des
+objets dans le menu ouvert. Un déchargement du chunk écarte l’ancien contenu jusqu’à une
+nouvelle observation. Si l’identité du bloc a changé, sélectionne à nouveau le coffre.
 Chaque tampon reste exclu du repérage des coffres ordinaires.
 
 Tu peux utiliser **Prendre / Tout** dans un tampon ouvert. Dans Sophisticated Storage, retire à la
@@ -113,11 +113,18 @@ LDLib déportés. Cliquer sur une icône sélectionne ce produit et ouvre sa rec
 - Le panneau indique les fabrications possibles / restantes ; pour un lot en cours, sa deuxième ligne compte les résultats reçus, par exemple « 2/8 récupérés ». Les quantités détaillées sont au survol ; **Suivi → Recette** ouvre la recette EMI. À 320 × 240, au-delà de deux recettes, le panneau en montre une par page.
 - Les entrées déjà remplies sont déduites. Les outils et catalyseurs ne sont pas multipliés par le nombre de fabrications. Un moule manquant est nommé dans **À collecter** et apparaît dans l’arbre EMI : le scan peut le retrouver ou sa branche permet de préparer sa fabrication. Ouvrir une fois la machine, même avant de choisir l’arbre EMI, permet de reconnaître le moule déjà installé. Le relevé reste utilisable dans la même dimension tant que la machine est chargée. Il se met à jour à la réouverture.
 - Le **Circuit setting** des recettes GregTech est un réglage virtuel, jamais un ingrédient à collecter ou à envoyer. Le numéro requis vient de la vraie recette ; le mod vérifie le réglage natif de la machine, y compris lorsqu’elle utilise le menu de configuration latéral. En cas de différence, **Circuit à régler** indique le numéro attendu et le numéro actuel au survol. Le bouton **Circuit** remplace **Envoyer** et reste inactif. Régler soi-même la machine pour activer **Envoyer** ; le bon réglage est relu avant le premier transfert. Un réglage illisible bloque l’envoi ; il ne déclenche jamais une demande de circuit physique. Un circuit demandé comme produit final ou comme objet consommé reste un objet normal.
-- Les fluides viennent uniquement des contenants de l’inventaire. Le clic natif vide le contenant puis le rend. Un seau de 1 000 mB peut dépasser le besoin : le volume réellement envoyé est indiqué au survol.
+- Les fluides viennent des contenants de l’inventaire. Le survol indique le besoin, le volume en cuve, le volume prévu et les contenants rendus, y compris le volume qui reste dans une cellule partiellement vidée.
 - Les sorties ne sont jamais récupérées automatiquement. Les fabrications envoyées sont réservées pour éviter les doublons ; elles ne sont pas déclarées terminées avant récupération du résultat.
 - Chaque dépôt est confirmé séparément. Si la machine a déjà consommé l’entrée, le solde des ingrédients doit correspondre à la recette choisie. Si un cycle d’un tick est entièrement passé entre deux relevés, un dépôt simple peut être confirmé par le bilan exact entre les cases natives d’entrée et de sortie. EMI garde le suivi de la cible tant que sa sortie est attendue, jusqu’à sa réception ou à l’arrêt manuel.
 
 Pendant un envoi, la progression est affichée et les doubles clics sont ignorés. Fermer le menu ou arrêter l’arbre interrompt les actions restantes. Si le serveur refuse un transfert ou qu’une case change, les clics ne sont pas répétés automatiquement : vérifier les entrées et l’objet éventuellement sur le curseur avant de réessayer. Les machines sans entrées accessibles ne permettent pas cet envoi.
+
+Après une interruption, survole **Envoyer** en rouvrant la même machine dans le même arbre EMI.
+Le relevé indique les objets et fluides dont le dépôt a été confirmé. Un clic relit les entrées
+actuelles et propose uniquement le complément. Les fabrications déjà démarrées avec une preuve
+de recette sont réservées dans un lot partiel. Si le dernier clic ou une consommation reste
+incertain, le panneau indique **Reprise à vérifier dans la machine**. Vérifie les entrées, les
+sorties et le curseur avant de terminer manuellement ce cas.
 
 ## Dans quel ordre fabriquer ?
 
@@ -168,7 +175,7 @@ Le bouton **Suivi** est placé à côté de **Repérage**, en bas d’EMI. Dans 
 | En machine                         | Lot envoyé ou déclaré manuellement ; ses sorties restent attendues.                                 |
 | À récupérer / Terminé              | État de récupération estimé par le suivi client. Vérifier la sortie ou le stock réel.               |
 
-Les états des lots conservent le fonctionnement du suivi local. Une réception déduite uniquement de mouvements proches n’est pas une preuve de transfert exact : **Production V2** exclut les lots affectés de ses allocations.
+Le suivi d’un lot machine attend un clic natif sur sa sortie, une baisse de cette sortie et un gain correspondant chez le joueur. Les lots de la même recette dans la même machine sont servis dans l’ordre. Si deux recettes différentes peuvent expliquer le même retrait, la réception du lot reste à confirmer manuellement. **Production V2** conserve ses propres exigences de preuve.
 
 Sélectionner une recette donne accès à **Recette** et **En cours de craft**. Ce bouton sert aux fabrications déjà lancées manuellement. Pour **moins de 64 résultats**, il marque directement toute la quantité restante, sans fenêtre. À partir de **64 résultats**, il ouvre le choix de quantité : saisir le nombre de fabrications ou choisir **Tout le lot**, puis confirmer. Le seuil tient compte des objets produits par fabrication ; les fluides et sous-produits aléatoires ne déclenchent pas la fenêtre. Le nombre de résultats réservé est affiché avant confirmation. Seules les sorties objets garanties sont réservées pour un lot manuel. Leur réception réelle réduit la réservation, y compris si les objets arrivent dans le backpack. Les objets déjà possédés au moment de la déclaration ne valident pas ce lot. Ranger puis reprendre le même résultat ne valide pas une deuxième unité ; une nouvelle fabrication prouvée reste comptée même si le premier résultat a été rangé. Une réservation ne fait jamais avancer à elle seule la cible finale. Un lot déclaré manuellement n’a pas de position de machine : il reste visible dans **Suivi** et ne bloque pas l’ouverture d’une autre machine. Pour un lot encore en attente, le même emplacement propose **Annuler le lot**. Échap depuis la recette ramène au suivi ; **Retour** ramène au menu précédent.
 

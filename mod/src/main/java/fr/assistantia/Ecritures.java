@@ -289,6 +289,8 @@ public final class Ecritures {
         }
         IOException echec = essai(cible, contenu);
         boolean refuse = echec != null && aRetenter(echec, contenu);
+        boolean permanent = echec != null && !retentable(echec);
+        boolean journaliser;
         synchronized (verrou) {
             tache.enCours = null;
             if (refuse && tache.contenu == null) {
@@ -296,13 +298,11 @@ public final class Ecritures {
                 tache.echeance = echeance();
             }
             tache.refus = refuse ? 1 : 0;
+            journaliser = permanent && enregistrerErreur(cible, echec);
             terminer(tache, refuse, lent(echec));
         }
-        if (echec != null && !retentable(echec)) {
-            signaler(cible, echec);
-            return refuse; // une donnée du joueur reste en file jusqu'à réussite
-        }
-        return true;
+        if (journaliser) avertir(cible, echec);
+        return !permanent || refuse; // une donnée du joueur reste en file jusqu'à réussite
     }
 
     private void traiter(Tache tache) {
@@ -320,6 +320,8 @@ public final class Ecritures {
         IOException echec = essai(tache.cible, contenu);
         boolean refuse = echec != null && aRetenter(echec, contenu);
         boolean abandon = false;
+        IOException rapport = echec != null && !retentable(echec) ? echec : null;
+        boolean journaliser;
         synchronized (verrou) {
             tache.enCours = null;
             if (refuse) {
@@ -332,11 +334,12 @@ public final class Ecritures {
                     else abandon = true;
                 }
             } else tache.refus = 0;
+            if (rapport == null && abandon)
+                rapport = new IOException("fichier toujours tenu par son lecteur");
+            journaliser = rapport != null && enregistrerErreur(tache.cible, rapport);
             terminer(tache, refuse, lent(echec));
         }
-        if (echec != null && !retentable(echec)) signaler(tache.cible, echec);
-        else if (abandon)
-            signaler(tache.cible, new IOException("fichier toujours tenu par son lecteur"));
+        if (journaliser) avertir(tache.cible, rapport);
     }
 
     /**
@@ -474,17 +477,19 @@ public final class Ecritures {
         }
     }
 
-    private void signaler(Path cible, IOException erreur) {
-        synchronized (verrou) {
-            erreurs.put(
-                    cible,
-                    cible.getFileName()
-                            + " non écrit ("
-                            + erreur.getClass().getSimpleName()
-                            + (erreur.getMessage() == null ? "" : " : " + erreur.getMessage())
-                            + ")");
-            if (!signales.add(cible)) return; // une seule trace par série d'échecs
-        }
+    /** Sous le verrou, rendre le refus visible avant de libérer la tâche. */
+    private boolean enregistrerErreur(Path cible, IOException erreur) {
+        erreurs.put(
+                cible,
+                cible.getFileName()
+                        + " non écrit ("
+                        + erreur.getClass().getSimpleName()
+                        + (erreur.getMessage() == null ? "" : " : " + erreur.getMessage())
+                        + ")");
+        return signales.add(cible);
+    }
+
+    private static void avertir(Path cible, IOException erreur) {
         LogUtils.getLogger().warn("Assistant IA : " + cible.getFileName() + " non écrit", erreur);
     }
 }

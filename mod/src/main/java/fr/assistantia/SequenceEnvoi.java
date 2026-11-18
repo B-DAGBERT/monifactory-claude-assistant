@@ -4,12 +4,21 @@ import java.util.List;
 
 /** Une action n'est envoyée qu'une fois ; la suivante attend sa confirmation. */
 public final class SequenceEnvoi {
+    public enum Echec {
+        AUCUN,
+        INTERROMPU,
+        NON_CONFIRME,
+        ACTION_REFUSEE
+    }
+
     public interface Action {
         void envoyer() throws Exception;
 
         default void observer() throws Exception {}
 
         boolean confirmee() throws Exception;
+
+        default void acquittee() {}
 
         default void terminer() {}
     }
@@ -18,6 +27,7 @@ public final class SequenceEnvoi {
     private int index, attente, stable;
     private boolean envoyee, fin;
     private String erreur = "";
+    private Echec echec = Echec.AUCUN;
 
     public SequenceEnvoi(List<Action> actions) {
         this.actions = List.copyOf(actions);
@@ -39,10 +49,19 @@ public final class SequenceEnvoi {
         return erreur;
     }
 
+    public Echec echec() {
+        return echec;
+    }
+
     public void annuler(String raison) {
+        annuler(raison, Echec.INTERROMPU);
+    }
+
+    private void annuler(String raison, Echec cause) {
         if (fin) return;
         fin = true;
         erreur = raison;
+        echec = cause;
         if (index < actions.size()) actions.get(index).terminer();
     }
 
@@ -64,14 +83,18 @@ public final class SequenceEnvoi {
             if (++attente < 5) return;
             stable = action.confirmee() ? stable + 1 : 0;
             if (stable >= 3) {
+                action.acquittee();
                 action.terminer();
                 index++;
                 envoyee = false;
             } else if (attente >= 80)
                 annuler(
-                        "Envoi non confirmé par le serveur. Vérifie la machine avant de réessayer.");
+                        "Envoi non confirmé par le serveur. Vérifie la machine avant de réessayer.",
+                        Echec.NON_CONFIRME);
         } catch (Exception e) {
-            annuler(e.getMessage() == null ? "Envoi interrompu" : e.getMessage());
+            annuler(
+                    e.getMessage() == null ? "Envoi interrompu" : e.getMessage(),
+                    Echec.ACTION_REFUSEE);
         }
     }
 }

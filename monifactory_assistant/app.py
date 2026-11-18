@@ -177,7 +177,10 @@ class App(GameController, ConversationController, InterfaceController):
         threading.Thread(target=self.prepare_conversation, daemon=True).start()
 
     def run(self):
-        self.root.mainloop()
+        try:
+            self.root.mainloop()
+        finally:
+            self.bridge.close_publications()
 
     def poll(self):
         try:

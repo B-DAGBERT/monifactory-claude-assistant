@@ -4,7 +4,10 @@ import hashlib
 import json
 import os
 import re
+import tempfile
+import threading
 import time
+from pathlib import Path
 
 from monifactory_assistant.game.inventory import personal_inventory, recent_state
 from monifactory_assistant.game.world_scope import WorldRouting, scope_file, scope_folder
@@ -27,6 +30,7 @@ SCOPED_INPUTS = {
     "inventaire_joueur.json",
 }
 SCOPED_OUTPUTS = {"commande.json", "vue_mod.json"}
+SNAPSHOTS = {"vue_mod.json", "stockage.txt", "coffres_connus.json"}
 
 
 class Bridge:
@@ -44,6 +48,10 @@ class Bridge:
         self.last_state = None
         self.routing = WorldRouting(self.dir, HERE)
         self.scope = None
+        self._publication = threading.Condition()
+        self._pending = {}
+        self._publisher = None
+        self._publication_closed = False
 
     def script_outdated(self, state):
         """Le jeu fait tourner une ancienne version du script (F3 + T pas encore fait)."""
@@ -143,6 +151,90 @@ class Bridge:
             except PermissionError:
                 time.sleep(0.05)
         raise RuntimeError(f"Impossible d'écrire {name}")
+
+    def publish(self, name, data):
+        scope = self.scope
+        if self.isolated:
+            if scope is None:
+                return False
+            data = {**data, **scope.fields()}
+        return self._queue_snapshot(name, json.dumps(data, ensure_ascii=False, indent=1), scope)
+
+    def publish_text(self, name, text):
+        return self._queue_snapshot(name, text, self.scope)
+
+    def _queue_snapshot(self, name, text, scope):
+        if name not in SNAPSHOTS:
+            raise ValueError("Seuls les instantanés remplaçables utilisent cette file")
+        with self._publication:
+            if self._publication_closed or (self.isolated and scope is None):
+                return False
+            self._pending[name] = (scope, text)
+            if self._publisher is None:
+                self._publisher = threading.Thread(
+                    target=self._write_snapshots, name="minecraft-publication", daemon=True
+                )
+                self._publisher.start()
+            self._publication.notify()
+        return True
+
+    def _snapshot_current(self, name, scope):
+        with self._publication:
+            if self._publication_closed or name in self._pending:
+                return False
+        return self.scope_valid(scope)
+
+    def _write_snapshots(self):
+        while True:
+            with self._publication:
+                self._publication.wait_for(lambda: self._publication_closed or self._pending)
+                if self._publication_closed:
+                    return
+                name = next(iter(self._pending))
+                scope, text = self._pending.pop(name)
+            try:
+                self._write_snapshot(name, text, scope)
+            except (OSError, ValueError):
+                if self._snapshot_current(name, scope):
+                    with self._publication:
+                        if not self._publication_closed:
+                            self._pending.setdefault(name, (scope, text))
+                            self._publication.wait(0.05)
+
+    def _write_snapshot(self, name, text, scope):
+        if not self._snapshot_current(name, scope):
+            return
+        path = self.data_path(name, create=True)
+        if path is None:
+            return
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=path.parent,
+                prefix=".assistant-snapshot-",
+                delete=False,
+            ) as stream:
+                temporary = Path(stream.name)
+                stream.write(text)
+            # Vérifier après l'écriture temporaire, avant chaque nouvelle tentative de publication.
+            if self._snapshot_current(name, scope):
+                os.replace(temporary, path)
+        finally:
+            try:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def close_publications(self):
+        with self._publication:
+            self._publication_closed = True
+            self._pending.clear()
+            self._publication.notify_all()
+        if self._publisher is not None:
+            self._publisher.join(0.2)
 
     def state(self):
         """Dernier état du jeu s'il date de moins de 5 s (jeu lancé, dans un monde), sinon None."""

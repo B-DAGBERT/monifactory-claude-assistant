@@ -153,16 +153,24 @@ class ParcoursStock(Parcours, unittest.TestCase):
                 self.assertEqual(crafts, etape.a_crafter, "fabrications proposées")
                 self.assertEqual(physique, etape.poches + etape.tampon, "stock physique")
 
-    def test_un_tampon_expire_reouvre_le_besoin_sans_devenir_un_coffre_ordinaire(self):
+    def test_un_tampon_garde_son_releve_jusqua_une_nouvelle_observation(self):
         observe = Etape("tampon relevé", 0, 8, 8, 8, 0, 0, 0)
-        expire = Etape("relevé expiré", 0, 0, 2, 2, 8, 2, 8)
-        self.assertEqual(self.rejouer_stock((observe, expire)), [(8, 0, 0, 0, 8), (2, 2, 0, 8, 0)])
+        retire = Etape("retrait observé dans le menu", 0, 3, 3, 3, 5, 0, 5)
+        decharge = Etape("chunk déchargé", 0, 0, 2, 2, 8, 2, 8)
+        self.assertEqual(
+            self.rejouer_stock((observe, observe, retire, decharge)),
+            [(8, 0, 0, 0, 8), (8, 0, 0, 0, 8), (3, 0, 0, 5, 3), (2, 2, 0, 8, 0)],
+        )
 
         self.demarrer(arbre=ARBRE)
         self.client.step(tampon=[TAMPON], stock_tampons={TAMPON: {PLAQUE: 8}})
         coffres = [coffre(3, n=8), coffre(COFFRE, n=8)]
         self.assertEqual(self.rafraichir(coffres)["quotas"], {})
-        # Une nouvelle observation native n'est plus disponible, mais le rôle tampon subsiste.
+        self.client.step(temps=self.client.last["temps"] + 720_000)
+        self.assertEqual(self.rafraichir(coffres)["quotas"], {})
+        self.client.step(stock_tampons={TAMPON: {PLAQUE: 3}})
+        self.assertEqual(self.rafraichir(coffres)["quotas"], {str(COFFRE): 5})
+        # Le chunk du tampon peut manquer, mais le rôle tampon subsiste.
         self.client.step(tampon=[TAMPON], stock_tampons={})
         self.assertEqual(self.rafraichir(coffres)["quotas"], {str(COFFRE): 8})
 

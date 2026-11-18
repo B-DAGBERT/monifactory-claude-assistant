@@ -82,7 +82,15 @@ public final class MachinesEmi {
     private static List<PlanMachines.Operation<EmiRecipe>> utiles = List.of(),
             operationsUtiles = List.of();
 
-    private static String calculPrecedent = "";
+    private record RevisionCouverture(
+            long inventaire,
+            long lots,
+            long coffres,
+            long tampons,
+            List<PlanRetrait.Stock<ItemStack>> credits,
+            List<PlanRetrait.Stock<EmiStack>> outils) {}
+
+    private static RevisionCouverture calculPrecedent;
 
     private record EntreesConnues(Object machine, List<PlanRetrait.Stock<EmiStack>> objets) {}
 
@@ -309,8 +317,12 @@ public final class MachinesEmi {
         return dernierTermine;
     }
 
-    public static void recevoir(List<PlanRetrait.Stock<ItemStack>> objets) {
-        lots.recevoir(objets);
+    public static void recevoir(OrigineFabrication.Provenances receptions) {
+        lots.recevoir(receptions);
+    }
+
+    public static void clicSortieFluide(Object widget) {
+        lots.clicSortieFluide(widget);
     }
 
     private static void lotsModifies() {
@@ -357,7 +369,7 @@ public final class MachinesEmi {
 
     public static void recalculer() {
         if (EnvoiMachine.occupe()) return;
-        calculPrecedent = "";
+        calculPrecedent = null;
         compatibilites.clear();
         actualise = 0;
         actualiserArbre();
@@ -581,7 +593,7 @@ public final class MachinesEmi {
             if (entreesConnues.size() > 64)
                 entreesConnues.remove(entreesConnues.keySet().iterator().next());
             entreesVersion++;
-            calculPrecedent = "";
+            calculPrecedent = null;
             InventaireArbreEmi.invalider();
             actualiserArbre();
         }
@@ -752,14 +764,6 @@ public final class MachinesEmi {
                     .setScreen(new DeclarerFabricationEcran(parent, recipe, n, demande, id));
     }
 
-    private static String cleStock(List<PlanRetrait.Stock<EmiStack>> stock) {
-        return stock.stream()
-                .map(s -> s.objet().getId() + "|" + s.objet().getNbt() + "|" + s.quantite())
-                .sorted()
-                .toList()
-                .toString();
-    }
-
     private static void actualiserArbre() {
         var mc = Minecraft.getInstance();
         Object current = actif();
@@ -779,7 +783,7 @@ public final class MachinesEmi {
             }
             lots.oublierInterface();
             toutes = utiles = operationsUtiles = List.of();
-            calculPrecedent = "";
+            calculPrecedent = null;
             problemeOrdre = "";
             choixExplicite = false;
             affichees = List.of();
@@ -808,21 +812,20 @@ public final class MachinesEmi {
             var vue = InstantaneArbreEmi.lire(arbre);
             if (instantane != vue) {
                 compatibilites.clear();
-                calculPrecedent = "";
+                calculPrecedent = null;
                 instantane = vue;
             }
+            var cle =
+                    new RevisionCouverture(
+                            fr.assistantia.InventaireJoueur.revisionFabrication(),
+                            lots.revision(),
+                            fr.assistantia.CoffresConnus.revisionProches(),
+                            fr.assistantia.CoffreTampon.revision(),
+                            CycleArbreEmi.credits(),
+                            outilsMachines());
+            if (cle.equals(calculPrecedent)) return;
             var couverture = StockFabricationEmi.pourMachines(inventaire());
             var stock = couverture.couverture();
-            String cle =
-                    cleStock(stock)
-                            + "|"
-                            + lots.revision()
-                            + "|"
-                            + fr.assistantia.CoffresConnus.revisionProches()
-                            + "|"
-                            + fr.assistantia.CoffreTampon.revision();
-            if (cle.equals(calculPrecedent)) return;
-            calculPrecedent = cle;
             toutes = couverture.operations(vue.machines(), vue.lots());
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
             var horsPoches = new ArrayList<>(couverture.credits());
@@ -834,10 +837,11 @@ public final class MachinesEmi {
                 utiles = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             }
             operationsUtiles = utiles.stream().filter(o -> estGT(o.recette())).toList();
+            calculPrecedent = cle;
             problemeOrdre = "";
         } catch (ReflectiveOperationException | RuntimeException e) {
             operations = toutes = utiles = operationsUtiles = List.of();
-            calculPrecedent = "";
+            calculPrecedent = null;
             problemeOrdre = "Arbre EMI invalide ou cyclique · choisis une autre branche.";
             if (!erreurSignalee) {
                 com.mojang.logging.LogUtils.getLogger()
@@ -1177,7 +1181,8 @@ public final class MachinesEmi {
                                                 envoi.fois(),
                                                 op.fois(),
                                                 ui.position(),
-                                                ecran));
+                                                ecran),
+                                cycles -> lots.ajouter(op.recette(), cycles, ui.position()));
                 } catch (ReflectiveOperationException ex) {
                     actualise = 0;
                 }

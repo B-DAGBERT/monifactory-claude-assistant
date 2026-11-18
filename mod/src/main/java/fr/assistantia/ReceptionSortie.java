@@ -6,8 +6,10 @@ import java.util.function.BiPredicate;
 /** Rapproche une baisse de sortie et un gain personnel, même reçus dans deux ticks différents. */
 public final class ReceptionSortie<T> {
     private final BiPredicate<T, T> meme;
+    private final boolean gesteRequis;
     private List<PlanRetrait.Stock<T>> stock = List.of(), sorties = List.of();
     private final List<Mouvement<T>> gains = new ArrayList<>(), retraits = new ArrayList<>();
+    private final List<Mouvement<T>> gestes = new ArrayList<>();
     private int tick;
     private boolean initialise;
 
@@ -15,6 +17,7 @@ public final class ReceptionSortie<T> {
         final T objet;
         final int tick;
         int quantite;
+        int premierRapprochement = -1;
 
         Mouvement(T objet, int quantite, int tick) {
             this.objet = objet;
@@ -24,11 +27,30 @@ public final class ReceptionSortie<T> {
     }
 
     public ReceptionSortie(BiPredicate<T, T> meme) {
+        this(meme, false);
+    }
+
+    public ReceptionSortie(BiPredicate<T, T> meme, boolean gesteRequis) {
         this.meme = meme;
+        this.gesteRequis = gesteRequis;
+    }
+
+    /** Le rapprochement n'utilise que les variations qui suivent ce geste sur une sortie réelle. */
+    public void autoriser(T objet, int quantite) {
+        if (gesteRequis && initialise && quantite > 0)
+            gestes.add(new Mouvement<>(objet, quantite, tick + 1));
+    }
+
+    public List<PlanRetrait.Stock<T>> gestesEnCours() {
+        return gestes.stream()
+                .filter(g -> g.quantite > 0)
+                .map(g -> new PlanRetrait.Stock<>(g.objet, g.quantite, true))
+                .toList();
     }
 
     /** Lecture de cohérence uniquement : aucun mouvement en vol ne devient une réception. */
     public boolean enAttente() {
+        if (gesteRequis) return gestes.stream().anyMatch(g -> g.quantite > 0);
         return gains.stream().anyMatch(m -> m.quantite > 0)
                 || retraits.stream().anyMatch(m -> m.quantite > 0);
     }
@@ -54,7 +76,13 @@ public final class ReceptionSortie<T> {
         List<PlanRetrait.Stock<T>> preuves = new ArrayList<>();
         gains.removeIf(m -> tick - m.tick > 20 || m.quantite == 0);
         retraits.removeIf(m -> tick - m.tick > 20 || m.quantite == 0);
-        if (initialise) {
+        gestes.removeIf(
+                m ->
+                        tick - m.tick > 20
+                                || m.quantite == 0
+                                || m.premierRapprochement >= 0
+                                        && tick - m.premierRapprochement > 2);
+        if (initialise && (!gesteRequis || !gestes.isEmpty())) {
             List<T> objets = new ArrayList<>();
             // Seules les sorties connues peuvent prouver une réception. Éviter une comparaison
             // quadratique de tous les objets sans rapport d'un grand backpack.
@@ -85,6 +113,8 @@ public final class ReceptionSortie<T> {
                 for (var g : gains)
                     if (r.quantite > 0 && g.quantite > 0 && meme.test(r.objet, g.objet)) {
                         int n = Math.min(r.quantite, g.quantite);
+                        if (gesteRequis) n = autorises(g.objet, Math.min(r.tick, g.tick), n);
+                        if (n <= 0) continue;
                         r.quantite -= n;
                         g.quantite -= n;
                         preuves.add(new PlanRetrait.Stock<>(g.objet, n, true));
@@ -94,5 +124,17 @@ public final class ReceptionSortie<T> {
         sorties = List.copyOf(disponibles);
         initialise = true;
         return List.copyOf(preuves);
+    }
+
+    private int autorises(T objet, int avantVariations, int maximum) {
+        int restant = maximum;
+        for (var geste : gestes)
+            if (restant > 0 && geste.tick <= avantVariations && meme.test(geste.objet, objet)) {
+                int n = Math.min(geste.quantite, restant);
+                geste.quantite -= n;
+                if (geste.premierRapprochement < 0) geste.premierRapprochement = tick;
+                restant -= n;
+            }
+        return maximum - restant;
     }
 }

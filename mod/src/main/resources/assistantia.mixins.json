@@ -15,6 +15,7 @@
     "ContenuStockSophistiqueMixin",
     "VariationStockSophistiqueMixin",
     "ClicStockMixin",
+    "ClicCuveGregTechMixin",
     "ClicStockSophistiqueMixin",
     "EcranStockMixin"
   ]

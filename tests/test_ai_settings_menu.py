@@ -109,8 +109,28 @@ ECRAN_STUBS["net.minecraft.client.gui.screens.Screen"] = stubs_theme.membres(
     stubs_theme.ECRAN,
 )
 ECRAN_STUBS["net.minecraft.client.Minecraft"] = stubs_theme.membres(
-    ECRAN_STUBS["net.minecraft.client.Minecraft"], stubs_theme.JEU
+    ECRAN_STUBS["net.minecraft.client.Minecraft"],
+    stubs_theme.JEU
+    + (
+        (
+            "keyboardHandler",
+            """
+ public final Clavier keyboardHandler=new Clavier();
+ public static class Clavier {public String report;public void setClipboard(String text){report=text;}}
+ """,
+        ),
+    ),
 )
+ECRAN_STUBS["fr.assistantia.Emi"] = (
+    "public class Emi {public static boolean arbreActif(){return true;}public static boolean present(){return true;}}"
+)
+ECRAN_STUBS["fr.assistantia.compat.emi.EnvoiMachine"] = """
+public class EnvoiMachine {
+ public static String statut(){return "/private/message";}
+ public record Diagnostic(String recette,String etat,String motif){}
+ public static Diagnostic diagnostic(){return new Diagnostic("gtceu:bender/plate","interrompu","confirmation_absente");}
+}
+"""
 ECRAN_STUBS["net.minecraft.client.gui.components.EditBox"] = stubs_theme.membres(
     ECRAN_STUBS["net.minecraft.client.gui.components.EditBox"], stubs_theme.CHAMP
 )
@@ -133,6 +153,10 @@ public class DiagnosticScreenTest {
   assert GuiGraphics.TEXTES.contains("Mod chargé")&&!GuiGraphics.TEXTES.contains("c · récupérée"):GuiGraphics.TEXTES;
   s.mouseScrolled(160,120,-100);GuiGraphics.TEXTES.clear();s.render(new GuiGraphics(),0,0,0);
   assert GuiGraphics.TEXTES.contains("c · récupérée")&&!GuiGraphics.TEXTES.contains("Mod chargé"):"scrolling reveals the last backup";
+  var copier=(Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals("Copier le diagnostic")).findFirst().orElseThrow();
+  copier.press();
+  assert mc.keyboardHandler.report.equals("Monifactory Assistant test-shared31\nRecette gtceu:bender/plate\nTransfert interrompu\nMotif confirmation absente"):mc.keyboardHandler.report;
+  assert !mc.keyboardHandler.report.contains("/private/message")&&!mc.keyboardHandler.report.contains("Sauvegarde");
   assert Pont.sends==0;
   s.keyPressed(256,0,0);assert mc.screen==parent;
   s.init(mc,640,480);s.render(new GuiGraphics(),0,0,0);assert Pont.sends==0;

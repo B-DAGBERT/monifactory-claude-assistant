@@ -35,6 +35,15 @@ class MachinePanelClickTests(unittest.TestCase):
         self.assertIn("Clic droit : voir la recette dans EMI", panneau)
         self.assertNotIn("Clic : ouvrir cette recette dans EMI", panneau)
 
+    def test_blocked_send_exposes_the_native_reason_in_the_panel_and_tooltip(self):
+        panneau = (EMI / "PanneauMachineEmi.java").read_text(encoding="utf-8")
+        rendu = corps(panneau, "static void afficher(")
+        ligne = rendu.split("String blocage =", 1)[1].split(";", 1)[0]
+        self.assertIn("Synchronisation de l’inventaire", ligne)
+        self.assertIn("plan.probleme()", ligne)
+        self.assertIn("blocage.isEmpty() ? quantites : blocage", rendu)
+        self.assertIn("tooltip.add(Component.literal(blocage))", rendu)
+
     def test_machine_panel_calculations_run_on_tick_and_are_revalidated_at_click(self):
         machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
         tick = corps(machines, "public static void tick(TickEvent.ClientTickEvent event)")
@@ -62,6 +71,22 @@ class MachinePanelClickTests(unittest.TestCase):
         )
         selection = corps(machines, "private static boolean selectionnerAffichee(")
         self.assertLess(selection.index("actualiserInterface();"), selection.index("for (int i"))
+
+    def test_unchanged_machine_plan_skips_stock_conversion_and_allocation(self):
+        machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
+        arbre = corps(machines, "private static void actualiserArbre()")
+        cache = arbre.index("cle.equals(calculPrecedent)")
+        for source in (
+            "revisionFabrication()",
+            "lots.revision()",
+            "CoffresConnus.revisionProches()",
+            "CoffreTampon.revision()",
+            "CycleArbreEmi.credits()",
+            "outilsMachines()",
+        ):
+            self.assertIn(source, arbre[:cache])
+        self.assertGreater(arbre.index("pourMachines(inventaire())"), cache)
+        self.assertGreater(arbre.index("couverture.operations"), cache)
 
     def test_observing_machine_inputs_does_not_require_an_emi_tree(self):
         machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")

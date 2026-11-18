@@ -169,8 +169,10 @@ class GameController:
                             self.notify(
                                 f"Coffre mémorisé : {len(chest['objets'])} sortes d'objets.", 4
                             )
-                self.bridge.write_text("stockage.txt", text)
-                self.storage_text = text
+                if self.bridge.publish_text("stockage.txt", text):
+                    self.storage_text = text
+                else:
+                    export_key = None
             self.storage_export_key = export_key
         self.storage = storage
 
@@ -197,11 +199,10 @@ class GameController:
         if self.bridge.data_path("coffres_connus.json") is None:
             return
         text = json.dumps(known_chests(blocks.values()), ensure_ascii=False, separators=(",", ":"))
-        if published is None or published[1] != text:
-            try:
-                self.bridge.write_text("coffres_connus.json", text)
-            except (OSError, RuntimeError):
-                return  # Le mod garde sa dernière lecture ; nouvel essai au prochain cycle.
+        if (published is None or published[1] != text) and not self.bridge.publish_text(
+            "coffres_connus.json", text
+        ):
+            return
         self.known_chests_published = (blocks, text)
 
     def journal(self, kind, text):

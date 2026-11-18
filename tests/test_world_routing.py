@@ -1,9 +1,11 @@
 """Two local installations, same coordinates, independent scopes and delayed exchanges."""
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -108,6 +110,14 @@ def stored(count):
 
 
 class WorldRoutingTests(unittest.TestCase):
+    def await_snapshot(self, predicate):
+        end = time.monotonic() + 2
+        while time.monotonic() < end:
+            if predicate():
+                return
+            time.sleep(0.01)
+        self.fail("instantané non publié")
+
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.bridge = setup_bridge(self.root)
@@ -303,8 +313,9 @@ class WorldRoutingTests(unittest.TestCase):
             app.apply_world_scope(self.bridge.scope)
             app.world = world
             dump(self.bridge.dir / "mondes" / WORLD_A / "stockage.json", client)
-            write = Mock(wraps=self.bridge.write_text)
-            with patch.object(self.bridge, "write_text", write):
+            write = Mock(wraps=self.bridge.publish_text)
+            self.addCleanup(self.bridge.close_publications)
+            with patch.object(self.bridge, "publish_text", write):
                 app.publish_known_chests(app.world)
                 published = self.bridge.dir / "mondes" / WORLD_A / "coffres_connus.json"
 
@@ -350,6 +361,7 @@ class WorldRoutingTests(unittest.TestCase):
                         }
                     ],
                 }
+                self.await_snapshot(published.exists)
                 self.assertEqual(
                     published.read_text(encoding="utf-8"),
                     json.dumps(expected, ensure_ascii=False, separators=(",", ":")),
@@ -370,6 +382,7 @@ class WorldRoutingTests(unittest.TestCase):
                 )
                 app.publish_known_chests(app.world)
                 self.assertEqual(write.call_count, 2)
+                self.await_snapshot(lambda: '"n":300' in published.read_text(encoding="utf-8"))
                 self.assertIn('"n":300', published.read_text(encoding="utf-8"))
                 saved = published.read_bytes()
 
@@ -385,11 +398,74 @@ class WorldRoutingTests(unittest.TestCase):
                 self.assertIsNone(app.known_chests_published)
                 app.publish_known_chests(app.world)
                 self.assertEqual(write.call_count, 3)
-        other = json.loads(
-            (self.bridge.dir / "mondes" / WORLD_B / "coffres_connus.json").read_text("utf-8")
-        )
+        other_file = self.bridge.dir / "mondes" / WORLD_B / "coffres_connus.json"
+        self.await_snapshot(other_file.exists)
+        other = json.loads(other_file.read_text("utf-8"))
         self.assertEqual(other, {"v": 2, "conteneurs": [], "machines": []})
         self.assertEqual(published.read_bytes(), saved)
+
+    def test_locked_snapshot_coalesces_latest_and_does_not_block_the_caller(self):
+        self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
+        self.addCleanup(self.bridge.close_publications)
+        entered, release, queued = threading.Event(), threading.Event(), threading.Event()
+        original = os.replace
+        target = self.bridge.dir / "vue_mod.json"
+        attempts = []
+
+        def replace(source, destination):
+            if destination == target:
+                attempts.append(json.loads(source.read_text(encoding="utf-8"))["view"])
+                if len(attempts) == 1:
+                    entered.set()
+                    release.wait(2)
+                    raise PermissionError("test lock")
+            return original(source, destination)
+
+        def publish_latest():
+            self.bridge.publish("vue_mod.json", {"view": "middle"})
+            self.bridge.publish("vue_mod.json", {"view": "latest"})
+            queued.set()
+
+        with patch("monifactory_assistant.game.bridge.os.replace", side_effect=replace):
+            try:
+                self.assertTrue(self.bridge.publish("vue_mod.json", {"view": "locked"}))
+                self.assertTrue(entered.wait(2))
+                producer = threading.Thread(target=publish_latest, daemon=True)
+                producer.start()
+                self.assertTrue(queued.wait(1), "publication UI bloquée par le disque")
+            finally:
+                release.set()
+            self.await_snapshot(target.exists)
+        self.assertEqual(attempts, ["locked", "latest"])
+        self.assertEqual(self.bridge.read("vue_mod.json")["view"], "latest")
+
+    def test_world_change_drops_the_locked_snapshot_before_retry(self):
+        self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
+        self.addCleanup(self.bridge.close_publications)
+        original = os.replace
+        old = self.bridge.dir / "mondes" / WORLD_A / "stockage.txt"
+        entered = threading.Event()
+        release = threading.Event()
+
+        def replace(source, destination):
+            if destination == old:
+                entered.set()
+                release.wait(2)
+                raise PermissionError("test lock")
+            return original(source, destination)
+
+        with patch("monifactory_assistant.game.bridge.os.replace", side_effect=replace):
+            try:
+                self.assertTrue(self.bridge.publish_text("stockage.txt", "old"))
+                self.assertTrue(entered.wait(2))
+                self.assertTrue(enter(self.bridge, WORLD_B, SESSION_B))
+                self.assertTrue(self.bridge.publish_text("stockage.txt", "new"))
+            finally:
+                release.set()
+            new = self.bridge.dir / "mondes" / WORLD_B / "stockage.txt"
+            self.await_snapshot(new.exists)
+        self.assertFalse(old.exists())
+        self.assertEqual(new.read_text(), "new")
 
     def test_expired_native_receipt_cannot_reactivate_cached_state(self):
         self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))

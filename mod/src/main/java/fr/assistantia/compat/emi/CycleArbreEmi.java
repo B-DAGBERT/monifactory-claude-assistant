@@ -100,7 +100,7 @@ public final class CycleArbreEmi {
             List<PlanRetrait.Stock<ItemStack>> stock = new ArrayList<>();
             for (ItemStack item : fr.assistantia.InventaireJoueur.piles()) ajouter(stock, item);
             OrigineFabrication.actualiser(stock);
-            MachinesEmi.recevoir(OrigineFabrication.receptions());
+            MachinesEmi.recevoir(OrigineFabrication.provenances());
             boolean fini = suivi.actualiser(stock, OrigineFabrication.receptions());
             if (fini && CoffresArbreEmi.arbreActif() == tree) {
                 MachinesEmi.termine();

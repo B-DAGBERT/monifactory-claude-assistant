@@ -35,8 +35,10 @@ Données locales du jeu, en lecture seule, dans {data_dir} :
 - inventaire_joueur.json : inventaire complet incluant les backpacks portés ; utiliser seulement un relevé actif, synchronisé et récent.
 - quetes.json : progression des quêtes FTB (chapitres, quêtes terminées, quêtes disponibles avec leurs tâches \
 et leur description).
-- recettes_*.json : TOUTES les recettes du pack, une par ligne "catégorie | entrées => sorties | id". \
-Cherche-les avec Grep, ce sont les vraies recettes du mode Expert.
+- recettes_info.json indique le groupe actif (a ou b), la génération et le nombre de parties. \
+Cherche avec Grep dans les parties numérotées de ce groupe, de 0 à parties - 1, avec la même génération. \
+Pour un ancien manifeste sans groupe, utilise recettes_0.json et les parties suivantes du manifeste. \
+Chaque recette du mode Expert a la forme "catégorie | entrées => sorties | id".
 - stockage.txt : les derniers contenus observés dans les coffres, une ligne par objet \
 "id | quantité | x y z | dimension | bloc | date". Cherche dedans avec Grep pour dire où aller chercher un objet.
 - inventaire_details.txt : chaque objet que le joueur a sur lui (en main, barre, sac, armure portée) et dans le \

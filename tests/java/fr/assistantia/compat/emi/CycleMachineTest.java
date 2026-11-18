@@ -51,6 +51,7 @@ public final class CycleMachineTest {
         GregTechMachines.busy = false;
         GregTechMachines.recetteActive = null;
         GregTechMachines.outputSlots = List.of(sortie);
+        cuveSortie.remplissable = true;
         GregTechMachines.outputTanks = List.of(cuveSortie);
         menu.slots.addAll(List.of(entree, moule, sortie));
         for (int i = 3; i < 12; i++) menu.slots.add(new Slot(mc.player.getInventory(), i));
@@ -96,7 +97,7 @@ public final class CycleMachineTest {
 
     private void synchroniser() {
         OrigineFabrication.actualiser(objets());
-        suivi.recevoir(OrigineFabrication.receptions());
+        suivi.recevoir(OrigineFabrication.provenances());
         suivi.actualiser();
     }
 
@@ -378,6 +379,130 @@ public final class CycleMachineTest {
         synchroniser();
     }
 
+    private void reprendreApresInterruption(String scenario) throws ReflectiveOperationException {
+        var recette = new EmiRecipe(List.of(item(ETAIN, 2), item(MOULE, 1)), List.of());
+        recette.outputs = List.of(item(PLAQUE, 1));
+        var premiere = menu.slots.get(3);
+        var seconde = menu.slots.get(4);
+        premiere.item = new ItemStack(ETAIN, 2);
+        seconde.item = new ItemStack(MOULE, 1);
+        envoyer(EnvoiMachine.preparer(ecran, recette, 1));
+        assert EnvoiMachine.diagnostic()
+                .equals(new EnvoiMachine.Diagnostic("test:recipe", "en_cours", "aucun"));
+        attendreDepot(premiere, 2);
+        for (int i = 0; i < 7; i++) EnvoiMachine.tick(new TickEvent.ClientTickEvent());
+        assert seconde.getItem().getCount() == 1 : "le second dépôt n'est pas parti";
+        boolean corrige = scenario.equals("reprise-serveur-corrige");
+        boolean incertain = scenario.equals("reprise-incertaine");
+        boolean contexte = scenario.equals("reprise-nouveau-contexte");
+        boolean consomme = scenario.equals("reprise-consommation-incertaine");
+        boolean ajout = scenario.equals("reprise-entree-modifiee");
+        boolean clicPerime = scenario.equals("reprise-clic-perime");
+        if (corrige || incertain) {
+            var nouveauDepot = new TickEvent.ClientTickEvent();
+            EnvoiMachine.tick(nouveauDepot);
+            assert moule.getItem().is(MOULE) && seconde.getItem().isEmpty();
+            moule.item = ItemStack.EMPTY;
+            if (corrige) seconde.item = new ItemStack(MOULE, 1);
+        } else mc.screen = null;
+        attendreFinEnvoi();
+        assert suivi.actifs().isEmpty() && EnvoiMachine.statut().contains("1 dépôt confirmé");
+        assert EnvoiMachine.diagnostic()
+                .equals(
+                        new EnvoiMachine.Diagnostic(
+                                "test:recipe",
+                                "interrompu",
+                                corrige || incertain ? "confirmation_absente" : "contexte_change"));
+        int clicsAvant = mc.gameMode.clicks;
+        var menuRouvre = new AbstractContainerScreen<>(menu);
+        mc.screen = menuRouvre;
+        if (contexte) mc.level = new Object();
+        if (consomme) entree.item = ItemStack.EMPTY;
+        if (ajout) entree.item.setCount(3);
+        var reprise = EnvoiMachine.preparer(menuRouvre, recette, 1);
+        assert reprise.details().stream().anyMatch(s -> s.contains("Déposé") && s.contains(ETAIN))
+                        != contexte
+                : "le relevé ne change pas de dimension";
+        if (incertain || consomme) {
+            assert !reprise.possible() && reprise.probleme().contains("à vérifier");
+            assert reprise.details().contains("Dernier dépôt non confirmé") == incertain;
+            assert mc.gameMode.clicks == clicsAvant;
+            return;
+        }
+        assert reprise.possible() : reprise.probleme();
+        assert mc.gameMode.clicks == clicsAvant : "aucun rejeu à l'ouverture";
+        rendreClicDisponible();
+        if (clicPerime) entree.item = ItemStack.EMPTY;
+        EnvoiMachine.lancer(
+                menuRouvre,
+                reprise,
+                () -> lotId = suivi.ajouter(recette, 1, GregTechMachines.ui.position()));
+        if (clicPerime) {
+            assert !EnvoiMachine.occupe() && suivi.actifs().isEmpty();
+            assert EnvoiMachine.statut().contains("à vérifier") && mc.gameMode.clicks == clicsAvant;
+            assert EnvoiMachine.diagnostic()
+                    .equals(
+                            new EnvoiMachine.Diagnostic(
+                                    "test:recipe", "refuse", "preconditions_transfert"));
+            return;
+        }
+        attendreFinEnvoi();
+        assert lot().fois() == 1 && entree.getItem().getCount() == (ajout ? 3 : 2);
+        assert moule.getItem().getCount() == 1 && seconde.getItem().isEmpty();
+        assert mc.gameMode.clicks == clicsAvant + 2 : "seul le complément est transféré";
+        assert EnvoiMachine.diagnostic()
+                .equals(new EnvoiMachine.Diagnostic("test:recipe", "reussi", "aucun"));
+    }
+
+    private void reprendreApresCycleProuve() throws ReflectiveOperationException {
+        var recette = recettePlaques(1);
+        var racine = new InstantaneArbreEmiTest.Arbre();
+        racine.goal = new dev.emi.emi.bom.MaterialNode(item(PLAQUE, 1));
+        racine.goal.recipe = recette;
+        racine.goal.children.add(new dev.emi.emi.bom.MaterialNode(item(ETAIN, 1)));
+        racine.batches = 2;
+        ArbreEmi.tree = racine;
+        MachinesEmi.suivi = suivi;
+        var premiere = menu.slots.get(3);
+        var seconde = menu.slots.get(4);
+        premiere.item = new ItemStack(ETAIN, 1);
+        seconde.item = new ItemStack(ETAIN, 1);
+        synchroniser();
+        var plan = EnvoiMachine.preparer(ecran, recette, 2);
+        EnvoiMachine.lancer(
+                ecran,
+                plan,
+                () -> {
+                    throw new AssertionError("deuxième dépôt jamais lancé");
+                },
+                cycles -> lotId = suivi.ajouter(recette, cycles, GregTechMachines.ui.position()));
+        attendreDepot(premiere, 1);
+        entree.item = ItemStack.EMPTY;
+        jouerRecetteCourte(recette);
+        for (int i = 0; i < 5; i++) EnvoiMachine.tick(new TickEvent.ClientTickEvent());
+        mc.screen = null;
+        attendreFinEnvoi();
+        assert lot().fois() == 1 && lot().suivi().totalRecu() == 0;
+        assert seconde.getItem().getCount() == 1 && sortie.getItem().getCount() == 1;
+        var vue = InstantaneArbreEmi.lire(racine);
+        var operations =
+                StockFabricationEmi.pourMachines(stock()).operations(vue.machines(), vue.lots());
+        assert operations.size() == 1 && operations.get(0).fois() == 1
+                : "le cycle prouvé est déjà réservé dans le calcul commun";
+        mc.screen = ecran;
+        var nouveau = EnvoiMachine.preparer(ecran, recette, operations.get(0).fois());
+        assert nouveau.possible() && nouveau.details().contains("Fabrications déjà lancées · 1");
+        rendreClicDisponible();
+        EnvoiMachine.lancer(
+                ecran,
+                nouveau,
+                () -> suivi.ajouter(recette, nouveau.fois(), GregTechMachines.ui.position()));
+        attendreFinEnvoi();
+        assert suivi.actifs().size() == 2;
+        assert suivi.actifs().stream().allMatch(l -> l.fois() == 1);
+        assert mc.gameMode.clicks == 4 : "les deux dépôts natifs sont joués une seule fois";
+    }
+
     private void envoyer(EnvoiMachine.Plan plan) {
         EnvoiMachine.lancer(
                 ecran,
@@ -404,6 +529,12 @@ public final class CycleMachineTest {
 
     private void receptionnerPlaques(int resteSortie, int totalPorte, boolean sortieDabord) {
         var poche = menu.slots.get(8);
+        OrigineFabrication.clicSortie(
+                menu.containerId,
+                sortie.index,
+                0,
+                net.minecraft.world.inventory.ClickType.QUICK_MOVE,
+                mc.player);
         if (sortieDabord) sortie.item = new ItemStack(PLAQUE, resteSortie);
         else poche.item = new ItemStack(PLAQUE, totalPorte);
         synchroniser();
@@ -416,6 +547,7 @@ public final class CycleMachineTest {
 
     private void receptionnerAcide(int resteCuve, int totalPorte, boolean sortieDabord) {
         var poche = menu.slots.get(9);
+        suivi.clicSortieFluide(cuveSortie);
         int avant = quantite(lot().suivi().obtenus(), fluide(ACIDE, 1));
         if (sortieDabord) cuveSortie.tank.setFluid(new FluidStack(ACIDE, resteCuve));
         else poche.item = contenant("test:acid_cell", 1, ACIDE, totalPorte);
@@ -437,6 +569,16 @@ public final class CycleMachineTest {
         GregTechMachines.machineCircuit = 7;
         var plan = EnvoiMachine.preparer(ecran, recette, 3);
         assert plan.possible() && plan.fois() == 3 : plan.probleme();
+        assert plan.details().stream()
+                        .anyMatch(
+                                s ->
+                                        s.contains("1000 mB à envoyer")
+                                                && s.contains("besoin 432 mB")
+                                                && s.contains("en cuve 0 mB"))
+                : plan.details();
+        assert plan.details().stream()
+                        .anyMatch(s -> s.startsWith("Retour") && s.contains("empty_cell"))
+                : plan.details();
         assert cuveEntree.tank.isEmpty() && entree.item.isEmpty() : "aperçu sans mutation";
         envoyer(plan);
         EnvoiMachine.lancer(
@@ -631,7 +773,7 @@ public final class CycleMachineTest {
         cuveEntree.tank.setFluid(new FluidStack(ACIDE, 450));
         assert EnvoiMachine.preparer(ecran, recette, 1)
                 .probleme()
-                .contains("Fluide manquant ou cuve pleine");
+                .contains("Cuve pleine ou incompatible");
         assert cuveEntree.tank.getFluidAmount() == 450 && cuveEntree.calls == 0;
         cuveEntree.tank.setFluid(FluidStack.EMPTY);
         for (int i = 6; i < menu.slots.size(); i++)
@@ -831,6 +973,14 @@ public final class CycleMachineTest {
             case "absorption-avant-depot-suivant",
                     "absorption-avant-depot-suivant-autre",
                     "absorption-ancien-demarrage" -> fixture.absorptionAvantDepotSuivant(scenario);
+            case "reprise-apres-premier-depot",
+                    "reprise-serveur-corrige",
+                    "reprise-incertaine",
+                    "reprise-consommation-incertaine",
+                    "reprise-entree-modifiee",
+                    "reprise-clic-perime",
+                    "reprise-nouveau-contexte" -> fixture.reprendreApresInterruption(scenario);
+            case "reprise-cycle-prouve" -> fixture.reprendreApresCycleProuve();
             case "deux-lots" -> fixture.deuxLots();
             case "63" -> fixture.lotLimite(63, false);
             case "64" -> fixture.lotLimite(64, false);

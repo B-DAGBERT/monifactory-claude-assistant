@@ -8,6 +8,7 @@ import fr.assistantia.PlanRetrait;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
 
@@ -78,22 +79,31 @@ public final class ProjectionLotsEmiTest {
                 .toList();
     }
 
-    private static void receiveCorrelatedMachine(SuiviLotsEmi owner, int n) {
+    private static net.minecraft.world.inventory.Slot recevoirMachine(
+            SuiviLotsEmi owner, int n, boolean clic) {
         machine();
         var slot = new net.minecraft.world.inventory.Slot(new Object(), 0);
         slot.item = new ItemStack("test:plate", n);
         GregTechMachines.outputSlots = List.of(slot);
         OrigineFabrication.vider();
         OrigineFabrication.actualiser(nativeInventory());
-        // A conveyor removes the output; no item has reached the player.
+        var joueur = net.minecraft.client.Minecraft.getInstance().player;
+        if (clic)
+            OrigineFabrication.clicSortie(
+                    joueur.containerMenu.containerId, slot.index, 0, ClickType.QUICK_MOVE, joueur);
+        // Le volet sortie se synchronise avant l'inventaire.
         slot.item = ItemStack.EMPTY;
         OrigineFabrication.actualiser(nativeInventory());
         assert OrigineFabrication.receptions().isEmpty();
-        // An unrelated later gain of the same item is locally indistinguishable.
         inventory = List.of(stock(item("test:plate", n), n));
         OrigineFabrication.actualiser(nativeInventory());
-        assert !OrigineFabrication.receptions().isEmpty();
-        owner.recevoir(OrigineFabrication.receptions());
+        var preuves = OrigineFabrication.provenances();
+        assert (preuves.machine() != null) == clic;
+        owner.recevoir(preuves);
+        long revision = owner.revision();
+        owner.recevoir(preuves);
+        assert owner.revision() == revision : "une réception répétée est sans effet";
+        return slot;
     }
 
     // Pure model fixture: an explicitly proven receipt, not a native source or runtime fallback.
@@ -223,21 +233,28 @@ public final class ProjectionLotsEmiTest {
             assert quantity(lot, "restants", "test:plate") == 11;
             assert lot.get("id").getAsString().endsWith("/" + id);
         } else if (scenario.equals("generic_manual") || scenario.equals("generic_machine")) {
-            if (scenario.equals("generic_machine")) {
+            boolean machine = scenario.equals("generic_machine");
+            if (machine) {
                 owner.vider();
                 id = owner.ajouter(recipe, 5, new BlockPos(0, 64, 0));
             }
             long version = owner.revision();
             inventory = List.of(stock(item("test:plate", 3), 3));
             owner.recevoir(List.of());
-            assert owner.actifs().get(0).suivi().totalRecu() == 3 : "Legacy gameplay unchanged";
-            assert owner.actifs().get(0).suivi().receptionNonAttribuee();
-            assert owner.revision() > version;
-            excluded(owner);
-            assert owner.completer(id, recipe, 1);
-            excluded(owner);
-            assert owner.annuler(id);
-            excluded(owner);
+            assert owner.actifs().get(0).suivi().totalRecu() == (machine ? 0 : 3);
+            assert owner.actifs().get(0).suivi().receptionNonAttribuee() != machine;
+            if (machine) {
+                assert owner.revision() == version;
+                assert quantity(only(project(owner)), "restants", "test:plate") == 10;
+                assert owner.terminer(id, TREE);
+            } else {
+                assert owner.revision() > version;
+                excluded(owner);
+                assert owner.completer(id, recipe, 1);
+                excluded(owner);
+                assert owner.annuler(id);
+                excluded(owner);
+            }
         } else if (scenario.equals("generic_independent")) {
             int second = owner.ajouter(recipe, 5, null);
             inventory = List.of(stock(item("test:plate", 3), 3));
@@ -253,30 +270,59 @@ public final class ProjectionLotsEmiTest {
             owner.recevoir(List.of());
             assert !owner.actifs().get(0).suivi().receptionNonAttribuee();
             assert quantity(only(project(owner)), "restants", "test:plate") == 10;
-        } else if (scenario.equals("correlated_machine")
-                || scenario.equals("correlated_machine_independent")) {
+        } else if (List.of(
+                        "correlated_machine",
+                        "correlated_machine_independent",
+                        "native_machine_ambiguous",
+                        "native_machine_distinct")
+                .contains(scenario)) {
             owner.vider();
             machine();
-            owner.ajouter(recipe, 5, new BlockPos(0, 64, 0));
-            int second =
-                    scenario.equals("correlated_machine_independent")
-                            ? owner.ajouter(recipe, 5, new BlockPos(0, 64, 0))
-                            : 0;
-            receiveCorrelatedMachine(owner, 3);
-            assert owner.actifs().get(0).suivi().totalRecu() == 3
-                    : "Gameplay receipt remains unchanged";
-            assert owner.actifs().get(0).suivi().receptionNonAttribuee();
-            if (second == 0) excluded(owner);
-            else {
-                assert !owner.actifs().get(1).suivi().receptionNonAttribuee();
-                var retained = only(project(owner));
-                assert retained.get("id").getAsString().endsWith("/" + second);
-                assert quantity(retained, "restants", "test:plate") == 10;
+            boolean distinct = scenario.equals("native_machine_distinct");
+            boolean ambigu = scenario.equals("native_machine_ambiguous");
+            boolean clic = ambigu || distinct;
+            int premier = owner.ajouter(recipe, 5, new BlockPos(distinct ? 1 : 0, 64, 0));
+            if (!scenario.equals("correlated_machine")) {
+                var autreRecette = ambigu ? new EmiRecipe(List.of(), List.of()) : recipe;
+                autreRecette.outputs = recipe.getOutputs();
+                owner.ajouter(autreRecette, 5, new BlockPos(0, 64, 0));
+            }
+            var sortie = recevoirMachine(owner, 3, clic);
+            assert owner.actifs().get(0).suivi().totalRecu() == 0
+                    : "un gain sans clic, ambigu ou provenant d'une autre machine n'acquitte pas le premier lot";
+            if (distinct) {
+                assert owner.actifs().get(1).suivi().totalRecu() == 3;
+                assert owner.actifs().get(1).suivi().restants().get(0).quantite() == 7;
+                assert owner.actifs().get(1).suivi().receptionNonAttribuee();
+                assert only(project(owner)).get("id").getAsString().endsWith("/" + premier);
+                sortie.item = new ItemStack("test:plate", 4);
+                OrigineFabrication.actualiser(nativeInventory());
+                var joueur = net.minecraft.client.Minecraft.getInstance().player;
+                OrigineFabrication.clicSortie(
+                        joueur.containerMenu.containerId,
+                        sortie.index,
+                        0,
+                        ClickType.QUICK_MOVE,
+                        joueur);
+                inventory = List.of(stock(item("test:plate", 7), 7));
+                OrigineFabrication.actualiser(nativeInventory());
+                owner.recevoir(OrigineFabrication.provenances());
+                assert owner.actifs().get(1).suivi().totalRecu() == 3;
+                sortie.item = ItemStack.EMPTY;
+                OrigineFabrication.actualiser(nativeInventory());
+                owner.recevoir(OrigineFabrication.provenances());
+                assert owner.actifs().get(1).suivi().totalRecu() == 7;
+                assert owner.actifs().get(1).suivi().restants().get(0).quantite() == 3;
+            } else {
+                assert owner.actifs().stream().allMatch(l -> l.suivi().totalRecu() == 0);
+                if (!ambigu)
+                    assert project(owner).getAsJsonArray("lots").size() == owner.actifs().size();
             }
         } else if (scenario.equals("mixed_craft_machine")) {
             owner.vider();
             machine();
             owner.ajouter(recipe, 5, new BlockPos(0, 64, 0));
+            owner.ajouter(recipe, 5, null);
             var slot = new net.minecraft.world.inventory.Slot(new Object(), 0);
             slot.item = new ItemStack("test:plate", 3);
             GregTechMachines.outputSlots = List.of(slot);
@@ -289,10 +335,11 @@ public final class ProjectionLotsEmiTest {
             inventory = List.of(stock(item("test:plate", 3), 3));
             slot.item = ItemStack.EMPTY;
             OrigineFabrication.actualiser(nativeInventory());
-            owner.recevoir(OrigineFabrication.receptions());
-            assert owner.actifs().get(0).suivi().totalRecu() == 3;
-            assert owner.actifs().get(0).suivi().receptionNonAttribuee();
-            excluded(owner);
+            owner.recevoir(OrigineFabrication.provenances());
+            assert owner.actifs().get(0).suivi().totalRecu() == 0;
+            assert owner.actifs().get(1).suivi().totalRecu() == 3;
+            assert owner.actifs().get(1).suivi().receptionNonAttribuee();
+            assert quantity(only(project(owner)), "restants", "test:plate") == 10;
         } else if (scenario.equals("correlated_fluids")) {
             owner.vider();
             machine();
@@ -300,6 +347,7 @@ public final class ProjectionLotsEmiTest {
             inventory = List.of();
             owner.ajouter(recipe(EmiStack.of(fluid, null, 1000)), 1, new BlockPos(0, 64, 0));
             var tank = new GregTechMachines.Cuve();
+            tank.remplissable = true;
             tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(fluid, 1000));
             GregTechMachines.outputTanks = List.of(tank);
             owner.actualiser();
@@ -308,6 +356,37 @@ public final class ProjectionLotsEmiTest {
             owner.actualiser();
             assert owner.actifs().get(0).suivi().totalRecu() == 0;
             inventory = List.of(stock(EmiStack.of(fluid, null, 300), 300));
+            owner.actualiser();
+            owner.recevoir(List.of());
+            assert owner.actifs().get(0).suivi().totalRecu() == 0;
+            // Le clic d'une cuve d'entrée n'autorise aucun rapprochement.
+            owner.clicSortieFluide(new GregTechMachines.Cuve().widget());
+            tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(fluid, 600));
+            inventory = List.of(stock(EmiStack.of(fluid, null, 400), 400));
+            owner.actualiser();
+            assert owner.actifs().get(0).suivi().totalRecu() == 0;
+            // Le bon geste sur une sortie dont le liquide diffère du lot ne le crédite pas.
+            var autre = new Fluid("test:acid");
+            tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(autre, 600));
+            owner.actualiser();
+            owner.clicSortieFluide(tank.widget());
+            tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(autre, 300));
+            inventory =
+                    List.of(
+                            stock(EmiStack.of(fluid, null, 400), 400),
+                            stock(EmiStack.of(autre, null, 300), 300));
+            owner.actualiser();
+            assert owner.actifs().get(0).suivi().totalRecu() == 0;
+            tank.tank.setFluid(new net.minecraftforge.fluids.FluidStack(fluid, 300));
+            owner.actualiser();
+            owner.clicSortieFluide(tank.widget());
+            tank.tank.setFluid(net.minecraftforge.fluids.FluidStack.EMPTY);
+            owner.actualiser();
+            inventory =
+                    List.of(
+                            stock(EmiStack.of(fluid, null, 700), 700),
+                            stock(EmiStack.of(autre, null, 300), 300));
+            owner.actualiser();
             owner.actualiser();
             owner.recevoir(List.of());
             assert owner.actifs().get(0).suivi().totalRecu() == 300;

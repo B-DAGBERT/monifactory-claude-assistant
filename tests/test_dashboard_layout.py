@@ -42,7 +42,8 @@ public class LogUtils {public static org.slf4j.Logger getLogger(){return new org
         "net.minecraft.client.Minecraft": """
 public class Minecraft {private static Minecraft instance;public final net.minecraft.client.gui.Font font=new net.minecraft.client.gui.Font();
  public final MouseHandler mouseHandler=new MouseHandler();public net.minecraft.client.gui.screens.Screen screen;
- public Object player=new Object();public final Clavier keyboardHandler=new Clavier();
+ public Object player=new Object(),level=new Object(),connexion=new Object();public final Clavier keyboardHandler=new Clavier();
+ public Object getConnection(){return connexion;}
  public static class Clavier {public String copie="";public void setClipboard(String s){copie=s;}}
  public static Minecraft getInstance(){if(instance==null)instance=new Minecraft();return instance;}
  public void setScreen(net.minecraft.client.gui.screens.Screen s){screen=s;}}
@@ -78,7 +79,8 @@ public class Screen {protected Minecraft minecraft;protected Font font=new Font(
 """,
         "fr.assistantia.Pont": """
 import com.google.gson.*;
-public class Pont {public static JsonObject vue=new JsonObject();public static boolean actif=true,relance;
+public class Pont {public static JsonObject vue=new JsonObject();public static boolean actif=true,relance,envoiPossible=true;
+ public static int tentatives;
  public static final java.util.List<JsonObject> envois=new java.util.ArrayList<>();
  public static JsonObject vue(){return vue;}
  public static JsonObject partie(String k){return vue.has(k)&&vue.get(k).isJsonObject()?vue.getAsJsonObject(k):new JsonObject();}
@@ -87,8 +89,10 @@ public class Pont {public static JsonObject vue=new JsonObject();public static b
  public static double nombre(JsonObject j,String k,double d){return j.has(k)&&j.get(k).isJsonPrimitive()?j.get(k).getAsDouble():d;}
  public static JsonArray liste(JsonObject j,String k){return j.has(k)&&j.get(k).isJsonArray()?j.getAsJsonArray(k):new JsonArray();}
  public static boolean assistantActif(){return actif;}public static boolean relanceEnCours(){return relance;}
+ public static String cleContexte(){return "legacy";}
  public static boolean relancer(){return false;}
- public static boolean envoyer(JsonObject j){j.addProperty("n",1000+envois.size());envois.add(j.deepCopy());return true;}
+ public static boolean envoyer(JsonObject j){tentatives++;if(!envoiPossible)return false;
+  int n=1000+envois.size();j.addProperty("n",n);j.addProperty("requete","id-"+n);envois.add(j.deepCopy());return true;}
  public static net.minecraft.world.item.ItemStack objet(String id){return new net.minecraft.world.item.ItemStack(id);}}
 """,
         "net.minecraft.client.gui.GuiGraphics": """
@@ -189,7 +193,55 @@ public class DashboardLayoutTest {
   assert p[0]==champ.getX()+4&&p[0]+p[2]<=champ.getX()+champ.getWidth()-4:cas+": hint inside the field "+Arrays.toString(p);
  }
  static JsonObject reglage(String cle,String nom,String description,boolean valeur){var r=new JsonObject();r.addProperty("cle",cle);r.addProperty("nom",nom);r.addProperty("description",description);r.addProperty("valeur",valeur);return r;}
+ static JsonObject accuse(JsonObject ecran,long n,String id,String etat){
+  var demandes=new JsonObject();var recu=new JsonObject();recu.addProperty("n",n);
+  recu.addProperty("id",id);recu.addProperty("etat",etat);
+  demandes.add("derniere",recu);ecran.add("demandes",demandes);return recu;
+ }
+ static void etatReglages(){
+  var etat=new EtatReglages();var ecran=new JsonObject();var reglages=new JsonArray();
+  var voix=reglage("voix","Voix","",false);reglages.add(voix);ecran.add("reglages",reglages);
+  var connexion=new Object();var niveau=new Object();
+  var initial=new EtatReglages.Contexte("legacy",connexion,niveau);
+  etat.observer(initial,true,ecran,0);
+  assert etat.cliquer("voix",1);etat.echecEnvoi();
+  assert !etat.enAttente()&&etat.information().contains("impossible")&&!etat.cliquer("voix",5);
+  assert etat.cliquer("voix",500);etat.envoyer("voix",true,5,"a",500);
+  assert !etat.cliquer("panneau",510);
+  accuse(ecran,5,"autre","refusee");etat.observer(initial,true,ecran,520);
+  assert etat.enAttente()&&etat.information().contains("attente");
+  accuse(ecran,5,"a","refusee");etat.observer(initial,true,ecran,530);
+  assert !etat.enAttente()&&etat.information().contains("refusé")&&!EtatReglages.valeurPubliee(ecran,"voix");
+  assert etat.cliquer("voix",900);etat.envoyer("voix",true,6,"b",900);
+  accuse(ecran,6,"b","traitee");etat.observer(initial,true,ecran,1000);
+  assert etat.enAttente(): "l'accusé seul ne change pas la valeur";
+  accuse(ecran,7,"c","traitee");voix.addProperty("valeur",true);etat.observer(initial,true,ecran,1100);
+  assert !etat.enAttente()&&etat.information().isEmpty()&&EtatReglages.valeurPubliee(ecran,"voix");
+  assert !etat.cliquer("voix",1120):"double clic ignoré même après publication rapide";
+  assert etat.cliquer("voix",1300);etat.envoyer("voix",false,8,"d",1300);
+  etat.observer(initial,true,ecran,1300+EtatReglages.DELAI_REPONSE);
+  assert !etat.enAttente()&&etat.information().contains("Aucune confirmation");
+  assert etat.cliquer("voix",50000);etat.envoyer("voix",false,9,"e",50000);
+  accuse(ecran,9,"e","expiree");etat.observer(initial,true,ecran,50100);
+  assert !etat.enAttente()&&etat.information().contains("expirée");
+  assert etat.cliquer("voix",50500);etat.envoyer("voix",false,10,"f",50500);
+  accuse(ecran,10,"f","interrompue");etat.observer(initial,true,ecran,50600);
+  assert !etat.enAttente()&&etat.information().contains("interrompu");
+  assert etat.cliquer("voix",51000);etat.envoyer("voix",false,11,"g",51000);
+  etat.observer(initial,false,ecran,51100);
+  assert !etat.enAttente()&&etat.information().contains("Assistant arrêté");
+  assert etat.cliquer("voix",51500);etat.envoyer("voix",false,12,"h",51500);
+  var change=new EtatReglages.Contexte("legacy",connexion,new Object());
+  etat.observer(change,true,ecran,51600);
+  assert !etat.enAttente()&&etat.information().contains("dimension changée");
+  assert etat.cliquer("voix",51601);etat.envoyer("voix",false,13,"i",51601);
+  accuse(ecran,12,"h","refusee");etat.observer(change,true,ecran,51602);
+  assert etat.enAttente():"ancienne réponse ignorée";
+  etat.observer(new EtatReglages.Contexte("legacy",new Object(),new Object()),true,ecran,51603);
+  assert !etat.enAttente()&&etat.information().contains("Connexion");
+ }
  public static void main(String[] args){
+  etatReglages();
   var mc=Minecraft.getInstance();
   var ecran=new JsonObject();Pont.vue.add("ecran",ecran);Pont.vue.addProperty("moteur","Codex");
   ecran.add("question_recue",new JsonObject());ecran.addProperty("serveur",true);ecran.addProperty("coffres",12);
@@ -214,6 +266,7 @@ public class DashboardLayoutTest {
   boolean premier=true;
   for(int[] taille:new int[][]{{320,240},{480,270},{640,360}}){
    int w=taille[0],h=taille[1];String cas=w+"x"+h;
+   mc.level=new Object();
    var s=new EcranAssistant();mc.screen=s;s.init(mc,w,h);
    List<BoutonTheme> onglets=new ArrayList<>();for(String n:ONGLETS)onglets.add(bouton(s,n));
    render(s);
@@ -283,8 +336,11 @@ public class DashboardLayoutTest {
    assert voix!=null:cas+": voice toggle visible";
    int avant=Pont.envois.size();s.mouseClicked(voix[0]+2,voix[1]+2,0);
    assert Pont.envois.size()==avant+1&&Pont.texte(Pont.envois.get(avant),"cle").equals("voix")&&Pont.vrai(Pont.envois.get(avant),"valeur"):cas+": toggle click sends the setting";
-   render(s);assert interrupteur("Lecture à voix","✔ Activé")!=null:cas+": toggle shows the new value at once";
+   s.mouseClicked(voix[0]+2,voix[1]+2,0);render(s);
+   assert Pont.envois.size()==avant+1&&ecrit("Réglage en attente")!=null:cas+": single request with a visible pending status";
+   assert interrupteur("Lecture à voix","✘ Désactivé")!=null:cas+": still displays the applied value";
    voixPubliee.addProperty("valeur",true);render(s);
+   assert interrupteur("Lecture à voix","✔ Activé")!=null&&ecrit("Réglage en attente")==null:cas+": published value completes the request";
    voixPubliee.addProperty("valeur",false);render(s);
    // Discussion: scrolling up shows « Derniers messages », a theme button inside the view.
    onglets.get(2).onPress();render(s);
@@ -310,6 +366,21 @@ public class DashboardLayoutTest {
    assert GuiGraphics.textes.stream().anyMatch(t->t.contains("Machine 19"))&&GuiGraphics.textes.stream().noneMatch(t->t.contains("Machine 00")):cas+": scrolled to the last machine";
    for(int k=0;k<40;k++)s.mouseScrolled(w/2,h/2,1);
   }
+  mc.level=new Object();
+  var echec=new EcranAssistant();echec.init(mc,640,360);bouton(echec,"Réglages").onPress();render(echec);
+  int[] voix=interrupteur("Lecture à voix","✘ Désactivé");
+  assert voix!=null:"voice visible before injected failure";
+  Pont.envoiPossible=false;
+  int avant=Pont.envois.size();int tentatives=Pont.tentatives;
+  echec.mouseClicked(voix[0]+2,voix[1]+2,0);echec.mouseClicked(voix[0]+2,voix[1]+2,0);render(echec);
+  assert Pont.envois.size()==avant&&Pont.tentatives==tentatives+1:"failed write and double click submit no extra request";
+  assert ecrit("Envoi du réglage impossible")!=null&&interrupteur("Lecture à voix","✘ Désactivé")!=null;
+  Pont.envoiPossible=true;mc.level=new Object();render(echec);
+  echec.mouseClicked(voix[0]+2,voix[1]+2,0);
+  var requete=Pont.envois.get(avant);
+  accuse(ecran,requete.get("n").getAsLong(),Pont.texte(requete,"requete"),"refusee");
+  render(echec);
+  assert ecrit("Réglage refusé")!=null&&interrupteur("Lecture à voix","✘ Désactivé")!=null;
   System.out.println("PASS dashboard layout");
  }
 }
@@ -346,6 +417,7 @@ class DashboardLayoutTests(unittest.TestCase):
                 "OngletBase",
                 "OngletDiscussion",
                 "EtatDiscussion",
+                "EtatReglages",
                 "AvisMiseAJour",
                 "GroupesMachines",
             ):

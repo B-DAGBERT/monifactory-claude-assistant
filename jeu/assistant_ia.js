@@ -9,8 +9,8 @@
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 16  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
-const VERSION_RECETTES = 2 // export des recettes plus ancien : refait au chargement (2 : durée et EU/t des recettes GregTech)
+const VERSION_SCRIPT = 17  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_RECETTES = 3 // parties liées au manifeste publié après leur écriture
 const RECETTES_PAR_TICK = 400
 const RECETTES_PAR_FICHIER = 15000
 const STOCKAGE = /chest|barrel|crate|drawer|shulker|storage|cabinet|drum|safe|backpack/
@@ -701,7 +701,10 @@ function lancerExportRecettes() {
   gestionRecettes = premiereValeur([() => Client.level.getRecipeManager(), () => Client.level.m_7465_()])
   // Copie : la liste d'EMI est une liste interne de Java dont Rhino ne peut pas appeler get()
   const copie = new ArrayList(recettes)
-  exportRecettes = { liste: copie, total: copie.size(), i: 0, partie: 0, lignes: [], ok: 0, ratees: 0 }
+  const info = JsonIO.read(DOSSIER + 'recettes_info.json')
+  const groupe = info != null && str(info.get('groupe')) === 'a' ? 'b' : 'a'
+  const generation = Date.now() + '-' + Math.floor(Math.random() * 2147483648)
+  exportRecettes = { liste: copie, total: copie.size(), i: 0, partie: 0, lignes: [], ok: 0, ratees: 0, groupe: groupe, generation: generation }
   etatRecettes = { etat: 'export', progression: 0 }
 }
 
@@ -718,17 +721,19 @@ function avancerExportRecettes() {
     }
   }
   if (ex.lignes.length >= RECETTES_PAR_FICHIER || ex.i >= ex.total) {
-    JsonIO.write(DOSSIER + 'recettes_' + ex.partie + '.json', { recettes: ex.lignes })
+    JsonIO.write(DOSSIER + 'recettes_' + ex.groupe + '_' + ex.partie + '.json', {
+      generation: ex.generation, recettes: ex.lignes
+    })
     ex.partie++
     ex.lignes = []
   }
   etatRecettes = { etat: 'export', progression: Math.floor(ex.i * 100 / ex.total) }
   if (ex.i >= ex.total) {
     if (ex.ok > ex.total / 2) {
-      // Les parties en trop d'un export précédent plus long sont effacées (JsonIO.write avec null supprime)
-      for (let k = ex.partie; k < ex.partie + 20; k++) JsonIO.write(DOSSIER + 'recettes_' + k + '.json', null)
+      // Le groupe indiqué dans le manifeste précédent reste lisible pendant le nouvel export.
       JsonIO.write(DOSSIER + 'recettes_info.json', {
-        t: Date.now(), version: VERSION_RECETTES, nombre: ex.ok, ratees: ex.ratees, parties: ex.partie
+        t: Date.now(), version: VERSION_RECETTES, nombre: ex.ok, ratees: ex.ratees, parties: ex.partie,
+        groupe: ex.groupe, generation: ex.generation
       })
       etatRecettes = { etat: 'pret', nombre: ex.ok }
     } else {

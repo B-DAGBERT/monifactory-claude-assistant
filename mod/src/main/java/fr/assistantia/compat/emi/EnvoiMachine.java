@@ -11,14 +11,17 @@ import fr.assistantia.RetraitCoffre;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.IntConsumer;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.ToLongFunction;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
@@ -33,6 +36,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 /** Dépôt par les interactions normales du menu ; le serveur reste autoritaire. */
 public final class EnvoiMachine {
+    public record Diagnostic(String recette, String etat, String motif) {}
+
     public record Plan(
             EmiRecipe recette,
             Object arbre,
@@ -45,12 +50,156 @@ public final class EnvoiMachine {
         }
     }
 
+    private record Portee(
+            Object connexion, Object niveau, Object joueur, Object arbre, long revision) {
+        static Portee courante(Object arbre) {
+            var mc = Minecraft.getInstance();
+            return new Portee(
+                    mc.getConnection(),
+                    mc.level,
+                    mc.player,
+                    arbre,
+                    InstantaneArbreEmi.revisionStructureProduction());
+        }
+
+        boolean meme(Portee autre) {
+            return connexion == autre.connexion
+                    && niveau == autre.niveau
+                    && joueur == autre.joueur
+                    && arbre == autre.arbre
+                    && revision == autre.revision;
+        }
+    }
+
+    private record Envoi(
+            AbstractContainerScreen<?> ecran,
+            Plan plan,
+            Portee portee,
+            BlockPos position,
+            List<SequenceEnvoi.Action> actions,
+            Runnable succes,
+            IntConsumer partiel) {}
+
+    private record EtatMachine(List<ItemStack> objets, List<FluidStack> fluides) {
+        static EtatMachine relever(
+                AbstractContainerMenu menu, GregTechMachines.Interface ui, boolean sorties) {
+            try {
+                var cases = new ArrayList<>(ui.entrees());
+                var cuves = new ArrayList<>(ui.cuves());
+                if (sorties) {
+                    cases.addAll(GregTechMachines.sorties(menu));
+                    cuves.addAll(GregTechMachines.cuvesSortie(menu));
+                }
+                return new EtatMachine(
+                        cases.stream().filter(Slot::isActive).map(s -> s.getItem().copy()).toList(),
+                        cuves.stream().map(GregTechMachines.Cuve::contenu).toList());
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                return null;
+            }
+        }
+
+        boolean compare(EtatMachine autre, boolean exact) {
+            if (autre == null
+                    || objets.size() != autre.objets.size()
+                    || fluides.size() != autre.fluides.size()) return false;
+            for (int i = 0; i < objets.size(); i++) {
+                var avant = objets.get(i);
+                var apres = autre.objets.get(i);
+                if (avant.isEmpty() && (!exact || apres.isEmpty())) continue;
+                if (!ItemStack.isSameItemSameTags(avant, apres)
+                        || apres.getCount() < avant.getCount()
+                        || exact && avant.getCount() != apres.getCount()) return false;
+            }
+            for (int i = 0; i < fluides.size(); i++) {
+                var avant = fluides.get(i);
+                var apres = autre.fluides.get(i);
+                if (avant.isEmpty() && (!exact || apres.isEmpty())) continue;
+                if (!avant.isFluidEqual(apres)
+                        || apres.getAmount() < avant.getAmount()
+                        || exact && avant.getAmount() != apres.getAmount()) return false;
+            }
+            return true;
+        }
+
+        EtatMachine avecObjet(int index, ItemStack pile) {
+            if (index < 0) return null;
+            var simule = new ArrayList<>(objets);
+            simule.set(index, pile.copy());
+            return new EtatMachine(simule, fluides);
+        }
+
+        EtatMachine avecFluide(int index, FluidStack fluide) {
+            if (index < 0) return null;
+            var simule = new ArrayList<>(fluides);
+            simule.set(index, fluide.copy());
+            return new EtatMachine(objets, simule);
+        }
+    }
+
+    private record Tentative(
+            EtatMachine avant,
+            EtatMachine arrivee,
+            int emplacement,
+            ItemStack source,
+            ItemStack restant,
+            ItemStack retour) {
+        boolean reconciliee(Entrees entrees) {
+            if (avant == null) return false;
+            var reel = EtatMachine.relever(entrees.menu(), entrees.ui(), true);
+            for (var slot : entrees.joueurs()) {
+                if (slot.getContainerSlot() != emplacement) continue;
+                var pile = slot.getItem();
+                return avant.compare(reel, true) && meme(pile, source)
+                        || arrivee != null
+                                && arrivee.compare(reel, true)
+                                && (meme(pile, restant) || retour != null && meme(pile, retour));
+            }
+            return false;
+        }
+    }
+
+    private record Livraison(String nom, int quantite, boolean fluide) {}
+
+    private record Reprise(
+            EmiRecipe recette,
+            List<Livraison> livraisons,
+            EtatMachine dernierDepot,
+            Tentative tentative,
+            int cycles,
+            boolean consommationAmbigue) {
+        List<String> details() {
+            var lignes = new ArrayList<String>();
+            var objets = new LinkedHashMap<String, Integer>();
+            var fluides = new LinkedHashMap<String, Integer>();
+            for (var livraison : livraisons)
+                (livraison.fluide() ? fluides : objets)
+                        .merge(livraison.nom(), livraison.quantite(), Integer::sum);
+            objets.forEach((nom, quantite) -> lignes.add("Déposé · " + quantite + " × " + nom));
+            fluides.forEach(
+                    (nom, quantite) -> lignes.add("Déposé · " + quantite + " mB de " + nom));
+            if (cycles > 0) lignes.add("Fabrications déjà lancées · " + cycles);
+            if (tentative != null) lignes.add("Dernier dépôt non confirmé");
+            return lignes;
+        }
+
+        boolean autorisee(Entrees entrees, EmiRecipe recette) {
+            if (this.recette != recette || consommationAmbigue) return false;
+            if (!livraisons.isEmpty()
+                    && (dernierDepot == null
+                            || !dernierDepot.compare(
+                                    EtatMachine.relever(entrees.menu(), entrees.ui(), false),
+                                    false))) return false;
+            return tentative == null || tentative.reconciliee(entrees);
+        }
+    }
+
     private static SequenceEnvoi sequence;
-    private static AbstractContainerScreen<?> ecran;
-    private static Object arbre;
-    private static Runnable succes;
+    private static Envoi lancement;
+    private static Portee porteeReprises;
+    private static final Map<BlockPos, Reprise> REPRISES = new HashMap<>();
     private static long dernierClic;
     private static String statut = "";
+    private static Diagnostic diagnostic = new Diagnostic("", "aucun", "aucun");
 
     public static boolean occupe() {
         return sequence != null;
@@ -58,6 +207,15 @@ public final class EnvoiMachine {
 
     public static String statut() {
         return sequence == null ? statut : "Envoi " + sequence.progression() + " %";
+    }
+
+    public static Diagnostic diagnostic() {
+        return diagnostic;
+    }
+
+    private static void diagnostiquer(EmiRecipe recette, String etat, String motif) {
+        var identifiant = recette == null ? null : recette.getId();
+        diagnostic = new Diagnostic(identifiant == null ? "" : identifiant.toString(), etat, motif);
     }
 
     public static void effacerStatut() {
@@ -72,6 +230,14 @@ public final class EnvoiMachine {
     private static boolean meme(ItemStack a, ItemStack b) {
         return a.isEmpty() && b.isEmpty()
                 || ItemStack.isSameItemSameTags(a, b) && a.getCount() == b.getCount();
+    }
+
+    private static Map<BlockPos, Reprise> reprises(Portee portee) {
+        if (porteeReprises == null || !porteeReprises.meme(portee)) {
+            REPRISES.clear();
+            porteeReprises = portee;
+        }
+        return REPRISES;
     }
 
     private static void clic(AbstractContainerMenu menu, Slot slot, int bouton) {
@@ -151,9 +317,9 @@ public final class EnvoiMachine {
             List<EmiIngredient> ingredients,
             int circuit) {}
 
-    private static Entrees lireEntrees(AbstractContainerMenu menu, EmiRecipe recette)
+    private static Entrees lireEntrees(
+            AbstractContainerMenu menu, EmiRecipe recette, GregTechMachines.Interface ui)
             throws ReflectiveOperationException {
-        var ui = GregTechMachines.ouvrir(menu);
         verifier(
                 ui != null && GregTechMachines.compatible(ui.machine(), recette),
                 "Machine incompatible");
@@ -213,28 +379,93 @@ public final class EnvoiMachine {
 
     public static Plan preparer(AbstractContainerScreen<?> screen, EmiRecipe recipe, int demande) {
         if (demande <= 0) return vide("Ingrédients manquants");
+        Reprise reprise = null;
         try {
             Object arbre = ArbreEmi.actif();
             if (arbre == null) return vide("Arbre EMI inactif");
-            var entrees = lireEntrees(screen.getMenu(), recipe);
+            var menu = screen.getMenu();
+            var ui = GregTechMachines.ouvrir(menu);
+            if (ui != null) reprise = reprises(Portee.courante(arbre)).get(ui.position());
+            var entrees = lireEntrees(menu, recipe, ui);
+            if (reprise != null && !reprise.autorisee(entrees, recipe))
+                return decrireReprise(vide("Reprise à vérifier dans la machine"), reprise);
             Plan dernier = vide("Ingrédients manquants");
             for (int n = borneObjets(entrees, recipe, Math.min(64, demande)); n >= 1; n--) {
                 dernier = calculer(entrees, recipe, arbre, n, null);
-                if (dernier.possible()) return dernier;
+                if (dernier.possible()) break;
             }
-            return dernier;
+            return decrireReprise(dernier, reprise);
         } catch (IllegalStateException e) {
-            return vide(
-                    e.getMessage() == null
-                            ? "Entrées de cette machine non disponibles"
-                            : e.getMessage());
+            return decrireReprise(
+                    vide(
+                            e.getMessage() == null
+                                    ? "Entrées de cette machine non disponibles"
+                                    : e.getMessage()),
+                    reprise);
         } catch (ReflectiveOperationException | RuntimeException e) {
-            return vide("Entrées de cette machine non disponibles");
+            return decrireReprise(vide("Entrées de cette machine non disponibles"), reprise);
         }
+    }
+
+    private static Plan decrireReprise(Plan plan, Reprise reprise) {
+        if (reprise == null) return plan;
+        var details = reprise.details();
+        if (plan.possible()) details.add("Envoyer reprend avec ce qui manque encore.");
+        details.addAll(plan.details());
+        return new Plan(
+                plan.recette(),
+                plan.arbre(),
+                plan.machine(),
+                plan.fois(),
+                List.copyOf(details),
+                plan.probleme());
     }
 
     private static Plan vide(String message) {
         return new Plan(null, null, null, 0, List.of(), message);
+    }
+
+    private static final class ApercuFluide {
+        private final String nom;
+        private final int present;
+        private final Map<String, Integer> retours = new LinkedHashMap<>();
+        private int besoin, envoye;
+
+        private ApercuFluide(String nom, int present) {
+            this.nom = nom;
+            this.present = present;
+        }
+
+        private void ajouter(int volume, ItemStack retour) {
+            envoye += volume;
+            if (retour.isEmpty()) return;
+            String nomRetour = EmiStack.of(retour).getName().getString();
+            int reste = FluidUtil.getFluidContained(retour).map(FluidStack::getAmount).orElse(0);
+            if (reste > 0) nomRetour += " (" + reste + " mB restants)";
+            retours.merge(nomRetour, 1, Integer::sum);
+        }
+
+        private void decrire(List<String> lignes) {
+            lignes.add(
+                    nom
+                            + " · "
+                            + envoye
+                            + " mB à envoyer (besoin "
+                            + besoin
+                            + " mB, en cuve "
+                            + present
+                            + " mB)");
+            if (envoye > 0)
+                lignes.add(
+                        retours.isEmpty()
+                                ? "Aucun contenant rendu"
+                                : "Retour · "
+                                        + String.join(
+                                                ", ",
+                                                retours.entrySet().stream()
+                                                        .map(r -> r.getValue() + " × " + r.getKey())
+                                                        .toList()));
+        }
     }
 
     private static Plan calculer(
@@ -273,7 +504,7 @@ public final class EnvoiMachine {
         var items = new ArrayList<PlanRetrait.Besoin<ItemStack>>();
         var nomsItems = new ArrayList<String>();
         var tous = entrees.ingredients();
-        Map<String, Integer> fluidesDemandes = new HashMap<>();
+        Map<String, ApercuFluide> fluidesDemandes = new LinkedHashMap<>();
         Map<String, Integer> outilsDemandes = new HashMap<>();
         for (int k = 0; k < tous.size(); k++) {
             var ingredient = tous.get(k);
@@ -316,14 +547,22 @@ public final class EnvoiMachine {
                             .sorted()
                             .toList()
                             .toString();
-            besoin = fluidesDemandes.merge(cleFluide, besoin, Integer::sum);
             int present = 0;
             for (var c : cuves)
                 if (accepte(ingredient, c.getFluid())) present += c.getFluidAmount();
-            int manque = Math.max(0, besoin - present), envoye = 0;
+            var apercu = fluidesDemandes.get(cleFluide);
+            if (apercu == null) {
+                apercu =
+                        new ApercuFluide(
+                                ingredient.getEmiStacks().get(0).getName().getString(), present);
+                fluidesDemandes.put(cleFluide, apercu);
+            }
+            apercu.besoin += besoin;
+            int manque = Math.max(0, apercu.besoin - present);
             int garde = 0;
             while (manque > 0 && garde++ < 128) {
                 boolean trouve = false;
+                boolean contenantCompatible = false;
                 for (Slot src : joueurs) {
                     ItemStack pile = simulation.get(src);
                     if (pile.isEmpty()) continue;
@@ -331,6 +570,7 @@ public final class EnvoiMachine {
                     un.setCount(1);
                     FluidStack contenu = FluidUtil.getFluidContained(un).orElse(FluidStack.EMPTY);
                     if (!accepte(ingredient, contenu)) continue;
+                    contenantCompatible = true;
                     for (int t = 0; t < cuves.size(); t++) {
                         var cuve = cuves.get(t);
                         if (!cuve.getFluid().isEmpty() && !cuve.getFluid().isFluidEqual(contenu))
@@ -380,7 +620,7 @@ public final class EnvoiMachine {
                         simulation.put(src, restant);
                         simulation.put(retour, vide);
                         manque = Math.max(0, manque - volume);
-                        envoye += volume;
+                        apercu.ajouter(volume, vide);
                         trouve = true;
                         break;
                     }
@@ -388,18 +628,13 @@ public final class EnvoiMachine {
                 }
                 if (!trouve)
                     return vide(
-                            "Fluide manquant ou cuve pleine : "
-                                    + ingredient.getEmiStacks().get(0).getName().getString());
+                            contenantCompatible
+                                    ? "Cuve pleine ou incompatible · " + apercu.nom
+                                    : "Fluide manquant · " + manque + " mB de " + apercu.nom);
             }
             if (manque > 0) return vide("Trop de contenants pour un envoi");
-            details.add(
-                    ingredient.getEmiStacks().get(0).getName().getString()
-                            + " : "
-                            + envoye
-                            + " mB à envoyer (besoin "
-                            + besoin
-                            + " mB)");
         }
+        fluidesDemandes.values().forEach(apercu -> apercu.decrire(details));
         // Réserver les entrées existantes avant les objets du joueur, avec les équivalences EMI.
         List<Slot> sources = new ArrayList<>(ui.entrees());
         sources.addAll(joueurs);
@@ -536,11 +771,52 @@ public final class EnvoiMachine {
         private long fabricationsDemarrees, fabricationsSorties;
         private Runnable desabonner = () -> {};
         private boolean bilanNatifSimple, autreRecetteObservee, recetteRecue;
+        private Tentative tentative;
+        private Livraison livraison;
+        private EtatMachine apres;
+        private boolean acquittee, consommationAmbigue;
+        private int cycles;
 
         Depot(AbstractContainerMenu menu, GregTechMachines.Interface ui, EmiRecipe recette) {
             this.menu = menu;
             this.ui = ui;
             this.recette = recette;
+        }
+
+        final void avantClic(
+                Slot src,
+                ItemStack source,
+                ItemStack restant,
+                ItemStack retour,
+                Livraison livraison,
+                java.util.function.UnaryOperator<EtatMachine> arrivee) {
+            var avant = EtatMachine.relever(menu, ui, true);
+            tentative =
+                    new Tentative(
+                            avant,
+                            avant == null ? null : arrivee.apply(avant),
+                            src.getContainerSlot(),
+                            source.copy(),
+                            restant.copy(),
+                            retour == null ? null : retour.copy());
+            this.livraison = livraison;
+        }
+
+        @Override
+        public final void acquittee() {
+            if (tentative == null) return;
+            acquittee = true;
+            apres = EtatMachine.relever(menu, ui, false);
+            if (consommationConfirmee()) {
+                try {
+                    long fabrications = bilanConsommation.getAsLong();
+                    if (cycleAvecIdentite(fabrications))
+                        cycles = (int) Math.min(fabrications, Integer.MAX_VALUE);
+                    else consommationAmbigue = true;
+                } catch (RuntimeException e) {
+                    consommationAmbigue = true;
+                }
+            }
         }
 
         final void avantDepot(
@@ -638,14 +914,7 @@ public final class EnvoiMachine {
             try {
                 long fabrications = bilanConsommation.getAsLong();
                 // La dernière sortie peut être synchronisée après la disparition de l'ID.
-                return fabrications == 1 && fabricationsDemarrees >= 1
-                        || fabrications > 0
-                                && (recetteRecue && !autreRecetteObservee
-                                        || fabrications
-                                                <= Math.max(
-                                                        fabricationsDemarrees, fabricationsSorties))
-                                && sorties != null
-                                && sorties.nouvellesSorties(fabrications)
+                return cycleAvecIdentite(fabrications)
                         // LDLib peut publier uniquement l'état final d'un cycle très court.
                         || fabrications == 1
                                 && bilanNatifSimple
@@ -654,6 +923,16 @@ public final class EnvoiMachine {
             } catch (RuntimeException e) {
                 return false;
             }
+        }
+
+        private boolean cycleAvecIdentite(long fabrications) {
+            return fabrications == 1 && fabricationsDemarrees >= 1
+                    || fabrications > 0
+                            && (recetteRecue && !autreRecetteObservee
+                                    || fabrications
+                                            <= Math.max(fabricationsDemarrees, fabricationsSorties))
+                            && sorties != null
+                            && sorties.nouvellesSorties(fabrications);
         }
     }
 
@@ -699,6 +978,19 @@ public final class EnvoiMachine {
                                         .sum(),
                         n,
                         original);
+                avantClic(
+                        src,
+                        original,
+                        restant,
+                        null,
+                        new Livraison(EmiStack.of(original).getName().getString(), n, false),
+                        etat ->
+                                etat.avecObjet(
+                                        ui.entrees().stream()
+                                                .filter(Slot::isActive)
+                                                .toList()
+                                                .indexOf(dest),
+                                        destinationAttendue));
                 clic(menu, src, 0);
                 if (n == original.getCount()) clic(menu, dest, 0);
                 else {
@@ -776,6 +1068,7 @@ public final class EnvoiMachine {
                         essai.isSuccess() && meme(essai.getResult(), vide),
                         "Volume disponible dans la cuve modifié");
                 destinationAttendue = simulation.getFluid().copy();
+                int volume = destinationAttendue.getAmount() - avant;
                 avantDepot(
                         i -> accepte(i, destinationAttendue),
                         i ->
@@ -784,8 +1077,20 @@ public final class EnvoiMachine {
                                         .filter(f -> accepte(i, f))
                                         .mapToLong(FluidStack::getAmount)
                                         .sum(),
-                        destinationAttendue.getAmount() - avant,
+                        volume,
                         ItemStack.EMPTY);
+                var fluide =
+                        EmiStack.of(
+                                destinationAttendue.getFluid(),
+                                destinationAttendue.getTag(),
+                                volume);
+                avantClic(
+                        src,
+                        original,
+                        restant,
+                        retour == src ? vide : null,
+                        new Livraison(fluide.getName().getString(), volume, true),
+                        etat -> etat.avecFluide(ui.cuves().indexOf(cuve), destinationAttendue));
                 cuve.viderContenant();
             }
 
@@ -848,6 +1153,11 @@ public final class EnvoiMachine {
     }
 
     public static void lancer(AbstractContainerScreen<?> screen, Plan plan, Runnable termine) {
+        lancer(screen, plan, termine, cycles -> {});
+    }
+
+    static void lancer(
+            AbstractContainerScreen<?> screen, Plan plan, Runnable termine, IntConsumer partiel) {
         var mc = Minecraft.getInstance();
         if (occupe()
                 || RetraitCoffre.occupe()
@@ -859,15 +1169,24 @@ public final class EnvoiMachine {
                 || !screen.getMenu().getCarried().isEmpty()
                 || System.nanoTime() - dernierClic < 1_000_000_000L) return;
         var actions = new ArrayList<SequenceEnvoi.Action>();
+        Portee portee;
+        BlockPos position;
         try {
             Object courant = ArbreEmi.actif();
             verifier(courant != null && courant == plan.arbre(), "Arbre EMI changé");
-            var entrees = lireEntrees(screen.getMenu(), plan.recette());
+            portee = Portee.courante(courant);
+            var menu = screen.getMenu();
+            var entrees = lireEntrees(menu, plan.recette(), GregTechMachines.ouvrir(menu));
             verifier(entrees.ui().machine() == plan.machine(), "Machine changée");
+            position = entrees.ui().position().immutable();
+            var reprise = reprises(portee).get(position);
+            verifier(
+                    reprise == null || reprise.autorisee(entrees, plan.recette()),
+                    "Reprise à vérifier dans la machine");
             var confirme = calculer(entrees, plan.recette(), courant, plan.fois(), actions);
             verifier(confirme.possible(), confirme.probleme());
-            arbre = courant;
         } catch (IllegalStateException e) {
+            diagnostiquer(plan.recette(), "refuse", "preconditions_transfert");
             statut =
                     e.getMessage() == null
                             ? "Entrées de cette machine non disponibles"
@@ -875,53 +1194,109 @@ public final class EnvoiMachine {
             mc.player.displayClientMessage(Component.literal(statut), false);
             return;
         } catch (ReflectiveOperationException | RuntimeException e) {
+            diagnostiquer(plan.recette(), "refuse", "entrees_indisponibles");
             statut = "Entrées de cette machine non disponibles";
             mc.player.displayClientMessage(Component.literal(statut), false);
             return;
         }
         dernierClic = System.nanoTime();
-        ecran = screen;
-        succes = termine;
+        lancement =
+                new Envoi(screen, plan, portee, position, List.copyOf(actions), termine, partiel);
         sequence = new SequenceEnvoi(actions);
         statut = "Envoi en cours…";
+        diagnostiquer(plan.recette(), "en_cours", "aucun");
     }
 
     public static void arreter() {
         if (sequence != null) sequence.annuler("Envoi interrompu");
     }
 
+    private static Reprise noterInterruption(Envoi envoi) throws ReflectiveOperationException {
+        if (!envoi.portee().meme(Portee.courante(ArbreEmi.actif()))) return null;
+        var dossiers = reprises(envoi.portee());
+        var precedent = dossiers.get(envoi.position());
+        var livraisons = new ArrayList<Livraison>();
+        EtatMachine dernierDepot = precedent == null ? null : precedent.dernierDepot();
+        Tentative tentative = null;
+        boolean tentativeEnvoyee = false;
+        boolean ambigu = false;
+        long cycles = 0;
+        for (var action : envoi.actions()) {
+            if (!(action instanceof Depot depot) || depot.tentative == null) continue;
+            tentativeEnvoyee = true;
+            if (depot.acquittee) {
+                livraisons.add(depot.livraison);
+                dernierDepot = depot.apres;
+                cycles += depot.cycles;
+                ambigu |= depot.consommationAmbigue;
+            } else tentative = depot.tentative;
+        }
+        if (!tentativeEnvoyee) return precedent;
+        int nouveauxCycles = (int) Math.min(cycles, envoi.plan().fois());
+        if (precedent != null) livraisons.addAll(0, precedent.livraisons());
+        var reprise =
+                new Reprise(
+                        envoi.plan().recette(),
+                        List.copyOf(livraisons),
+                        dernierDepot,
+                        tentative,
+                        nouveauxCycles + (precedent == null ? 0 : precedent.cycles()),
+                        ambigu);
+        dossiers.put(envoi.position(), reprise);
+        if (nouveauxCycles > 0) envoi.partiel().accept(nouveauxCycles);
+        return reprise;
+    }
+
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || sequence == null) return;
         var mc = Minecraft.getInstance();
+        var envoi = lancement;
+        String motif = null;
         try {
             if (mc.player == null
-                    || mc.screen != ecran
-                    || mc.player.containerMenu != ecran.getMenu()
-                    || ArbreEmi.actif() != arbre)
+                    || mc.screen != envoi.ecran()
+                    || mc.player.containerMenu != envoi.ecran().getMenu()
+                    || !envoi.portee().meme(Portee.courante(ArbreEmi.actif()))) {
+                motif = "contexte_change";
                 sequence.annuler("Envoi interrompu : interface ou arbre EMI changé");
-            sequence.tick();
-            if (sequence.terminee()) {
-                if (sequence.reussie()) {
-                    succes.run();
-                    statut = "Envoyé · récupère le résultat dans la machine";
-                } else {
-                    statut = sequence.erreur();
-                    if (mc.player != null)
-                        mc.player.displayClientMessage(Component.literal(statut), false);
-                }
-                sequence = null;
-                ecran = null;
-                succes = null;
             }
+            sequence.tick();
         } catch (Exception e) {
+            motif = "observation_indisponible";
             sequence.annuler("Envoi interrompu : vérifie les entrées de la machine");
-            sequence = null;
-            ecran = null;
-            succes = null;
-            arbre = null;
-            statut = "Envoi interrompu : vérifie les entrées de la machine";
-            if (mc.player != null) mc.player.displayClientMessage(Component.literal(statut), false);
         }
+        if (!sequence.terminee()) return;
+        var fin = sequence;
+        sequence = null;
+        lancement = null;
+        try {
+            if (fin.reussie()) {
+                reprises(envoi.portee()).remove(envoi.position());
+                envoi.succes().run();
+                statut = "Envoyé · récupère le résultat dans la machine";
+                diagnostiquer(envoi.plan().recette(), "reussi", "aucun");
+                return;
+            }
+            if (motif == null)
+                motif =
+                        switch (fin.echec()) {
+                            case NON_CONFIRME -> "confirmation_absente";
+                            case ACTION_REFUSEE -> "action_refusee";
+                            default -> "interruption";
+                        };
+            diagnostiquer(envoi.plan().recette(), "interrompu", motif);
+            statut = fin.erreur();
+            var reprise = noterInterruption(envoi);
+            if (reprise != null) {
+                int n = reprise.livraisons().size();
+                if (n > 0) statut += " · " + n + (n == 1 ? " dépôt confirmé" : " dépôts confirmés");
+                if (reprise.tentative() != null) statut += " · dernier dépôt à vérifier";
+            }
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            diagnostiquer(envoi.plan().recette(), "interrompu", "suivi_indisponible");
+            statut = "Envoi interrompu : vérifie les entrées de la machine";
+        }
+        if (mc.player != null) mc.player.displayClientMessage(Component.literal(statut), false);
     }
 }

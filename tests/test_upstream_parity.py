@@ -136,6 +136,7 @@ class ParityTests(unittest.TestCase):
         gameplay_changes = {
             "App.refresh",
             "App.check_game",
+            "App.run",  # Stop the snapshot writer when Tk closes; test_world_routing.py.
             "App.machine_at",  # restrict live machine lookup to the requested dimension
             "App.coach",
             "App.flush_coach",
@@ -266,6 +267,8 @@ class ParityTests(unittest.TestCase):
         # ecrireEtat, ecrireQuetes, suivreConteneur and recevoirMonde also write only on change
         # (or debounced) and hand file work to the mod's writer thread; test_kubejs_exports.py.
         allowed = {
+            "lancerExportRecettes",
+            "avancerExportRecettes",  # Manifest and generation isolation; test_recipe_loading.py.
             "ecrireEtat",
             "ecrireQuetes",
             "chargerStockage",

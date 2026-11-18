@@ -338,10 +338,10 @@ public class CoffreTamponTest {
         MC.connection = new ClientPacketListener();
         tick();
         assert !CoffreTampon.exclu("test:world", 7, 90, -4);
-        verifierFraicheur(pos, item);
+        verifierPermanence(pos, item);
     }
 
-    static void verifierFraicheur(BlockPos pos, Item item) {
+    static void verifierPermanence(BlockPos pos, Item item) {
         toggle(pos);
         var menu = open(new StorageContainerMenu(pos));
         RetraitCoffre.piles = List.of(new ItemStack(item, 5));
@@ -351,26 +351,30 @@ public class CoffreTamponTest {
         assert etat(pos) == CoffreTampon.EtatReleve.DERNIERE_OUVERTURE;
         long derniereRevision = CoffreTampon.revision();
         RetraitCoffre.piles = List.of(new ItemStack(item, 2)); // Changement sans menu observé.
-        maintenant += 59_000_000_000L;
+        maintenant += 720_000_000_000L;
         tick();
-        assert stock() == 5 && CoffreTampon.revision() == derniereRevision;
-        maintenant += 1_000_000_000L;
-        tick();
-        assert stock() == 0 && etat(pos) == CoffreTampon.EtatReleve.A_REVOIR;
+        assert stock() == 5 && etat(pos) == CoffreTampon.EtatReleve.DERNIERE_OUVERTURE;
         assert CoffreTampon.selectionne("test:world", 7, 90, -4);
-        assert CoffreTampon.revision() == derniereRevision + 1;
+        assert !CoffreTampon.selectionne("test:other_world", 7, 90, -4);
+        assert CoffreTampon.revision() == derniereRevision : "le temps seul ne change rien";
+        toggle(pos);
+        maintenant += 720_000_000_000L;
         tick();
-        assert CoffreTampon.revision() == derniereRevision + 1 : "expiry is signalled once";
+        toggle(pos);
+        assert stock() == 5 : "reselection reuses the last observed content";
 
         StockProduction.initialise = false;
         menu = open(new StorageContainerMenu(pos));
         tick();
-        assert stock() == 0 && etat(pos) == CoffreTampon.EtatReleve.A_REVOIR;
+        assert stock() == 5 && etat(pos) == CoffreTampon.EtatReleve.DERNIERE_OUVERTURE;
         StockProduction.initialise = true;
         tick();
         assert stock() == 2 && etat(pos) == CoffreTampon.EtatReleve.DIRECT;
+        RetraitCoffre.piles = List.of(new ItemStack(item, 3));
+        tick();
+        assert stock() == 3 && etat(pos) == CoffreTampon.EtatReleve.DIRECT;
         close(menu);
-        assert stock() == 2 && etat(pos) == CoffreTampon.EtatReleve.DERNIERE_OUVERTURE;
+        assert stock() == 3 && etat(pos) == CoffreTampon.EtatReleve.DERNIERE_OUVERTURE;
     }
 }
 """

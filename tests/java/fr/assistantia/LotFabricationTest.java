@@ -59,5 +59,14 @@ public class LotFabricationTest {
                 .equals(List.of(s("acid", 500)));
         assert comparaisons[0] < 5000
                 : "les objets sans rapport du backpack ne sont pas comparés entre eux";
+        var geste = new ReceptionSortie<String>(String::equals, true);
+        geste.actualiser(List.of(), List.of(s("plate", 4)));
+        geste.autoriser("plate", 4);
+        assert geste.actualiser(List.of(s("plate", 1)), List.of(s("plate", 3)))
+                .equals(List.of(s("plate", 1)));
+        for (int i = 0; i < 3; i++)
+            geste.actualiser(List.of(s("plate", 1)), List.of(s("plate", 3)));
+        assert geste.actualiser(List.of(s("plate", 2)), List.of(s("plate", 2))).isEmpty()
+                : "la quantité inutilisée d'un geste ne couvre pas un deuxième mouvement";
     }
 }

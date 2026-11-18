@@ -30,6 +30,7 @@ final class SuiviLotsEmi {
     private final java.util.Map<Integer, Object> origines = new java.util.HashMap<>();
     private final java.util.Map<Integer, Object> arbresTermines = new java.util.HashMap<>();
     private List<PlanRetrait.Stock<EmiStack>> inventaireAssimile;
+    private OrigineFabrication.Provenances derniereReception;
     private final ReceptionManuelle<EmiStack> receptionManuelle =
             new ReceptionManuelle<>(ComparaisonEmi::meme);
     private long revision;
@@ -39,7 +40,7 @@ final class SuiviLotsEmi {
     private List<Slot> sortiesObservees = List.of();
     private List<GregTechMachines.Cuve> cuvesObservees = List.of();
     private ReceptionSortie<EmiStack> receptionFluides =
-            new ReceptionSortie<>(ComparaisonEmi::meme);
+            new ReceptionSortie<>(SuiviLotsEmi::memeFluide, true);
 
     SuiviLotsEmi(Supplier<List<PlanRetrait.Stock<EmiStack>>> inventaire, Runnable changement) {
         this(inventaire, changement, () -> null);
@@ -105,6 +106,7 @@ final class SuiviLotsEmi {
         machineObservee = null;
         sortiesObservees = List.of();
         cuvesObservees = List.of();
+        receptionFluides = new ReceptionSortie<>(SuiviLotsEmi::memeFluide, true);
     }
 
     void vider() {
@@ -113,6 +115,7 @@ final class SuiviLotsEmi {
         arbresTermines.clear();
         retiresDuSuivi.clear();
         inventaireAssimile = null;
+        derniereReception = null;
         oublierInterface();
         receptionManuelle.vider();
         modifie();
@@ -225,48 +228,55 @@ final class SuiviLotsEmi {
         return id;
     }
 
-    void recevoir(List<PlanRetrait.Stock<ItemStack>> objets) {
+    private static List<PlanRetrait.Stock<EmiStack>> objets(
+            List<PlanRetrait.Stock<ItemStack>> stock) {
+        return stock.stream()
+                .map(s -> new PlanRetrait.Stock<>(EmiStack.of(s.objet()), s.quantite(), true))
+                .toList();
+    }
+
+    void recevoir(OrigineFabrication.Provenances provenances) {
+        if (provenances == derniereReception) return;
+        derniereReception = provenances;
+        recevoir(provenances.crafts(), provenances.machine());
+    }
+
+    void recevoir(List<PlanRetrait.Stock<ItemStack>> crafts) {
+        recevoir(crafts, null);
+    }
+
+    private void recevoir(
+            List<PlanRetrait.Stock<ItemStack>> crafts,
+            OrigineFabrication.ReceptionMachine machine) {
         if (lots.isEmpty()) return;
-        List<PlanRetrait.Stock<EmiStack>> gains =
-                objets.stream()
-                        .map(
-                                s ->
-                                        new PlanRetrait.Stock<>(
-                                                EmiStack.of(s.objet()), s.quantite(), true))
-                        .toList();
         var player = Minecraft.getInstance().player;
         if (player == null) return;
-        List<PlanRetrait.Stock<EmiStack>> restants = gains;
-        List<PlanRetrait.Stock<EmiStack>> attendusAutomatiques = new ArrayList<>();
-        try {
-            var ui = GregTechMachines.ouvrir(player.containerMenu);
-            if (ui != null) {
-                for (var lot : lots)
-                    if (lot.ici(ui.position())) attendusAutomatiques.addAll(lot.suivi().restants());
-                restants = recevoir(gains, ui.position());
-            }
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            // Conserver le rapprochement historique seulement si la machine est lisible.
+        var directs = objets(crafts);
+        List<PlanRetrait.Stock<EmiStack>> retraitsMachine = List.of();
+        if (machine != null && player.containerMenu == machine.menu()) {
+            retraitsMachine = objets(machine.objets());
+            recevoirMachine(retraitsMachine, machine.position());
         }
-        var attribues = receptionManuelle.soustraire(gains, restants);
+        var attendusAutomatiques =
+                receptionManuelle.soustraire(
+                        objets(OrigineFabrication.retraitsAttendus(player.containerMenu)), directs);
         var personnels = inventaire.get();
         var nouveaux =
-                receptionManuelle.actualiser(personnels, attribues, attendusAutomatiques, restants);
+                receptionManuelle.actualiser(
+                        personnels, retraitsMachine, attendusAutomatiques, directs);
         memoriserInventaire(personnels);
         if (nouveaux.isEmpty()) return;
         var distribution =
                 fr.assistantia.ReceptionLots.repartir(
                         nouveaux,
                         lots.stream()
+                                .filter(LotMachine::manuel)
                                 .map(
                                         l ->
                                                 new fr.assistantia.ReceptionLots.Source<>(
                                                         l.suivi(),
                                                         (java.util.function.Predicate<EmiStack>)
-                                                                s ->
-                                                                        l.manuel()
-                                                                                || !s.getItemStack()
-                                                                                        .isEmpty()))
+                                                                s -> true))
                                 .toList(),
                         false);
         if (distribution.change()) {
@@ -274,20 +284,60 @@ final class SuiviLotsEmi {
         }
     }
 
-    private List<PlanRetrait.Stock<EmiStack>> recevoir(
-            List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position) {
-        if (gains.isEmpty()) return gains;
-        for (var lot : lots)
-            if (lot.ici(position)) {
-                int avant = lot.suivi().totalRecu();
-                // Objets et fluides : une baisse de sortie + un gain proche ne portent aucun
-                // identifiant de transfert. Le suivi reste inchangé, pas une preuve Production.
-                gains = lot.suivi().recevoir(gains, false);
-                if (avant != lot.suivi().totalRecu()) {
-                    modifie();
-                }
+    private void recevoirMachine(List<PlanRetrait.Stock<EmiStack>> gains, BlockPos position) {
+        boolean change = false;
+        for (var gain : gains) {
+            var candidats =
+                    lots.stream()
+                            .filter(l -> l.ici(position))
+                            .filter(
+                                    l ->
+                                            l.suivi().restants().stream()
+                                                    .anyMatch(
+                                                            r ->
+                                                                    ComparaisonEmi.meme(
+                                                                            r.objet(),
+                                                                            gain.objet())))
+                            .toList();
+            if (candidats.isEmpty()) continue;
+            var recette = candidats.get(0).recette();
+            // Dans une même machine, deux recettes différentes peuvent produire le même objet.
+            if (candidats.stream().anyMatch(lot -> lot.recette() != recette)) continue;
+            var reste = List.of(gain);
+            for (var lot : candidats) {
+                var suivi = lot.suivi();
+                int avant = suivi.totalRecu();
+                // Ordre de lancement pour une même recette exacte ; preuve locale uniquement.
+                reste = suivi.recevoir(reste, false);
+                change |= avant != suivi.totalRecu();
+                if (reste.isEmpty()) break;
             }
-        return gains;
+        }
+        if (change) modifie();
+    }
+
+    private static boolean memeFluide(EmiStack a, EmiStack b) {
+        return a.getKey().equals(b.getKey()) && java.util.Objects.equals(a.getNbt(), b.getNbt());
+    }
+
+    void clicSortieFluide(Object widget) {
+        var player = Minecraft.getInstance().player;
+        if (player == null || player.containerMenu != menuObserve || machineObservee == null)
+            return;
+        for (var cuve : cuvesObservees)
+            if (cuve.widget() == widget) {
+                try {
+                    if (!cuve.peutRemplirContenant()) return;
+                    var fluide = cuve.contenu();
+                    if (!fluide.isEmpty())
+                        receptionFluides.autoriser(
+                                EmiStack.of(fluide.getFluid(), fluide.getTag(), fluide.getAmount()),
+                                fluide.getAmount());
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    // Pas de crédit automatique quand l'interface native n'est pas lisible.
+                }
+                return;
+            }
     }
 
     void actualiser() {
@@ -318,12 +368,12 @@ final class SuiviLotsEmi {
                         machineObservee == null
                                 ? List.of()
                                 : GregTechMachines.cuvesSortie(menuObserve);
-                receptionFluides = new fr.assistantia.ReceptionSortie<>(ComparaisonEmi::meme);
+                receptionFluides = new ReceptionSortie<>(SuiviLotsEmi::memeFluide, true);
             }
             if (machineObservee == null || !fr.assistantia.InventaireJoueur.synchronise()) return;
             List<PlanRetrait.Stock<EmiStack>> sorties = new ArrayList<>();
             for (var slot : sortiesObservees)
-                if (!slot.getItem().isEmpty())
+                if (slot.isActive() && !slot.getItem().isEmpty())
                     sorties.add(
                             new PlanRetrait.Stock<>(
                                     EmiStack.of(slot.getItem()), slot.getItem().getCount(), true));
@@ -349,7 +399,8 @@ final class SuiviLotsEmi {
                                                         net.minecraft.world.level.material.Fluid)
                                 .toList());
             }
-            recevoir(receptionFluides.actualiser(personnels, fluides), machineObservee.position());
+            recevoirMachine(
+                    receptionFluides.actualiser(personnels, fluides), machineObservee.position());
             for (var lot : lots)
                 if (lot.ici(machineObservee.position()))
                     lot.suivi()

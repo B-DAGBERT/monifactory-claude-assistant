@@ -62,6 +62,72 @@ piles de 64 et deux bûches, avec un débit de 130 dans le terminal. Refaire ave
 case presque pleine, puis avec **Arrêter** pendant le premier transfert. Comparer le stock
 restant dans ME, celui des poches et celui du curseur après la dernière confirmation.
 
+### Chaîne sac, terminal et cintreuse à 63, 64 et 65 plaques
+
+Utiliser la copie du pack et le [pack de données de test](../tests/fixtures/craft_lab/). Dans
+EMI, vérifier que la recette GregTech `gtceu:bender/bend_copper_to_plate` produit une plaque
+de cuivre pour un lingot avec le circuit virtuel 1. Préparer une cintreuse UV, un backpack
+Sophisticated et un réseau AE2 isolé comportant un terminal, un lecteur avec une cellule de
+stockage d’objets et une source d’énergie. Garder la cintreuse sans énergie au début du cas.
+
+| Cible EMI  | Cuivre dans le sac fermé | Cuivre ME au départ | Retrait ME attendu | Solde ME  | Envois dans la cintreuse |
+| ---------- | ------------------------ | ------------------- | ------------------ | --------- | ------------------------ |
+| 63 plaques | 1 lingot                 | 67 lingots          | 62 lingots         | 5 lingots | 63                       |
+| 64 plaques | 1 lingot                 | 68 lingots          | 63 lingots         | 5 lingots | 64                       |
+| 65 plaques | 1 lingot                 | 69 lingots          | 64 lingots         | 5 lingots | 64 puis 1                |
+
+1. Exécuter `/function moni_qa:machine/initialiser`, puis régler la cible avec
+   `/scoreboard players set @s moni_cible 63` en remplaçant 63 selon le cas. Vider les
+   autres réserves de cuivre et de plaques sur la copie, puis placer un lingot dans le sac
+   porté et la quantité du tableau dans ME.
+2. Avec le sac fermé et l’option **Backpacks dans les crafts** activée, demander dans EMI la
+   quantité du tableau. Dans le terminal, vérifier la quantité proposée et cliquer
+   **Prendre**. Vérifier le solde de cinq dans le terminal, le lingot toujours dans le sac
+   et le curseur vide.
+3. Ouvrir le sac, transférer son lingot dans les poches et exécuter
+   `/function moni_qa:machine/verifier_pret`. Le contrôle doit afficher la quantité
+   demandée de lingots et zéro plaque.
+4. Ouvrir la cintreuse et cliquer **Envoyer**. Vérifier le lot confirmé, la quantité
+   dans l’entrée et la sortie vide. Pour 65, fermer une éventuelle déclaration de surplus
+   avec Échap et garder le dernier lingot dans les poches pour le second envoi.
+5. Alimenter la cintreuse, attendre les plaques et les prendre par Maj-clic dans la sortie.
+   Pour 65, envoyer le dernier lingot après le premier retrait, puis prendre la dernière
+   plaque. Vérifier que les lots ont été réceptionnés dans **Suivi**.
+6. Fermer la machine et exécuter `/function moni_qa:machine/verifier_reception`. Le contrôle
+   doit afficher 63, 64 ou 65 plaques et zéro lingot. Rouvrir le terminal pour confirmer
+   les cinq lingots restés dans ME. Repartir de la copie restaurée ou d’une station fraîche
+   avant le cas suivant.
+
+Les fonctions de contrôle lisent le stock physique des poches côté serveur. Le menu du sac,
+le terminal et la sortie de la machine permettent de contrôler les autres quantités.
+Consigner séparément chacun des trois cas et l’empreinte du JAR utilisé.
+
+**Qualification locale macOS, IN_GAME.** Les trois cas ont réussi dans un labo Forge
+jetable sous Java 17, Minecraft 1.20.1, Forge 47.4.13, EMI 1.1.22, GTCEu 7.5.3,
+AE2 15.4.10-cosmolite.36 et Sophisticated Backpacks 3.24.21.1515. JAR Assistantia
+`1.0.0-shared.68`, SHA-256 `bcba95c8e3041ab39dc9cfdeeca2ac09102285711ae59297f4f7d055601a8e88`.
+
+- **63** · 62 lingots retirés du réseau ME, un du sac, un envoi de 63 et 63 plaques
+  physiquement récupérées. Solde ME de cinq lingots.
+- **64** · 63 lingots retirés du réseau ME, un du sac, un envoi de 64 et 64 plaques
+  physiquement récupérées. Solde ME de cinq lingots.
+- **65** · 64 lingots retirés du réseau ME et un du sac. Un lingot restait dans les poches
+  après le premier envoi et la réception de 64 plaques. Le second envoi a produit la
+  dernière plaque. Solde ME de cinq lingots.
+
+La sonde a préparé les stocks, le circuit et l’énergie dans la copie. Le transfert du sac,
+les retraits ME, les dépôts GregTech et la récupération ont traversé les menus natifs. Les
+contrôles du pack de données ont confirmé le stock physique avant chaque premier envoi et
+après la réception de la cible. La copie a été fermée proprement.
+
+**Revalidation du candidat des dix améliorations, IN_GAME.** Les trois tailles ont réussi
+avec `1.0.0-shared.68-qa-suite10` et l’empreinte SHA-256
+`51a40f691ba6e47f15618de14ad75f070dc74079b84bb2fa2bd7dc43903d269a`.
+Dans la même copie, reprendre après Échap n’a envoyé que le second lingot. Une plaque
+identique prise dans un baril n’a donné aucun crédit au lot de la cintreuse. Le retrait
+dans sa vraie sortie a confirmé les trois plaques. Le parcours du tampon a vérifié cinq
+lingots dans le coffre et trois en poche, puis huit en poche après retrait.
+
 ## GregTech — envoyer, fabriquer et récupérer
 
 Préparer un LV Alloy Smelter alimenté et le circuit d’alimentation adapté. Sélectionner

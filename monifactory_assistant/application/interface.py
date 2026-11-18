@@ -117,8 +117,9 @@ class InterfaceController:
         try:
             mod_view = build_mod_view(self)
             mod_view["ecran"]["diagnostic"] = diagnostic_view(self)
-            if comparable_view(mod_view) != comparable_view(self.last_mod_view):
-                self.bridge.write("vue_mod.json", mod_view)
+            if comparable_view(mod_view) != comparable_view(
+                self.last_mod_view
+            ) and self.bridge.publish("vue_mod.json", mod_view):
                 self.last_mod_view = mod_view
         except Exception:
             log(traceback.format_exc())

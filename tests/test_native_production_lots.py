@@ -41,6 +41,8 @@ SCENARIOS = (
     "correlated_fluids",
     "correlated_machine",
     "correlated_machine_independent",
+    "native_machine_ambiguous",
+    "native_machine_distinct",
     "tree_revision",
     "tree_quantity",
 )
@@ -69,12 +71,6 @@ class NativeProductionLotTests(unittest.TestCase):
         stubs = dict(MACHINE_STUBS)
         stubs["dev.emi.emi.api.recipe.EmiRecipeManager"] = (
             "public class EmiRecipeManager {public EmiRecipe recipe;public EmiRecipe getRecipe(String id){return recipe;}}"
-        )
-        stubs["dev.emi.emi.api.recipe.EmiRecipe"] = stubs[
-            "dev.emi.emi.api.recipe.EmiRecipe"
-        ].replace(
-            "public class EmiRecipe {",
-            'public class EmiRecipe {public String getId(){return "test:recipe";}',
         )
         stubs["net.minecraft.core.BlockPos"] = stubs["net.minecraft.core.BlockPos"].replace(
             "public BlockPos immutable()",

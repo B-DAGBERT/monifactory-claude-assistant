@@ -133,9 +133,10 @@ terminal, les mêmes cinq unités couvrent toujours cinq besoins. Pour tester la
 vie du relevé, se reconnecter et vérifier que l’ancienne sélection n’est plus active, puis
 sélectionner à nouveau le tampon et relever son contenu pour retrouver le calcul.
 
-Pour vérifier un relevé périmé, refermer le tampon, modifier le contenu avec un hopper, puis
-attendre une minute. Le repère indique **Tampon · à revérifier** et la quantité précédemment
-lue cesse de couvrir les besoins. Rouvrir le coffre et vérifier la nouvelle quantité.
+Refermer ensuite le tampon, laisser son chunk chargé et attendre plus d’une minute. Les quatre
+parcours continuent de compter le dernier relevé. Rouvrir le tampon, retirer deux unités et
+vérifier que le nouveau relevé actualise les quatre quantités. Rejouer après déchargement du
+chunk ou remplacement du coffre pour vérifier que l’ancien relevé est écarté.
 
 Consigner les essais exécutés et les cas restant à vérifier. Le rapport automatisé sert de
 preuve pour les contrats de code. Le résultat en jeu couvre le pack, les menus et le serveur
@@ -710,8 +711,10 @@ la tâche. Les temporaires s’appellent `.ecriture-<nom>-<n>.tmp`, hors des mot
 de la sauvegarde. `IdentiteMonde` ne garde qu’une référence faible au serveur solo.
 
 Sans le mod, le script écrit directement comme avant. Il ne dessine plus de panneau et l’assistant
-n’écrit plus `plan.json` ; `fabrication_emi.json` a aussi disparu. `VERSION_SCRIPT` vaut 16 :
-l’assistant demande F3 + T si le jeu exécute un script plus ancien.
+n’écrit plus `plan.json` et `fabrication_emi.json` a disparu. Avec `VERSION_SCRIPT` 17,
+le catalogue de Discussion garde deux groupes de fichiers. KubeJS écrit dans le groupe inactif,
+puis publie `recettes_info.json` avec le nombre de parties et la génération. Python vérifie
+chaque partie et conserve l’index précédent si un groupe est incomplet.
 
 `RelachementSouris` empêche qu’un clic sur la barre EMI ou un panneau de l’assistant (bouton grisé
 compris), ou un retour vers le coffre ou la machine, laisse le relâchement atteindre le conteneur :
@@ -722,6 +725,9 @@ boutons retirés (« Fonction retirée : relance Minecraft… ») et demandes in
 le contexte Production publie encore `projet` et `revision_projet` constants (à retirer ensuite).
 `vue_mod.json` ignore `rendu_ms` et `inventaire_t` pour décider d’une réécriture : il change sur un
 vrai changement ou au battement « vie » de 5 s.
+Le pont publie la vue et les exports de stock remplaçables sur un fil dédié. Il garde la valeur
+la plus récente par fichier et vérifie le contexte avant le remplacement. Les commandes
+continuent à passer par leur chemin ordonné.
 
 `EcrituresTest`, `test_change_only_exports.py` et `test_kubejs_exports.py` rejouent l’écrivain,
 l’export d’inventaire et le script client tick par tick sous Node.js, avec ou sans le mod.

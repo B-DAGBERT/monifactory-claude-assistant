@@ -1,6 +1,8 @@
 package fr.assistantia.mixin;
 
+import fr.assistantia.Emi;
 import fr.assistantia.StockProduction;
+import fr.assistantia.compat.emi.OrigineFabrication;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ClickType;
@@ -19,5 +21,6 @@ public abstract class ClicStockMixin {
     private void assistantia$avantClic(
             int menu, int slot, int bouton, ClickType type, Player joueur, CallbackInfo ci) {
         StockProduction.clic();
+        if (Emi.present()) OrigineFabrication.clicSortie(menu, slot, bouton, type, joueur);
     }
 }

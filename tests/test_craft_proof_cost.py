@@ -17,16 +17,33 @@ STUBS = {
  public ItemStack copy(){var s=new ItemStack(id,count);s.tag=tag;return s;}
  public static boolean isSameItemSameTags(ItemStack a,ItemStack b){comparisons++;return a.id.equals(b.id)&&a.tag==b.tag;}}
 """,
-    "net.minecraft.world.inventory.AbstractContainerMenu": "public class AbstractContainerMenu {}",
+    "net.minecraft.core.BlockPos": "public record BlockPos(int x,int y,int z) {public BlockPos immutable(){return this;}}",
+    "net.minecraft.world.inventory.ClickType": "public enum ClickType {PICKUP, QUICK_MOVE}",
+    "net.minecraft.world.inventory.AbstractContainerMenu": """public class AbstractContainerMenu {
+ public int containerId=1;public net.minecraft.world.item.ItemStack getCarried(){return net.minecraft.world.item.ItemStack.EMPTY;}
+}""",
     "net.minecraft.world.inventory.ChestMenu": "public class ChestMenu extends AbstractContainerMenu {}",
-    "net.minecraft.world.inventory.Slot": "public class Slot {public net.minecraft.world.item.ItemStack item=net.minecraft.world.item.ItemStack.EMPTY;public Slot(Object o,int n){}public net.minecraft.world.item.ItemStack getItem(){return item;}}",
+    "net.minecraft.world.inventory.Slot": """public class Slot {
+ public final int index;public net.minecraft.world.item.ItemStack item=net.minecraft.world.item.ItemStack.EMPTY;
+ public Slot(Object o,int n){index=n;}public boolean isActive(){return true;}
+ public boolean mayPickup(net.minecraft.world.entity.player.Player p){return true;}
+ public net.minecraft.world.item.ItemStack getItem(){return item;}
+}""",
     "net.minecraft.world.entity.player.Player": "public class Player {public net.minecraft.world.inventory.AbstractContainerMenu containerMenu=new net.minecraft.world.inventory.ChestMenu();}",
     "net.minecraft.client.Minecraft": "public class Minecraft {private static final Minecraft INSTANCE=new Minecraft();public net.minecraft.world.entity.player.Player player=new net.minecraft.world.entity.player.Player();public static Minecraft getInstance(){return INSTANCE;}}",
     "net.minecraftforge.event.entity.player.PlayerEvent": "public class PlayerEvent {public record ItemCraftedEvent(net.minecraft.world.entity.player.Player getEntity,net.minecraft.world.item.ItemStack getCrafting){}}",
     "net.minecraftforge.eventbus.api.SubscribeEvent": "public @interface SubscribeEvent {}",
     "net.minecraftforge.registries.ForgeRegistries": "public class ForgeRegistries {public static final Registry ITEMS=new Registry();public static class Registry {public String getKey(String id){return id;}}}",
     "fr.assistantia.compat.emi.CoffresArbreEmi": "public class CoffresArbreEmi {public static Object arbreActif(){return Boolean.TRUE;}}",
-    "fr.assistantia.compat.emi.GregTechMachines": "public class GregTechMachines {public static java.util.List<net.minecraft.world.inventory.Slot> outputSlots=java.util.List.of();public static java.util.List<net.minecraft.world.inventory.Slot> sorties(net.minecraft.world.inventory.AbstractContainerMenu menu)throws ReflectiveOperationException{return outputSlots;}}",
+    "fr.assistantia.compat.emi.GregTechMachines": """public class GregTechMachines {
+ public record Interface(Object machine,java.util.List<?> entrees,java.util.List<?> cuves,Object circuit){
+   public net.minecraft.core.BlockPos position(){return new net.minecraft.core.BlockPos(0,64,0);}
+ }
+ public static Interface ui;
+ public static Interface ouvrir(net.minecraft.world.inventory.AbstractContainerMenu menu){return ui;}
+ public static java.util.List<net.minecraft.world.inventory.Slot> outputSlots=java.util.List.of();
+ public static java.util.List<net.minecraft.world.inventory.Slot> sorties(net.minecraft.world.inventory.AbstractContainerMenu menu)throws ReflectiveOperationException{return outputSlots;}
+}""",
 }
 
 
