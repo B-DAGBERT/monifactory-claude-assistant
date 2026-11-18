@@ -182,7 +182,7 @@ class Bridge:
         with self._publication:
             if self._publication_closed or name in self._pending:
                 return False
-        return self.scope_valid(scope)
+        return not self.isolated or scope == self.scope
 
     def _write_snapshots(self):
         while True:
@@ -204,9 +204,11 @@ class Bridge:
     def _write_snapshot(self, name, text, scope):
         if not self._snapshot_current(name, scope):
             return
+        if not self.scope_valid(scope):
+            raise OSError("Contexte temporairement indisponible")
         path = self.data_path(name, create=True)
         if path is None:
-            return
+            raise OSError("Contexte temporairement indisponible")
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -220,6 +222,8 @@ class Bridge:
                 stream.write(text)
             # Vérifier après l'écriture temporaire, avant chaque nouvelle tentative de publication.
             if self._snapshot_current(name, scope):
+                if not self.scope_valid(scope):
+                    raise OSError("Contexte temporairement indisponible")
                 os.replace(temporary, path)
         finally:
             try:

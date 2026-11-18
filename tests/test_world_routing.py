@@ -467,6 +467,26 @@ class WorldRoutingTests(unittest.TestCase):
         self.assertFalse(old.exists())
         self.assertEqual(new.read_text(), "new")
 
+    def test_snapshot_retries_when_scope_receipt_is_temporarily_unreadable(self):
+        self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
+        self.addCleanup(self.bridge.close_publications)
+        scope = self.bridge.scope
+        blocked, checked = threading.Event(), threading.Event()
+        blocked.set()
+        target = self.bridge.dir / "mondes" / WORLD_A / "stockage.txt"
+
+        def current(*_):
+            checked.set()
+            return None if blocked.is_set() else scope
+
+        with patch.object(self.bridge.routing, "current", side_effect=current):
+            self.assertTrue(self.bridge.publish_text("stockage.txt", "retained"))
+            self.assertTrue(checked.wait(2))
+            self.assertFalse(target.exists())
+            blocked.clear()
+            self.await_snapshot(target.exists)
+        self.assertEqual(target.read_text(), "retained")
+
     def test_expired_native_receipt_cannot_reactivate_cached_state(self):
         self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
         stamp = time.time() * 1000 - 6000
