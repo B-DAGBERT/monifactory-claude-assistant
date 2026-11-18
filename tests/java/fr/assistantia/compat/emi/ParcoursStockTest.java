@@ -7,6 +7,7 @@ import fr.assistantia.CoffreTampon;
 import fr.assistantia.InventaireJoueur;
 import fr.assistantia.PlanMachines;
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.SacsFabrication;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -43,6 +44,10 @@ public final class ParcoursStockTest {
         CoffresArbreEmi.arbre = arbreNatif;
         var stockTerminal = TerminalMe.class.getDeclaredField("stock");
         stockTerminal.setAccessible(true);
+        if (args.length == 1 && args[0].equals("basculer-sac")) {
+            verifierBasculesSac(stockTerminal);
+            return;
+        }
 
         for (var etape : args) {
             String[] donnees = etape.split(",");
@@ -117,6 +122,53 @@ public final class ParcoursStockTest {
                     arbre, plaquesARetirer, lingotsARetirer, aFabriquer, physiques);
         }
         verifierPrioriteMachine();
+    }
+
+    private static void verifierBasculesSac(java.lang.reflect.Field terminal)
+            throws IllegalAccessException {
+        var mc = Minecraft.getInstance();
+        InventaireJoueur.base = piles(3);
+        InventaireJoueur.sacs = piles(5);
+        InventaireJoueur.piles = piles(8);
+        mc.player.items.addAll(InventaireJoueur.base);
+        var reseau = List.of(new PlanRetrait.Stock<>(new ItemStack(PLAQUE, 1), 5, false));
+        terminal.set(null, reseau);
+        // Le handler d'un sac ouvert voit déjà ses cases. Le remplisseur conserve cette vue.
+        var fluideSac = new net.minecraft.world.level.material.Fluid("test:contenu_sac");
+        var natif =
+                new EmiPlayerInventory(
+                        List.of(
+                                EmiStack.of(new ItemStack(PLAQUE, 8)),
+                                EmiStack.of(fluideSac, null, 1_000)));
+
+        for (boolean actif : new boolean[] {true, false, true}) {
+            SacsFabrication.actif = actif;
+            InventaireJoueur.sync =
+                    actif; // un sac peut encore être en cours de lecture lorsque OFF.
+            InventaireJoueur.revision++;
+            var vueEmi = InventaireArbreEmi.completer(natif);
+            assert quantite(vueEmi, PLAQUE) == (actif ? 13 : 8) : "vue synthétique EMI";
+            assert quantite(vueEmi, "test:contenu_sac") == (actif ? 1_000 : 0)
+                    : "un handler sans provenance ne réintroduit pas le fluide d'un sac désactivé";
+            for (int i = 0; i < 10; i++)
+                InventaireArbreEmi.tick(new TickEvent.ClientTickEvent(TickEvent.Phase.END));
+            assert quantite(EmiFavorites.last, PLAQUE) == (actif ? 13 : 8)
+                    : "les favoris reflètent le réglage sans déplacement des objets";
+            var personnel = InventaireArbreEmi.physiques(InventaireArbreEmi.personnel());
+            var ae2 = StockFabricationEmi.courant(personnel, reseau).retraitsReseau(ARBRE, 1);
+            assert ae2.stream().mapToInt(PlanRetrait.Prise::quantite).sum() == (actif ? 0 : 5)
+                    : "le terminal retire seulement le complément des sources autorisées";
+            var operations = StockFabricationEmi.pourMachines(personnel).operations(ARBRE, 1);
+            assert operations.stream().mapToInt(PlanMachines.Operation::fois).sum()
+                            == (actif ? 0 : 5)
+                    : "les opérations machine suivent le stock de calcul";
+            assert quantite(natif, PLAQUE) == 8 && InventaireJoueur.piles.get(0).getCount() == 8
+                    : "le changement ne mute ni les cases visibles ni l'inventaire physique";
+        }
+        terminal.set(null, List.of());
+        SacsFabrication.actif = false;
+        assert quantite(InventaireArbreEmi.completer(natif), PLAQUE) == 3
+                : "un handler natif de sac ouvert ne réintroduit pas ses cases";
     }
 
     private static PlisFabricationEmiTest.Tree arbreNatif() {

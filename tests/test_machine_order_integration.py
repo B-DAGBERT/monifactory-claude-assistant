@@ -49,8 +49,9 @@ STUBS.update(
  private static final Minecraft INSTANCE=new Minecraft();public static Minecraft getInstance(){return INSTANCE;}
  public net.minecraft.world.entity.player.Player player=new net.minecraft.world.entity.player.Player(); public Object connection=new Object(),level=new Object();public Object getConnection(){return connection;}}""",
         "fr.assistantia.InventaireJoueur": """public class InventaireJoueur {
- public static boolean synced=true;public static java.util.List<net.minecraft.world.item.ItemStack> bags=java.util.List.of();
- public static boolean disponible(){return synced;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return bags;}}""",
+ public static boolean synced=true,includeBags=true;public static java.util.List<net.minecraft.world.item.ItemStack> bags=java.util.List.of();
+ public static boolean fabricationDisponible(){return synced||!includeBags;}
+ public static java.util.List<net.minecraft.world.item.ItemStack> sacsFabrication(){return includeBags?bags:java.util.List.of();}}""",
         "fr.assistantia.Pont": """public class Pont {public static net.minecraft.world.item.ItemStack objet(String id){return new net.minecraft.world.item.ItemStack(id,1);}}""",
         "fr.assistantia.CoffreTampon": """public class CoffreTampon {
  public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
@@ -167,6 +168,8 @@ public class OrderIntegrationTest {
     InventaireJoueur.bags=List.of(new ItemStack("test:iron",3));var a=gt(item("test:iron",3));var screen=machine();
     EnvoiMachine.plan=new EnvoiMachine.Plan(false,"À collecter : 3 × fer");
     mode(calculate(screen,a),a,OrdreMachines.Mode.PREPARER);assert EnvoiMachine.reads==1;
+    InventaireJoueur.includeBags=false;InventaireJoueur.synced=false;mode(calculate(screen,a),a,OrdreMachines.Mode.BLOQUE);
+    InventaireJoueur.includeBags=true;InventaireJoueur.synced=true;mode(calculate(screen,a),a,OrdreMachines.Mode.PREPARER);
     InventaireJoueur.bags=List.of();mode(calculate(screen,a),a,OrdreMachines.Mode.BLOQUE);
    }
    case "repeated_catalyst_max_quantity" -> {

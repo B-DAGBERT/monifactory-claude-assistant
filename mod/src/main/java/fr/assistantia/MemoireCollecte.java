@@ -20,6 +20,7 @@ public final class MemoireCollecte {
     private final List<Ingredient> ingredients;
     private final List<PlanRetrait.Besoin<String>> besoins;
     private final Map<String, Integer> observes = new LinkedHashMap<>();
+    private final Map<String, Integer> prouves = new LinkedHashMap<>();
     private final boolean[] valides;
     private final Set<String> tous;
     private Map<String, Integer> dernierInventaire = Map.of();
@@ -33,6 +34,10 @@ public final class MemoireCollecte {
         ancienne.observes.forEach(
                 (id, n) -> {
                     if (tous.contains(id)) observes.put(id, n);
+                });
+        ancienne.prouves.forEach(
+                (id, n) -> {
+                    if (tous.contains(id)) prouves.put(id, n);
                 });
         dernierInventaire = null;
     }
@@ -145,6 +150,15 @@ public final class MemoireCollecte {
 
     public long version() {
         return version;
+    }
+
+    /** Une source que le joueur retire du calcul exige une nouvelle observation du stock. */
+    void reprendreStockCourant() {
+        observes.clear();
+        observes.putAll(prouves);
+        java.util.Arrays.fill(valides, false);
+        dernierInventaire = null;
+        restants = tous;
     }
 
     public Set<String> tous() {
@@ -287,13 +301,11 @@ public final class MemoireCollecte {
     }
 
     private void crediter(String id, Map<String, Integer> actuel, Map<String, Integer> preuves) {
-        int credit =
-                (int)
-                        Math.min(
-                                1_000_000L,
-                                (long) observes.getOrDefault(id, 0)
-                                        + Math.max(0, preuves.getOrDefault(id, 0)));
+        int gain = Math.max(0, preuves.getOrDefault(id, 0));
+        int credit = (int) Math.min(1_000_000L, (long) observes.getOrDefault(id, 0) + gain);
         observes.put(id, Math.max(credit, Math.max(0, actuel.getOrDefault(id, 0))));
+        if (gain > 0)
+            prouves.merge(id, Math.min(1_000_000, gain), (a, b) -> Math.min(1_000_000, a + b));
     }
 
     private void consommerHistorique(
@@ -313,6 +325,10 @@ public final class MemoireCollecte {
             int ancien = credits.getOrDefault(id, 0), reel = actuel.getOrDefault(id, 0);
             int retire = Math.min(reste, Math.max(0, ancien - reel));
             credits.put(id, ancien - retire);
+            if (credits == observes && retire > 0) {
+                // Une preuve déjà consommée ne couvre plus un besoin après une bascule.
+                prouves.computeIfPresent(id, (cle, n) -> n > retire ? n - retire : null);
+            }
             reste -= retire;
         }
         // Une conversion peut traverser plusieurs recettes entre deux relevés.

@@ -29,7 +29,18 @@ public class Minecraft {
 }
 """,
     "net.minecraftforge.registries.ForgeRegistries": "public class ForgeRegistries {public static final Registry ITEMS=new Registry();public static class Registry {public net.minecraft.resources.ResourceLocation getKey(String id){return new net.minecraft.resources.ResourceLocation(id);}}}",
-    "fr.assistantia.InventaireJoueur": "public class InventaireJoueur {public static boolean sync=true;public static java.util.List<net.minecraft.world.item.ItemStack> items=java.util.List.of();public static boolean synchronise(){return sync;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return items;}}",
+    "fr.assistantia.SacsFabrication": "public class SacsFabrication {static boolean actif=true;public static boolean actif(){return actif;}}",
+    "fr.assistantia.InventaireJoueur": """
+import java.util.*;
+import net.minecraft.world.item.ItemStack;
+public class InventaireJoueur {
+ static boolean sync=true;
+ static List<ItemStack> items=List.of(),sac=List.of();
+ public static boolean fabricationSynchronisee(){return !SacsFabrication.actif()||sync;}
+ public static List<ItemStack> pilesFabrication(){return SacsFabrication.actif()?piles():items;}
+ public static List<ItemStack> piles(){var stock=new ArrayList<>(items);stock.addAll(sac);return stock;}
+}
+""",
     "fr.assistantia.CoffreTampon": r"""
 public class CoffreTampon {
  public static java.util.Set<String> positions=java.util.Set.of();
@@ -111,12 +122,15 @@ public final class ParcoursCoffres {
  static long temps=1_000_000;
  static final List<LotFabrication<String>> lots=new ArrayList<>();
  static final ReceptionManuelle<String> receptions=new ReceptionManuelle<>(String::equals);
- static List<PlanRetrait.Stock<String>> stock(){return InventaireJoueur.items.stream().map(s->new PlanRetrait.Stock<>(s.item(),s.count(),true)).toList();}
+ static List<PlanRetrait.Stock<String>> stock(){return InventaireJoueur.piles().stream().map(s->new PlanRetrait.Stock<>(s.item(),s.count(),true)).toList();}
+ static List<ItemStack> piles(JsonObject j){var items=new ArrayList<ItemStack>();for(var e:j.entrySet())if(e.getValue().getAsInt()>0)items.add(new ItemStack(e.getKey(),e.getValue().getAsInt()));return List.copyOf(items);}
  static ArbreCollecte.Noeud arbre(JsonObject j){var children=new ArrayList<ArbreCollecte.Noeud>();for(var n:Pont.liste(j,"enfants"))children.add(arbre(n.getAsJsonObject()));
   var ids=new LinkedHashSet<String>();for(var n:Pont.liste(j,"ids"))ids.add(n.getAsString());return new ArbreCollecte.Noeud(ids,(long)Pont.nombre(j,"quantite",1),(long)Pont.nombre(j,"production",1),j.has("outil")&&j.get("outil").getAsBoolean(),children);}
  static JsonObject appliquer(JsonObject j)throws Exception {
   var mc=Minecraft.getInstance();if(j.has("temps"))temps=j.get("temps").getAsLong();else temps++;
-  if(j.has("inventaire")){var items=new ArrayList<ItemStack>();for(var e:j.getAsJsonObject("inventaire").entrySet())if(e.getValue().getAsInt()>0)items.add(new ItemStack(e.getKey(),e.getValue().getAsInt()));InventaireJoueur.items=List.copyOf(items);}
+  if(j.has("inventaire"))InventaireJoueur.items=piles(j.getAsJsonObject("inventaire"));
+  if(j.has("sac"))InventaireJoueur.sac=piles(j.getAsJsonObject("sac"));
+  if(j.has("compte_sac"))SacsFabrication.actif=j.get("compte_sac").getAsBoolean();
   if(j.has("outils")){var m=new HashMap<String,Integer>();for(var e:j.getAsJsonObject("outils").entrySet())m.put(e.getKey(),e.getValue().getAsInt());Emi.outils=Map.copyOf(m);}
   if(j.has("sync"))InventaireJoueur.sync=j.get("sync").getAsBoolean();
   if(j.has("actif"))Emi.actif=j.get("actif").getAsBoolean();

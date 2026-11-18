@@ -298,18 +298,22 @@ def decode_stock(data, context, *, personal):
         _object(personal, "Inventaire personnel")
         active = _boolean(personal.get("actif"), "Présence du joueur")
         synchronized = _boolean(personal.get("synchronise"), "Synchronisation de l’inventaire")
+        includes_backpacks = _boolean(personal.get("inclut_sacs", True), "Prise en compte des sacs")
         available = active and synchronized
         mode, revision = "personnel", context.capture
         if available:
             quantities = _item_amounts(personal.get("inventaire"))
+            nature = "inventaire_et_sacs" if includes_backpacks else "inventaire_personnel"
             stock, observation = _stock_row(
-                context, "personnel", "inventaire_et_sacs", quantities, revision=revision
+                context, "personnel", nature, quantities, revision=revision
             )
             sources.append(stock)
             observations.append(observation)
         limits = (
             *limits,
-            "Stock personnel et sacs synchronisés uniquement ; coffres et variantes NBT exclus.",
+            "Stock personnel et sacs synchronisés uniquement ; coffres et variantes NBT exclus."
+            if includes_backpacks
+            else "Stock personnel uniquement ; sacs désactivés, coffres et variantes NBT exclus.",
         )
         if not available:
             limits = (*limits, "Inventaire personnel non synchronisé ; aucun stock garanti.")

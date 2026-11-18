@@ -173,7 +173,7 @@ final class TerminalMe {
     }
 
     static List<PlanRetrait.Stock<ItemStack>> stock() {
-        if (vue == null || vue.menu() != courant() || !InventaireJoueur.disponible())
+        if (vue == null || vue.menu() != courant() || !InventaireJoueur.fabricationDisponible())
             return List.of();
         return vue.stockCalcul();
     }
@@ -263,7 +263,7 @@ final class TerminalMe {
     private static void actualiser(boolean complet) throws ReflectiveOperationException {
         var actif = courant();
         Object tree = actif == null ? null : arbreCourant();
-        if (tree == null || !InventaireJoueur.disponible()) {
+        if (tree == null || !InventaireJoueur.fabricationDisponible()) {
             if (vue != null) InventaireArbreEmi.invalider();
             vue = null;
             recherche = null;
@@ -271,7 +271,7 @@ final class TerminalMe {
         }
         var instantane = InstantaneArbreEmi.lire(tree);
         var stock = lire(actif, instantane, complet);
-        long revision = InventaireJoueur.revision(),
+        long revision = InventaireJoueur.revisionFabrication(),
                 revisionTampon = CoffreTampon.revision(),
                 lots = MachinesEmi.revisionLotsProduction();
         var credits = CycleArbreEmi.credits();

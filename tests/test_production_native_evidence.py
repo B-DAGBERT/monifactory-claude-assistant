@@ -106,6 +106,14 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual(result.observations[0].evidence[0].capture_id, request["capture"])
         self.assertEqual(result.observations[0].evidence[0].world, SCOPE.world)
 
+    def test_disabled_backpacks_label_and_native_stock(self):
+        data, request = fixture(personal=3, lots=[])
+        data.update(inclut_sacs=False, backpacks={IRON.id: 8})
+        result = decode(data, request)
+        self.assertTrue(result.stock_available)
+        self.assertEqual(quantities(result.ledger.sources[0].contents), {IRON: 3})
+        self.assertTrue(any("sacs désactivés" in limite for limite in result.limitations))
+
     def test_open_menu_packet_uses_three_disjoint_sources_not_personal_cache(self):
         data, request = fixture(personal=999, menu=True, lots=[])
         result = decode(data, request)

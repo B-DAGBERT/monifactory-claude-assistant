@@ -761,7 +761,7 @@ public final class AnalyseRecette {
      */
     private static boolean actualiserPlan() {
         if (lecture == null) return false;
-        if (!InventaireJoueur.synchronise()) {
+        if (!InventaireJoueur.fabricationSynchronisee()) {
             if (etapes.isEmpty()) attendre("Lecture du sac en cours…");
             return false;
         }
@@ -801,7 +801,7 @@ public final class AnalyseRecette {
                         + "|"
                         + (suivi ? System.identityHashCode(operationsSuivies) : 0)
                         + "|"
-                        + InventaireJoueur.revision()
+                        + InventaireJoueur.revisionFabrication()
                         + "|"
                         + MachinesEmi.revisionLotsProduction()
                         + "|"
@@ -813,7 +813,7 @@ public final class AnalyseRecette {
                         + "|"
                         + lotsEnMarche()
                         + "|"
-                        + InventaireJoueur.disponible();
+                        + InventaireJoueur.fabricationDisponible();
         if (signature.equals(clePlan)) return false;
         clePlan = signature;
         long debut = System.nanoTime();
@@ -870,10 +870,10 @@ public final class AnalyseRecette {
         for (var o : visibles) regles.put(o.recette(), OrdonnancementEmi.regles(o.recette(), null));
         List<OrdreMachines.StockSource<OrdonnancementEmi.Objet>> sources =
                 new ArrayList<>(
-                        InventaireJoueur.disponible()
+                        InventaireJoueur.fabricationDisponible()
                                 ? OrdonnancementEmi.stocks(visibles, null)
                                 : List.of());
-        if (InventaireJoueur.disponible()) {
+        if (InventaireJoueur.fabricationDisponible()) {
             sources.addAll(coffres(visibles));
             // Moules, presses, lentilles déjà installés dans une machine : présents, rien à
             // chercher (machine GregTech déjà ouverte, inscriber d'AE2 relevé par le serveur).
@@ -893,7 +893,7 @@ public final class AnalyseRecette {
                         r -> regles.getOrDefault(r, List.of()),
                         sources,
                         AnalyseRecette::condition,
-                        InventaireJoueur.disponible());
+                        InventaireJoueur.fabricationDisponible());
         List<RangsRecette.Lot<EmiRecipe>> lots = new ArrayList<>();
         List<LotMachine> actifs = suivi ? MachinesEmi.lotsSuivis() : List.of();
         for (var lot : actifs) {
@@ -934,7 +934,7 @@ public final class AnalyseRecette {
     /** Stock de calcul des besoins quand l'arbre n'est pas suivi : poches, sac et contenants. */
     private static List<PlanRetrait.Stock<EmiStack>> stockEmi() {
         List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
-        for (ItemStack s : InventaireJoueur.piles()) {
+        for (ItemStack s : InventaireJoueur.pilesFabrication()) {
             if (s.isEmpty()) continue;
             stock.add(new PlanRetrait.Stock<>(EmiStack.of(s), s.getCount(), true));
             ItemStack un = s.copy();

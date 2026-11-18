@@ -55,7 +55,7 @@ def _native_lines(native):
     lines = [
         "Couverture partielle · coffre ouvert et cases du même paquet serveur."
         if native.stock_mode == "menu_serveur"
-        else "Couverture partielle · inventaire et sacs synchronisés."
+        else "Couverture partielle · stock personnel attesté."
         if native.stock_available
         else "Stock physique inconnu · inventaire non attesté."
     ]

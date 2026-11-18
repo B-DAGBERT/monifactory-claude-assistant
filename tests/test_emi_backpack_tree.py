@@ -45,10 +45,16 @@ public class TickEvent {public enum Phase {START,END} public static class Client
 """,
     "fr.assistantia.InventaireJoueur": """
 public class InventaireJoueur {public static boolean sync=true;public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
- public static java.util.List<net.minecraft.world.item.ItemStack> sacs;public static long revision;
+ public static java.util.List<net.minecraft.world.item.ItemStack> sacs,base=java.util.List.of();public static long revision;
  public static long revision(){return revision;}
- public static boolean disponible(){return sync;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return sacs==null?piles:sacs;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}}
+ public static boolean disponible(){return sync;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return sacs==null?piles:sacs;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}
+ public static long revisionFabrication(){return revision;}
+ public static boolean fabricationDisponible(){return sync||!SacsFabrication.actif();}
+ public static java.util.List<net.minecraft.world.item.ItemStack> sacsFabrication(){return SacsFabrication.actif()?sacs():java.util.List.of();}
+ public static java.util.List<net.minecraft.world.item.ItemStack> pilesFabrication(){return SacsFabrication.actif()?piles:base;}}
 """,
+    "fr.assistantia.SacsFabrication": """public class SacsFabrication {
+ public static boolean actif=true;public static boolean actif(){return actif;}}""",
     "fr.assistantia.CoffreTampon": """
 public class CoffreTampon {
  public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
@@ -194,6 +200,24 @@ def compiler_contrats(directory):
 
 
 class EmiBackpackTreeTests(unittest.TestCase):
+    def test_same_backpack_changes_emi_ae2_and_machine_plans_when_toggled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            java = compiler_contrats(directory)
+            result = subprocess.run(
+                [
+                    java,
+                    "-ea",
+                    "-cp",
+                    directory,
+                    "fr.assistantia.compat.emi.ParcoursStockTest",
+                    "basculer-sac",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_closed_bag_native_tree_counts_and_refresh_without_fill_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             java = compiler_contrats(directory)

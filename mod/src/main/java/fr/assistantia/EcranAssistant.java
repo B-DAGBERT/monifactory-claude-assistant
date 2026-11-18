@@ -258,6 +258,10 @@ public class EcranAssistant extends Screen {
             Fullbright.regler(valeur);
             return;
         }
+        if (SacsFabrication.CLE.equals(cle)) {
+            SacsFabrication.regler(valeur);
+            return;
+        }
         JsonObject demande = new JsonObject();
         demande.addProperty("type", "reglage");
         demande.addProperty("cle", cle);
@@ -478,6 +482,7 @@ public class EcranAssistant extends Screen {
      */
     private boolean valeurReglage(String cle, boolean parDefaut) {
         if (Fullbright.CLE.equals(cle)) return Fullbright.actif();
+        if (SacsFabrication.CLE.equals(cle)) return SacsFabrication.actif();
         for (JsonElement e : Pont.liste(ecran(), "reglages")) {
             JsonObject r = e.getAsJsonObject();
             if (cle.equals(Pont.texte(r, "cle"))) {
@@ -536,6 +541,11 @@ public class EcranAssistant extends Screen {
         lumiere.addProperty("nom", "Luminosité maximale (Fullbright)");
         lumiere.addProperty("description", Fullbright.description());
         reglages.add(lumiere);
+        JsonObject sac = new JsonObject();
+        sac.addProperty("cle", SacsFabrication.CLE);
+        sac.addProperty("nom", "Backpacks dans les crafts");
+        sac.addProperty("description", SacsFabrication.description());
+        reglages.add(sac);
         for (JsonElement reglage : Pont.liste(ecran, "reglages")) reglages.add(reglage);
         // Les cartes s'arrêtent avant la colonne de la barre ; 5 px de marge dans chaque carte.
         int fin = x + largeur - Theme.DEFILEMENT - Theme.ECART, marge = 5;

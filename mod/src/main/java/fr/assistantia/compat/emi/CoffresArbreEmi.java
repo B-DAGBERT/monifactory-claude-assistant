@@ -146,7 +146,7 @@ public final class CoffresArbreEmi {
 
     private static void reglerScan(BoutonTheme bouton) throws ReflectiveOperationException {
         boolean selection = RechercheEmi.selectionnee(ID);
-        boolean attend = selection && !fr.assistantia.InventaireJoueur.synchronise();
+        boolean attend = selection && !fr.assistantia.InventaireJoueur.fabricationSynchronisee();
         bouton.active = selection || ArbreEmi.consulte() != null;
         bouton.texte(attend ? "Repérage…" : selection ? "Repérage ON" : "Repérage OFF")
                 .choisi(selection)

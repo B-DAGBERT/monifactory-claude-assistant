@@ -36,7 +36,30 @@ public final class MemoireCollecteTest {
         suivi = new MemoireCollecte(List.of(besoin(1, "hammer"), besoin(3, "iron")));
         assert suivi.actualiser(Map.of("hammer", 1, "stone", 64)).equals(Set.of("iron"));
         assert suivi.actualiser(Map.of("iron", 3)).isEmpty() : "outil validé reste acquis";
+        preuvesApresBascule();
         System.out.println(
                 "Collecte : seuils, validation définitive, variantes, doublons et réinitialisation OK");
+    }
+
+    private static void preuvesApresBascule() {
+        var plaque = new ArbreCollecte.Noeud(Set.of("plaque"), 1, 1, false, List.of());
+        var moule = new ArbreCollecte.Noeud(Set.of("moule"), 1, 1, true, List.of());
+        var arbre = new ArbreCollecte.Noeud(Set.of(), 1, 1, false, List.of(plaque, moule));
+        var suivi = new MemoireCollecte(arbre, 1);
+        assert suivi.actualiser(Map.of("moule", 1), Map.of("plaque", 1)).isEmpty();
+        var reprise = new MemoireCollecte(arbre, 1);
+        reprise.reprendre(suivi);
+        reprise.reprendreStockCourant();
+        assert reprise.actualiser(Map.of()).equals(Set.of("moule"))
+                : "le moule observé disparaît, la fabrication prouvée reste acquise";
+
+        var boite = new ArbreCollecte.Noeud(Set.of("boite"), 1, 1, false, List.of(plaque));
+        var assemblage = new ArbreCollecte.Noeud(Set.of(), 1, 1, false, List.of(boite, plaque));
+        var fabrication = new MemoireCollecte(assemblage, 1);
+        fabrication.actualiser(Map.of(), Map.of("plaque", 1));
+        fabrication.actualiser(Map.of(), Map.of("boite", 1));
+        fabrication.reprendreStockCourant();
+        assert fabrication.actualiser(Map.of()).equals(Set.of("plaque"))
+                : "la preuve de la plaque consommée ne peut plus couvrir la seconde branche";
     }
 }

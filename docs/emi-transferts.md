@@ -20,13 +20,25 @@ La mémoire des coffres distingue les identifiants des objets, pas leurs variant
 
 ## Objets dans le backpack
 
+**Y → Réglages → Backpacks dans les crafts** contrôle leur prise en compte dans les besoins
+d’EMI, les retraits des coffres et du réseau ME, ainsi que les plans de fabrication.
+Le choix est activé par défaut et mémorisé sur le client. Une bascule recalcule le plan et le
+repérage en cours. Les réceptions confirmées et l’indication **Dans ton backpack** continuent
+de suivre l’inventaire physique.
+
 Les sacs Sophisticated Backpacks portés sont inclus dans le stock personnel : inventaire, armure, main secondaire, curseur ou emplacement Curios. Les contenus imbriqués sont dédupliqués par identifiant de sac. Les piles agrandies conservent leur vraie quantité et leur NBT ; les upgrades et filtres ne sont pas des ingrédients disponibles.
 
 Le client demande périodiquement le contenu via le protocole natif du mod. Le menu ouvert donne une lecture directe. Les besoins et le compteur attendent une synchronisation cohérente lors d’un déplacement entre les poches et le sac ; un ancien cache ne valide pas un nouvel inventaire ou une nouvelle connexion. **Lecture du sac…** indique cette attente. Ouvrir le sac donne accès immédiatement au contenu synchronisé par son interface. Si l’envoi d’une demande de contenu échoue, la lecture peut reprendre après le délai normal, sans lancer deux demandes en parallèle.
 
-Les objets du sac comptent dans **l’arbre natif EMI et sa liste latérale**, même après fermeture, ainsi que pour l’avancement et les retraits dans les coffres. L’arbre se rafraîchit à la réception du relevé ; ses calculs ne modifient pas les sources de transfert. Les cases réelles de la grille de craft restent comptées, et le curseur ainsi qu’un sac ouvert ne sont comptés qu’une fois. Pour un envoi machine, **À sortir du sac** signifie qu’il faut d’abord déplacer les ingrédients dans les poches. Le remplissage natif d’EMI et le bouton **Envoyer** ne prélèvent pas automatiquement dans un sac fermé. Un sac posé au sol reste un stockage du monde, et non un inventaire personnel.
+Avec l’option activée, les objets du sac comptent dans **l’arbre natif EMI et sa liste latérale**
+même après fermeture. L’arbre se rafraîchit à la réception du relevé. Les cases réelles de la
+grille, le curseur et le contenu d’un sac ouvert sont comptés chacun une fois. Pour le remplissage
+natif d’EMI et **Envoyer**, sors les ingrédients d’un sac fermé vers les poches. **À sortir du sac**
+indique cette étape. Un sac posé au sol fait partie des stockages du monde.
 
-L’arbre EMI et **Recette** comptent les fluides récupérables dans les contenants portés, y compris dans le sac fermé. Un fût GregTech, un seau ou une cellule compatible Forge fournit son volume réel en mB.
+L’arbre EMI et **Recette** comptent les fluides récupérables dans les contenants portés, avec le
+même réglage pour ceux qui sont dans un sac. Un fût GregTech, un seau ou une cellule compatible
+Forge fournit son volume réel en mB.
 
 Dans EMI, **Dans ton backpack × N** apparaît au survol d’une variante présente dans les sacs portés.
 Avec une recette suivie, les cases utiles du backpack ouvert sont encadrées en doré. Leur infobulle

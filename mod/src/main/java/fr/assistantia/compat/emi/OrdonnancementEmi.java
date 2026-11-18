@@ -49,7 +49,7 @@ final class OrdonnancementEmi {
             List<PlanMachines.Operation<EmiRecipe>> operations,
             AbstractContainerScreen<?> screen) {
         var mc = Minecraft.getInstance();
-        boolean synchronise = InventaireJoueur.disponible();
+        boolean synchronise = InventaireJoueur.fabricationDisponible();
         GregTechMachines.Interface machine = null;
         if (screen != null && mc.player != null && mc.player.containerMenu == screen.getMenu())
             try {
@@ -105,7 +105,7 @@ final class OrdonnancementEmi {
 
     /** Quantités d'une seule fabrication, poches déduites, sans mutation ni provenance inventée. */
     static java.util.Map<Integer, Integer> besoinsSac(EmiRecipe recette, List<ItemStack> sac) {
-        if (!InventaireJoueur.disponible() || recette == null) return java.util.Map.of();
+        if (!InventaireJoueur.fabricationDisponible() || recette == null) return java.util.Map.of();
         var mc = Minecraft.getInstance();
         if (mc.player == null) return java.util.Map.of();
         var stocks = new ArrayList<PlanRetrait.Stock<Objet>>();
@@ -280,7 +280,7 @@ final class OrdonnancementEmi {
         for (var pile : mc.player.getInventory().items)
             ajouter(resultat, pile, OrdreMachines.Origine.POCHES, false, operations);
         if (coffre == null) {
-            for (var pile : InventaireJoueur.sacs())
+            for (var pile : InventaireJoueur.sacsFabrication())
                 ajouter(resultat, pile, OrdreMachines.Origine.SAC, false, operations);
             for (var pile : mc.player.getInventory().armor)
                 ajouter(resultat, pile, OrdreMachines.Origine.DEPLACER, false, operations);

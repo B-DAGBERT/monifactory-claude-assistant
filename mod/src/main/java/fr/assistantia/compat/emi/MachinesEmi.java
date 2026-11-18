@@ -61,11 +61,13 @@ public final class MachinesEmi {
     private static EnvoiMachine.Plan plan;
     private static final long INTERVALLE_PANNEAU = 500_000_000L;
     private static long actualise;
-    private static List<ItemStack> pilesConverties;
-    private static List<PlanRetrait.Stock<EmiStack>> inventaireEmi = List.of();
+
+    private record InventaireEmi(List<ItemStack> piles, List<PlanRetrait.Stock<EmiStack>> stock) {}
+
+    private static InventaireEmi inventaireCalcul, inventaireReceptions;
     private static final SuiviLotsEmi lots =
             new SuiviLotsEmi(
-                    MachinesEmi::inventaire,
+                    MachinesEmi::inventairePhysique,
                     MachinesEmi::lotsModifies,
                     MachinesEmi::porteeProduction);
 
@@ -289,7 +291,7 @@ public final class MachinesEmi {
                         && !fr.assistantia.RetraitCoffre.occupe()
                         && !OrigineFabrication.receptionEnAttente();
         return ProjectionLotsEmi.lire(
-                lots, porteeProduction(), inventaire(), synchronise, contexte, catalogue);
+                lots, porteeProduction(), inventairePhysique(), synchronise, contexte, catalogue);
     }
 
     /**
@@ -688,23 +690,35 @@ public final class MachinesEmi {
     }
 
     private static List<PlanRetrait.Stock<EmiStack>> inventaire() {
-        if (!fr.assistantia.InventaireJoueur.disponible()) {
-            pilesConverties = null;
-            inventaireEmi = List.of();
-            return inventaireEmi;
+        if (!fr.assistantia.InventaireJoueur.fabricationDisponible()) {
+            inventaireCalcul = null;
+            return List.of();
         }
+        inventaireCalcul = convertirInventaire(fr.assistantia.InventaireJoueur.pilesFabrication());
+        return inventaireCalcul.stock();
+    }
+
+    private static List<PlanRetrait.Stock<EmiStack>> inventairePhysique() {
+        if (!fr.assistantia.InventaireJoueur.disponible()) {
+            inventaireReceptions = null;
+            return List.of();
+        }
+        inventaireReceptions = convertirInventaire(fr.assistantia.InventaireJoueur.piles());
+        return inventaireReceptions.stock();
+    }
+
+    private static InventaireEmi convertirInventaire(List<ItemStack> piles) {
         // InventaireJoueur garde la même vue immuable tant que les piles restent identiques.
-        var piles = fr.assistantia.InventaireJoueur.piles();
-        if (piles == pilesConverties) return inventaireEmi;
+        if (inventaireCalcul != null && inventaireCalcul.piles() == piles) return inventaireCalcul;
+        if (inventaireReceptions != null && inventaireReceptions.piles() == piles)
+            return inventaireReceptions;
         List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
         for (ItemStack pile : piles) {
             if (pile.isEmpty()) continue;
             stock.add(new PlanRetrait.Stock<>(EmiStack.of(pile), pile.getCount(), true));
             ajouterFluide(stock, pile);
         }
-        inventaireEmi = List.copyOf(stock);
-        pilesConverties = piles;
-        return inventaireEmi;
+        return new InventaireEmi(piles, List.copyOf(stock));
     }
 
     private static int compte(List<PlanRetrait.Stock<EmiStack>> stock, EmiStack objet) {
@@ -773,7 +787,7 @@ public final class MachinesEmi {
                 || mc.player == null
                 || mc.level == null
                 || EnvoiMachine.occupe()
-                || !fr.assistantia.InventaireJoueur.disponible()) return;
+                || !fr.assistantia.InventaireJoueur.fabricationDisponible()) return;
         try {
             var vue = InstantaneArbreEmi.lire(arbre);
             if (instantane != vue) {

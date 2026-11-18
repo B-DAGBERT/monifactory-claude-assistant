@@ -85,7 +85,13 @@ public class IdentiteMonde{public static String world="m1_"+"a".repeat(64),sessi
 """,
         "fr.assistantia.InventaireJoueur": """
 public class InventaireJoueur{public static boolean available=true;public static java.util.List<net.minecraft.world.item.ItemStack> stacks=java.util.List.of();
- public static boolean disponible(){return available;}public static long revision(){return 1;}public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return stacks;}}
+ public static long revision=1;public static java.util.List<net.minecraft.world.item.ItemStack> pockets=java.util.List.of();
+ public static boolean fabricationDisponible(){return available||!SacsFabrication.actif();}
+ public static long revisionFabrication(){return revision;}
+ public static java.util.List<net.minecraft.world.item.ItemStack> pilesFabrication(){return SacsFabrication.actif()?stacks:pockets;}}
+""",
+        "fr.assistantia.SacsFabrication": """
+public class SacsFabrication{public static boolean actif=true;public static boolean actif(){return actif;}}
 """,
         "fr.assistantia.StockProduction": """
 import com.google.gson.JsonObject;
@@ -184,6 +190,18 @@ public class ProductionMenuTest {
    InventaireJoueur.available=false;InventaireJoueur.stacks=List.of(new ItemStack("minecraft:iron_ingot",64,null));
    ready();tick(s);assert Pont.sends==1&&!Pont.inventory.get("synchronise").getAsBoolean();
    assert Pont.inventory.getAsJsonObject("inventaire").size()==0:"Pending backpack must not publish stale holdings";return;
+  }
+  if(args[0].equals("backpack-disabled")){
+   SacsFabrication.actif=false;InventaireJoueur.available=false;
+   InventaireJoueur.stacks=List.of(new ItemStack("minecraft:iron_ingot",64,null));
+   InventaireJoueur.pockets=List.of(new ItemStack("minecraft:iron_ingot",4,null));
+   ready();tick(s);assert Pont.sends==1&&Pont.inventory.get("synchronise").getAsBoolean();
+   assert !Pont.inventory.get("inclut_sacs").getAsBoolean();
+   assert Pont.inventory.getAsJsonObject("inventaire").get("minecraft:iron_ingot").getAsInt()==4;
+   view.add("resultat",response(1001));tick(s);assert shows(s,"Fait observé 0");
+   SacsFabrication.actif=true;InventaireJoueur.available=true;InventaireJoueur.revision++;
+   tick(s);assert !shows(s,"Fait observé"):"Changing backpack participation invalidates a previous proof";
+   return;
   }
   InventaireJoueur.stacks=List.of(new ItemStack("minecraft:iron_ingot",4,null),new ItemStack("minecraft:iron_ingot",3,new CompoundTag(true)),new ItemStack("minecraft:iron_ingot",64,new CompoundTag(false)));
   ready();tick(s);assert Pont.sends==1&&Pont.exports==1;
@@ -288,6 +306,7 @@ class ProductionMenuTests(unittest.TestCase):
             "catalogue-foreign",
             "capture-failed",
             "backpack-pending",
+            "backpack-disabled",
             "result",
             "unpublished",
             "revocation",

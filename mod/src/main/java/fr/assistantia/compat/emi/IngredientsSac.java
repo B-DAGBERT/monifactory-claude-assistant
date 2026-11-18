@@ -1,6 +1,7 @@
 package fr.assistantia.compat.emi;
 
 import fr.assistantia.InventaireJoueur;
+import fr.assistantia.SacsFabrication;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -44,7 +45,8 @@ public final class IngredientsSac {
             stockIndexe = List.of();
             parObjet = Map.of();
         }
-        if (!(event.getScreen() instanceof AbstractContainerScreen<?> ecran)
+        if (!SacsFabrication.actif()
+                || !(event.getScreen() instanceof AbstractContainerScreen<?> ecran)
                 || mc.player == null
                 || mc.player.containerMenu != ecran.getMenu()
                 || !MENU_SAC.equals(ecran.getMenu().getClass().getName())
@@ -99,7 +101,8 @@ public final class IngredientsSac {
 
     @SubscribeEvent
     public static void rendu(ScreenEvent.Render.Post event) {
-        if (releve == null || event.getScreen() != releve.ecran()) return;
+        if (!SacsFabrication.actif() || releve == null || event.getScreen() != releve.ecran())
+            return;
         var g = event.getGuiGraphics();
         for (Slot slot : releve.prises().keySet()) {
             int x = releve.ecran().getGuiLeft() + slot.x;
@@ -133,7 +136,7 @@ public final class IngredientsSac {
                     .add(
                             Component.literal("Dans ton backpack × " + total)
                                     .withStyle(ChatFormatting.GOLD));
-        if (releve == null || mc.screen != releve.ecran()) return;
+        if (!SacsFabrication.actif() || releve == null || mc.screen != releve.ecran()) return;
         var slot = releve.ecran().getSlotUnderMouse();
         if (slot == null || !ItemStack.isSameItemSameTags(cible, slot.getItem())) return;
         var quantite = releve.prises().get(slot);

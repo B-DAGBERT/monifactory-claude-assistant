@@ -5,6 +5,7 @@ import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.CoffreTampon;
 import fr.assistantia.InventaireJoueur;
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.SacsFabrication;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.inventory.CraftingContainer;
@@ -46,24 +47,26 @@ public final class InventaireArbreEmi {
         // Le mixin des favoris peut repasser sur une vue déjà enrichie : repartir de sa source.
         natif = ORIGINES.getOrDefault(natif, natif);
         var mc = Minecraft.getInstance();
-        if (mc.player == null || !InventaireJoueur.disponible()) return natif;
+        if (mc.player == null || !InventaireJoueur.fabricationDisponible()) return natif;
         var resultat = personnel();
         var stock = StockFabricationEmi.courant(physiques(resultat), TerminalMe.stock());
         var reservations = stock.virtuels();
-        if (InventaireJoueur.sacs().isEmpty()
+        boolean avecSacs = SacsFabrication.actif();
+        if (avecSacs
+                && InventaireJoueur.sacsFabrication().isEmpty()
                 && stock.reseau().isEmpty()
                 && stock.tampon().isEmpty()
                 && reservations.isEmpty()
                 && resultat.inventory.values().stream()
                         .noneMatch(pile -> pile.getKey() instanceof Fluid)) return natif;
-        // Le handler natif peut déjà représenter les mêmes fluides portés, sans indiquer leur
-        // origine.
-        for (var pile : natif.inventory.values())
-            if (pile.getKey() instanceof Fluid) {
-                var copie = ComparaisonEmi.pourInventaire(pile);
-                resultat.inventory.merge(
-                        copie, copie, (a, b) -> a.getAmount() >= b.getAmount() ? a : b);
-            }
+        // Un handler natif peut inclure des cases du sac ouvert sans indiquer leur origine.
+        if (avecSacs)
+            for (var pile : natif.inventory.values())
+                if (pile.getKey() instanceof Fluid) {
+                    var copie = ComparaisonEmi.pourInventaire(pile);
+                    resultat.inventory.merge(
+                            copie, copie, (a, b) -> a.getAmount() >= b.getAmount() ? a : b);
+                }
         ajouter(resultat, stock.tampon());
         ajouter(resultat, stock.reseau());
         ajouter(resultat, reservations);
@@ -72,7 +75,7 @@ public final class InventaireArbreEmi {
     }
 
     static EmiPlayerInventory personnel() {
-        return composer(InventaireJoueur.piles(), grilles());
+        return composer(InventaireJoueur.pilesFabrication(), grilles());
     }
 
     private static List<ItemStack> grilles() {
@@ -149,7 +152,7 @@ public final class InventaireArbreEmi {
                 ecran = null;
                 return;
             }
-            if (!InventaireJoueur.disponible()) return;
+            if (!InventaireJoueur.fabricationDisponible()) return;
             var instantane = InstantaneArbreEmi.lire(arbre);
             var reseau = TerminalMe.stock();
             var sources =
@@ -157,7 +160,7 @@ public final class InventaireArbreEmi {
                             instantane,
                             mc.level,
                             mc.getConnection(),
-                            InventaireJoueur.revision(),
+                            InventaireJoueur.revisionFabrication(),
                             CoffreTampon.revision(),
                             MachinesEmi.revisionLotsProduction(),
                             reseau,
@@ -167,7 +170,7 @@ public final class InventaireArbreEmi {
             boolean modifie = !sources.equals(precedent) || !memeGrille(grille);
             boolean plisChanges;
             if (modifie) {
-                var personnels = composer(InventaireJoueur.piles(), grille);
+                var personnels = composer(InventaireJoueur.pilesFabrication(), grille);
                 var stock = StockFabricationEmi.courant(physiques(personnels), reseau);
                 ajouter(personnels, stock.tampon());
                 ajouter(personnels, stock.reseau());

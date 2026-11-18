@@ -97,7 +97,7 @@ final class PossessionsRecette {
 
     /** Inventaire synchronisé et mémoire des coffres lue : un manque peut être annoncé. */
     static boolean complet() {
-        return InventaireJoueur.disponible() && CoffresConnus.etat().pret();
+        return InventaireJoueur.fabricationDisponible() && CoffresConnus.etat().pret();
     }
 
     static void vider() {
@@ -189,7 +189,7 @@ final class PossessionsRecette {
             recomposerPosees();
         }
         var coffres = CoffresConnus.etat();
-        long signature = signature(InventaireJoueur.piles());
+        long signature = signature(InventaireJoueur.pilesFabrication());
         long tampon = CoffreTampon.revision();
         var lots = MachinesEmi.reservationsObjets();
         var outils = MachinesEmi.outilsObjets();
@@ -218,7 +218,7 @@ final class PossessionsRecette {
             var id = ForgeRegistries.ITEMS.getKey(pile.getItem());
             if (id != null) totaux.merge(id.toString(), (long) pile.getCount(), Long::sum);
         }
-        for (ItemStack pile : InventaireJoueur.piles()) {
+        for (ItemStack pile : InventaireJoueur.pilesFabrication()) {
             if (pile.isEmpty()) continue;
             var id = ForgeRegistries.ITEMS.getKey(pile.getItem());
             if (id != null) totaux.merge(id.toString(), (long) pile.getCount(), Long::sum);

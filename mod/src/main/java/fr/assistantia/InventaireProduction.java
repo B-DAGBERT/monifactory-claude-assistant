@@ -33,6 +33,7 @@ final class InventaireProduction {
         var mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || !courant(contexte))
             return CompletableFuture.completedFuture("");
+        long revisionInventaire = InventaireJoueur.revisionFabrication();
         long maintenant = System.currentTimeMillis();
         String capture = Pont.texte(demande, "capture");
         var json = new JsonObject();
@@ -47,16 +48,19 @@ final class InventaireProduction {
         JsonObject stock = depuisCoffre ? StockProduction.capturer(maintenant) : null;
         if (stock != null) json.add("stock", stock);
         json.addProperty("coffre_demande", depuisCoffre);
-        boolean synchronise = InventaireJoueur.disponible();
+        boolean synchronise = InventaireJoueur.fabricationDisponible();
         json.addProperty("synchronise", synchronise);
+        json.addProperty("inclut_sacs", SacsFabrication.actif());
         json.addProperty("complet", false);
         json.add(
                 "inventaire",
                 sansVariantes(
                         stock == null && synchronise
-                                ? InventaireJoueur.piles()
+                                ? InventaireJoueur.pilesFabrication()
                                 : java.util.List.of()));
         JsonObject lots = lots(demande, catalogue);
+        if (revisionInventaire != InventaireJoueur.revisionFabrication())
+            return CompletableFuture.completedFuture("");
         json.add("suivi", lots);
         annoter(json, contexte);
         String empreinte = Pont.vrai(lots, "disponible") ? Pont.texte(lots, "empreinte") : "";
@@ -65,7 +69,7 @@ final class InventaireProduction {
                 new Capture(
                         capture,
                         contexte,
-                        InventaireJoueur.revision(),
+                        revisionInventaire,
                         stock,
                         demande.deepCopy(),
                         catalogue.deepCopy(),
@@ -100,7 +104,7 @@ final class InventaireProduction {
                 || !courant(capture.contexte)
                 || empreinte.isEmpty()
                 || !empreinteCapture.equals(empreinte)
-                || capture.inventaire != InventaireJoueur.revision()
+                || capture.inventaire != InventaireJoueur.revisionFabrication()
                 || (capture.stock != null && !StockProduction.valide(capture.stock))) return false;
         var ecran = Pont.partie("ecran");
         var production = ecran.get("production_v2");

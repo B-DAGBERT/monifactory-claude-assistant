@@ -48,6 +48,26 @@ class Parcours(ContratJava):
 
 
 class ScenariosBasiques(Parcours, unittest.TestCase):
+    def test_option_sac_recalcule_le_reperage_actif(self):
+        plaque = "test:plate"
+        stockage = [coffre(3, item=plaque, n=8)]
+        self.client.step(inventaire={plaque: 3}, sac={plaque: 5})
+        self.demarrer(arbre=noeud("test:machine", enfants=[noeud(plaque, 8)]))
+        self.assertEqual(self.rafraichir(stockage)["selection"], {})
+
+        # La recherche peut continuer avec les poches pendant une lecture du sac.
+        self.client.step(compte_sac=False, sync=False)
+        avec_poches = self.rafraichir(stockage)
+        self.assertTrue(avec_poches["actif"])
+        self.assertEqual(avec_poches["quotas"], {"3": 5})
+        self.assertEqual(avec_poches["selection"], {plaque: 5})
+
+        attente = self.client.step(compte_sac=True)
+        self.assertEqual(attente["quotas"], {})
+        self.assertEqual(attente["selection"], {})
+        self.client.step(sync=True)
+        self.assertEqual(self.rafraichir(stockage)["selection"], {})
+
     def test_01_craft_machine_coffre_retrait_puis_pose(self):
         self.demarrer()
         self.client.step(lot={"item": "test:plate", "n": 2})

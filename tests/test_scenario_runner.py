@@ -65,6 +65,7 @@ class ScenarioRunnerTests(unittest.TestCase):
                 "tests.scenarios.test_parcours_stock",
                 "tests.test_me_terminal_panel.MeTerminalPanelTests.test_panel_allocates_buffer_before_withdrawable_me_entries",
                 "tests.test_me_terminal_panel.MeTerminalPanelTests.test_retrait_par_piles_attend_le_serveur_et_respecte_le_quota",
+                "tests.test_emi_backpack_tree.EmiBackpackTreeTests.test_same_backpack_changes_emi_ae2_and_machine_plans_when_toggled",
                 "tests.test_machine_inputs.MachineInputTests",
             ],
         )

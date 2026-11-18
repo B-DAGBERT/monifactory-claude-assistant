@@ -107,6 +107,11 @@ public class Fullbright {public static final String CLE="local_fullbright";publi
  public static boolean actif(){return actif;}public static void regler(boolean v){actif=v;}
  public static String description(){return "Éclaire les grottes au maximum, sans torche. Réglage local mémorisé.";}}
 """,
+        "fr.assistantia.SacsFabrication": """
+public class SacsFabrication {public static final String CLE="local_backpack_craft";private static boolean actif=true;
+ public static boolean actif(){return actif;}public static void regler(boolean v){actif=v;}
+ public static String description(){return "Compte le contenu des sacs portés dans les besoins de craft.";}}
+""",
         "fr.assistantia.CatalogueProduction": """
 public class CatalogueProduction {public static boolean apercuCourant(com.google.gson.JsonObject j){return true;}}
 """,
@@ -157,6 +162,15 @@ public class DashboardLayoutTest {
  static ChampTheme question(EcranAssistant s){return (ChampTheme)widgets(s).stream().filter(w->w instanceof ChampTheme).max(Comparator.comparingInt(AbstractWidget::getY)).orElseThrow();}
  static void render(EcranAssistant s){GuiGraphics.textes.clear();GuiGraphics.positions.clear();s.render(new GuiGraphics(),-1,-1,0);}
  static int[] ecrit(String debut){for(int i=0;i<GuiGraphics.textes.size();i++)if(GuiGraphics.textes.get(i).startsWith(debut))return GuiGraphics.positions.get(i);return null;}
+ static int[] interrupteur(String titre,String etat){
+  int[] ligne=ecrit(titre);if(ligne==null)return null;
+  int[] plusProche=null;int distance=Theme.LIGNE*2;
+  for(int i=0;i<GuiGraphics.textes.size();i++){
+   int[] p=GuiGraphics.positions.get(i);int ecart=Math.abs(p[1]-ligne[1]);
+   if(p[0]>ligne[0]&&ecart<distance&&GuiGraphics.textes.get(i).equals(etat)){plusProche=p;distance=ecart;}
+  }
+  return plusProche;
+ }
  static int[] boite(AbstractWidget w){return w instanceof ChampTheme?new int[]{w.getX()-1,w.getY()-1,w.getWidth()+2,w.getHeight()+2}:new int[]{w.getX(),w.getY(),w.getWidth(),w.getHeight()};}
  /** Every visible widget: theme height, inside the panel, labels complete, no overlap. */
  static void dedans(EcranAssistant s,String cas){
@@ -251,13 +265,20 @@ public class DashboardLayoutTest {
    // Réglages: each toggle is a theme button drawn in the scrolled list; a click changes the setting.
    onglets.get(4).onPress();render(s);
    assert GuiGraphics.textes.contains("✘ Désactivé")&&GuiGraphics.textes.contains("✔ Activé"):cas+": toggles drawn";
+   int avantSac=Pont.envois.size();int[] sac=interrupteur("Backpacks","✔ Activé");
+   assert sac!=null:cas+": backpack option visible and on by default";
+   s.mouseClicked(sac[0]+2,sac[1]+2,0);render(s);
+   sac=interrupteur("Backpacks","✘ Désactivé");
+   assert !SacsFabrication.actif()&&sac!=null&&Pont.envois.size()==avantSac:cas+": backpack option applies locally";
+   s.mouseClicked(sac[0]+2,sac[1]+2,0);render(s);
+   assert SacsFabrication.actif()&&Pont.envois.size()==avantSac:cas+": backpack option can be reenabled";
+   s.mouseScrolled(w/2,h/2,-1);render(s);
    assert GuiGraphics.textes.stream().anyMatch(t->t.startsWith("Les réponses")):cas+": description drawn";
-   int[] voix=null;int vus=0;
-   for(int k=0;k<GuiGraphics.textes.size();k++)if(GuiGraphics.textes.get(k).equals("✘ Désactivé")&&++vus==2)voix=GuiGraphics.positions.get(k);
+   int[] voix=interrupteur("Lecture à voix","✘ Désactivé");
    assert voix!=null:cas+": voice toggle visible";
    int avant=Pont.envois.size();s.mouseClicked(voix[0]+2,voix[1]+2,0);
    assert Pont.envois.size()==avant+1&&Pont.texte(Pont.envois.get(avant),"cle").equals("voix")&&Pont.vrai(Pont.envois.get(avant),"valeur"):cas+": toggle click sends the setting";
-   render(s);assert Collections.frequency(GuiGraphics.textes,"✘ Désactivé")==vus-1:cas+": toggle shows the new value at once";
+   render(s);assert interrupteur("Lecture à voix","✔ Activé")!=null:cas+": toggle shows the new value at once";
    reglages.get(0).getAsJsonObject().addProperty("valeur",true);render(s);
    reglages.get(0).getAsJsonObject().addProperty("valeur",false);render(s);
    // Discussion: scrolling up shows « Derniers messages », a theme button inside the view.

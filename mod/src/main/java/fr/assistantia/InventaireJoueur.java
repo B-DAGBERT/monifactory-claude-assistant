@@ -32,7 +32,7 @@ public final class InventaireJoueur {
 
     private static List<ItemStack> piles = List.of(), sacs = List.of(), base = List.of();
     private static boolean synchronise = true, connecte, synchroniseExporte;
-    private static long dernierExport, revision, revisionExportee = -1;
+    private static long dernierExport, revision, revisionExportee = -1, revisionStockFabrication;
     private static int ticks;
     private static Object connexion, dimensionExportee, joueurExporte;
     private static JsonObject inventaireExporte, sacsExportes;
@@ -43,8 +43,7 @@ public final class InventaireJoueur {
 
     /** Un nouveau monde ne peut pas utiliser la dernière vue de la connexion précédente. */
     public static boolean disponible() {
-        var mc = Minecraft.getInstance();
-        return connecte && synchronise && mc.player != null && mc.getConnection() == connexion;
+        return synchronise && connexionCourante();
     }
 
     public static List<ItemStack> piles() {
@@ -53,6 +52,32 @@ public final class InventaireJoueur {
 
     public static List<ItemStack> sacs() {
         return sacs;
+    }
+
+    /** Stock de calcul, distinct du relevé physique qui sert aux preuves de réception. */
+    public static List<ItemStack> pilesFabrication() {
+        return SacsFabrication.actif() ? piles : base;
+    }
+
+    public static List<ItemStack> sacsFabrication() {
+        return SacsFabrication.actif() ? sacs : List.of();
+    }
+
+    public static boolean fabricationDisponible() {
+        return fabricationSynchronisee() && connexionCourante();
+    }
+
+    public static boolean fabricationSynchronisee() {
+        return !SacsFabrication.actif() || synchronise;
+    }
+
+    public static long revisionFabrication() {
+        return revisionStockFabrication + SacsFabrication.revision();
+    }
+
+    private static boolean connexionCourante() {
+        var mc = Minecraft.getInstance();
+        return connecte && mc.player != null && mc.getConnection() == connexion;
     }
 
     /** Révision du stock personnel synchronisé, y compris des variantes et des contenants. */
@@ -68,9 +93,13 @@ public final class InventaireJoueur {
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         var mc = Minecraft.getInstance();
+        boolean inclureSacs = SacsFabrication.actif();
         long temps = horloge.getAsLong();
         if (mc.player == null || mc.level == null) {
-            if (connecte) revision++;
+            if (connecte) {
+                revision++;
+                revisionStockFabrication++;
+            }
             piles = sacs = base = List.of();
             cases = new ItemStack[0];
             inventaireExporte = sacsExportes = null;
@@ -120,6 +149,7 @@ public final class InventaireJoueur {
             sacs = etat.objets();
         }
         if (modifie) revision++;
+        if (inclureSacs ? modifie : baseChangee || nouvelleConnexion) revisionStockFabrication++;
         synchronise = etat.synchronise();
         connexion = mc.getConnection();
         exporter(mc, temps);

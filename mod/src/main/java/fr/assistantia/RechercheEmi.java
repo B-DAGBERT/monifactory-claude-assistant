@@ -22,6 +22,7 @@ public final class RechercheEmi {
     private static String recette = "", monde = "", dimension = "", contexte = "";
     private static long numero, fin, dernierClic, envoye;
     private static boolean attente, inventaireEnAttente;
+    private static boolean sacsInclus;
     private static MemoireCollecte collecte;
     private static java.util.function.Predicate<net.minecraft.world.item.ItemStack> conforme =
             s -> false;
@@ -69,7 +70,7 @@ public final class RechercheEmi {
      * est vidée dès que la recherche s'arrête.
      */
     public static int aSortir(Pont.Repere repere) {
-        return aSortir.isEmpty() ? 0 : aSortir.getOrDefault(cle(repere), 0);
+        return aSortir.isEmpty() || !stockCalculPret() ? 0 : aSortir.getOrDefault(cle(repere), 0);
     }
 
     private static boolean contexteValide() {
@@ -93,24 +94,28 @@ public final class RechercheEmi {
         return actif() && recette.equals(id);
     }
 
+    private static boolean stockCalculPret() {
+        return sacsInclus == SacsFabrication.actif() && InventaireJoueur.fabricationSynchronisee();
+    }
+
     /**
      * Objet à surligner dans un conteneur ouvert : un ingrédient retenu dans les coffres, ou un
      * ingrédient qui ne se consomme pas (moule, presse, outil) encore demandé. Avant, un moule dans
      * le coffre surligné n'était pas toujours surligné lui-même.
      */
     public static boolean cherche(String id) {
-        if (!actif() || !InventaireJoueur.synchronise()) return false;
+        if (!actif() || !stockCalculPret()) return false;
         if (objets.contains(id)) return true;
         var suivi = collecte;
         return suivi != null && demandes.contains(id) && suivi.outils().contains(id);
     }
 
     public static List<Pont.Repere> reperes() {
-        return actif() && InventaireJoueur.synchronise() ? reperes : List.of();
+        return actif() && stockCalculPret() ? reperes : List.of();
     }
 
     public static Map<String, Integer> resultatsDisponibles() {
-        if (!actif() || collecte == null || !InventaireJoueur.synchronise()) return Map.of();
+        if (!actif() || collecte == null || !stockCalculPret()) return Map.of();
         Map<String, Integer> tampons = new HashMap<>(resultatsTampons);
         Map<String, Integer> autres = new HashMap<>();
         quantites.forEach(
@@ -195,10 +200,7 @@ public final class RechercheEmi {
     }
 
     private static boolean pret() {
-        return Pont.retraitCoffres()
-                && actif()
-                && collecte != null
-                && InventaireJoueur.synchronise();
+        return Pont.retraitCoffres() && actif() && collecte != null && stockCalculPret();
     }
 
     /** Coffres mémorisés encore utiles, sans le stock ouvert (son contenu réel le remplace). */
@@ -255,10 +257,17 @@ public final class RechercheEmi {
     }
 
     private static void actualiserCollecte() {
-        if (collecte == null
-                || RetraitCoffre.occupe()
-                || Emi.envoiMachineEnCours()
-                || !InventaireJoueur.synchronise()) return;
+        if (collecte == null || RetraitCoffre.occupe() || Emi.envoiMachineEnCours()) return;
+        boolean inclureSacs = SacsFabrication.actif();
+        if (sacsInclus != inclureSacs) {
+            sacsInclus = inclureSacs;
+            // L'ancien maximum des observations peut contenir des objets observés dans un sac.
+            // Les réservations et crédits natifs sont relus après ce changement de couverture.
+            collecte.reprendreStockCourant();
+            AideCoffre.vider();
+            invaliderSelection();
+        }
+        if (!InventaireJoueur.fabricationSynchronisee()) return;
         long version = collecte.version();
         var cumul = Emi.fabricationsConfirmees();
         Map<String, Integer> preuves = new HashMap<>();
@@ -270,7 +279,7 @@ public final class RechercheEmi {
         fabricationsPrecedentes = cumul;
         collecte.reserver(Emi.reservationsFabrication());
         collecte.outilsMachines(Emi.outilsMachines());
-        var physiques = compter(InventaireJoueur.piles());
+        var physiques = compter(InventaireJoueur.pilesFabrication());
         if (!portes.equals(physiques)) {
             portes = physiques;
             versionAppliquee = -1;
@@ -289,7 +298,7 @@ public final class RechercheEmi {
 
     public static String bouton(String id) {
         return selectionnee(id)
-                ? !InventaireJoueur.synchronise()
+                ? !InventaireJoueur.fabricationSynchronisee()
                         ? "Lecture du sac…"
                         : attente ? "Recherche…" : "Arrêter"
                 : "Repérage";
@@ -330,6 +339,7 @@ public final class RechercheEmi {
         contexte = Pont.cleContexte();
         fin = now + 600_000;
         collecte = suivi;
+        sacsInclus = SacsFabrication.actif();
         fabricationsPrecedentes = Emi.fabricationsConfirmees();
         conforme = accepte;
         inventaireEnAttente = true;
@@ -348,20 +358,24 @@ public final class RechercheEmi {
         collecte = suivi;
         fabricationsPrecedentes = Emi.fabricationsConfirmees();
         conforme = accepte;
+        invaliderSelection();
+        fin = horloge.getAsLong() + 600_000;
+        actualiserCollecte();
+    }
+
+    private static void invaliderSelection() {
         inventaireEnAttente = true;
         demandes = Set.of();
         // Invalider les quotas de l'ancien arbre. Le dernier relevé reste : ses coffres sont
         // recomptés pour le nouvel arbre dès que ses besoins sont connus.
         objets = Set.of();
         quantites = resultatsTampons = Map.of();
-        aSortir = Map.of();
+        portes = aSortir = Map.of();
         reperes = List.of();
         resultatsPrets = Set.of();
         derniereVue = null;
         versionAppliquee = -1;
         revision++;
-        fin = horloge.getAsLong() + 600_000;
-        actualiserCollecte();
     }
 
     private static Map<String, Integer> compter(List<net.minecraft.world.item.ItemStack> piles) {
@@ -471,19 +485,21 @@ public final class RechercheEmi {
             vider();
             return;
         }
-        if (++ticks % 2 == 0 || CoffreTampon.revision() != versionTamponAppliquee)
-            actualiserCollecte();
+        if (++ticks % 2 == 0
+                || CoffreTampon.revision() != versionTamponAppliquee
+                || sacsInclus != SacsFabrication.actif()) actualiserCollecte();
         actualiserVue();
         // Une acquisition (résultat pris à la main, objet rangé) refait la sélection tout de suite.
         var suivi = collecte;
         if (suivi != null
+                && stockCalculPret()
                 && (suivi.version() != versionAppliquee
                         || CoffreTampon.revision() != versionTamponAppliquee)
                 && !RetraitCoffre.occupe()) appliquer();
     }
 
     private static void actualiserVue() {
-        if (collecte == null || !InventaireJoueur.synchronise()) return;
+        if (collecte == null || !stockCalculPret()) return;
         if (demandes.isEmpty())
             return; // Garder la recherche validée, sans revenir au guidage de l'objectif.
         if (RetraitCoffre.occupe() || Emi.envoiMachineEnCours()) return;

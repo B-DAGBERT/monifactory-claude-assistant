@@ -52,6 +52,7 @@ INVENTORY_STUBS = {
                 "net.minecraft.resources",
                 "net.minecraftforge.registries",
                 "net.minecraftforge.items",
+                "net.p3pp3rf1y.sophisticatedbackpacks",
             )
         )
     },
@@ -84,6 +85,7 @@ public class Inventory {
 public class Player {
  public net.minecraft.world.inventory.AbstractContainerMenu containerMenu=new net.minecraft.world.inventory.AbstractContainerMenu();
  public final Inventory inventory=new Inventory();public Inventory getInventory(){return inventory;}
+ public final java.util.List<net.minecraft.world.item.ItemStack> items=inventory.items,extra=new java.util.ArrayList<>();
  public net.minecraft.network.chat.Component getName(){return new net.minecraft.network.chat.Component("Damien");}}
 """,
     "net.minecraft.client.Minecraft": """
@@ -98,6 +100,10 @@ public class TickEvent {public enum Phase {START,END}public static class ClientT
 """,
     "net.minecraftforge.eventbus.api.EventPriority": "public enum EventPriority {HIGHEST,HIGH,NORMAL,LOW,LOWEST}",
     "net.minecraftforge.eventbus.api.SubscribeEvent": "public @interface SubscribeEvent {EventPriority priority() default EventPriority.NORMAL;}",
+    "net.minecraftforge.fml.loading.FMLPaths": """
+public class FMLPaths {public static final FMLPaths CONFIGDIR=new FMLPaths();
+ public java.nio.file.Path get(){return java.nio.file.Path.of(System.getProperty("test.game")).resolve("config");}}
+""",
     "fr.assistantia.Pont": """
 public class Pont {public static int exports;public static com.google.gson.JsonObject dernier;
  public static boolean envoyerInventaire(com.google.gson.JsonObject j){exports++;dernier=j.deepCopy();return true;}}
@@ -159,11 +165,141 @@ public class InventaireJoueurTest {
 }
 """
 
+CRAFT_STOCK_TEST = r"""
+package fr.assistantia;
+
+import fr.assistantia.compat.backpacks.SacsPortes;
+import java.nio.file.Files;
+import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import net.minecraft.client.Minecraft;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.fml.loading.FMLPaths;
+import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackStorage;
+import net.p3pp3rf1y.sophisticatedbackpacks.network.SBPPacketHandler;
+
+public class StockFabricationSacTest {
+    private static final String FER = "minecraft:iron_ingot";
+    private static final UUID SAC = UUID.fromString("075f3fac-24fe-4fd7-a39f-eba957c2e5f2");
+    private static long temps = 1_000_000;
+
+    private static void tick() {
+        temps += 500;
+        InventaireJoueur.tick(new TickEvent.ClientTickEvent());
+    }
+
+    private static int compte(List<ItemStack> piles) {
+        return piles.stream().filter(s -> s.id.equals(FER)).mapToInt(ItemStack::getCount).sum();
+    }
+
+    private static void repondre(int n) {
+        var fer = new CompoundTag();
+        fer.putString("id", FER);
+        fer.putInt("Count", n);
+        fer.putInt("Slot", 0);
+        var liste = new ListTag();
+        liste.add(fer);
+        var inventaire = new CompoundTag();
+        inventaire.putInt("Size", 9);
+        inventaire.put("Items", liste);
+        var stockage = new CompoundTag();
+        stockage.put("inventory", inventaire);
+        BackpackStorage.get().contents.put(SAC, stockage);
+        SacsPortes.reception(SAC, stockage);
+    }
+
+    public static void main(String[] args) throws Exception {
+        var config = FMLPaths.CONFIGDIR.get();
+        var preference = config.resolve("assistantia-sacs-craft.txt");
+        var voisine = config.resolve("assistantia-visuel.json");
+        if (args[0].equals("relire")) {
+            long avant = System.nanoTime();
+            while (SacsFabrication.actif()
+                    && System.nanoTime() - avant < Duration.ofSeconds(3).toNanos()) {
+                Thread.sleep(1);
+            }
+            assert !SacsFabrication.actif() : "le choix OFF survit au redémarrage";
+            assert Files.readString(voisine).equals("{\"fullbright\":true}");
+            System.out.println("Préférence relue");
+            return;
+        }
+        Files.createDirectories(config);
+        Files.writeString(voisine, "{\"fullbright\":true}");
+        assert SacsFabrication.actif() && !Files.exists(preference) : "activée par défaut";
+        InventaireJoueur.horloge = () -> temps;
+        var mc = Minecraft.getInstance();
+        mc.player = new Player();
+        mc.level = new Minecraft.Level("minecraft:overworld");
+        mc.connection = new Object();
+        mc.player.inventory.items.set(0, new ItemStack(FER, 3));
+        var sac = new ItemStack("sophisticatedbackpacks:diamond_backpack", 1);
+        var tag = new CompoundTag();
+        tag.putUUID("contentsUuid", SAC);
+        sac.setTag(tag);
+        mc.player.inventory.items.set(1, sac);
+        tick();
+        assert SBPPacketHandler.requested.equals(List.of(SAC));
+        assert !InventaireJoueur.disponible() && !InventaireJoueur.fabricationDisponible();
+
+        long brut = InventaireJoueur.revision();
+        long fabrication = InventaireJoueur.revisionFabrication();
+        SacsFabrication.regler(false);
+        assert InventaireJoueur.fabricationDisponible() && InventaireJoueur.fabricationSynchronisee();
+        assert !InventaireJoueur.disponible() && !InventaireJoueur.synchronise();
+        assert InventaireJoueur.revision() == brut;
+        assert InventaireJoueur.revisionFabrication() == fabrication + 1;
+        assert compte(InventaireJoueur.pilesFabrication()) == 3;
+        var poches = InventaireJoueur.pilesFabrication();
+
+        fabrication = InventaireJoueur.revisionFabrication();
+        repondre(5);
+        tick();
+        assert InventaireJoueur.disponible() && InventaireJoueur.fabricationDisponible();
+        assert InventaireJoueur.pilesFabrication() == poches;
+        assert InventaireJoueur.revisionFabrication() == fabrication;
+        assert InventaireJoueur.revision() > brut && compte(InventaireJoueur.piles()) == 8;
+        assert compte(InventaireJoueur.sacs()) == 5 && InventaireJoueur.sacsFabrication().isEmpty();
+        assert Pont.dernier.getAsJsonObject("inventaire").get(FER).getAsInt() == 8;
+        assert Pont.dernier.getAsJsonObject("backpacks").get(FER).getAsInt() == 5;
+
+        brut = InventaireJoueur.revision();
+        SacsFabrication.regler(true);
+        assert InventaireJoueur.revisionFabrication() == fabrication + 1;
+        var piles = InventaireJoueur.piles();
+        assert InventaireJoueur.pilesFabrication() == piles;
+        assert InventaireJoueur.sacsFabrication() == InventaireJoueur.sacs();
+        SacsFabrication.regler(false);
+        SacsFabrication.regler(false);
+        assert InventaireJoueur.revisionFabrication() == fabrication + 2;
+        assert InventaireJoueur.piles() == piles && InventaireJoueur.revision() == brut;
+        assert InventaireJoueur.pilesFabrication() == poches;
+        assert Ecritures.attendre(3000) : "écriture en file terminée";
+        assert Files.readString(preference).equals("false");
+        assert Files.readString(voisine).equals("{\"fullbright\":true}");
+
+        mc.connection = new Object();
+        assert !InventaireJoueur.fabricationDisponible() : "stock de l'ancienne connexion interdit";
+        tick();
+        assert InventaireJoueur.fabricationDisponible() && compte(InventaireJoueur.pilesFabrication()) == 3;
+        assert !InventaireJoueur.disponible() : "ancien contenu du sac encore sans preuve";
+        mc.player = null;
+        tick();
+        assert InventaireJoueur.pilesFabrication().isEmpty() && !InventaireJoueur.fabricationDisponible();
+        System.out.println("Stock des crafts OK");
+    }
+}
+"""
+
 
 class JavaContract(unittest.TestCase):
     """Compiles real mod classes with stubs and runs a contract; holds no test itself."""
 
-    def compile_and_run(self, stubs, sources, main, extra=()):
+    def compile_and_run(self, stubs, sources, main, extra=(), executions=((),)):
         javac, java = jdk()
         gson = gson_jar()
         if not javac or not java or gson is None:
@@ -193,16 +329,30 @@ class JavaContract(unittest.TestCase):
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
             game = temp / "game"
             game.mkdir()
-            ran = subprocess.run(
-                [java, "-ea", f"-Dtest.game={game}", "-cp", classpath, main],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=60,
-            )
-            self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
-            return ran.stdout
+            resultats = []
+            for args in executions:
+                ran = subprocess.run(
+                    [java, "-ea", f"-Dtest.game={game}", "-cp", classpath, main, *args],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=60,
+                )
+                self.assertEqual(ran.returncode, 0, ran.stdout + ran.stderr)
+                resultats.append(ran.stdout)
+            return "".join(resultats)
+
+
+INVENTORY_SOURCES = [
+    str(JAVA / name)
+    for name in (
+        "Ecritures.java",
+        "InventaireJoueur.java",
+        "SacsFabrication.java",
+        "compat/backpacks/SacsPortes.java",
+    )
+]
 
 
 class JavaExportTests(JavaContract):
@@ -220,14 +370,22 @@ class JavaExportTests(JavaContract):
     def test_inventory_export_is_copy_free_when_unchanged_and_written_on_change(self):
         output = self.compile_and_run(
             INVENTORY_STUBS,
-            [
-                str(JAVA / "InventaireJoueur.java"),
-                str(JAVA / "compat/backpacks/SacsPortes.java"),
-            ],
+            INVENTORY_SOURCES,
             "fr.assistantia.InventaireJoueurTest",
             extra=[("fr/assistantia/InventaireJoueurTest.java", INVENTORY_TEST)],
         )
         self.assertIn("InventaireJoueur OK", output)
+
+    def test_backpack_craft_preference_revises_only_planning_and_survives_restart(self):
+        output = self.compile_and_run(
+            INVENTORY_STUBS,
+            INVENTORY_SOURCES,
+            "fr.assistantia.StockFabricationSacTest",
+            extra=[("fr/assistantia/StockFabricationSacTest.java", CRAFT_STOCK_TEST)],
+            executions=(("appliquer",), ("relire",)),
+        )
+        self.assertIn("Stock des crafts OK", output)
+        self.assertIn("Préférence relue", output)
 
 
 class TemporaryNameTests(unittest.TestCase):
