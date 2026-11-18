@@ -50,7 +50,9 @@ STUBS.update(
         "fr.assistantia.compat.emi.EnvoiMachine": "public class EnvoiMachine {public static boolean busy;public static boolean occupe(){return busy;}}",
         "fr.assistantia.compat.emi.DeclarerFabricationEcran": """public class DeclarerFabricationEcran {
  public static dev.emi.emi.api.recipe.EmiRecipe declared;public static int calls;
- public static boolean ouvrir(net.minecraft.client.gui.screens.Screen parent,dev.emi.emi.api.recipe.EmiRecipe r){declared=r;calls++;return true;}}""",
+ public static boolean attendreConfirmation;public static Runnable confirmation;
+ public static boolean ouvrir(net.minecraft.client.gui.screens.Screen parent,dev.emi.emi.api.recipe.EmiRecipe r,Runnable confirmee){
+ declared=r;calls++;if(attendreConfirmation)confirmation=confirmee;else confirmee.run();return true;}}""",
         "fr.assistantia.compat.emi.MachinesEmi": """import java.util.*;import dev.emi.emi.api.recipe.EmiRecipe;
  public class MachinesEmi {public record Ligne(int lot,EmiRecipe recette,int fois,String etat,boolean annulable,String detail,int groupe){
  boolean terminee(){return lot>0&&etat.equals("Terminé");}}
@@ -137,6 +139,28 @@ public class SuiviOrderMenuTest {
     assert selected(s).recette()==a;assert s.mouseClicked(45,88,0);assert selected(s).recette()==a;
     render(s);button(s,"En cours").press();assert DeclarerFabricationEcran.declared==a;
     button(s,"En cours").press();assert DeclarerFabricationEcran.calls==1;
+   }
+   case "declare-from-existing-lot" -> {
+    MachinesEmi.rows=List.of(row(10,a,2));refresh(s);render(s);assert s.mouseClicked(45,88,0);
+    render(s);
+    var declarer=button(s,"En cours");
+    assert declarer.y==button(s,"Recalculer").y&&declarer.active&&declarer.visible;
+    assert button(s,"Annuler").y>declarer.y;
+    DeclarerFabricationEcran.attendreConfirmation=true;
+    declarer.press();
+    assert DeclarerFabricationEcran.declared==a && selected(s).lot()==10;
+    MachinesEmi.rows=List.of(row(10,a,2),row(11,a,2));MachinesEmi.max=0;
+    DeclarerFabricationEcran.confirmation.run();render(s);
+    assert selected(s).lot()==11&&!((boolean[])field(s,"replies"))[2]&&!declarer.active;
+    assert render(s).texts.stream().anyMatch(t->t.contains("Fabrication ajoutée"));
+    declarer.press();assert DeclarerFabricationEcran.calls==1;
+   }
+   case "declare-only-visible-row" -> {
+    var rows=new ArrayList<MachinesEmi.Ligne>();for(int i=0;i<30;i++)rows.add(row(i==0?-1:i,a,0));
+    MachinesEmi.rows=rows;refresh(s);render(s);
+    for(int i=0;i<6;i++)s.mouseScrolled(100,120,-1);
+    render(s);var declarer=button(s,"En cours");assert declarer.visible&&!declarer.active;
+    declarer.press();assert DeclarerFabricationEcran.calls==0;
    }
    case "removed" -> {
     MachinesEmi.rows=List.of(row(-1,b,0));refresh(s);
@@ -263,6 +287,8 @@ class MachineOrderMenuTests(unittest.TestCase):
                 "fallback-group",
                 "render-cache",
                 "reorder-click",
+                "declare-from-existing-lot",
+                "declare-only-visible-row",
                 "removed",
                 "changed-before-click",
                 "lot-identity",

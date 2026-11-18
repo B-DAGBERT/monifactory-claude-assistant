@@ -116,7 +116,7 @@ import dev.emi.emi.api.recipe.EmiRecipe;
 public class RenderUiSafetyTest {
  static EditBox input(DeclarerFabricationEcran screen){return (EditBox)screen.widgets.stream().filter(w->w instanceof EditBox).findFirst().orElseThrow();}
  static Button button(DeclarerFabricationEcran screen,String name){return (Button)screen.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals(name)).findFirst().orElseThrow();}
- public static void main(String[] args){
+ public static void main(String[] args)throws Exception{
   if(args[0].equals("texture")){
    RenderSystem.unit=33987;RenderSystem.texture=41;
    LiaisonTexture.preserver(()->RenderSystem.bindTexture(99));
@@ -130,6 +130,27 @@ public class RenderUiSafetyTest {
   }
   Minecraft mc=new Minecraft();Screen parent=new Screen(Component.literal("Suivi"));
   EmiRecipe recipe=()->java.util.List.of(new EmiRecipe.Output(2));
+  if(args[0].startsWith("rappel-")){
+   mc.screen=parent;MachinesEmi.max=args[0].equals("rappel-direct")?4:65;
+   var ouvrir=DeclarerFabricationEcran.class.getDeclaredMethod("ouvrir",Screen.class,EmiRecipe.class,Runnable.class);
+   ouvrir.setAccessible(true);int[] rappels={0};
+   Runnable rappel=()->{assert mc.screen==parent;rappels[0]++;};
+   assert (boolean)ouvrir.invoke(null,parent,recipe,rappel);
+   if(args[0].equals("rappel-direct")){
+    assert MachinesEmi.calls==1&&rappels[0]==1;
+   }else{
+    var quantite=(DeclarerFabricationEcran)mc.screen;
+    assert MachinesEmi.calls==0&&rappels[0]==0:"opening a prompt cannot confirm a batch";
+    quantite.init(mc,320,240);
+    if(args[0].equals("rappel-annule")){
+     quantite.onClose();assert mc.screen==parent&&MachinesEmi.calls==0&&rappels[0]==0;
+    }else{
+     input(quantite).setValue("4");quantite.tick();button(quantite,"Confirmer").press();
+     quantite.keyPressed(257,0,0);assert MachinesEmi.calls==1&&MachinesEmi.last==4&&rappels[0]==1;
+    }
+   }
+   return;
+  }
   if(args[0].matches("(direct|prompt)-[0-9]+")){
    mc.screen=parent;
    int amount=Integer.parseInt(args[0].substring(args[0].indexOf('-')+1));
@@ -275,6 +296,11 @@ class RenderUiSafetyTests(unittest.TestCase):
 
     def test_64_and_above_require_quantity_dialog(self):
         for case in ("prompt-64", "prompt-65", "thresholds"):
+            with self.subTest(case=case):
+                self.run_case(case)
+
+    def test_follow_up_refresh_only_after_successful_declaration(self):
+        for case in ("rappel-direct", "rappel-confirme", "rappel-annule"):
             with self.subTest(case=case):
                 self.run_case(case)
 

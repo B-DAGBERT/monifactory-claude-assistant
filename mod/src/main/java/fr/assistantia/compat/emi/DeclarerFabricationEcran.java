@@ -21,6 +21,7 @@ public final class DeclarerFabricationEcran extends Screen {
     private final EmiRecipe recette;
     private final Object arbre;
     private final int envoyes, limite, lot;
+    private final Runnable apresDeclaration;
     private ChampTheme nombre;
     private BoutonTheme confirmer, tout, charge;
     private String erreur = "", brouillon;
@@ -40,6 +41,10 @@ public final class DeclarerFabricationEcran extends Screen {
 
     /** Même règle depuis la machine et le suivi, avec protection contre le double clic. */
     public static boolean ouvrir(Screen parent, EmiRecipe recette) {
+        return ouvrir(parent, recette, () -> {});
+    }
+
+    static boolean ouvrir(Screen parent, EmiRecipe recette, Runnable apresDeclaration) {
         var mc = Minecraft.getInstance();
         if (mc.screen != parent || MachinesEmi.arbreDeclaration() == null) return false;
         long maintenant = System.nanoTime();
@@ -48,11 +53,14 @@ public final class DeclarerFabricationEcran extends Screen {
         if (quantite <= 0) return false;
         if (demandeQuantite(recette, quantite)) {
             dernierClic = maintenant;
-            mc.setScreen(new DeclarerFabricationEcran(parent, recette));
+            mc.setScreen(
+                    new DeclarerFabricationEcran(
+                            parent, recette, 0, Integer.MAX_VALUE, 0, apresDeclaration));
             return true;
         }
         if (!MachinesEmi.declarer(recette, quantite)) return false;
         dernierClic = maintenant;
+        apresDeclaration.run();
         return true;
     }
 
@@ -67,12 +75,23 @@ public final class DeclarerFabricationEcran extends Screen {
 
     public DeclarerFabricationEcran(
             Screen parent, EmiRecipe recette, int envoyes, int limite, int lot) {
+        this(parent, recette, envoyes, limite, lot, () -> {});
+    }
+
+    private DeclarerFabricationEcran(
+            Screen parent,
+            EmiRecipe recette,
+            int envoyes,
+            int limite,
+            int lot,
+            Runnable apresDeclaration) {
         super(Component.literal("Quantité en cours de craft"));
         this.lot = lot;
         this.parent = parent;
         this.recette = recette;
         this.envoyes = Math.max(0, envoyes);
         this.limite = limite;
+        this.apresDeclaration = apresDeclaration;
         this.arbre = MachinesEmi.arbreDeclaration();
         this.brouillon = String.valueOf(envoyes > 0 ? envoyes : 1);
     }
@@ -179,8 +198,10 @@ public final class DeclarerFabricationEcran extends Screen {
         if (supplement == 0
                 || (lot > 0
                         ? MachinesEmi.completerLot(lot, recette, supplement)
-                        : MachinesEmi.declarer(recette, supplement))) minecraft.setScreen(parent);
-        else {
+                        : MachinesEmi.declarer(recette, supplement))) {
+            minecraft.setScreen(parent);
+            if (supplement > 0) apresDeclaration.run();
+        } else {
             valide = false;
             erreur = "Besoins modifiés · vérifie la quantité";
         }

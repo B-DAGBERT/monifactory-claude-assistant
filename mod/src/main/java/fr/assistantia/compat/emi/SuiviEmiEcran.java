@@ -1,5 +1,6 @@
 package fr.assistantia.compat.emi;
 
+import dev.emi.emi.api.recipe.EmiRecipe;
 import fr.assistantia.BarreDefilement;
 import fr.assistantia.BoutonTheme;
 import fr.assistantia.DispositionCoffre.Zone;
@@ -32,7 +33,7 @@ public final class SuiviEmiEcran extends Screen {
     private boolean replisChoisis;
     private int debut, selection = -1, hauteur;
     private long actualise, dernierClic;
-    private BoutonTheme recalculer, annuler, statutLot, voir, deplier;
+    private BoutonTheme recalculer, declarer, annuler, statutLot, voir, deplier;
     private String message = "", probleme = "";
     private final BarreDefilement barre = new BarreDefilement();
     private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
@@ -65,6 +66,16 @@ public final class SuiviEmiEcran extends Screen {
         int basBoutons = fenetre.basBoutons();
         haut = y + Theme.BOUTON + Theme.ECART;
         bas = Math.max(haut + 1, basBoutons - Theme.ECART - Theme.LIGNE);
+        String libelleRepli =
+                font.width("Tout déplier") >= font.width("Tout replier")
+                        ? "Tout déplier"
+                        : "Tout replier";
+        int[] outils =
+                Theme.largeursRangee(
+                        font,
+                        List.of("Recalculer", DECLARER, libelleRepli),
+                        droite - x,
+                        Theme.ECART);
         recalculer =
                 addRenderableWidget(
                         BoutonTheme.creer(
@@ -82,10 +93,14 @@ public final class SuiviEmiEcran extends Screen {
                                                             ? "Besoins recalculés · avancement conservé"
                                                             : "Scan non recalculé · réessaie depuis EMI";
                                         })
-                                .zone(x, y, largeur("Recalculer"))
+                                .zone(x, y, outils[0])
                                 .infobulle(
                                         "Relire l’arbre et les stocks actuels. Les lots en machine restent réservés."));
-        int replier = Math.max(largeur("Tout déplier"), largeur("Tout replier"));
+        declarer =
+                addRenderableWidget(
+                        BoutonTheme.creer(DECLARER, b -> declarerFabrication())
+                                .genre(Theme.Genre.PRINCIPAL)
+                                .zone(x + outils[0] + Theme.ECART, y, outils[1]));
         deplier =
                 addRenderableWidget(
                         BoutonTheme.creer(
@@ -99,13 +114,12 @@ public final class SuiviEmiEcran extends Screen {
                                             selectionRendue = null;
                                             actualiserBoutons();
                                         })
-                                .zone(droite - replier, y, replier));
-        String texteAction = font.width(DECLARER) >= font.width(ANNULER) ? DECLARER : ANNULER;
+                                .zone(droite - outils[2], y, outils[2]));
         String texteLot = font.width(SUPPRIMER) >= font.width(TERMINER) ? SUPPRIMER : TERMINER;
         int[] largeurs =
                 Theme.largeursRangee(
                         font,
-                        List.of("Recette", texteAction, texteLot, "Retour"),
+                        List.of("Recette", ANNULER, texteLot, "Retour"),
                         droite - x,
                         Theme.ECART);
         int largeurRecette = largeurs[0], largeurAction = largeurs[1];
@@ -131,30 +145,22 @@ public final class SuiviEmiEcran extends Screen {
         annuler =
                 addRenderableWidget(
                         BoutonTheme.creer(
-                                        DECLARER,
+                                        ANNULER,
                                         b -> {
                                             var ligne = pourAction();
                                             if (ligne == null
+                                                    || ligne.lot() <= 0
+                                                    || !ligne.annulable()
                                                     || !clicPossible()
                                                     || EnvoiMachine.occupe()) return;
-                                            if (ligne.lot() < 0) {
-                                                if (MachinesEmi.declarables(ligne.recette()) <= 0
-                                                        || !DeclarerFabricationEcran.ouvrir(
-                                                                this, ligne.recette())) {
-                                                    message =
-                                                            "Cette fabrication n’est plus déclarable.";
-                                                    return;
-                                                }
-                                            } else {
-                                                if (!ligne.annulable()) return;
-                                                MachinesEmi.annulerLot(ligne.lot());
-                                                message =
-                                                        "Annulation demandée · aucun objet déplacé";
-                                            }
+                                            MachinesEmi.annulerLot(ligne.lot());
+                                            message = "Annulation demandée · aucun objet déplacé";
                                             actualise = 0;
                                             selectionRendue = null;
                                         })
-                                .zone(xAction, basBoutons, largeurAction));
+                                .zone(xAction, basBoutons, largeurAction)
+                                .infobulle(
+                                        "Libérer ce lot dans le suivi. Les objets restent dans la machine."));
         statutLot =
                 addRenderableWidget(
                         BoutonTheme.creer(TERMINER, b -> agirSurLot())
@@ -168,10 +174,6 @@ public final class SuiviEmiEcran extends Screen {
         actualise = 0;
         debut = Math.min(debut, maximumDefilement());
         actualiserBoutons();
-    }
-
-    private int largeur(String texte) {
-        return Theme.largeurBouton(font, texte, 200);
     }
 
     /** Couleur d'un groupe d'ordonnancement, commune au suivi et au panneau des machines. */
@@ -341,26 +343,51 @@ public final class SuiviEmiEcran extends Screen {
         actualiserBoutons();
     }
 
+    private void declarerFabrication() {
+        var ligne = pourAction();
+        if (ligne == null || EnvoiMachine.occupe() || !clicPossible()) return;
+        var recette = ligne.recette();
+        if (!DeclarerFabricationEcran.ouvrir(this, recette, () -> afficherDeclaration(recette)))
+            message = "Cette fabrication n’est plus déclarable.";
+    }
+
+    private void afficherDeclaration(EmiRecipe recette) {
+        replies[2] = false;
+        actualiser(true);
+        for (int i = lignes.size() - 1; i >= 0; i--) {
+            var ligne = lignes.get(i);
+            if (ligne.lot() > 0 && ligne.recette() == recette && ligne.annulable()) {
+                selection = i;
+                break;
+            }
+        }
+        reconstruire();
+        for (var entree : entrees)
+            if (meme(entree.ligne(), choisie())) {
+                if (entree.y() < debut || entree.y() + entree.hauteur() > debut + zoneHauteur())
+                    debut = Math.min(entree.y(), maximumDefilement());
+                break;
+            }
+        selectionRendue = null;
+        message = "Fabrication ajoutée au suivi";
+        actualiserBoutons();
+    }
+
     private void actualiserBoutons() {
         boolean actif = CoffresArbreEmi.arbreActif() != null;
         recalculer.active = actif && !EnvoiMachine.occupe();
         var ligne = choisie();
         boolean visible = ligne != null && !replies[groupe(ligne)];
         voir.active = visible;
-        boolean declaration = ligne == null || ligne.lot() < 0;
-        annuler.texte(declaration ? DECLARER : ANNULER)
-                .infobulle(
-                        declaration
-                                ? "Déclarer un résultat déjà en fabrication. Aucun objet transféré ni résultat validé."
-                                : "Libérer ce lot dans le suivi. Les objets restent dans la machine.");
-        annuler.visible = ligne == null || !ligne.terminee();
-        annuler.active =
-                actif
-                        && !EnvoiMachine.occupe()
-                        && visible
-                        && (declaration
-                                ? MachinesEmi.declarables(ligne.recette()) > 0
-                                : ligne.annulable());
+        boolean lot = visible && ligne.lot() > 0;
+        boolean disponible = actif && !EnvoiMachine.occupe();
+        declarer.active = disponible && visible && MachinesEmi.declarables(ligne.recette()) > 0;
+        declarer.infobulle(
+                declarer.active
+                        ? "Déclarer une fabrication déjà lancée pour la recette sélectionnée."
+                        : "Sélectionne une fabrication dont il reste une quantité à déclarer.");
+        annuler.visible = lot && ligne.annulable();
+        annuler.active = disponible && annuler.visible;
         boolean fini = ligne != null && ligne.terminee();
         statutLot
                 .texte(fini ? SUPPRIMER : TERMINER)
@@ -368,7 +395,7 @@ public final class SuiviEmiEcran extends Screen {
                         fini
                                 ? "Retirer la ligne du suivi et garder son avancement EMI."
                                 : "Marquer ce lot terminé dans l’arbre EMI.");
-        statutLot.visible = visible && !declaration && (fini || ligne.annulable());
+        statutLot.visible = lot && (fini || ligne.annulable());
         statutLot.active = statutLot.visible && actif && !EnvoiMachine.occupe();
         deplier.active = !lignes.isEmpty();
         deplier.texte(replisPresents() ? "Tout déplier" : "Tout replier");
@@ -481,8 +508,12 @@ public final class SuiviEmiEcran extends Screen {
             g.disableScissor();
         }
         rendus = List.copyOf(zones);
-        selectionRendue = choisie();
-        if (selectionRendue != null && replies[groupe(selectionRendue)]) selectionRendue = null;
+        var selectionAffichee = choisie();
+        selectionRendue =
+                zones.stream().anyMatch(r -> meme(r.entree().ligne(), selectionAffichee))
+                        ? selectionAffichee
+                        : null;
+        if (selectionRendue == null) declarer.active = false;
         arbreRendu = CoffresArbreEmi.arbreActif();
         contexteRendu = MachinesEmi.contexteSelection();
         revisionRendue = InstantaneArbreEmi.revisionStructureProduction();
