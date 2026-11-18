@@ -609,8 +609,11 @@ ou lot) : prête ou à préparer jusqu’à sa fabrication ou son envoi, lot à 
 dernière sortie. `MachinesEmi` calcule aussi les opérations encore utiles avec les coffres à portée
 (`stockCoffres`, `CoffresConnus.proches` : même dimension que le joueur, 256 blocs à l’horizontale,
 jamais `lootr:`) : la surbrillance, les repères et le plan de l’onglet Recette les suivent, le
-panneau d’une machine garde toutes les opérations. Les totaux globaux de `CoffresConnus` servent
-toujours aux possessions et à « Introuvable ». Les repères sont tracés en segments
+panneau d’une machine garde toutes les opérations. `CoffresConnus` indexe les relevés par dimension
+et secteurs de 64 blocs hors du thread de rendu. À chaque déplacement horizontal d’un bloc, la
+distance exacte est vérifiée pour les coffres des secteurs proches. Le total n’est recalculé que si
+la liste des coffres à portée ou les relevés ont changé. Les plans suivent la révision des quantités
+à portée. Les totaux globaux servent toujours aux possessions et à « Introuvable ». Les repères sont tracés en segments
 (`TraitsReperes`) avec les lignes des contours rouges, au milieu de la face vue de la machine : le
 texte de la police du jeu ne s’affichait pas dans le monde chez le joueur (repères bien calculés,
 vérifié par un histogramme de classes du jeu en cours). `PossessionsRecette` relève les postes posés (rayon de 48 blocs, une rangée de chunks par
@@ -637,10 +640,13 @@ un cube avec une marge pour un générateur inconnu. `ScanFilon` parcourt ce vol
 par colonne, saute les sections sans minerai de la composition et garde en attente les colonnes non
 chargées, sauvegardées avec le filon. Dans la marge, seuls les minerais reliés au filon par des trous
 de 2 blocs au plus sont retenus ; un minerai déjà rattaché à un autre gisement ne lui est jamais pris.
-`VerificationFilons` relit à tour de rôle les minerais connus des chunks chargés (192 par tick) et les
-64 plus proches du filon surligné à chaque tick ; un minerai disparu devient un compteur « miné ».
+`VerificationFilons` relit à tour de rôle les minerais connus des chunks chargés (192 par tick).
+Pour les contours du filon affiché, `ReleveContoursFilon` vérifie à chaque tick les 64 positions les
+plus proches, jusqu’à 128 autres par rotation et le bloc visé ou que le joueur vient de quitter de
+son viseur. Un minerai disparu devient un compteur « miné ». Le rendu se sert de ces vérifications.
+Le déchargement ou le remplacement d’un chunk invalide ses contours au tick suivant.
 `FilonMemoire` garde les minerais présents dans des tableaux primitifs indexés par `TableLong`, au
-plus 400 000 par monde. Le travail d’un tick reste sous 1 ms.
+plus 400 000 par monde.
 
 La mémoire d’un monde est enregistrée dans `kubejs/assistant/filons_gregtech/<monde>.json` au format
 v2 : une table des types de blocs, puis par gisement ses métadonnées, son volume, l’avancement du scan
@@ -661,6 +667,12 @@ valeur par défaut sans effacer les autres. `CouleursFilons` donne à chaque mat
 de GregTech, contrastée selon le fond de la dimension, et le rendu coupe le brouillard le temps des
 contours. `FilonMemoireTest`, `SauvegardeFilonsTest`, `test_filons.py` et `test_vein_tab.py` (onglet
 et écran des blocs à 320 × 240 contre des stubs) couvrent scan, compte, format et affichage, sans GPU.
+
+Dans une copie du pack, afficher un filon scanné avec le budget de 4 096 contours. En mode Surface,
+vérifier la lisibilité des blocs exposés en minant près du viseur. En mode Total, vérifier que les
+contours distants apparaissent progressivement à travers la roche. Ouvrir l’onglet pendant le scan,
+vérifier le compteur, puis décharger et revisiter un chunk pour contrôler la disparition et le
+retour des contours.
 
 ## Écritures au changement et fil d’écriture
 

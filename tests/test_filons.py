@@ -389,6 +389,7 @@ class FilonsTests(unittest.TestCase):
                 "FilonMemoire",
                 "ScanFilon",
                 "VerificationFilons",
+                "ReleveContoursFilon",
                 "InstantaneFilons",
                 "FormatFilons",
                 "CouleursFilons",
@@ -418,10 +419,26 @@ class FilonsTests(unittest.TestCase):
                 timeout=60,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("22 scenarios filons valides", result.stdout)
+            self.assertIn("23 scenarios filons valides", result.stdout)
 
 
 class VeinSearchSourceTests(unittest.TestCase):
+    def test_vein_render_reuses_tick_confirmations(self):
+        path = ROOT / "mod/src/main/java/fr/assistantia/Filons.java"
+        java = path.read_text(encoding="utf-8")
+        rendu = java.split("public static void rendu(RenderLevelStageEvent event)", 1)[1].split(
+            "private static void vider(RenderType type", 1
+        )[0]
+        tick = java.split("public static void tick(TickEvent.ClientTickEvent event)", 1)[1].split(
+            "// ---------- Épuisement", 1
+        )[0]
+        self.assertRegex(tick, r"actualiserContours\(\s*affiche\b")
+        self.assertIn("c.releve.actualiser(", tick)
+        self.assertIn("c.releve.confirme(i)", rendu)
+        self.assertNotIn("getBlockState(", rendu)
+        self.assertNotIn("hasChunk(", rendu)
+        self.assertNotIn("actualiserContours(", rendu)
+
     def test_search_and_recipe_sort_skip_an_exhausted_ore_only(self):
         # Player report: gold mined out of a magnesite vein still listed it for "gold".
         java = ROOT / "mod/src/main/java/fr/assistantia"

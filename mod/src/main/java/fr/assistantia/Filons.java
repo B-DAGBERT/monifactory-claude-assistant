@@ -61,7 +61,9 @@ public final class Filons {
     /**
      * Minerais connus relus à tour de rôle à chaque tick, et proches du joueur (filon surligné).
      */
-    private static final int VERIFICATIONS_TICK = 192, VERIFICATIONS_PROCHES = 64;
+    private static final int VERIFICATIONS_TICK = 192,
+            VERIFICATIONS_PROCHES = 64,
+            VERIFICATIONS_CONTOURS = 128;
 
     private static FilonMemoire memoire = new FilonMemoire();
     private static final Map<String, ScanFilon> SCANS = new LinkedHashMap<>();
@@ -413,6 +415,10 @@ public final class Filons {
         prioritaire = "";
         tpEnCours = modifie = false;
         tpAttendue = null;
+        if (!feuillesRecette.isEmpty()) revisionRecette++;
+        feuillesRecette = Set.of();
+        besoinsRecette = Set.of();
+        lectureRecette = 0;
         utiles.clear();
     }
 
@@ -604,13 +610,27 @@ public final class Filons {
         long limite = HORLOGE.getAsLong() + BUDGET_TICK;
         MONDE.preparer(mc.level, memoire);
         String dimension = mc.level.dimension().location().toString();
-        // Filon surligné : les minerais proches du joueur sont relus à chaque tick.
-        var affiche = memoire.filon(AFFICHES.get(dimension));
-        if (affiche != null && contours.filon == affiche)
-            VerificationFilons.proches(
-                    memoire, affiche, contours.positions, VERIFICATIONS_PROCHES, MONDE);
         avancerScans(dimension, limite, maintenant);
         VERIFICATION.tour(memoire, dimension, MONDE, VERIFICATIONS_TICK, maintenant);
+        var affiche = memoire.filon(AFFICHES.get(dimension));
+        if (affiche == null || mc.player == null) {
+            invaliderContours();
+        } else {
+            if (MONDE.typesConnus != memoire.typesConnus()) MONDE.preparer(mc.level, memoire);
+            actualiserContours(
+                    affiche, mc.level, mc.player.blockPosition(), AffichageFilons.style());
+            var c = contours;
+            c.releve.actualiser(
+                    colonne ->
+                            MONDE.chunk(
+                                    VolumeFilon.colonneX(colonne), VolumeFilon.colonneZ(colonne)),
+                    i ->
+                            VerificationFilons.confirmer(
+                                    memoire, affiche, c.positions[i], c.types[i], MONDE),
+                    vise(mc),
+                    VERIFICATIONS_PROCHES,
+                    VERIFICATIONS_CONTOURS);
+        }
         sauver(false);
     }
 
@@ -680,7 +700,7 @@ public final class Filons {
     private static final Map<String, Boolean> utiles = new HashMap<>();
     private static Set<Object> besoinsRecette = Set.of();
     private static Set<String> feuillesRecette = Set.of();
-    private static long lectureRecette;
+    private static long lectureRecette, revisionRecette;
     private static java.lang.reflect.Method feuillesArbre;
     private static boolean arbreIndisponible;
 
@@ -697,6 +717,11 @@ public final class Filons {
     public static boolean recetteChoisie() {
         actualiserRecette();
         return !feuillesRecette.isEmpty();
+    }
+
+    public static long revisionRecette() {
+        actualiserRecette();
+        return revisionRecette;
     }
 
     @SuppressWarnings("unchecked")
@@ -719,6 +744,7 @@ public final class Filons {
         feuillesRecette = feuilles;
         besoinsRecette = GregTechFilons.besoins(feuilles);
         utiles.clear();
+        revisionRecette++;
         revision++;
     }
 
@@ -922,7 +948,6 @@ public final class Filons {
         private FilonMemoire types;
         private int typesConnus = -1;
         private final Map<Block, Integer> typesBlocs = new IdentityHashMap<>();
-        private Block[] blocs = new Block[0];
         private FilonMemoire.Filon filonPalette;
         private final Predicate<BlockState> palette =
                 s -> {
@@ -937,7 +962,6 @@ public final class Filons {
                 types = memoire;
                 typesConnus = memoire.typesConnus();
                 typesBlocs.clear();
-                blocs = new Block[typesConnus];
             }
         }
 
@@ -948,18 +972,6 @@ public final class Filons {
             int v = id == null ? -1 : types.typeConnu(id.toString());
             typesBlocs.put(b, v);
             return v;
-        }
-
-        /** Bloc d'un type de la mémoire (null s'il n'existe pas dans ce jeu). */
-        Block bloc(int t) {
-            if (t < 0 || t >= blocs.length) return null;
-            Block b = blocs[t];
-            if (b == null) {
-                var rl = ResourceLocation.tryParse(types.typeId(t));
-                b = rl == null ? null : ForgeRegistries.BLOCKS.getValue(rl);
-                blocs[t] = b;
-            }
-            return b;
         }
 
         private LevelChunk chunk(int cx, int cz) {
@@ -1017,8 +1029,21 @@ public final class Filons {
     private static final class Contours {
         static final Contours VIDE =
                 new Contours(
-                        null, new long[0], new int[0], new int[0], new byte[0], 0, 0, 0, -1, null);
+                        null,
+                        null,
+                        new long[0],
+                        new int[0],
+                        new int[0],
+                        new byte[0],
+                        0,
+                        0,
+                        0,
+                        -1,
+                        null,
+                        null);
         final FilonMemoire.Filon filon;
+        final ClientLevel niveau;
+        final ReleveContoursFilon releve;
         final long[] positions;
         final int[] types, couleurs;
         final byte[] faces;
@@ -1033,6 +1058,7 @@ public final class Filons {
 
         Contours(
                 FilonMemoire.Filon filon,
+                ClientLevel niveau,
                 long[] positions,
                 int[] types,
                 int[] couleurs,
@@ -1041,8 +1067,11 @@ public final class Filons {
                 int y,
                 int z,
                 long revision,
-                StyleFilons style) {
+                StyleFilons style,
+                ReleveContoursFilon precedent) {
             this.filon = filon;
+            this.niveau = niveau;
+            releve = new ReleveContoursFilon(positions, types, precedent);
             this.positions = positions;
             this.types = types;
             this.couleurs = couleurs;
@@ -1059,7 +1088,6 @@ public final class Filons {
 
     private static Contours contours = Contours.VIDE;
     private static final Map<String, Integer> COULEURS = new HashMap<>();
-    private static final BlockPos.MutableBlockPos CURSEUR = new BlockPos.MutableBlockPos();
     private static final int[][] FACES = {
         {0, -1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}
     };
@@ -1081,10 +1109,11 @@ public final class Filons {
     }
 
     private static void actualiserContours(
-            FilonMemoire.Filon f, BlockPos joueur, StyleFilons style) {
+            FilonMemoire.Filon f, ClientLevel niveau, BlockPos joueur, StyleFilons style) {
         var c = contours;
         long maintenant = System.currentTimeMillis();
         if (c.filon == f
+                && c.niveau == niveau
                 && c.style == style
                 && Math.abs(c.x - joueur.getX()) < 2
                 && Math.abs(c.y - joueur.getY()) < 2
@@ -1119,6 +1148,7 @@ public final class Filons {
         contours =
                 new Contours(
                         f,
+                        niveau,
                         positions,
                         types,
                         couleurs,
@@ -1127,8 +1157,16 @@ public final class Filons {
                         joueur.getY(),
                         joueur.getZ(),
                         f.revision,
-                        style);
+                        style,
+                        c.filon == f && c.niveau == niveau ? c.releve : null);
         contours.date = maintenant;
+    }
+
+    private static long vise(Minecraft mc) {
+        return mc.hitResult instanceof BlockHitResult cible
+                        && cible.getType() == HitResult.Type.BLOCK
+                ? cible.getBlockPos().asLong()
+                : TableLong.VIDE;
     }
 
     @SubscribeEvent
@@ -1141,28 +1179,21 @@ public final class Filons {
         // Un filon d'une autre dimension n'est jamais dessiné ici ; il revient dans la sienne.
         if (f == null || !f.dimension().equals(dimension)) return;
         var style = AffichageFilons.style();
-        actualiserContours(f, mc.player.blockPosition(), style);
         var c = contours;
-        if (c.positions.length == 0) return;
+        if (c.filon != f || c.niveau != mc.level || c.style != style || c.positions.length == 0)
+            return;
         Vec3 camera = event.getCamera().getPosition();
-        MONDE.preparer(mc.level, memoire);
-        long vise =
-                mc.hitResult instanceof BlockHitResult cible
-                                && cible.getType() == HitResult.Type.BLOCK
-                        ? cible.getBlockPos().asLong()
-                        : TableLong.VIDE;
+        long vise = vise(mc);
         int dessinables = 0;
         for (int i = 0; i < c.positions.length; i++) {
             long p = c.positions[i];
             c.dessines[i] = false;
-            // Laisser le bloc visé et son contour natif parfaitement lisibles pour miner.
-            if (p == vise) continue;
+            // Laisser le bloc visé et son contour natif lisibles pendant le minage.
+            if (p == vise || !c.releve.confirme(i)) continue;
+            // Le scan ou la vérification générale peut avoir modifié la mémoire depuis ce relevé.
+            int connu = f.index.lire(p);
+            if (connu == TableLong.ABSENT || f.typeBloc(connu) != c.types[i]) continue;
             int x = FilonMemoire.x(p), y = FilonMemoire.y(p), z = FilonMemoire.z(p);
-            if (!mc.level.hasChunk(x >> 4, z >> 4)) continue;
-            Block attendu = MONDE.bloc(c.types[i]);
-            if (attendu == null
-                    || mc.level.getBlockState(CURSEUR.set(x, y, z)).getBlock() != attendu)
-                continue; // miné : la vérification le comptera
             double dx = x + .5 - camera.x, dy = y + .5 - camera.y, dz = z + .5 - camera.z;
             c.distances[i] = (float) (dx * dx + dy * dy + dz * dz);
             c.dessines[i] = true;

@@ -805,9 +805,9 @@ public final class AnalyseRecette {
                         + "|"
                         + MachinesEmi.revisionLotsProduction()
                         + "|"
-                        + CoffresConnus.etat().revision()
+                        + CoffresConnus.revisionProches()
                         + "|"
-                        + CoffresConnus.zone()
+                        + CoffresConnus.etat().pret()
                         + "|"
                         + CoffreTampon.revision()
                         + "|"

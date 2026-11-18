@@ -493,9 +493,11 @@ class RecipeTabScreenTests(unittest.TestCase):
 
 MEMORY_STUBS = {
     "fr.assistantia.CoffreTampon": """public class CoffreTampon {
- public static long revision(){return 0;}
- public static boolean exclu(String dimension,long x,long y,long z){return false;}
- public static boolean selectionne(String dimension,long x,long y,long z){return false;}}""",
+ public static long revision;
+ public static Long excluX, tamponX;
+ public static long revision(){return revision;}
+ public static boolean exclu(String dimension,long x,long y,long z){return excluX!=null && x==excluX;}
+ public static boolean selectionne(String dimension,long x,long y,long z){return tamponX!=null && x==tamponX;}}""",
     "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft I=new Minecraft();public static Minecraft getInstance(){return I;}
  public Niveau level;public Joueur player;public Object connexion;public Object getConnection(){return connexion;}
  public static class Pos {public int x,z;public int getX(){return x;}public int getZ(){return z;}}
@@ -582,6 +584,13 @@ class KnownChestMemoryTests(unittest.TestCase):
             ROOT / "tests/java/fr/assistantia/CoffresConnusContexteTest.java",
             "CoffresConnusContexteTest",
             "PASS contexte coffres connus",
+        )
+
+    def test_nearby_stock_uses_exact_radius_without_replanning_unchanged_totals(self):
+        self.run_harness(
+            ROOT / "tests/java/fr/assistantia/CoffresPorteeTest.java",
+            "CoffresPorteeTest",
+            "PASS portee exacte",
         )
 
     def test_native_and_legacy_chest_identities_match_python(self):

@@ -65,6 +65,12 @@ class ScenarioRunnerTests(unittest.TestCase):
         self.assertTrue(
             any("test_native_and_legacy_chest_identities_match_python" in n for n in noms)
         )
+        self.assertTrue(
+            any(
+                "test_nearby_stock_uses_exact_radius_without_replanning_unchanged_totals" in n
+                for n in noms
+            )
+        )
         self.assertTrue(any("BufferChestTests." in n for n in noms))
         self.assertTrue(any("EmiBackpackTreeTests." in n for n in noms))
         self.assertTrue(any("MeTerminalPanelTests." in n for n in noms))

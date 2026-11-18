@@ -108,13 +108,14 @@ public final class FilonMemoireTest {
         gisementsGregtech();
         epuisementManuel();
         choixAffichage();
+        releveContours();
         mondeActif();
         disposition();
         destinationProche();
         teleportationDirecte();
         securite();
         System.out.println(
-                "22 scenarios filons valides : volume, remplissage, propriete, comptes, sauvegarde,"
+                "23 scenarios filons valides : volume, remplissage, propriete, comptes, sauvegarde,"
                         + " ancien format, couleurs, destination.");
     }
 
@@ -480,14 +481,73 @@ public final class FilonMemoireTest {
         verifier(f.verification == 5000, "Passe complète datée");
         // Filon surligné : les plus proches du joueur relus à chaque tick.
         monde.retirer(5, 10, 0);
-        long[] proches = {
-            FilonMemoire.pos(5, 10, 0), FilonMemoire.pos(4, 10, 0), FilonMemoire.pos(0, 10, 0)
-        };
+        long mine = FilonMemoire.pos(5, 10, 0);
         verifier(
-                VerificationFilons.proches(m, f, proches, 64, monde) == 1 && f.restants() == 16,
+                !VerificationFilons.confirmer(m, f, mine, t, monde) && f.restants() == 16,
                 "Minage du filon surligné vu au tick");
-        verifier(VerificationFilons.proches(m, f, proches, 64, monde) == 0, "Pas de double compte");
+        verifier(
+                !VerificationFilons.confirmer(m, f, mine, t, monde) && f.restants() == 16,
+                "Pas de double compte");
+        verifier(
+                VerificationFilons.confirmer(m, f, FilonMemoire.pos(4, 10, 0), t, monde),
+                "Le bloc voisin est confirmé");
         verifier(td >= 0, "Types de la composition déclarés");
+    }
+
+    static void releveContours() {
+        long[] positions = new long[4096];
+        int[] types = new int[positions.length];
+        for (int i = 0; i < positions.length; i++)
+            positions[i] = FilonMemoire.pos(i % 64, 64 + i / 64, 0);
+        var releve = new ReleveContoursFilon(positions, types, null);
+        var lectures = new AtomicInteger();
+        Object[] chunks = {new Object(), new Object(), new Object(), new Object()};
+        java.util.function.LongFunction<Object> charger =
+                colonne -> chunks[VolumeFilon.colonneX(colonne)];
+        Set<Integer> mines = new HashSet<>();
+        java.util.function.IntPredicate verifierBloc =
+                i -> {
+                    lectures.incrementAndGet();
+                    return !mines.contains(i);
+                };
+
+        releve.actualiser(charger, verifierBloc, TableLong.VIDE, 64, 128);
+        verifier(
+                lectures.get() == 192 && releve.confirme(0) && !releve.confirme(4095),
+                "La première sélection confirme les plus proches dans le budget du tick");
+        for (int tick = 1; tick < 32; tick++)
+            releve.actualiser(charger, verifierBloc, TableLong.VIDE, 64, 128);
+        int avant = lectures.get();
+        for (int i = 0; i < positions.length; i++)
+            verifier(releve.confirme(i), "Rotation complète");
+        verifier(
+                avant <= 32 * 192 && lectures.get() == avant,
+                "Le rendu peut consulter 4096 confirmations sans aucune lecture du monde");
+
+        int vise = 3000;
+        releve.actualiser(charger, verifierBloc, positions[vise], 64, 128);
+        mines.add(vise);
+        releve.actualiser(charger, verifierBloc, positions[0], 64, 128);
+        verifier(
+                !releve.confirme(vise), "Le bloc visé au tick précédent est relu après son minage");
+
+        chunks[1] = null;
+        releve.actualiser(charger, verifierBloc, TableLong.VIDE, 64, 128);
+        verifier(
+                !releve.confirme(16) && !releve.confirme(4048) && releve.confirme(0),
+                "Un chunk déchargé masque tous ses contours, même hors du secteur tournant");
+        chunks[1] = new Object();
+        releve.actualiser(charger, verifierBloc, TableLong.VIDE, 64, 128);
+        verifier(
+                releve.confirme(16) && !releve.confirme(4048),
+                "Le rechargement exige de confirmer ses nouveaux états");
+
+        long[] selection = {positions[4095], positions[4048], positions[0]};
+        var nouveau = new ReleveContoursFilon(selection, new int[] {0, 0, 1}, releve);
+        nouveau.actualiser(charger, verifierBloc, TableLong.VIDE, 0, 0);
+        verifier(
+                nouveau.confirme(0) && !nouveau.confirme(1) && !nouveau.confirme(2),
+                "Le déplacement conserve uniquement les positions compatibles déjà vérifiées");
     }
 
     static void presqueEpuise() {

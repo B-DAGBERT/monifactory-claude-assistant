@@ -121,10 +121,12 @@ public class Pont {public static net.minecraft.world.item.ItemStack objet(String
 import java.util.*;
 public class Filons {public static FilonMemoire memoire=new FilonMemoire();public static String affiche="",message="";
  public static Set<String> scans=new HashSet<>(),utiles=new HashSet<>();public static Map<String,Boolean> choix;public static int scansDemandes;
+ public static long revisionMateriaux;public static int calculsUtiles;public static boolean enChargement;
+ public static FilonMemoire.Position positionActuelle=new FilonMemoire.Position("minecraft:overworld",0,40,0);
  public static FilonMemoire memoire(){return memoire;}public static String monde(){return "aaaaaaaaaaaaaaaaaaaaaaaa";}
- public static boolean synchroniserMonde(){return true;}public static boolean chargement(){return false;}
- public static FilonMemoire.Position position(){return new FilonMemoire.Position("minecraft:overworld",0,40,0);}
- public static void actualiserGregtech(){}public static long revision(){return memoire.revision();}
+ public static boolean synchroniserMonde(){return true;}public static boolean chargement(){return enChargement;}
+ public static FilonMemoire.Position position(){return positionActuelle;}
+ public static void actualiserGregtech(){}public static long revisionRecette(){return revisionMateriaux;}
  public static String affiche(){return affiche;}public static FilonMemoire.Filon afficheAilleurs(){return null;}
  public static boolean affichageDisponible(){return true;}public static void afficher(String id,boolean a){affiche=a?id:"";}
  public static boolean afficherSelection(String m,String id,Map<String,Boolean> c){choix=new HashMap<>(c);affiche=id;return true;}
@@ -133,10 +135,10 @@ public class Filons {public static FilonMemoire memoire=new FilonMemoire();publi
  public static int scansEnCours(){return scans.size();}public static String raisonScan(String id){return "";}
  public static String raisonTP(FilonMemoire.Filon f){return "";}public static void scannerSelection(String id){scansDemandes++;}
  public static void teleporter(String id){}public static boolean marquageDisponible(){return true;}
- public static boolean marquerEpuise(String o,String id,boolean v){return memoire.filon(id).marquerEpuise(v);}
+ public static boolean marquerEpuise(String o,String id,boolean v){boolean change=memoire.filon(id).marquerEpuise(v);if(change)memoire.toucher();return change;}
  public static boolean boutonScanDisponible(){return true;}public static boolean tpEnCours(){return false;}
  public static String message(){return message;}public static String nom(String b){return b.substring(b.indexOf(':')+1).replace('_',' ');}
- public static boolean utilePourRecette(FilonMemoire.Filon f){return utiles.contains(f.id);}public static boolean recetteChoisie(){return !utiles.isEmpty();}
+ public static boolean utilePourRecette(FilonMemoire.Filon f){calculsUtiles++;return utiles.contains(f.id);}public static boolean recetteChoisie(){return !utiles.isEmpty();}
  public static int invalidations;public static void invaliderContours(){invalidations++;}}
 """,
 }
@@ -170,6 +172,73 @@ public class VeinTabTest {
   var f=m.filon(id);int t=m.typeConnu("gtceu:redstone_ore");
   for(int i=0;i<presents+mines;i++)m.ajouter(f,FilonMemoire.pos(x+i%30,40+i/900,i/30%30),t);
   for(int i=0;i<mines;i++)m.miner(f,f.position(0));return f;}
+ static void verifierCaches(Minecraft mc, FilonMemoire memoire)throws Exception {
+  var hote = new Hote();
+  hote.init(mc, 640, 360);
+  var onglet = hote.onglet;
+  var actualiser = OngletFilons.class.getDeclaredMethod("actualiser", long.class);
+  var resumer = OngletFilons.class.getDeclaredMethod("resume", FilonMemoire.Filon.class);
+  var utile = OngletFilons.class.getDeclaredMethod("utile", FilonMemoire.Filon.class);
+  var ligneInfo = OngletFilons.class.getDeclaredMethod("ligneInfo", FilonMemoire.Filon.class);
+  var champListe = OngletFilons.class.getDeclaredField("liste");
+  var champTri = OngletFilons.class.getDeclaredField("tri");
+  for (var membre : new java.lang.reflect.AccessibleObject[]{
+       actualiser, resumer, utile, ligneInfo, champListe, champTri}) membre.setAccessible(true);
+  var proche = memoire.filon("presque");
+  var partiel = memoire.filon("partiel");
+  proche.verification = 1000L;
+
+  actualiser.invoke(onglet, 1000L);
+  var liste = champListe.get(onglet);
+  var resume = resumer.invoke(onglet, proche);
+  assert ((List<?>) liste).get(0) == proche;
+  assert (boolean) utile.invoke(onglet, proche);
+  int appelsRecette = Filons.calculsUtiles;
+  actualiser.invoke(onglet, 2000L);
+  assert champListe.get(onglet) == liste : "le temps seul ne retrie pas les filons";
+  assert resumer.invoke(onglet, proche) == resume : "un filon stable ne se recompte pas";
+  assert (boolean) utile.invoke(onglet, proche) && Filons.calculsUtiles == appelsRecette;
+
+  memoire.miner(partiel, partiel.position(0));
+  actualiser.invoke(onglet, 3000L);
+  assert resumer.invoke(onglet, proche) == resume : "modifier le voisin préserve les comptes du filon";
+  memoire.miner(proche, proche.position(0));
+  actualiser.invoke(onglet, 4000L);
+  var modifie = resumer.invoke(onglet, proche);
+  assert modifie != resume && proche.restants() == 99;
+  assert !((String) ligneInfo.invoke(onglet, proche)).contains("ancien");
+
+  liste = champListe.get(onglet);
+  actualiser.invoke(onglet, 601000L);
+  assert ((String) ligneInfo.invoke(onglet, proche)).contains("ancien") : "âge mis à jour sans révision";
+  assert champListe.get(onglet) == liste && resumer.invoke(onglet, proche) == modifie;
+
+  Filons.positionActuelle = new FilonMemoire.Position("minecraft:overworld", 120, 40, 0);
+  actualiser.invoke(onglet, 602000L);
+  assert ((List<?>) champListe.get(onglet)).get(0) == partiel : "le tri suit le joueur";
+  assert resumer.invoke(onglet, proche) == modifie : "se déplacer n'efface pas les comptes";
+
+  champTri.setInt(null, 1);
+  actualiser.invoke(onglet, 603000L);
+  assert ((List<?>) champListe.get(onglet)).get(0) == proche : "la recette prime sur la distance";
+  Filons.utiles.clear();
+  Filons.utiles.add("partiel");
+  Filons.revisionMateriaux++;
+  actualiser.invoke(onglet, 604000L);
+  assert ((List<?>) champListe.get(onglet)).get(0) == partiel : "retri si les ingrédients changent";
+  assert !(boolean) utile.invoke(onglet, proche);
+  assert resumer.invoke(onglet, proche) == modifie : "modifier la recette conserve les comptes";
+
+  Filons.enChargement = true;
+  actualiser.invoke(onglet, 605000L);
+  assert ((List<?>) champListe.get(onglet)).isEmpty();
+  Filons.enChargement = false;
+  Filons.memoire = new FilonMemoire();
+  var relu = filon(Filons.memoire, "presque", "Redstone Vein", 10, 7, 0);
+  actualiser.invoke(onglet, 606000L);
+  assert ((List<?>) champListe.get(onglet)).get(0) == relu && relu.restants() == 7;
+ }
+
  public static void main(String[] a)throws Exception{
   var mc=Minecraft.getInstance();var m=Filons.memoire;
   filon(m,"presque","Redstone Vein",10,100,1400);
@@ -181,7 +250,9 @@ public class VeinTabTest {
   m.filon("presque").scanComplet=true; // seul un scan complet permet « presque épuisé »
   m.filon("scan").scanTotal=100;m.filon("scan").scanFait=63;m.filon("scan").colonnesRestantes=new long[]{1,2,3};
   String c=a[0];
-  if(c.equals("tab")){
+  if(c.equals("cache")){
+   verifierCaches(mc, m);
+  }else if(c.equals("tab")){
    for(int[] taille:new int[][]{{960,540},{640,360},{427,240},{320,240}}){
     var h=new Hote();mc.screen=h;h.init(mc,taille[0],taille[1]);
     int x=10,y=36,l=taille[0]-20,b=taille[1]-38;
@@ -341,6 +412,9 @@ class VeinTabTests(unittest.TestCase):
 
     def test_tab_fits_from_320x240_with_badges_counts_menu_and_scrollbar(self):
         self.run_case("tab")
+
+    def test_list_and_counts_reuse_unchanged_inputs_and_follow_revisions(self):
+        self.run_case("cache")
 
     def test_partial_zone_asks_for_a_scan_instead_of_exhausted(self):
         self.run_case("confirmer")

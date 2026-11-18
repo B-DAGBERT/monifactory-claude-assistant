@@ -19,6 +19,7 @@ SUITES = {
         "tests.test_buffer_chest.BufferChestTests.test_native_menu_lifecycle_for_multiple_marked_chests",
         "tests.test_recipe_tab.KnownChestMemoryTests.test_reads_are_scoped_to_the_active_connection_and_world",
         "tests.test_recipe_tab.KnownChestMemoryTests.test_native_and_legacy_chest_identities_match_python",
+        "tests.test_recipe_tab.KnownChestMemoryTests.test_nearby_stock_uses_exact_radius_without_replanning_unchanged_totals",
         "tests.test_emi_backpack_tree.EmiBackpackTreeTests.test_closed_bag_native_tree_counts_and_refresh_without_fill_changes",
         "tests.test_machine_panel_click.MachinePanelClickTests.test_machine_panel_calculations_run_on_tick_and_are_revalidated_at_click",
         "tests.test_me_terminal_panel.MeTerminalPanelTests.test_panel_allocates_buffer_before_withdrawable_me_entries",

@@ -56,30 +56,18 @@ final class VerificationFilons {
         return mines;
     }
 
-    /**
-     * Relit les minerais du filon surligné aux positions données (les plus proches du joueur).
-     *
-     * @return minerais devenus « minés »
-     */
-    static int proches(
+    /** Confirme la variante du relevé de rendu en actualisant la mémoire si le bloc a changé. */
+    static boolean confirmer(
             FilonMemoire memoire,
             FilonMemoire.Filon f,
-            long[] positions,
-            int nombre,
+            long position,
+            int attendu,
             ScanFilon.Monde monde) {
-        int mines = 0;
-        for (int i = 0; i < Math.min(nombre, positions.length); i++) {
-            long p = positions[i];
-            if (!f.present(p)) continue;
-            int x = FilonMemoire.x(p), y = FilonMemoire.y(p), z = FilonMemoire.z(p);
-            if (!monde.charge(x >> 4, z >> 4)) continue;
-            int t = monde.type(x, y, z);
-            int attendu = f.typeBloc(f.index.lire(p));
-            if (t == attendu) continue;
-            if (t >= 0 && f.dansComposition(t)) memoire.ajouter(f, p, t);
-            else if (memoire.miner(f, p)) mines++;
-        }
-        return mines;
+        int i = f.index.lire(position);
+        return i != TableLong.ABSENT
+                && f.typeBloc(i) == attendu
+                && verifier(memoire, f, i, monde) == 0
+                && f.typeBloc(i) == attendu;
     }
 
     /**

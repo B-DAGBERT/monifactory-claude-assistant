@@ -36,18 +36,29 @@ public final class OngletFilons {
     private final Minecraft mc = Minecraft.getInstance();
 
     private record Resume(
-            Map<String, Integer> types,
-            int restants,
-            int trouves,
+            long revision,
+            long date,
+            List<Map.Entry<String, Integer>> types,
             String item,
-            String age,
-            boolean ancien,
-            boolean presque,
-            boolean confirmer,
-            boolean utile) {}
+            String titre) {}
 
-    private final Map<String, Resume> resumes = new HashMap<>();
-    private long revisionResumes = -1, resumesDate;
+    private record Pertinence(long revision, long recette, boolean utile) {}
+
+    private record CriteresListe(
+            long revision,
+            long recette,
+            FilonMemoire.Position position,
+            String recherche,
+            boolean masquerVides,
+            int tri) {}
+
+    private final Map<FilonMemoire.Filon, Resume> resumes = new HashMap<>();
+    private final Map<FilonMemoire.Filon, Pertinence> pertinences = new HashMap<>();
+    private FilonMemoire memoireListe;
+    private CriteresListe criteresListe;
+    private FilonMemoire.Position position;
+    private long maintenant, revisionRecette;
+    private boolean filonsConnus;
 
     private ChampTheme filtre;
     private BoutonTheme trier, vides, vue, budget, epaisseur, intensite, remplissage, reglages;
@@ -201,86 +212,96 @@ public final class OngletFilons {
     }
 
     private String titre(FilonMemoire.Filon f) {
-        if (f.gregtech() && !f.nom.isEmpty()) return f.nom;
-        return String.join(", ", f.types().keySet().stream().map(Filons::nom).toList());
+        return f.gregtech() && !f.nom.isEmpty() ? f.nom : resume(f).titre();
     }
 
     private String distance(FilonMemoire.Filon f) {
-        double d = f.ancre.distance2(Filons.position());
+        double d = f.ancre.distance2(position);
         return Double.isFinite(d) ? Math.round(Math.sqrt(d)) + " blocs" : "autre dimension";
     }
 
-    // Compter au plus quand la mémoire change, jamais à chaque image du menu.
     private Resume resume(FilonMemoire.Filon f) {
-        return resumes.computeIfAbsent(
-                f.id,
-                id -> {
-                    Map<String, Integer> types = f.typesReperes();
-                    String item =
-                            types.keySet().stream()
-                                    .findFirst()
-                                    .orElseGet(
-                                            () ->
-                                                    f.composition.stream()
-                                                            .sorted()
-                                                            .findFirst()
-                                                            .orElse(""));
-                    long maintenant = System.currentTimeMillis();
-                    return new Resume(
-                            types,
-                            f.restants(),
-                            f.trouves(),
-                            item,
-                            f.ageReleve(maintenant),
-                            f.releveAncien(maintenant),
-                            f.presqueEpuise(),
-                            f.presqueEpuiseAConfirmer(),
-                            Filons.utilePourRecette(f));
-                });
+        var precedent = resumes.get(f);
+        // Un scan modifie la même veine à chaque tick. Borner son recompte seul.
+        if (precedent != null
+                && (precedent.revision() == f.revision
+                        || Filons.scanDuFilon(f.id) && maintenant - precedent.date() < 250))
+            return precedent;
+        var types = f.typesReperes();
+        String item = f.compositionTriee.length == 0 ? "" : f.compositionTriee[0];
+        if (!types.isEmpty()) item = types.keySet().iterator().next();
+        String titre = "";
+        if (!f.gregtech() || f.nom.isEmpty()) {
+            var blocs = new TreeSet<>(f.composition);
+            blocs.addAll(types.keySet());
+            titre = String.join(", ", blocs.stream().map(Filons::nom).toList());
+        }
+        var resume = new Resume(f.revision, maintenant, List.copyOf(types.entrySet()), item, titre);
+        resumes.put(f, resume);
+        return resume;
     }
 
-    private void actualiser() {
+    private boolean utile(FilonMemoire.Filon f) {
+        var precedente = pertinences.get(f);
+        if (precedente != null
+                && precedente.revision() == f.revision
+                && precedente.recette() == revisionRecette) return precedente.utile();
+        boolean utile = Filons.utilePourRecette(f);
+        pertinences.put(f, new Pertinence(f.revision, revisionRecette, utile));
+        return utile;
+    }
+
+    private void actualiser(long date) {
+        maintenant = date;
         boolean connecte = Filons.synchroniserMonde();
-        String actuelle = connecte ? Filons.position().dimension() : "";
-        if (!monde.equals(Filons.monde()) || !dimension.equals(actuelle)) {
-            monde = Filons.monde();
+        position = Filons.position();
+        String actuelle = connecte ? position.dimension() : "";
+        String mondeActuel = Filons.monde();
+        boolean contexteChange = !monde.equals(mondeActuel) || !dimension.equals(actuelle);
+        if (contexteChange) {
+            monde = mondeActuel;
             dimension = actuelle;
             selection = "";
-            listeDate = 0;
-            liste = List.of();
-            resumes.clear();
             barre.defiler(1e6);
             positionListe = positionMinerais = 0;
         }
-        if (!connecte || Filons.chargement()) {
+        var memoire = connecte && !Filons.chargement() ? Filons.memoire() : null;
+        if (contexteChange || memoireListe != memoire) {
+            memoireListe = memoire;
+            criteresListe = null;
+            listeDate = 0;
             liste = List.of();
-            if (!connecte) selection = "";
+            filonsConnus = false;
             resumes.clear();
-            return;
+            pertinences.clear();
         }
+        if (memoire == null) return;
         Filons.actualiserGregtech();
-        long revision = Filons.revision(), maintenant = System.currentTimeMillis();
-        // Pendant un scan la mémoire change à chaque tick : recompter au plus quatre fois par
-        // seconde.
-        if (revision != revisionResumes && maintenant - resumesDate >= 250) {
-            revisionResumes = revision;
-            resumesDate = maintenant;
-            resumes.clear();
-        }
-        if (maintenant - listeDate < 500) return;
+        revisionRecette = Filons.revisionRecette();
+        var criteres =
+                new CriteresListe(
+                        memoire.revision(),
+                        tri == 1 ? revisionRecette : 0,
+                        tri == 2 ? null : position,
+                        recherche,
+                        masquerVides,
+                        tri);
+        if (criteres.equals(criteresListe) || listeDate != 0 && maintenant - listeDate < 500)
+            return;
+        criteresListe = criteres;
         listeDate = maintenant;
-        resumes.clear();
-        var position = Filons.position();
         Comparator<FilonMemoire.Filon> ordre =
                 Comparator.comparingDouble(f -> f.ancre.distance2(position));
         if (tri == 1)
             ordre =
-                    Comparator.<FilonMemoire.Filon, Boolean>comparing(f -> !resume(f).utile())
+                    Comparator.<FilonMemoire.Filon, Boolean>comparing(f -> !utile(f))
                             .thenComparing(ordre);
         if (tri == 2) ordre = Comparator.comparing(this::titre);
         String q = normaliser(recherche);
+        var connus = memoire.filonsDans(dimension);
+        filonsConnus = !connus.isEmpty();
         liste =
-                Filons.memoire().filonsDans(dimension).stream()
+                connus.stream()
                         .filter(f -> !masquerVides || f.visible())
                         .filter(f -> q.isEmpty() || correspond(f, q, !masquerVides))
                         .sorted(ordre.thenComparing(f -> f.id))
@@ -314,7 +335,7 @@ public final class OngletFilons {
 
     public void render(GuiGraphics g, int x, int y, int largeur, int bas, int sx, int sy) {
         visible(true);
-        actualiser();
+        actualiser(System.currentTimeMillis());
         this.x = x;
         this.y = y;
         this.largeur = largeur;
@@ -329,7 +350,7 @@ public final class OngletFilons {
         disposition = DispositionFilons.calculer(x, y, largeur, bas);
         outils();
         listeRendu(g, sx, sy);
-        var f = Filons.memoire().filon(selection);
+        var f = memoireListe == null ? null : memoireListe.filon(selection);
         fiche(g, f, sx, sy);
         statut(g, sx, sy);
         if (menuOuvert) {
@@ -495,29 +516,22 @@ public final class OngletFilons {
             int texteX = x + 25, texteL = contenuLargeur - 25 - boutonL - 2 * Theme.ECART;
             // Pastille « presque épuisé » à droite ; ★ cyan devant un filon utile à la recette.
             int pastilles =
-                    r.presque()
+                    f.presqueEpuise()
                             ? pastille(g, "presque épuisé", Theme.JAUNE, texteX + texteL, ly + 3)
                             : 0;
+            boolean utile = utile(f);
             Theme.texte(
                     g,
                     font,
-                    (r.utile() ? "★ " : "") + titre(f),
+                    (utile ? "★ " : "") + titre(f),
                     texteX,
                     ly + 4,
                     texteL - pastilles,
-                    r.utile() ? Theme.CYAN : Theme.TEXTE,
+                    utile ? Theme.CYAN : Theme.TEXTE,
                     tx,
                     ty);
             Theme.texte(
-                    g,
-                    font,
-                    ligneInfo(f, r),
-                    texteX,
-                    ly + 14,
-                    texteL,
-                    Theme.TEXTE_SECONDAIRE,
-                    tx,
-                    ty);
+                    g, font, ligneInfo(f), texteX, ly + 14, texteL, Theme.TEXTE_SECONDAIRE, tx, ty);
             boolean entiere = ly >= listeY && ly + hauteur <= listeBas;
             int by = ly + (hauteur - Theme.BOUTON) / 2;
             int bx = x + contenuLargeur - boutonL - Theme.ECART;
@@ -527,11 +541,11 @@ public final class OngletFilons {
             b.choisi(visibleIci);
             b.active =
                     Filons.affichageDisponible()
-                            && (visibleIci || (f.visible() && r.restants() > 0));
+                            && (visibleIci || (f.visible() && f.restants() > 0));
             b.infobulle(
                     visibleIci
                             ? "Masquer ce filon."
-                            : r.restants() == 0
+                            : f.restants() == 0
                                     ? "Sélectionne ce filon puis scanne-le pour repérer ses minerais."
                                     : "Choisir les minerais à surligner. Portée : "
                                             + StyleFilons.RAYON
@@ -547,7 +561,7 @@ public final class OngletFilons {
                             ? "Entre dans ta partie : les filons GregTech prospectés apparaîtront ici."
                             : Filons.chargement()
                                     ? "Chargement des filons…"
-                                    : Filons.memoire().filonsDans(dimension).isEmpty()
+                                    : !filonsConnus
                                             ? "Aucun filon connu ici. Utilise la prospection GregTech (prospecteur ou carte)."
                                             : "Aucun résultat. Modifie la recherche ou le filtre.";
             Theme.paragraphe(
@@ -578,7 +592,7 @@ public final class OngletFilons {
     }
 
     /** Deuxième ligne d'un filon, courte pour tenir à 320 pixels : distance et restants/trouvés. */
-    private String ligneInfo(FilonMemoire.Filon f, Resume r) {
+    private String ligneInfo(FilonMemoire.Filon f) {
         String debut = distance(f) + " · ";
         if (f.estEpuise()) return debut + "épuisé";
         if (Filons.scanDuFilon(f.id))
@@ -586,16 +600,16 @@ public final class OngletFilons {
                     + "scan "
                     + f.avancementScan()
                     + " %"
-                    + (r.trouves() > 0 ? " · " + Theme.nombre(r.trouves()) + " trouvés" : "");
-        if (r.trouves() == 0) return debut + "à scanner";
+                    + (f.trouves() > 0 ? " · " + Theme.nombre(f.trouves()) + " trouvés" : "");
+        if (f.trouves() == 0) return debut + "à scanner";
         return debut
-                + Theme.nombre(r.restants())
+                + Theme.nombre(f.restants())
                 + "/"
-                + Theme.nombre(r.trouves())
+                + Theme.nombre(f.trouves())
                 + " ("
                 + f.pourcentRestant()
                 + " %)"
-                + (r.ancien() ? " · ancien" : "");
+                + (f.releveAncien(maintenant) ? " · ancien" : "");
     }
 
     private void fiche(GuiGraphics g, FilonMemoire.Filon f, int sx, int sy) {
@@ -628,7 +642,7 @@ public final class OngletFilons {
         if (f.estEpuise()) {
             compte = f.quantite();
             couleur = Theme.JAUNE;
-        } else if (r.trouves() == 0) {
+        } else if (f.trouves() == 0) {
             compte =
                     Filons.scanDuFilon(f.id)
                             ? "Scan en cours : aucun minerai trouvé pour l'instant."
@@ -636,15 +650,15 @@ public final class OngletFilons {
             couleur = Theme.TEXTE_SECONDAIRE;
         } else {
             compte =
-                    r.restants()
+                    f.restants()
                             + " restants sur "
-                            + r.trouves()
+                            + f.trouves()
                             + " trouvés ("
                             + f.pourcentRestant()
                             + " %)";
-            couleur = r.presque() ? Theme.JAUNE : Theme.VERT;
+            couleur = f.presqueEpuise() ? Theme.JAUNE : Theme.VERT;
         }
-        int barreL = r.trouves() > 0 && !f.estEpuise() ? Math.min(60, dl / 5) : 0;
+        int barreL = f.trouves() > 0 && !f.estEpuise() ? Math.min(60, dl / 5) : 0;
         Theme.texte(g, font, compte, dx, y2, dl - (barreL > 0 ? barreL + 6 : 0), couleur, tx, ty);
         if (barreL > 0)
             Theme.progression(
@@ -653,17 +667,17 @@ public final class OngletFilons {
                     y2 + 1,
                     barreL,
                     7,
-                    r.restants() / (double) Math.max(1, r.trouves()),
-                    r.presque() ? Theme.JAUNE : Theme.VERT);
+                    f.restants() / (double) Math.max(1, f.trouves()),
+                    f.presqueEpuise() ? Theme.JAUNE : Theme.VERT);
         // Ligne 3 : conseil « Épuisé », état du scan ou coordonnées.
         int y3 = y2 + Theme.LIGNE;
         if (y3 + 9 <= d.detailBas()) {
             String ligne;
             int c3 = Theme.TEXTE_SECONDAIRE;
-            if (r.presque()) {
+            if (f.presqueEpuise()) {
                 ligne = "Presque épuisé, il reste " + f.pourcentRestant() + " % : clique Épuisé.";
                 c3 = Theme.JAUNE;
-            } else if (r.confirmer() && !Filons.scanDuFilon(f.id)) {
+            } else if (f.presqueEpuiseAConfirmer() && !Filons.scanDuFilon(f.id)) {
                 // Zone vue en partie (ancien scan de 16 blocs, scan arrêté) : total inconnu.
                 ligne = "Peu de minerai vu : scanne pour confirmer.";
                 c3 = Theme.JAUNE;
@@ -680,7 +694,7 @@ public final class OngletFilons {
                                 + f.ancre.z()
                                 + " · "
                                 + Filons.etatScan(f)
-                                + (r.trouves() > 0 ? " · relevé " + r.age() : "");
+                                + (f.trouves() > 0 ? " · relevé " + f.ageReleve(maintenant) : "");
             Theme.texte(g, font, ligne, dx, y3, dl, c3, tx, ty);
         }
         // Minerais présents par type, avec défilement si la place manque.
@@ -691,7 +705,7 @@ public final class OngletFilons {
                                 (d.detailBas() - (y3 + Theme.LIGNE + 2))
                                         / DispositionFilons.MINERAI)
                         : d.minerais();
-        var types = new ArrayList<>(r.types().entrySet());
+        var types = r.types();
         int haut = y3 + Theme.LIGNE + 2;
         if (capacite > 0 && !types.isEmpty() && !f.estEpuise()) {
             int hauteur = Math.min(capacite * DispositionFilons.MINERAI, d.detailBas() - haut);
@@ -740,10 +754,10 @@ public final class OngletFilons {
             g.disableScissor();
             Theme.barre(g, barreMinerais, sx, sy);
         } else barreMinerais.regler(dx + dl - Theme.DEFILEMENT, haut, 0, 0);
-        actions(f, r);
+        actions(f);
     }
 
-    private void actions(FilonMemoire.Filon f, Resume r) {
+    private void actions(FilonMemoire.Filon f) {
         var d = disposition;
         int l = (d.detailLargeur() - 2 * Theme.ECART) / 3;
         int ay = d.actionsY();
@@ -753,7 +767,7 @@ public final class OngletFilons {
         scanner.texte(scanEnCours ? "Scan " + f.avancementScan() + " %" : "Scanner");
         // Jamais scanné, ou peu de minerai vu dans une zone partielle : scanner est l'action utile.
         scanner.genre(
-                !scanEnCours && (r.trouves() == 0 || r.confirmer())
+                !scanEnCours && (f.trouves() == 0 || f.presqueEpuiseAConfirmer())
                         ? Theme.Genre.PRINCIPAL
                         : Theme.Genre.NORMAL);
         scanner.choisi(scanEnCours);
@@ -764,7 +778,7 @@ public final class OngletFilons {
                                 + ". Cliquer pour arrêter ; les minerais trouvés sont gardés."
                         : !raisonScan.isEmpty()
                                 ? raisonScan
-                                : (r.confirmer()
+                                : (f.presqueEpuiseAConfirmer()
                                                 ? "Seule une partie du filon a été vue : un scan complet dira s'il est vraiment presque épuisé. "
                                                 : "")
                                         + "Parcourir tout le volume de génération du filon (bornes du générateur GregTech). Les zones non chargées se scannent dès que tu t'en approches.");
@@ -783,17 +797,17 @@ public final class OngletFilons {
         epuiser.active = Filons.marquageDisponible() && (!f.epuise || f.epuiseManuel());
         epuiser.texte(f.epuiseManuel() ? "Rétablir" : f.epuise ? "Épuisé ✔" : "Épuisé");
         // Peu de minerai restant : l'action principale proposée est de le marquer épuisé.
-        epuiser.genre(r.presque() ? Theme.Genre.PRINCIPAL : Theme.Genre.NORMAL);
+        epuiser.genre(f.presqueEpuise() ? Theme.Genre.PRINCIPAL : Theme.Genre.NORMAL);
         epuiser.infobulle(
                 f.epuiseManuel()
                         ? "Annuler ton marquage épuisé. Les relevés et le journal GregTech sont conservés."
                         : f.epuise
                                 ? "Déjà déclaré épuisé par le journal GregTech."
-                                : r.presque()
+                                : f.presqueEpuise()
                                         ? "Il reste "
-                                                + r.restants()
+                                                + f.restants()
                                                 + " minerais sur "
-                                                + r.trouves()
+                                                + f.trouves()
                                                 + " trouvés : le marquer épuisé le masque de la liste. Pour annuler : Épuisés visibles → Rétablir."
                                         : "Marquer ce filon comme épuisé pour ce monde. Pour annuler : Épuisés visibles → Rétablir.");
     }
@@ -856,8 +870,10 @@ public final class OngletFilons {
                 + "\n"
                 + Filons.etatScan(f)
                 + (f.volume != null ? " · volume " + f.volume.nom() : "")
-                + (r.trouves() > 0
-                        ? "\nRelevé : " + r.age() + (r.ancien() ? " · à vérifier" : "")
+                + (f.trouves() > 0
+                        ? "\nRelevé : "
+                                + f.ageReleve(maintenant)
+                                + (f.releveAncien(maintenant) ? " · à vérifier" : "")
                         : "")
                 + (f.mines() > 0
                         ? "\n" + f.mines() + " minerais minés depuis le premier relevé."
@@ -868,7 +884,7 @@ public final class OngletFilons {
                         : "\n"
                                 + String.join(
                                         "\n",
-                                        r.types().entrySet().stream()
+                                        r.types().stream()
                                                 .map(e -> ligneMinerai(f, e.getKey(), e.getValue()))
                                                 .toList()))
                 + (f.matieresEpuisees().isEmpty()

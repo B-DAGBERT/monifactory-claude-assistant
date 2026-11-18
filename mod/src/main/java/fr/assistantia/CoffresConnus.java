@@ -13,6 +13,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -74,7 +75,8 @@ public final class CoffresConnus {
             Set<String> machines,
             List<Conteneur> conteneurs,
             long revision,
-            boolean pret) {}
+            boolean pret,
+            Map<String, Map<Long, List<Conteneur>>> secteurs) {}
 
     /** Un coffre retenu, position connue, avec son contenu. */
     public record Conteneur(
@@ -83,13 +85,21 @@ public final class CoffresConnus {
     /** Rayon, en blocs à l'horizontale, des coffres que le plan compte comme à portée. */
     public static final int RAYON_PLAN = 256;
 
+    private static final int BITS_SECTEUR = 6;
+
     private static Etat vide(Path dossier) {
-        return new Etat(dossier, ABSENT, ABSENT, Map.of(), Set.of(), List.of(), 0, false);
+        return new Etat(dossier, ABSENT, ABSENT, Map.of(), Set.of(), List.of(), 0, false, Map.of());
     }
 
-    private record CleProches(long revision, long tampon, String zone) {}
+    private record CleCandidats(long revision, long tampon, String dimension, int x, int z) {}
 
-    private static CleProches cleProches;
+    private record Candidat(Conteneur conteneur, boolean machine) {}
+
+    private static CleCandidats cleCandidats;
+    private static List<Candidat> candidats = List.of();
+    private static final BitSet aPortee = new BitSet();
+    private static int dernierX, dernierZ;
+    private static long revisionProches;
     private static Map<String, Long> proches = Map.of(), enMachines = Map.of();
     private static final ExecutorService LECTEUR =
             Executors.newSingleThreadExecutor(
@@ -112,22 +122,15 @@ public final class CoffresConnus {
         return ETAT.get();
     }
 
-    /**
-     * Zone du joueur pour {@link #proches()} : dimension et case de 64 blocs. Un changement de zone
-     * suffit à refaire un plan qui en dépend.
-     */
-    public static String zone() {
-        var mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) return "";
-        var pos = mc.player.blockPosition();
-        return mc.level.dimension().location() + "|" + (pos.getX() >> 6) + "|" + (pos.getZ() >> 6);
+    /** Révision des totaux à portée, coffres et machines à outils. */
+    public static long revisionProches() {
+        actualiserProches();
+        return revisionProches;
     }
 
     /**
-     * Totaux des coffres que le plan peut compter comme à récupérer : même dimension que le joueur,
-     * à moins de {@link #RAYON_PLAN} blocs à l'horizontale, jamais un coffre à butin (Lootr). Les
-     * coffres vus en exploration ou dans une autre dimension restent connus (« Introuvable »), mais
-     * ne remplacent jamais une fabrication. Calculé au plus une fois par zone et par relevé.
+     * Totaux des coffres que le plan peut compter comme à récupérer, dans la dimension et à portée
+     * du joueur. Les coffres connus à distance restent dans la mémoire générale.
      */
     public static Map<String, Long> proches() {
         actualiserProches();
@@ -136,7 +139,7 @@ public final class CoffresConnus {
 
     /**
      * Ce qui est installé dans les machines à outils à portée (inscribers d'AE2 : presses), relevé
-     * par le serveur : déjà en place, jamais à aller chercher ni à fabriquer.
+     * par le serveur.
      */
     public static Map<String, Long> enMachines() {
         actualiserProches();
@@ -147,32 +150,109 @@ public final class CoffresConnus {
         var etat = ETAT.get();
         var mc = Minecraft.getInstance();
         if (!etat.pret() || mc.player == null || mc.level == null) {
-            proches = enMachines = Map.of();
-            cleProches = null;
+            if (cleCandidats != null) {
+                cleCandidats = null;
+                candidats = List.of();
+                aPortee.clear();
+                retenirProches(Map.of(), Map.of());
+            }
             return;
         }
-        var cle = new CleProches(etat.revision(), CoffreTampon.revision(), zone());
-        if (cle.equals(cleProches)) return;
         var pos = mc.player.blockPosition();
+        int x = pos.getX(), z = pos.getZ();
         String dimension = mc.level.dimension().location().toString();
-        proches =
-                proches(
-                        etat.conteneurs().stream()
-                                .filter(
-                                        c ->
-                                                !CoffreTampon.exclu(
-                                                                c.dimension(), c.x(), c.y(), c.z())
-                                                        && !CoffreTampon.selectionne(
-                                                                c.dimension(), c.x(), c.y(), c.z()))
-                                .toList(),
+        var cle =
+                new CleCandidats(
+                        etat.revision(),
+                        CoffreTampon.revision(),
                         dimension,
-                        pos.getX(),
-                        pos.getZ(),
-                        RAYON_PLAN,
-                        false);
-        enMachines =
-                proches(etat.conteneurs(), dimension, pos.getX(), pos.getZ(), RAYON_PLAN, true);
-        cleProches = cle;
+                        x >> BITS_SECTEUR,
+                        z >> BITS_SECTEUR);
+        boolean nouveauxCandidats = !cle.equals(cleCandidats);
+        if (!nouveauxCandidats && dernierX == x && dernierZ == z) return;
+        dernierX = x;
+        dernierZ = z;
+        if (nouveauxCandidats) {
+            cleCandidats = cle;
+            candidats = candidats(etat.secteurs().get(dimension), cle.x(), cle.z());
+            aPortee.clear();
+        }
+        boolean nouvellesPositions = nouveauxCandidats;
+        for (int i = 0; i < candidats.size(); i++) {
+            boolean dansRayon = dansRayon(candidats.get(i).conteneur(), x, z, RAYON_PLAN);
+            if (dansRayon == aPortee.get(i)) continue;
+            aPortee.set(i, dansRayon);
+            nouvellesPositions = true;
+        }
+        if (!nouvellesPositions) return;
+        Map<String, Long> coffres = new HashMap<>(), machines = new HashMap<>();
+        for (int i = aPortee.nextSetBit(0); i >= 0; i = aPortee.nextSetBit(i + 1)) {
+            var candidat = candidats.get(i);
+            compter(candidat.machine() ? machines : coffres, candidat.conteneur());
+        }
+        retenirProches(coffres, machines);
+    }
+
+    private static List<Candidat> candidats(Map<Long, List<Conteneur>> secteurs, int x, int z) {
+        if (secteurs == null) return List.of();
+        List<Candidat> resultats = new ArrayList<>();
+        int marge = (RAYON_PLAN + (1 << BITS_SECTEUR) - 1) >> BITS_SECTEUR;
+        // Garder tous les secteurs pouvant intersecter le rayon pour un joueur dans ce secteur.
+        for (int sx = x - marge; sx <= x + marge; sx++)
+            for (int sz = z - marge; sz <= z + marge; sz++) {
+                var secteur = secteurs.get(cleSecteur(sx, sz));
+                if (secteur == null) continue;
+                for (var c : secteur) {
+                    boolean machine = TraitsReperes.machineOutils(c.bloc());
+                    if (machine
+                            || !CoffreTampon.exclu(c.dimension(), c.x(), c.y(), c.z())
+                                    && !CoffreTampon.selectionne(
+                                            c.dimension(), c.x(), c.y(), c.z()))
+                        resultats.add(new Candidat(c, machine));
+                }
+            }
+        return resultats;
+    }
+
+    private static void retenirProches(Map<String, Long> coffres, Map<String, Long> machines) {
+        boolean coffresModifies = !proches.equals(coffres),
+                machinesModifiees = !enMachines.equals(machines);
+        if (coffresModifies) proches = Map.copyOf(coffres);
+        if (machinesModifiees) enMachines = Map.copyOf(machines);
+        if (coffresModifies || machinesModifiees) revisionProches++;
+    }
+
+    private static long cleSecteur(int x, int z) {
+        return (long) x << 32 | Integer.toUnsignedLong(z);
+    }
+
+    private static Map<String, Map<Long, List<Conteneur>>> indexer(List<Conteneur> conteneurs) {
+        Map<String, Map<Long, List<Conteneur>>> dimensions = new HashMap<>();
+        for (var c : conteneurs) {
+            if (c.bloc().startsWith("lootr:") || c.x() != (int) c.x() || c.z() != (int) c.z())
+                continue;
+            long cle = cleSecteur((int) c.x() >> BITS_SECTEUR, (int) c.z() >> BITS_SECTEUR);
+            dimensions
+                    .computeIfAbsent(c.dimension(), d -> new HashMap<>())
+                    .computeIfAbsent(cle, k -> new ArrayList<>())
+                    .add(c);
+        }
+        dimensions.replaceAll(
+                (dimension, secteurs) -> {
+                    secteurs.replaceAll(
+                            (cle, conteneursDuSecteur) -> List.copyOf(conteneursDuSecteur));
+                    return Map.copyOf(secteurs);
+                });
+        return Map.copyOf(dimensions);
+    }
+
+    private static boolean dansRayon(Conteneur c, long x, long z, int rayon) {
+        double dx = (double) c.x() - x, dz = (double) c.z() - z;
+        return dx * dx + dz * dz <= (double) rayon * rayon;
+    }
+
+    private static void compter(Map<String, Long> totaux, Conteneur c) {
+        c.objets().forEach((k, n) -> totaux.merge(k, n, (a, b) -> Math.min(1_000_000_000L, a + b)));
     }
 
     /** Calcul pur de {@link #proches()} (coffres). */
@@ -193,16 +273,10 @@ public final class CoffresConnus {
             int rayon,
             boolean machines) {
         Map<String, Long> totaux = new HashMap<>();
-        long r2 = (long) rayon * rayon;
         for (var c : conteneurs) {
             if (!c.dimension().equals(dimension) || c.bloc().startsWith("lootr:")) continue;
             if (TraitsReperes.machineOutils(c.bloc()) != machines) continue;
-            long dx = c.x() - x, dz = c.z() - z;
-            if (dx * dx + dz * dz > r2) continue;
-            c.objets()
-                    .forEach(
-                            (k, n) ->
-                                    totaux.merge(k, n, (a, b) -> Math.min(1_000_000_000L, a + b)));
+            if (dansRayon(c, x, z, rayon)) compter(totaux, c);
         }
         return Map.copyOf(totaux);
     }
@@ -261,11 +335,12 @@ public final class CoffresConnus {
                     || !empreinteFusion.equals(empreinte(fusion))) return;
             // Contenu inchangé (dates d'observation rafraîchies seulement) : même révision, pour
             // ne pas recalculer le plan de l'onglet Recette à chaque relevé du serveur.
+            boolean memesConteneurs = lu.conteneurs().equals(precedent.conteneurs());
             long revision =
                     precedent.pret()
                                     && lu.objets().equals(precedent.objets())
                                     && lu.machines().equals(precedent.machines())
-                                    && lu.conteneurs().equals(precedent.conteneurs())
+                                    && memesConteneurs
                             ? precedent.revision()
                             : REVISIONS.incrementAndGet();
             publier(
@@ -277,7 +352,8 @@ public final class CoffresConnus {
                             lu.machines(),
                             lu.conteneurs(),
                             revision,
-                            true),
+                            true,
+                            memesConteneurs ? precedent.secteurs() : indexer(lu.conteneurs())),
                     precedent);
         } catch (IOException | RuntimeException illisible) {
             // Fichier en cours d'écriture ou disparu entre-temps : garder le dernier relevé

@@ -584,13 +584,10 @@ public final class MachinesEmi {
                                         && GregTechMachines.machine(
                                                         mc.level.getBlockEntity(e.getKey()))
                                                 != e.getValue().machine())) entreesVersion++;
-        String cleInstalles =
-                fr.assistantia.CoffresConnus.etat().revision()
-                        + "|"
-                        + fr.assistantia.CoffresConnus.zone();
+        long cleInstalles = fr.assistantia.CoffresConnus.revisionProches();
         if (outilsVersion == entreesVersion
                 && operationsOutils == toutes
-                && cleInstalles.equals(cleOutilsInstalles)) return outilsConnus;
+                && cleInstalles == cleOutilsInstalles) return outilsConnus;
         var resultat = new ArrayList<PlanRetrait.Stock<EmiStack>>();
         for (var entree : entreesConnues.values())
             for (var objet : entree.objets())
@@ -618,7 +615,7 @@ public final class MachinesEmi {
         return outilsConnus;
     }
 
-    private static String cleOutilsInstalles = "";
+    private static long cleOutilsInstalles = -1;
 
     /** L'objet est un ingrédient non consommé de la recette (moule, presse, lentille…). */
     private static boolean outilDe(EmiRecipe recette, EmiStack objet) {
@@ -791,9 +788,7 @@ public final class MachinesEmi {
                             + "|"
                             + lots.revision()
                             + "|"
-                            + fr.assistantia.CoffresConnus.etat().revision()
-                            + "|"
-                            + fr.assistantia.CoffresConnus.zone()
+                            + fr.assistantia.CoffresConnus.revisionProches()
                             + "|"
                             + fr.assistantia.CoffreTampon.revision();
             if (cle.equals(calculPrecedent)) return;
