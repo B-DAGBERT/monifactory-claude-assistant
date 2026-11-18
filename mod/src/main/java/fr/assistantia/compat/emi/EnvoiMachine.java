@@ -13,6 +13,10 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.LongSupplier;
+import java.util.function.Predicate;
+import java.util.function.ToLongFunction;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -368,7 +372,8 @@ public final class EnvoiMachine {
                                             vide,
                                             ui.cuves().get(t),
                                             ui,
-                                            circuitRequis));
+                                            circuitRequis,
+                                            recipe));
                         transfert = true;
                         ItemStack restant = pile.copy();
                         restant.shrink(1);
@@ -441,7 +446,8 @@ public final class EnvoiMachine {
                 if (quantite <= 0) continue;
                 ItemStack attendu = simulation.get(src).copy();
                 if (actions != null)
-                    actions.add(objets(menu, src, dest, attendu, quantite, ui, circuitRequis));
+                    actions.add(
+                            objets(menu, src, dest, attendu, quantite, ui, circuitRequis, recipe));
                 transfert = true;
                 ItemStack apres = attendu.copy();
                 apres.shrink(quantite);
@@ -463,6 +469,134 @@ public final class EnvoiMachine {
         verifier(probleme.isEmpty(), probleme);
     }
 
+    private record SortieTemoin(EmiStack produit, long avant) {}
+
+    private record SortiesDepot(
+            List<Slot> objets, List<GregTechMachines.Cuve> fluides, List<SortieTemoin> temoins) {
+        static SortiesDepot relever(AbstractContainerMenu menu, EmiRecipe recette)
+                throws ReflectiveOperationException {
+            var objets = GregTechMachines.sorties(menu).stream().filter(Slot::isActive).toList();
+            var fluides = GregTechMachines.cuvesSortie(menu);
+            var temoins = new ArrayList<SortieTemoin>();
+            for (var produit : recette.getOutputs())
+                if (!produit.isEmpty() && produit.getChance() >= 1 && produit.getAmount() > 0)
+                    temoins.add(new SortieTemoin(produit, quantite(objets, fluides, produit)));
+            return new SortiesDepot(objets, fluides, temoins);
+        }
+
+        boolean nouvellesSorties(long fabrications) {
+            if (objets.stream().anyMatch(slot -> !slot.isActive())) return false;
+            for (var temoin : temoins)
+                if ((quantite(objets, fluides, temoin.produit()) - temoin.avant())
+                                / temoin.produit().getAmount()
+                        >= fabrications) return true;
+            return false;
+        }
+
+        private static long quantite(
+                List<Slot> objets, List<GregTechMachines.Cuve> fluides, EmiStack produit) {
+            var item = produit.getItemStack();
+            if (!item.isEmpty())
+                return objets.stream()
+                        .map(Slot::getItem)
+                        .filter(s -> !s.isEmpty() && ItemStack.isSameItemSameTags(s, item))
+                        .mapToLong(ItemStack::getCount)
+                        .sum();
+            return fluides.stream()
+                    .map(GregTechMachines.Cuve::contenu)
+                    .filter(
+                            f ->
+                                    !f.isEmpty()
+                                            && f.getFluid().equals(produit.getKey())
+                                            && Objects.equals(f.getTag(), produit.getNbt()))
+                    .mapToLong(FluidStack::getAmount)
+                    .sum();
+        }
+    }
+
+    private abstract static class Depot implements SequenceEnvoi.Action {
+        private final AbstractContainerMenu menu;
+        private final GregTechMachines.Interface ui;
+        private final EmiRecipe recette;
+        private LongSupplier bilanConsommation;
+        private SortiesDepot sorties;
+        private long fabricationsDemarrees, fabricationsSorties;
+
+        Depot(AbstractContainerMenu menu, GregTechMachines.Interface ui, EmiRecipe recette) {
+            this.menu = menu;
+            this.ui = ui;
+            this.recette = recette;
+        }
+
+        final void avantDepot(
+                Predicate<EmiIngredient> correspond,
+                ToLongFunction<EmiIngredient> quantite,
+                int envoye) {
+            var execution = GregTechMachines.execution(ui.machine(), recette);
+            if (execution == null || execution.active()) return;
+            var consommables =
+                    recette.getInputs().stream()
+                            .filter(i -> !i.isEmpty() && i.getChance() > 0 && correspond.test(i))
+                            .toList();
+            if (consommables.size() != 1) return;
+            var ingredient = consommables.get(0);
+            // L'entrée manquait avant le clic. Le solde doit correspondre à des cycles entiers.
+            try {
+                long requis = ingredient.getAmount();
+                long avant = quantite.applyAsLong(ingredient);
+                if (ingredient.getChance() < 1
+                        || requis <= 0
+                        || avant >= requis
+                        || avant + envoye < requis) return;
+                bilanConsommation =
+                        () -> {
+                            long consomme = avant + envoye - quantite.applyAsLong(ingredient);
+                            return consomme > 0 && consomme % requis == 0 ? consomme / requis : 0;
+                        };
+                sorties = SortiesDepot.relever(menu, recette);
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                // L'interface peut ne pas exposer toutes les sorties. Le dépôt exact reste vérifié.
+            }
+        }
+
+        @Override
+        public final void observer() {
+            if (bilanConsommation == null) return;
+            var execution = GregTechMachines.execution(ui.machine(), recette);
+            if (execution == null) return;
+            if (execution.autreRecette()) fabricationsDemarrees = fabricationsSorties = 0;
+            if (!execution.recetteAttendue()) return;
+            try {
+                long fabrications = bilanConsommation.getAsLong();
+                if (execution.active())
+                    fabricationsDemarrees = Math.max(fabricationsDemarrees, fabrications);
+                // Au repos, la recette et la nouvelle sortie doivent être observées ensemble.
+                else if (sorties != null
+                        && fabrications > fabricationsSorties
+                        && sorties.nouvellesSorties(fabrications))
+                    fabricationsSorties = fabrications;
+            } catch (RuntimeException ignored) {
+                // Attendre un relevé de sortie exploitable.
+            }
+        }
+
+        final boolean consommationConfirmee() {
+            if (bilanConsommation == null) return false;
+            try {
+                long fabrications = bilanConsommation.getAsLong();
+                // La dernière sortie peut être synchronisée après la disparition de l'ID.
+                return fabrications == 1 && fabricationsDemarrees >= 1
+                        || fabrications > 0
+                                && fabrications
+                                        <= Math.max(fabricationsDemarrees, fabricationsSorties)
+                                && sorties != null
+                                && sorties.nouvellesSorties(fabrications);
+            } catch (RuntimeException e) {
+                return false;
+            }
+        }
+    }
+
     private static SequenceEnvoi.Action objets(
             AbstractContainerMenu menu,
             Slot src,
@@ -470,10 +604,13 @@ public final class EnvoiMachine {
             ItemStack original,
             int n,
             GregTechMachines.Interface ui,
-            int circuit) {
+            int circuit,
+            EmiRecipe recette) {
         ItemStack restant = original.copy();
         restant.shrink(n);
-        return new SequenceEnvoi.Action() {
+        return new Depot(menu, ui, recette) {
+            private ItemStack destinationAttendue;
+
             public void envoyer() {
                 verifierCircuit(ui, circuit);
                 verifier(
@@ -489,6 +626,18 @@ public final class EnvoiMachine {
                                         || ItemStack.isSameItemSameTags(dest.getItem(), original))
                                 && dest.getMaxStackSize(original) - dest.getItem().getCount() >= n,
                         "Entrée modifiée ou pleine");
+                destinationAttendue = original.copy();
+                destinationAttendue.setCount(dest.getItem().getCount() + n);
+                avantDepot(
+                        i -> accepte(i, original),
+                        i ->
+                                ui.entrees().stream()
+                                        .filter(Slot::isActive)
+                                        .map(Slot::getItem)
+                                        .filter(s -> accepte(i, s))
+                                        .mapToLong(ItemStack::getCount)
+                                        .sum(),
+                        n);
                 clic(menu, src, 0);
                 if (n == original.getCount()) clic(menu, dest, 0);
                 else {
@@ -504,7 +653,15 @@ public final class EnvoiMachine {
             }
 
             public boolean confirmee() {
-                return menu.getCarried().isEmpty() && meme(src.getItem(), restant);
+                var actuel = dest.getItem();
+                return menu.getCarried().isEmpty()
+                        && meme(src.getItem(), restant)
+                        && dest.isActive()
+                        && (meme(actuel, destinationAttendue)
+                                || (actuel.isEmpty()
+                                                || ItemStack.isSameItemSameTags(actuel, original))
+                                        && actuel.getCount() < destinationAttendue.getCount()
+                                        && consommationConfirmee());
             }
         };
     }
@@ -518,11 +675,17 @@ public final class EnvoiMachine {
             ItemStack vide,
             GregTechMachines.Cuve cuve,
             GregTechMachines.Interface ui,
-            int circuit) {
+            int circuit,
+            EmiRecipe recette) {
         ItemStack restant = original.copy();
         restant.shrink(1);
-        class Vidage implements SequenceEnvoi.Action {
+        class Vidage extends Depot {
             private String interruption = "";
+            private FluidStack destinationAttendue;
+
+            Vidage() {
+                super(menu, ui, recette);
+            }
 
             public void envoyer() throws Exception {
                 verifier(meme(menu.getCarried(), un), "Contenant modifié");
@@ -545,16 +708,37 @@ public final class EnvoiMachine {
                                                 un, simulation, Integer.MAX_VALUE, null, false)
                                         .isSuccess(),
                         "Le réservoir ne peut plus recevoir ce contenant");
+                int avant = simulation.getFluidAmount();
                 var essai =
-                        FluidUtil.tryEmptyContainer(un, simulation, Integer.MAX_VALUE, null, false);
+                        FluidUtil.tryEmptyContainer(un, simulation, Integer.MAX_VALUE, null, true);
                 verifier(
                         essai.isSuccess() && meme(essai.getResult(), vide),
                         "Volume disponible dans la cuve modifié");
+                destinationAttendue = simulation.getFluid().copy();
+                avantDepot(
+                        i -> accepte(i, destinationAttendue),
+                        i ->
+                                ui.cuves().stream()
+                                        .map(GregTechMachines.Cuve::contenu)
+                                        .filter(f -> accepte(i, f))
+                                        .mapToLong(FluidStack::getAmount)
+                                        .sum(),
+                        destinationAttendue.getAmount() - avant);
                 cuve.viderContenant();
             }
 
             public boolean confirmee() {
-                if (interruption.isEmpty()) return meme(menu.getCarried(), vide);
+                if (interruption.isEmpty()) {
+                    var contenu = cuve.contenu();
+                    return meme(menu.getCarried(), vide)
+                            && meme(src.getItem(), restant)
+                            && (contenu.getAmount() == destinationAttendue.getAmount()
+                                            && contenu.isFluidEqual(destinationAttendue)
+                                    || (contenu.isEmpty()
+                                                    || contenu.isFluidEqual(destinationAttendue))
+                                            && contenu.getAmount() < destinationAttendue.getAmount()
+                                            && consommationConfirmee());
+                }
                 return menu.getCarried().isEmpty() && meme(src.getItem(), original);
             }
         }

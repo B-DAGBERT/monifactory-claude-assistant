@@ -146,6 +146,7 @@ import net.minecraftforge.fluids.capability.templates.FluidTank;
 import net.minecraftforge.fluids.FluidUtil;
 public class GregTechMachines {
     public static Interface ui;public static boolean busy;public static int configuration=7,machineCircuit=-2;
+    public static dev.emi.emi.api.recipe.EmiRecipe recetteActive;
     public static List<Slot> outputSlots=List.of();
     public static List<Slot> sorties(AbstractContainerMenu menu)throws ReflectiveOperationException{return outputSlots;}
     public record Content(Object content) {}
@@ -163,6 +164,8 @@ public class GregTechMachines {
     public static Interface ouvrir(AbstractContainerMenu menu)throws ReflectiveOperationException{return ui;}
     public static boolean compatible(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return true;}
     public static boolean occupe(Object m){return busy;}
+    public record Execution(boolean active,boolean recetteAttendue,boolean autreRecette) {}
+    public static Execution execution(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return new Execution(busy,recetteActive==r,recetteActive!=null&&recetteActive!=r);}
     public static int circuit(ItemStack s){return s.tag;}
     public static int circuitConfigure(Interface ui) throws ReflectiveOperationException {return machineCircuit!=-2?machineCircuit:ui.circuit() instanceof ItemStack s&&!s.isEmpty()?s.tag:-1;}
     public static void reglerCircuit(Object w,int v){throw new AssertionError("Le réglage machine ne doit pas être modifié");}
@@ -285,6 +288,38 @@ class MachineInputTests(unittest.TestCase):
 
     def test_machine_preview_refuses_blocked_destinations_without_moving_inputs(self):
         self.rejouer_cycle("preconditions")
+
+    def test_machine_requires_destination_confirmation_or_the_expected_recipe_started(self):
+        self.rejouer_cycle(
+            "destination-corrigee",
+            "cuve-corrigee",
+            "consommation-immediate",
+            "autre-recette-demarree",
+        )
+
+    def test_machine_confirms_a_short_recipe_with_fresh_matching_evidence(self):
+        self.rejouer_cycle(
+            "recette-deux-ticks",
+            "recette-entre-observations",
+            "recette-rapide-deux-cycles",
+            "recette-rapide-sortie-retardee",
+            "recette-rapide-sortie-retardee-id-change",
+            "recette-deux-ticks-entree-partielle",
+            "recette-deux-ticks-autre",
+            "recette-deux-ticks-source-corrigee",
+            "sortie-corrigee-apres-observation",
+            "sortie-preexistante-seule",
+            "sortie-preexistante-masquee",
+            "fluide-entre-observations",
+            "fluide-sortie-preexistante",
+        )
+
+    def test_machine_continues_after_proven_consumption_of_an_intermediate_deposit(self):
+        self.rejouer_cycle(
+            "absorption-avant-depot-suivant",
+            "absorption-avant-depot-suivant-autre",
+            "absorption-ancien-demarrage",
+        )
 
     def test_machine_circuit_changes_preserve_items_and_stop_unconfirmed_transfers(self):
         self.rejouer_cycle(

@@ -238,11 +238,35 @@ public final class GregTechMachines {
     public static boolean enMarche(Object machine) {
         if (machine == null) return false;
         try {
-            Object logique = appeler(machine, "getRecipeLogic");
-            return "WORKING".equals(String.valueOf(appeler(logique, "getStatus")))
-                    || ((Number) appeler(logique, "getProgress")).intValue() > 0;
+            return active(appeler(machine, "getRecipeLogic"));
         } catch (ReflectiveOperationException | RuntimeException e) {
             return false;
+        }
+    }
+
+    private static boolean active(Object logique) throws ReflectiveOperationException {
+        return "WORKING".equals(String.valueOf(appeler(logique, "getStatus")))
+                || ((Number) appeler(logique, "getProgress")).intValue() > 0;
+    }
+
+    record Execution(boolean active, boolean recetteAttendue, boolean autreRecette) {}
+
+    /** La dernière recette reste parfois renseignée même lorsque la machine est au repos. */
+    static Execution execution(Object machine, EmiRecipe attendue) {
+        try {
+            var logique = appeler(machine, "getRecipeLogic");
+            boolean active = active(logique);
+            var derniere = appeler(logique, "getLastRecipe");
+            var recette = recette(attendue);
+            var id = recette == null ? null : recette.getClass().getField("id").get(recette);
+            var dernierId =
+                    derniere == null ? null : derniere.getClass().getField("id").get(derniere);
+            return new Execution(
+                    active,
+                    id != null && id.equals(dernierId),
+                    id != null && dernierId != null && !id.equals(dernierId));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return null;
         }
     }
 
