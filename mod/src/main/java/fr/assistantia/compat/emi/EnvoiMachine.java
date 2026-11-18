@@ -493,6 +493,19 @@ public final class EnvoiMachine {
             return false;
         }
 
+        boolean seuleSortieVide() {
+            return objets.size() == 1
+                    && fluides.isEmpty()
+                    && temoins.size() == 1
+                    && objets.get(0).getItem().isEmpty();
+        }
+
+        boolean seuleSortieExacte() {
+            var temoin = temoins.get(0);
+            return objets.get(0).isActive()
+                    && temoin.produit().getAmount() == quantite(objets, fluides, temoin.produit());
+        }
+
         private static long quantite(
                 List<Slot> objets, List<GregTechMachines.Cuve> fluides, EmiStack produit) {
             var item = produit.getItemStack();
@@ -521,6 +534,7 @@ public final class EnvoiMachine {
         private LongSupplier bilanConsommation;
         private SortiesDepot sorties;
         private long fabricationsDemarrees, fabricationsSorties;
+        private boolean bilanNatifSimple, autreRecetteObservee;
 
         Depot(AbstractContainerMenu menu, GregTechMachines.Interface ui, EmiRecipe recette) {
             this.menu = menu;
@@ -531,7 +545,8 @@ public final class EnvoiMachine {
         final void avantDepot(
                 Predicate<EmiIngredient> correspond,
                 ToLongFunction<EmiIngredient> quantite,
-                int envoye) {
+                int envoye,
+                ItemStack objetEnvoye) {
             var execution = GregTechMachines.execution(ui.machine(), recette);
             if (execution == null || execution.active()) return;
             var consommables =
@@ -554,6 +569,26 @@ public final class EnvoiMachine {
                             return consomme > 0 && consomme % requis == 0 ? consomme / requis : 0;
                         };
                 sorties = SortiesDepot.relever(menu, recette);
+                var variantes = ingredient.getEmiStacks();
+                bilanNatifSimple =
+                        avant == 0
+                                && envoye == requis
+                                && !execution.autreRecette()
+                                && sorties.seuleSortieVide()
+                                && ui.entrees().stream().filter(Slot::isActive).count() == 1
+                                && ui.entrees().stream()
+                                        .filter(Slot::isActive)
+                                        .allMatch(s -> s.getItem().isEmpty())
+                                && ui.cuves().isEmpty()
+                                && recette.getOutputs().size() == 1
+                                && recette.getInputs().stream()
+                                                .filter(i -> !i.isEmpty() && i.getChance() > 0)
+                                                .count()
+                                        == 1
+                                && variantes.size() == 1
+                                && !objetEnvoye.isEmpty()
+                                && ItemStack.isSameItemSameTags(
+                                        variantes.get(0).getItemStack(), objetEnvoye);
             } catch (ReflectiveOperationException | RuntimeException ignored) {
                 // L'interface peut ne pas exposer toutes les sorties. Le dépôt exact reste vérifié.
             }
@@ -564,7 +599,10 @@ public final class EnvoiMachine {
             if (bilanConsommation == null) return;
             var execution = GregTechMachines.execution(ui.machine(), recette);
             if (execution == null) return;
-            if (execution.autreRecette()) fabricationsDemarrees = fabricationsSorties = 0;
+            if (execution.autreRecette()) {
+                autreRecetteObservee = true;
+                fabricationsDemarrees = fabricationsSorties = 0;
+            }
             if (!execution.recetteAttendue()) return;
             try {
                 long fabrications = bilanConsommation.getAsLong();
@@ -590,7 +628,12 @@ public final class EnvoiMachine {
                                 && fabrications
                                         <= Math.max(fabricationsDemarrees, fabricationsSorties)
                                 && sorties != null
-                                && sorties.nouvellesSorties(fabrications);
+                                && sorties.nouvellesSorties(fabrications)
+                        // LDLib peut publier uniquement l'état final d'un cycle très court.
+                        || fabrications == 1
+                                && bilanNatifSimple
+                                && !autreRecetteObservee
+                                && sorties.seuleSortieExacte();
             } catch (RuntimeException e) {
                 return false;
             }
@@ -637,7 +680,8 @@ public final class EnvoiMachine {
                                         .filter(s -> accepte(i, s))
                                         .mapToLong(ItemStack::getCount)
                                         .sum(),
-                        n);
+                        n,
+                        original);
                 clic(menu, src, 0);
                 if (n == original.getCount()) clic(menu, dest, 0);
                 else {
@@ -723,7 +767,8 @@ public final class EnvoiMachine {
                                         .filter(f -> accepte(i, f))
                                         .mapToLong(FluidStack::getAmount)
                                         .sum(),
-                        destinationAttendue.getAmount() - avant);
+                        destinationAttendue.getAmount() - avant,
+                        ItemStack.EMPTY);
                 cuve.viderContenant();
             }
 

@@ -290,6 +290,38 @@ public final class CycleMachineTest {
         }
     }
 
+    private void cycleSansIdentifiant(String scenario) {
+        var recette = recettePlaques(1);
+        var source = menu.slots.get(3);
+        source.item = new ItemStack(ETAIN, 1);
+        boolean deuxEntrees = scenario.equals("sans-id-deux-entrees");
+        GregTechMachines.ui =
+                new GregTechMachines.Interface(
+                        new Object(),
+                        deuxEntrees ? List.of(entree, moule) : List.of(entree),
+                        List.of(),
+                        null);
+        GregTechMachines.outputTanks = List.of();
+        if (scenario.equals("sans-id-sortie-ancienne")) sortie.item = new ItemStack(PLAQUE, 1);
+        if (scenario.equals("sans-id-sortie-etrangere")) sortie.item = new ItemStack(MOULE, 1);
+        synchroniser();
+        envoyer(EnvoiMachine.preparer(ecran, recette, 1));
+        attendreDepot(source, 1);
+        int clics = mc.gameMode.clicks;
+        if (scenario.equals("sans-id-recette-concurrente")) {
+            GregTechMachines.recetteActive = recettePlaques(1);
+            EnvoiMachine.tick(new TickEvent.ClientTickEvent());
+            GregTechMachines.recetteActive = null;
+        }
+        entree.item = ItemStack.EMPTY;
+        sortie.item = new ItemStack(PLAQUE, scenario.equals("sans-id-sortie-excedentaire") ? 2 : 1);
+        attendreFinEnvoi();
+        if (scenario.equals("sans-id-cycle-court")) {
+            assert lot().fois() == 1 && lot().suivi().totalRecu() == 0;
+            assert mc.gameMode.clicks == clics : "dépôt acquitté sans clic supplémentaire";
+        } else verifierEnvoiNonConfirme(clics);
+    }
+
     private void absorptionAvantDepotSuivant(String scenario) {
         var recette = recettePlaques(1);
         var premiere = menu.slots.get(3);
@@ -707,6 +739,12 @@ public final class CycleMachineTest {
                     "sortie-preexistante-masquee" -> fixture.recetteDeuxTicks(scenario);
             case "fluide-entre-observations" -> fixture.fluideEntreObservations(true);
             case "fluide-sortie-preexistante" -> fixture.fluideEntreObservations(false);
+            case "sans-id-cycle-court",
+                    "sans-id-sortie-ancienne",
+                    "sans-id-sortie-etrangere",
+                    "sans-id-sortie-excedentaire",
+                    "sans-id-recette-concurrente",
+                    "sans-id-deux-entrees" -> fixture.cycleSansIdentifiant(scenario);
             case "absorption-avant-depot-suivant",
                     "absorption-avant-depot-suivant-autre",
                     "absorption-ancien-demarrage" -> fixture.absorptionAvantDepotSuivant(scenario);

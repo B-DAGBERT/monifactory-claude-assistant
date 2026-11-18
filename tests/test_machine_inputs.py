@@ -321,6 +321,16 @@ class MachineInputTests(unittest.TestCase):
             "absorption-ancien-demarrage",
         )
 
+    def test_machine_confirms_only_an_exact_isolated_cycle_without_a_recipe_frame(self):
+        self.rejouer_cycle(
+            "sans-id-cycle-court",
+            "sans-id-sortie-ancienne",
+            "sans-id-sortie-etrangere",
+            "sans-id-sortie-excedentaire",
+            "sans-id-recette-concurrente",
+            "sans-id-deux-entrees",
+        )
+
     def test_machine_circuit_changes_preserve_items_and_stop_unconfirmed_transfers(self):
         self.rejouer_cycle(
             "circuit-avant-vidage",
