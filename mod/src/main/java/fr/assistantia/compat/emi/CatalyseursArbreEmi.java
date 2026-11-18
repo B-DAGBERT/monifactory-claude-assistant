@@ -25,22 +25,24 @@ public final class CatalyseursArbreEmi {
         for (var ingredient : recipe.getCatalysts()) {
             if (ingredient.isEmpty() || ComparaisonEmi.circuitVirtuel(recipe, ingredient, true))
                 continue;
-            Object connu = null;
+            Object catalyseur = null;
             for (var enfant : enfants)
                 if ((champCatalyseur.getBoolean(enfant) || champChance.getFloat(enfant) == 0)
                         && memes((EmiIngredient) champIngredient.get(enfant), ingredient)) {
-                    connu = enfant;
+                    catalyseur = enfant;
                     break;
                 }
-            if (connu != null) {
+            if (catalyseur == null) {
+                catalyseur = type.getConstructor(EmiIngredient.class).newInstance(ingredient);
+                enfants.add(catalyseur);
+            } else {
                 champQuantite.setLong(
-                        connu, Math.max(champQuantite.getLong(connu), ingredient.getAmount()));
-                continue;
+                        catalyseur,
+                        Math.max(champQuantite.getLong(catalyseur), ingredient.getAmount()));
             }
-            var enfant = type.getConstructor(EmiIngredient.class).newInstance(ingredient);
-            champCatalyseur.setBoolean(enfant, true);
-            champChance.setFloat(enfant, 0);
-            enfants.add(enfant);
+            // Dans TreeCost, catalyst évite le débit ; une chance de 0 empêche de lire le stock.
+            champCatalyseur.setBoolean(catalyseur, true);
+            champChance.setFloat(catalyseur, 1);
         }
         champEnfants.set(node, enfants);
     }

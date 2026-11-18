@@ -327,7 +327,7 @@ public final class EnvoiMachineTest {
         CatalyseursArbreEmi.completer(node, gtAlloy);
         assert node.children.size() == 2
                 && node.children.get(1).catalyst
-                && node.children.get(1).consumeChance == 0
+                && node.children.get(1).consumeChance == 1
                 && node.children
                         .get(1)
                         .ingredient
@@ -343,7 +343,8 @@ public final class EnvoiMachineTest {
         deja.consumeChance = 0;
         natif.children.add(deja);
         CatalyseursArbreEmi.completer(natif, gtAlloy);
-        assert natif.children.size() == 1 : "moule déjà déclaré en entrée non consommée";
+        assert natif.children.equals(List.of(deja)) && deja.catalyst && deja.consumeChance == 1
+                : "normaliser le moule déjà déclaré en entrée non consommée, sans doublon";
         var manuel = new dev.emi.emi.bom.MaterialNode(item("ingot", 1));
         CatalyseursArbreEmi.completer(manuel, alloy);
         assert manuel.children.isEmpty()
