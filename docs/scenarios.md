@@ -70,6 +70,11 @@ réception. Elle vérifie les quantités autour d’une pile de 64, les livraiso
 le retour du contenant, le circuit virtuel et la reprise après interruption. Les contrats
 Java utilisent les mécanismes du mod avec des menus et des confirmations simulés.
 
+Le parcours sac → terminal ME → machine suit un même craft. Le composant dans le sac compte
+dans EMI. Le terminal retire la quantité manquante et le joueur place le composant du sac dans
+ses poches avant l’envoi. Si la machine démarre dès le dernier dépôt, le test vérifie qu’un
+seul lot est créé et que sa sortie attendue couvre le plan sans être comptée dans les poches.
+
 La [recette en jeu](recette-fabrication.md) contient la préparation d’un atelier, des contrôles de
 quantité dans Minecraft et les parcours GregTech et AE2 à réaliser dans une copie du pack.
 

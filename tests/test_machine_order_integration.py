@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 KEEP = (
     "net.minecraft.world.item.Item",
     "net.minecraft.world.item.ItemStack",
+    "net.minecraft.nbt.Tag",
+    "net.minecraft.nbt.CompoundTag",
     "net.minecraft.world.inventory.AbstractContainerMenu",
     "net.minecraft.world.inventory.Slot",
     "net.minecraft.client.gui.screens.inventory.AbstractContainerScreen",

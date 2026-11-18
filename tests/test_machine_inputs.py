@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from test_chest_transfers import STUBS as CHEST_STUBS
+from test_me_terminal_panel import corps
 
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = dict(CHEST_STUBS)
@@ -20,13 +21,13 @@ public class ItemStack {
     public String id, fluid=""; public int count, amount, tag;
     public ItemStack(String id,int count){this.id=id;this.count=count;}
     public ItemStack(String id){this(id,1);}public String getItem(){return id;}
-    public record Tag(int n){public boolean contains(String key){return n==88&&key.equals("assistantia_objectif");}}
-    public boolean hasTag(){return tag!=0;} public Tag getTag(){return new Tag(tag);}
+    public boolean hasTag(){return tag!=0;} public net.minecraft.nbt.CompoundTag getTag(){return new net.minecraft.nbt.CompoundTag(tag);}
     public boolean is(String item){return id.equals(item);}
     public boolean isDamageableItem(){return id.equals("test:hammer");}
     public boolean isEmpty(){return count<=0;} public int getCount(){return Math.max(0,count);}
     public int getMaxStackSize(){return 64;} public void setCount(int n){count=n;}
     public void shrink(int n){count-=n;}
+    public net.minecraft.nbt.CompoundTag save(net.minecraft.nbt.CompoundTag tag){return tag;}
     public ItemStack copy(){var s=new ItemStack(id,count);s.fluid=fluid;s.amount=amount;s.tag=tag;return s;}
     public static boolean isSameItemSameTags(ItemStack a,ItemStack b){return !a.isEmpty()&&!b.isEmpty()&&a.id.equals(b.id)&&a.tag==b.tag&&a.fluid.equals(b.fluid)&&a.amount==b.amount;}
 }
@@ -41,6 +42,32 @@ STUBS["net.minecraft.client.Minecraft"] = (
         "slot.item=new ItemStack(cursor.id,slot.item.getCount()+n);cursor.count-=n;",
         "int total=slot.item.getCount()+n;slot.item=cursor.copy();slot.item.count=total;cursor.count-=n;",
     )
+    .replace(
+        "public Object screen;",
+        """public Object screen;
+        public final Connection connection=new Connection();
+        public Connection getConnection(){return connection;}
+        public static class Connection {
+            public java.util.function.Consumer<Object> sender;
+            public void send(Object packet){sender.accept(packet);}
+        }""",
+    )
+)
+STUBS["net.minecraft.world.entity.player.Player"] = STUBS[
+    "net.minecraft.world.entity.player.Player"
+].replace(
+    "private final Object inventory=new Object();\n    public Object getInventory(){return inventory;}",
+    """private final Inventory inventory=new Inventory();
+    public Inventory getInventory(){return inventory;}
+    public static class Inventory {
+        public int getSlotWithRemainingSpace(net.minecraft.world.item.ItemStack pile){return -1;}
+        public int getFreeSlot(){return -1;}
+    }""",
+)
+STUBS["net.minecraft.world.inventory.AbstractContainerMenu"] = STUBS[
+    "net.minecraft.world.inventory.AbstractContainerMenu"
+].replace(
+    "public int containerId=1;", "public int containerId=1; public int getStateId(){return 0;}"
 )
 STUBS["net.minecraft.network.chat.Component"] = """
 public record Component(String text){public static Component literal(String s){return new Component(s);} public String getString(){return text;}}
@@ -138,6 +165,39 @@ public class GTEmiRecipe extends dev.emi.emi.api.recipe.EmiRecipe {
         "net.minecraftforge.registries.ForgeRegistries": "public class ForgeRegistries {public static final Registry ITEMS=new Registry(); public static class Registry {public String getKey(String item){return item;}}}",
         "net.minecraftforge.event.entity.player.PlayerEvent": "public class PlayerEvent {public record ItemCraftedEvent(net.minecraft.world.entity.player.Player getEntity,net.minecraft.world.item.ItemStack getCrafting) {}}",
         "fr.assistantia.ArbreEmi": "public class ArbreEmi {public static Object tree=new Object();public static Object actif(){return tree;}}",
+        "net.minecraft.nbt.Tag": "public class Tag {}",
+        "net.minecraft.nbt.CompoundTag": """
+public class CompoundTag extends Tag {
+    private final int n;
+    public CompoundTag(){this(0);}
+    public CompoundTag(int n){this.n=n;}
+    public Tag get(String key){return null;}
+    public boolean contains(String key){return n==88&&key.equals("assistantia_objectif");}
+    public boolean equals(Object o){return o instanceof CompoundTag t&&n==t.n;}
+    public int hashCode(){return n;}
+    public String toString(){return String.valueOf(n);}
+}""",
+        "fr.assistantia.CoffreTampon": """public class CoffreTampon {
+    public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return java.util.List.of();}
+}""",
+        "fr.assistantia.compat.emi.CycleArbreEmi": """public class CycleArbreEmi {
+    public static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> credits(){return java.util.List.of();}
+}""",
+        "fr.assistantia.compat.emi.MachinesEmi": """
+import java.util.*;
+import fr.assistantia.PlanRetrait.Stock;
+import dev.emi.emi.api.stack.EmiStack;
+public class MachinesEmi {
+    static SuiviLotsEmi suivi;
+    static List<Stock<EmiStack>> reservationsArbre() {
+        return suivi==null ? List.of() : suivi.actifs().stream()
+                .flatMap(lot -> lot.suivi().restants().stream()).toList();
+    }
+    static List<Stock<EmiStack>> creditsAcquis(List<Stock<EmiStack>> physiques, List<Stock<EmiStack>> credits) {
+        return List.of();
+    }
+    static List<Stock<EmiStack>> completerOutils(List<Stock<EmiStack>> deja){return List.of();}
+}""",
         "fr.assistantia.compat.emi.GregTechMachines": """
 import java.util.*;
 import net.minecraft.world.inventory.*;
@@ -183,6 +243,36 @@ public class GregTechMachines {
 )
 
 
+def compiler_retrait_me(dossier):
+    source = (ROOT / "mod/src/main/java/fr/assistantia/compat/emi/TerminalMe.java").read_text(
+        encoding="utf-8"
+    )
+    debut = source.index("private static AbstractContainerMenu menu;")
+    fin = source.index("private static boolean erreur;", debut)
+    champs = source[debut:fin] + "\n".join(
+        corps(source, signature) for signature in ("private record Lot(", "private record Acces(")
+    )
+    actions = "\n".join(
+        corps(source, signature)
+        for signature in (
+            "private static void lancer(",
+            "private static void avancer(",
+            "private static int volumeRetrait(",
+            "private static void attendre(",
+            "private static void terminer(",
+        )
+    )
+    fixture = (ROOT / "tests/java/fr/assistantia/compat/emi/RetraitMeCycle.java").read_text(
+        encoding="utf-8"
+    )
+    fichier = Path(dossier) / "RetraitMeCycle.java"
+    fichier.write_text(
+        fixture.replace("// CHAMPS_TERMINAL_ME", champs).replace("// ACTIONS_TERMINAL_ME", actions),
+        encoding="utf-8",
+    )
+    return str(fichier)
+
+
 class MachineInputTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -226,8 +316,10 @@ class MachineInputTests(unittest.TestCase):
                 "compat/emi/InstantaneArbreEmi",
                 "compat/emi/SuiviLotsEmi",
                 "compat/emi/LotMachine",
+                "compat/emi/StockFabricationEmi",
             )
         ]
+        sources.append(compiler_retrait_me(cls.classes))
         sources += [
             str(ROOT / "tests/java/fr/assistantia" / f"{name}.java")
             for name in (
@@ -277,6 +369,9 @@ class MachineInputTests(unittest.TestCase):
         self.rejouer_cycle(
             "objets-puis-cuves", "poches-puis-sortie", "annulation-reception-partielle", "deux-lots"
         )
+
+    def test_sac_retrait_me_machine_demarrage_immediat_un_seul_lot(self):
+        self.rejouer_cycle("sac-me-machine")
 
     def test_machine_interruption_between_container_pickup_and_fluid_send(self):
         self.rejouer_cycle(

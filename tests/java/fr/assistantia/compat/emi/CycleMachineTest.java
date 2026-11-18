@@ -6,6 +6,7 @@ import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.ArbreEmi;
 import fr.assistantia.LotFabrication.Etat;
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.MemoireCollecte;
 import fr.assistantia.ReceptionLots;
 import fr.assistantia.RechercheEmi;
 import java.util.ArrayList;
@@ -444,6 +445,75 @@ public final class CycleMachineTest {
         assert menu.slots.get(3).item.getCount() == 12 && menu.slots.get(4).item.getCount() == 2;
     }
 
+    private void sacVersMeVersMachine() throws ReflectiveOperationException {
+        var recette = new EmiRecipe(List.of(item(ETAIN, 4)), List.of());
+        recette.outputs = List.of(item(PLAQUE, 1));
+        var arbre = new InstantaneArbreEmiTest.Arbre();
+        arbre.goal = new dev.emi.emi.bom.MaterialNode(item(PLAQUE, 1));
+        arbre.goal.recipe = recette;
+        arbre.goal.children.add(new dev.emi.emi.bom.MaterialNode(item(ETAIN, 4)));
+        ArbreEmi.tree = arbre;
+        MachinesEmi.suivi = suivi;
+        sac.add(new ItemStack(ETAIN, 1));
+        synchroniser();
+
+        var vue = InstantaneArbreEmi.lire(arbre);
+        var coffre = List.of(new PlanRetrait.Stock<>(ETAIN, 20, false));
+        var reperage = new MemoireCollecte(vue.collecte(), vue.lots());
+        reperage.actualiser(java.util.Map.of(ETAIN, 1));
+        assert reperage.dansCoffres(coffre).equals(List.of(new PlanRetrait.Prise(0, 3)))
+                : "le sac remplit un quart du besoin Repérage";
+
+        var poches = menu.slots.stream().filter(EnvoiMachine::personnel).toList();
+        int restantMe = RetraitMeCycle.retirer(poches, new ItemStack(ETAIN), 20, 3, this::stock);
+        var poche = poches.get(0);
+        assert restantMe == 17 && poche.item.getCount() == 3 && sac.get(0).getCount() == 1;
+        var couverture = StockFabricationEmi.pourMachines(stock());
+        assert quantite(couverture.physiques(), item(ETAIN, 1)) == 4;
+        assert couverture.operations(vue.machines(), vue.lots()).size() == 1;
+        assert !EnvoiMachine.preparer(ecran, recette, 1).possible()
+                : "le plan compte le sac fermé, Envoyer ne peut pas le vider";
+
+        // Le joueur déplace la dernière unité du sac dans la pile que le terminal a remplie.
+        poche.item.setCount(poche.item.getCount() + sac.remove(0).getCount());
+        synchroniser();
+        var plan = EnvoiMachine.preparer(ecran, recette, 1);
+        assert plan.possible() && plan.fois() == 1 : plan.probleme();
+        envoyer(plan);
+        EnvoiMachine.lancer(
+                ecran,
+                plan,
+                () -> {
+                    throw new AssertionError(
+                            "un double clic ne doit jamais enregistrer un second lot");
+                });
+        for (int tick = 0; tick < 40 && entree.item.isEmpty(); tick++)
+            EnvoiMachine.tick(new TickEvent.ClientTickEvent());
+        assert entree.item.getCount() == 4 && poche.item.isEmpty();
+        assert suivi.actifs().isEmpty() : "n’enregistre rien avant la confirmation";
+
+        // GregTech absorbe l’entrée avant que le menu puisse encore afficher les quatre lingots.
+        entree.item = ItemStack.EMPTY;
+        GregTechMachines.busy = true;
+        GregTechMachines.recetteActive = recette;
+        attendreFinEnvoi();
+        var lance = lot();
+        assert lance.suivi().etat() == Etat.EN_MACHINE && lance.fois() == 1;
+        assert quantite(lance.suivi().restants(), item(PLAQUE, 1)) == 1;
+        assert sortie.item.isEmpty() && lance.suivi().totalRecu() == 0;
+        couverture = StockFabricationEmi.pourMachines(stock());
+        assert quantite(couverture.physiques(), item(PLAQUE, 1)) == 0;
+        assert quantite(couverture.attendus(), item(PLAQUE, 1)) == 1;
+        assert couverture.operations(vue.machines(), vue.lots()).isEmpty()
+                : "EMI réserve la sortie sans créer de stock physique ni de second craft";
+        reperage.reserver(java.util.Map.of(PLAQUE, 1));
+        assert reperage.dansCoffres(coffre).isEmpty()
+                : "le repérage ne redemande pas les ingrédients du lot en cours";
+        assert RetraitMeCycle.retirer(poches, new ItemStack(ETAIN), restantMe, 0, this::stock)
+                        == restantMe
+                : "aucun ingrédient n'est repris dans AE2 pour ce même lot";
+    }
+
     private void deuxLots() throws ReflectiveOperationException {
         var recette = new EmiRecipe(List.of(item(ETAIN, 1)), List.of());
         recette.outputs = List.of(item(PLAQUE, 1));
@@ -527,6 +597,7 @@ public final class CycleMachineTest {
             case "circuit-retour-bloque" -> fixture.changerCircuit(false, true);
             case "circuit-entre-objets" -> fixture.changerCircuitEntreObjets();
             case "preconditions" -> fixture.preconditions();
+            case "sac-me-machine" -> fixture.sacVersMeVersMachine();
             case "destination-corrigee",
                     "cuve-corrigee",
                     "consommation-immediate",
