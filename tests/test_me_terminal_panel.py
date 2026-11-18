@@ -1,9 +1,14 @@
 """Terminal AE2 : même panneau que la Collecte, utilisable d'un simple clic."""
 
+import os
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
-JAVA = Path(__file__).resolve().parents[1] / "mod/src/main/java/fr/assistantia"
+ROOT = Path(__file__).resolve().parents[1]
+JAVA = ROOT / "mod/src/main/java/fr/assistantia"
 
 
 def source(chemin):
@@ -78,6 +83,66 @@ class MeTerminalPanelTests(unittest.TestCase):
     def test_crafting_panel_avoids_the_me_panel(self):
         self.assertIn("PanneauAssistant.poser(affiche, disposition.cadre());", self.terminal)
         self.assertIn("PanneauAssistant.occupeeEtPanneau(ecranActuel)", source("AideEcran"))
+
+    def test_retrait_par_piles_attend_le_serveur_et_respecte_le_quota(self):
+        home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
+        suffix = ".exe" if os.name == "nt" else ""
+        javac, java = (
+            str(home / f"bin/{nom}{suffix}")
+            if (home / f"bin/{nom}{suffix}").is_file()
+            else shutil.which(nom)
+            for nom in ("javac", "java")
+        )
+        if not javac or not java:
+            self.skipTest("JDK 17 requis pour le contrat de retrait ME")
+        fixture = (ROOT / "tests/java/fr/assistantia/RetraitTerminalMeTest.java").read_text(
+            encoding="utf-8"
+        )
+        debut = self.terminal.index("private static AbstractContainerMenu menu;")
+        fin = self.terminal.index("private static boolean erreur;", debut)
+        champs = (
+            corps(self.terminal, "private record Lot(")
+            + corps(self.terminal, "private record Acces(")
+            + self.terminal[debut:fin]
+        )
+        traitement = "\n".join(
+            corps(self.terminal, signature)
+            for signature in (
+                "private static void avancer(",
+                "private static int volumeRetrait(",
+                "private static void attendre(",
+                "private static void terminer(",
+            )
+        )
+        fixture = fixture.replace("// EXTRACTION_CHAMPS", champs).replace(
+            "// EXTRACTION_TRAITEMENT", traitement
+        )
+        with tempfile.TemporaryDirectory() as dossier:
+            chemin = Path(dossier) / "RetraitTerminalMeTest.java"
+            chemin.write_text(fixture, encoding="utf-8")
+            compilation = subprocess.run(
+                [javac, "-encoding", "UTF-8", "-d", dossier, str(chemin)],
+                capture_output=True,
+                encoding="utf-8",
+                timeout=30,
+            )
+            self.assertEqual(compilation.returncode, 0, compilation.stderr)
+            for scenario in ("quantites", "capacites", "contexte", "confirmation"):
+                with self.subTest(scenario=scenario):
+                    resultat = subprocess.run(
+                        [
+                            java,
+                            "-ea",
+                            "-cp",
+                            dossier,
+                            "fr.assistantia.RetraitTerminalMeTest",
+                            scenario,
+                        ],
+                        capture_output=True,
+                        encoding="utf-8",
+                        timeout=15,
+                    )
+                    self.assertEqual(resultat.returncode, 0, resultat.stdout + resultat.stderr)
 
 
 if __name__ == "__main__":

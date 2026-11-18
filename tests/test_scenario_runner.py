@@ -64,6 +64,7 @@ class ScenarioRunnerTests(unittest.TestCase):
                 "tests.scenarios.test_stock_craft",
                 "tests.scenarios.test_parcours_stock",
                 "tests.test_me_terminal_panel.MeTerminalPanelTests.test_panel_allocates_buffer_before_withdrawable_me_entries",
+                "tests.test_me_terminal_panel.MeTerminalPanelTests.test_retrait_par_piles_attend_le_serveur_et_respecte_le_quota",
                 "tests.test_machine_inputs.MachineInputTests",
             ],
         )

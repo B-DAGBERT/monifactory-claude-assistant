@@ -61,7 +61,9 @@ final class TerminalMe {
             Method pile,
             Method retirer,
             Object un,
-            Object pileEntiere) {}
+            Object pileEntiere,
+            Object demiPile,
+            Object pileDirecte) {}
 
     private record Vue(
             AbstractContainerMenu menu,
@@ -101,6 +103,7 @@ final class TerminalMe {
     private static List<Lot> retraits = List.of();
     private static int index, reste, attendus, avant, recus, depotAvant;
     private static Slot destination;
+    private static boolean direct;
     private static long echeance;
     private static boolean erreur;
     private static int ticks;
@@ -130,11 +133,22 @@ final class TerminalMe {
                     item.getMethod("toStack"),
                     menu.getMethod("handleInteraction", long.class, action),
                     action.getField("PICKUP_SINGLE").get(null),
-                    action.getField("PICKUP_OR_SET_DOWN").get(null));
+                    action.getField("PICKUP_OR_SET_DOWN").get(null),
+                    actionOptionnelle(action, "SPLIT_OR_PLACE_SINGLE"),
+                    actionOptionnelle(action, "SHIFT_CLICK"));
         } catch (ClassNotFoundException absent) {
             return null;
         } catch (ReflectiveOperationException | LinkageError incompatible) {
             signaler(incompatible);
+            return null;
+        }
+    }
+
+    private static Object actionOptionnelle(Class<?> actions, String nom)
+            throws IllegalAccessException {
+        try {
+            return actions.getField(nom).get(null);
+        } catch (NoSuchFieldException absente) {
             return null;
         }
     }
@@ -581,6 +595,7 @@ final class TerminalMe {
             objets = lots;
             index = recus = avant = attendus = 0;
             destination = null;
+            direct = false;
             reste = retraits.get(0).quantite();
         } catch (ReflectiveOperationException | RuntimeException ex) {
             signaler(ex);
@@ -614,11 +629,17 @@ final class TerminalMe {
         }
         var curseur = menu.getCarried();
         if (destination != null) {
+            int gain = destination.getItem().getCount() - depotAvant;
             if (curseur.isEmpty()
                     && ItemStack.isSameItemSameTags(
                             destination.getItem(), retraits.get(index).pile())
-                    && destination.getItem().getCount() == depotAvant + avant) {
-                recus += avant;
+                    && (direct ? gain > 0 && gain <= attendus : gain == avant)) {
+                if (direct) {
+                    reste -= gain;
+                    attendus = 0;
+                    direct = false;
+                }
+                recus += gain;
                 avant = 0;
                 destination = null;
             } else {
@@ -634,6 +655,7 @@ final class TerminalMe {
             reste = retraits.get(index).quantite();
         }
         var lot = retraits.get(index);
+        boolean deposerPile = false;
         if (attendus > 0) {
             int volume = ItemStack.isSameItemSameTags(curseur, lot.pile()) ? curseur.getCount() : 0;
             if (volume == avant) {
@@ -647,6 +669,7 @@ final class TerminalMe {
             }
             reste -= gain;
             avant = volume;
+            deposerPile = attendus > 1;
             attendus = 0;
         }
         if (avant != curseur.getCount()
@@ -654,15 +677,28 @@ final class TerminalMe {
             terminer("Retrait ME interrompu : le curseur a changé.");
             return;
         }
+        var inventaire = mc.player.getInventory();
+        int taillePile = lot.pile().getMaxStackSize();
+        int emplacementNatif = -1;
+        if (avant == 0 && reste >= taillePile && ACCES.pileDirecte() != null) {
+            // Reprendre l'ordre du Maj-clic d'AE2. Il peut choisir une pile déjà entamée.
+            emplacementNatif = inventaire.getSlotWithRemainingSpace(lot.pile());
+            if (emplacementNatif < 0) emplacementNatif = inventaire.getFreeSlot();
+        }
         Slot cible = null;
+        Slot cibleDirecte = null;
         int place = 0;
         for (Slot slot : menu.slots) {
-            if (slot.container != mc.player.getInventory()
-                    || !slot.isActive()
-                    || !slot.mayPlace(lot.pile())) continue;
+            if (slot.container != inventaire || !slot.isActive() || !slot.mayPlace(lot.pile()))
+                continue;
             var ici = slot.getItem();
             if (!ici.isEmpty() && !ItemStack.isSameItemSameTags(ici, lot.pile())) continue;
             int libre = slot.getMaxStackSize(lot.pile()) - ici.getCount();
+            if (emplacementNatif >= 0
+                    && emplacementNatif < 36
+                    && slot.getContainerSlot() == emplacementNatif
+                    && ici.isEmpty()
+                    && libre >= taillePile) cibleDirecte = slot;
             if (libre <= place) continue;
             cible = slot;
             place = libre;
@@ -672,7 +708,7 @@ final class TerminalMe {
             return;
         }
         echeance = System.nanoTime() + 3_000_000_000L;
-        if (avant > 0 && (reste == 0 || avant == place)) {
+        if (avant > 0 && (reste == 0 || avant == place || deposerPile)) {
             destination = cible;
             depotAvant = cible.getItem().getCount();
             // Pas de prédiction locale : attendre que le serveur confirme la case et le curseur.
@@ -692,10 +728,30 @@ final class TerminalMe {
             terminer("Retrait ME arrêté : terminal hors tension.");
             return;
         }
-        int taillePile = lot.pile().getMaxStackSize();
-        boolean entier = avant == 0 && reste >= taillePile && place >= taillePile;
-        attendus = entier ? taillePile : 1;
-        ACCES.retirer().invoke(menu, lot.serial(), entier ? ACCES.pileEntiere() : ACCES.un());
+        if (cibleDirecte != null) {
+            destination = cibleDirecte;
+            depotAvant = 0;
+            direct = true;
+            attendus = taillePile;
+            ACCES.retirer().invoke(menu, lot.serial(), ACCES.pileDirecte());
+            return;
+        }
+        int volume = volumeRetrait(reste, taillePile, place, avant);
+        Object action = ACCES.un();
+        if (volume == taillePile && taillePile > 1) action = ACCES.pileEntiere();
+        else if (volume > 1 && ACCES.demiPile() != null) action = ACCES.demiPile();
+        else volume = 1;
+        attendus = volume;
+        ACCES.retirer().invoke(menu, lot.serial(), action);
+    }
+
+    private static int volumeRetrait(int reste, int taillePile, int place, int curseur) {
+        if (curseur > 0) return 1;
+        int limite = Math.min(reste, place);
+        if (limite >= taillePile) return taillePile;
+        // AE2 arrondit la demi-pile vers le haut ; le stock réel peut réduire ce volume.
+        int demi = (taillePile + 1) / 2;
+        return limite >= demi ? demi : 1;
     }
 
     private static void attendre() {

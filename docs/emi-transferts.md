@@ -79,6 +79,9 @@ Un simple clic suffit : **Tout** retire tout ce qui manque à l’arbre, **Prend
 l’objet choisi (clic sur son icône). Le clic relit le terminal et l’arbre à cet instant. Pendant
 le retrait, les quantités restantes baissent, les objets terminés sont soulignés en vert et
 **Tout** devient **Arrêter**. Un clic ailleurs dans le terminal arrête aussi le retrait.
+Le retrait privilégie les piles entières de la taille de l’objet. Une pile peut aller directement
+dans une case libre. Quand le reste à prendre et la place suffisent, AE2 prend une demi-pile,
+puis ajuste le solde à l’unité. Chaque lot attend la confirmation du serveur avant de continuer.
 Le relevé est valable tant que le menu du terminal est ouvert. Laisse le curseur vide avant
 de lancer le retrait ; en cas d’interruption, les objets déjà retirés peuvent se trouver sur
 le curseur. Les objets seulement autocraftables et les fluides du réseau restent à gérer dans

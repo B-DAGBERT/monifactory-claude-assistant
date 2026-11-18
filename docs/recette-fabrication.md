@@ -53,6 +53,15 @@ prend quelques secondes à reproduire dans une nouvelle copie du monde.
 | AT-03 | Fermer et rouvrir l’établi à stock identique, changer d’arbre sans modifier l’inventaire, puis passer au coffre.                                                                                                                                 | Le remplissage revient pour la recette compatible. Le coffre ne propose que la collecte pertinente. La grille précédente ne déclenche aucun craft spontanément.                                   |
 | AT-04 | Fabriquer deux résultats en Maj-clic, vérifier le crédit, augmenter seulement la quantité de la même cible, puis changer de produit final.                                                                                                       | Le crédit reste acquis quand seule la quantité change. Une nouvelle cible repart de ses propres quantités, avec le stock physique courant.                                                        |
 
+### Retrait par piles dans le terminal AE2
+
+Dans la copie du pack, stocker plus de 130 bûches identiques dans ME. Choisir dans EMI la
+recette de planches de cette essence et demander 130 fabrications à une bûche chacune.
+Cliquer **Prendre** avec au moins trois cases libres. Vérifier que l’inventaire reçoit deux
+piles de 64 et deux bûches, avec un débit de 130 dans le terminal. Refaire avec une seule
+case presque pleine, puis avec **Arrêter** pendant le premier transfert. Comparer le stock
+restant dans ME, celui des poches et celui du curseur après la dernière confirmation.
+
 ## GregTech — envoyer, fabriquer et récupérer
 
 Préparer un LV Alloy Smelter alimenté et le circuit d’alimentation adapté. Sélectionner
