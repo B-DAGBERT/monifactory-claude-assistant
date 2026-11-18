@@ -7,6 +7,8 @@ public final class SequenceEnvoi {
     public interface Action {
         void envoyer() throws Exception;
 
+        default void observer() throws Exception {}
+
         boolean confirmee() throws Exception;
     }
 
@@ -54,6 +56,7 @@ public final class SequenceEnvoi {
                 attente = stable = 0;
                 return;
             }
+            action.observer();
             if (++attente < 5) return;
             stable = action.confirmee() ? stable + 1 : 0;
             if (stable >= 3) {

@@ -510,6 +510,22 @@ public final class MachinesEmi {
                 .toList();
     }
 
+    /** Seules les sorties de la cible sélectionnée retardent la fin automatique d'EMI. */
+    public static boolean sortieFinaleAttendue() {
+        var reservations = reservationsArbre();
+        if (reservations.isEmpty()) return false;
+        try {
+            var cible = ArbreRecette.etatRacine(arbre).cle();
+            return cible.getEmiStacks().stream()
+                    .anyMatch(
+                            s ->
+                                    reservations.stream()
+                                            .anyMatch(r -> ComparaisonEmi.meme(s, r.objet())));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return false;
+        }
+    }
+
     /** Avancement du craft courant, sans doublon avec les poches ni les cibles finales. */
     public static List<PlanRetrait.Stock<EmiStack>> creditsAcquis(
             List<PlanRetrait.Stock<EmiStack>> physiques,

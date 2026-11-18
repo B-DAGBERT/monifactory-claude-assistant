@@ -225,7 +225,8 @@ public class GregTechMachines {
     public static boolean compatible(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return true;}
     public static boolean occupe(Object m){return busy;}
     public static boolean enMarche(Object m){return busy;}
-    public static boolean execute(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return busy&&recetteActive==r;}
+    public record Execution(boolean active,boolean recetteAttendue) {}
+    public static Execution execution(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return new Execution(busy,recetteActive==r);}
     public static int circuit(ItemStack s){return s.tag;}
     public static int circuitConfigure(Interface ui) throws ReflectiveOperationException {return machineCircuit!=-2?machineCircuit:ui.circuit() instanceof ItemStack s&&!s.isEmpty()?s.tag:-1;}
     public static void reglerCircuit(Object w,int v){throw new AssertionError("Le réglage machine ne doit pas être modifié");}
@@ -390,6 +391,28 @@ class MachineInputTests(unittest.TestCase):
             "cuve-corrigee",
             "consommation-immediate",
             "autre-recette-demarree",
+        )
+
+    def test_machine_confirms_a_short_recipe_with_fresh_matching_evidence(self):
+        self.rejouer_cycle(
+            "recette-deux-ticks",
+            "recette-entre-observations",
+            "recette-rapide-deux-cycles",
+            "recette-deux-ticks-entree-partielle",
+            "recette-deux-ticks-autre",
+            "recette-deux-ticks-source-corrigee",
+            "sortie-corrigee-apres-observation",
+            "sortie-preexistante-seule",
+            "sortie-preexistante-masquee",
+            "fluide-entre-observations",
+            "fluide-sortie-preexistante",
+        )
+
+    def test_machine_continues_after_proven_consumption_of_an_intermediate_deposit(self):
+        self.rejouer_cycle(
+            "absorption-avant-depot-suivant",
+            "absorption-avant-depot-suivant-autre",
+            "absorption-ancien-demarrage",
         )
 
     def test_machine_circuit_changes_preserve_items_and_stop_unconfirmed_transfers(self):
