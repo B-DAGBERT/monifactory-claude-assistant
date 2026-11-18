@@ -51,7 +51,48 @@ class ScenarioRunnerTests(unittest.TestCase):
         self.assertTrue(any("basique" in n for n in noms))
         self.assertTrue(any("complexe" in n for n in noms))
         self.assertTrue(any("test_parcours_stock" in n for n in noms))
+        self.assertIn("tests.scenarios.test_stock_craft", noms)
         self.assertTrue(any("MachineInputTests" in n for n in noms))
+
+    def test_fabrication_lance_etabli_et_machines(self):
+        with patch("monifactory_assistant.commands.scenarios.unittest.defaultTestLoader") as loader:
+            charger("fabrication")
+            noms = loader.loadTestsFromNames.call_args.args[0]
+        self.assertEqual(
+            noms,
+            [
+                "tests.scenarios.test_stock_craft",
+                "tests.scenarios.test_parcours_stock",
+                "tests.test_me_terminal_panel.MeTerminalPanelTests.test_panel_allocates_buffer_before_withdrawable_me_entries",
+                "tests.test_machine_inputs.MachineInputTests",
+            ],
+        )
+
+    def test_rapport_identifie_les_etapes_en_echec(self):
+        class Parcours(unittest.TestCase):
+            def test_stock(self):
+                with self.subTest(etape="avant"):
+                    self.assertEqual(3, 3)
+                with self.subTest(etape="double clic"):
+                    self.fail("unité dupliquée")
+                with self.subTest(etape="reconnexion"):
+                    raise RuntimeError("session indisponible")
+
+        with tempfile.TemporaryDirectory() as directory:
+            rapport = Path(directory) / "rapport.json"
+            suite = unittest.TestSuite([Parcours("test_stock")])
+            status = rejouer("parcours-stock", suite, rapport=rapport, stream=io.StringIO())
+            doc = json.loads(rapport.read_text(encoding="utf-8"))
+
+        self.assertEqual(status, 1)
+        self.assertFalse(doc["valide"])
+        self.assertEqual((doc["tests"], doc["echecs"], doc["erreurs"]), (1, 1, 1))
+        self.assertEqual([cas["etat"] for cas in doc["cas"]], ["echec", "erreur"])
+        echec, erreur = doc["cas"]
+        self.assertIn("etape='double clic'", echec["scenario"])
+        self.assertIn("unité dupliquée", echec["detail"])
+        self.assertIn("etape='reconnexion'", erreur["scenario"])
+        self.assertIn("session indisponible", erreur["detail"])
 
     def test_parcours_stock_peut_se_lancer_seul(self):
         with patch("monifactory_assistant.commands.scenarios.unittest.defaultTestLoader") as loader:

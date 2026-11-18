@@ -158,7 +158,8 @@ public class GregTechMachines {
     public record Interface(Object machine,List<Slot> entrees,List<Cuve> cuves,Object circuit){
         public net.minecraft.core.BlockPos position(){return new net.minecraft.core.BlockPos(0,64,0);}
     }
-    public static List<Cuve> cuvesSortie(AbstractContainerMenu menu){return List.of();}
+    public static List<Cuve> outputTanks=List.of();
+    public static List<Cuve> cuvesSortie(AbstractContainerMenu menu){return outputTanks;}
     public static Interface ouvrir(AbstractContainerMenu menu)throws ReflectiveOperationException{return ui;}
     public static boolean compatible(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return true;}
     public static boolean occupe(Object m){return busy;}
@@ -180,7 +181,8 @@ public class GregTechMachines {
 
 
 class MachineInputTests(unittest.TestCase):
-    def test_machine_inputs_and_fluids_use_confirmed_native_interactions(self):
+    @classmethod
+    def setUpClass(cls):
         home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
         if not (home / "bin/javac").exists():
             home = (
@@ -188,58 +190,106 @@ class MachineInputTests(unittest.TestCase):
                 / "Documents/curseforge/minecraft/Install/runtime/java-runtime-gamma/mac-os-arm64/java-runtime-gamma/jre.bundle/Contents/Home"
             )
         javac = str(home / "bin/javac") if (home / "bin/javac").exists() else shutil.which("javac")
-        java = str(home / "bin/java") if (home / "bin/java").exists() else shutil.which("java")
-        if not javac or not java:
-            self.skipTest("JDK 17 required")
-        with tempfile.TemporaryDirectory() as directory:
-            sources = []
-            for name, body in STUBS.items():
-                path = Path(directory) / (name.replace(".", "/") + ".java")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(f"package {name.rsplit('.', 1)[0]};\n{body}")
-                sources.append(str(path))
-            sources += [
-                str(ROOT / "mod/src/main/java/fr/assistantia" / f"{name}.java")
-                for name in (
-                    "PlanRetrait",
-                    "PlanArbre",
-                    "ArbreCollecte",
-                    "MemoireCollecte",
-                    "LotFabrication",
-                    "ReceptionLots",
-                    "ReceptionManuelle",
-                    "PlanMachines",
-                    "SequenceEnvoi",
-                    "ReceptionSortie",
-                    "compat/emi/EnvoiMachine",
-                    "compat/emi/OrigineFabrication",
-                    "compat/emi/ComparaisonEmi",
-                    "compat/emi/ConfigurationCircuit",
-                    "compat/emi/CatalyseursArbreEmi",
-                    "compat/emi/InstantaneArbreEmi",
-                    "compat/emi/SuiviLotsEmi",
-                    "compat/emi/LotMachine",
-                )
-            ]
-            sources.append(str(ROOT / "tests/java/fr/assistantia/EnvoiMachineTest.java"))
-            sources.append(str(ROOT / "tests/java/fr/assistantia/OrigineFabricationTest.java"))
-            sources.append(str(ROOT / "tests/java/fr/assistantia/InstantaneArbreEmiTest.java"))
-            result = subprocess.run(
-                [javac, "-encoding", "UTF-8", "-d", directory, *sources],
-                capture_output=True,
-                text=True,
-                timeout=30,
+        cls.java = str(home / "bin/java") if (home / "bin/java").exists() else shutil.which("java")
+        if not javac or not cls.java:
+            raise unittest.SkipTest("JDK 17 required")
+        dossier = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(dossier.cleanup)
+        cls.classes = dossier.name
+        sources = []
+        for name, body in STUBS.items():
+            path = Path(cls.classes) / (name.replace(".", "/") + ".java")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"package {name.rsplit('.', 1)[0]};\n{body}", encoding="utf-8")
+            sources.append(str(path))
+        sources += [
+            str(ROOT / "mod/src/main/java/fr/assistantia" / f"{name}.java")
+            for name in (
+                "PlanRetrait",
+                "PlanArbre",
+                "ArbreCollecte",
+                "MemoireCollecte",
+                "LotFabrication",
+                "ReceptionLots",
+                "ReceptionManuelle",
+                "PlanMachines",
+                "SequenceEnvoi",
+                "ReceptionSortie",
+                "compat/emi/EnvoiMachine",
+                "compat/emi/OrigineFabrication",
+                "compat/emi/ComparaisonEmi",
+                "compat/emi/ConfigurationCircuit",
+                "compat/emi/CatalyseursArbreEmi",
+                "compat/emi/InstantaneArbreEmi",
+                "compat/emi/SuiviLotsEmi",
+                "compat/emi/LotMachine",
             )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            for scenario in (
-                "fr.assistantia.EnvoiMachineTest",
-                "fr.assistantia.OrigineFabricationTest",
-                "fr.assistantia.compat.emi.InstantaneArbreEmiTest",
-            ):
-                result = subprocess.run(
-                    [java, "-ea", "-cp", directory, scenario],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        ]
+        sources += [
+            str(ROOT / "tests/java/fr/assistantia" / f"{name}.java")
+            for name in (
+                "EnvoiMachineTest",
+                "OrigineFabricationTest",
+                "InstantaneArbreEmiTest",
+                "compat/emi/CycleMachineTest",
+            )
+        ]
+        result = subprocess.run(
+            [javac, "-encoding", "UTF-8", "-d", cls.classes, *sources],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode:
+            raise AssertionError(result.stdout + result.stderr)
+
+    def rejouer(self, classe, *args):
+        result = subprocess.run(
+            [self.java, "-ea", "-cp", self.classes, classe, *args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(
+            result.returncode, 0, f"{' '.join((classe, *args))}\n{result.stdout}{result.stderr}"
+        )
+        return result.stdout
+
+    def test_machine_inputs_and_fluids_use_confirmed_native_interactions(self):
+        for scenario in (
+            "fr.assistantia.EnvoiMachineTest",
+            "fr.assistantia.OrigineFabricationTest",
+            "fr.assistantia.compat.emi.InstantaneArbreEmiTest",
+        ):
+            with self.subTest(scenario=scenario):
+                self.rejouer(scenario)
+
+    def rejouer_cycle(self, *scenarios):
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario):
+                sortie = self.rejouer("fr.assistantia.compat.emi.CycleMachineTest", scenario)
+                self.assertIn("PASS " + scenario, sortie)
+
+    def test_machine_cycle_from_confirmed_send_to_partial_and_final_receipt(self):
+        self.rejouer_cycle(
+            "objets-puis-cuves", "poches-puis-sortie", "annulation-reception-partielle", "deux-lots"
+        )
+
+    def test_machine_interruption_between_container_pickup_and_fluid_send(self):
+        self.rejouer_cycle(
+            "interface", "arbre", "connexion", "cuve", "arret", "fermeture-apres-vidage"
+        )
+
+    def test_machine_plan_limits_and_explicit_surplus(self):
+        self.rejouer_cycle("63", "64", "65", "65-avec-surplus")
+
+    def test_machine_preview_refuses_blocked_destinations_without_moving_inputs(self):
+        self.rejouer_cycle("preconditions")
+
+    def test_machine_circuit_changes_preserve_items_and_stop_unconfirmed_transfers(self):
+        self.rejouer_cycle(
+            "circuit-avant-vidage",
+            "circuit-apres-vidage",
+            "circuit-retour-bloque",
+            "circuit-entre-objets",
+        )

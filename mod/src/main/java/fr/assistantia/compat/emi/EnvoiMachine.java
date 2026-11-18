@@ -251,8 +251,7 @@ public final class EnvoiMachine {
                                     GregTechMachines.compatible(ui.machine(), recipe)
                                             && !GregTechMachines.occupe(ui.machine()),
                                     "Machine modifiée ou déjà en cours de fabrication");
-                            String erreurCircuit = problemeCircuit(ui, circuitRequis);
-                            verifier(erreurCircuit.isEmpty(), erreurCircuit);
+                            verifierCircuit(ui, circuitRequis);
                         }
 
                         public boolean confirmee() {
@@ -367,7 +366,9 @@ public final class EnvoiMachine {
                                             pile.copy(),
                                             un,
                                             vide,
-                                            ui.cuves().get(t)));
+                                            ui.cuves().get(t),
+                                            ui,
+                                            circuitRequis));
                         transfert = true;
                         ItemStack restant = pile.copy();
                         restant.shrink(1);
@@ -439,7 +440,8 @@ public final class EnvoiMachine {
                 int quantite = Math.min(place, restant);
                 if (quantite <= 0) continue;
                 ItemStack attendu = simulation.get(src).copy();
-                if (actions != null) actions.add(objets(menu, src, dest, attendu, quantite));
+                if (actions != null)
+                    actions.add(objets(menu, src, dest, attendu, quantite, ui, circuitRequis));
                 transfert = true;
                 ItemStack apres = attendu.copy();
                 apres.shrink(quantite);
@@ -456,12 +458,24 @@ public final class EnvoiMachine {
         return new Plan(recipe, arbre, ui.machine(), n, List.copyOf(details), "");
     }
 
+    private static void verifierCircuit(GregTechMachines.Interface ui, int circuit) {
+        String probleme = problemeCircuit(ui, circuit);
+        verifier(probleme.isEmpty(), probleme);
+    }
+
     private static SequenceEnvoi.Action objets(
-            AbstractContainerMenu menu, Slot src, Slot dest, ItemStack original, int n) {
+            AbstractContainerMenu menu,
+            Slot src,
+            Slot dest,
+            ItemStack original,
+            int n,
+            GregTechMachines.Interface ui,
+            int circuit) {
         ItemStack restant = original.copy();
         restant.shrink(n);
         return new SequenceEnvoi.Action() {
             public void envoyer() {
+                verifierCircuit(ui, circuit);
                 verifier(
                         menu.getCarried().isEmpty()
                                 && src.isActive()
@@ -502,12 +516,53 @@ public final class EnvoiMachine {
             ItemStack original,
             ItemStack un,
             ItemStack vide,
-            GregTechMachines.Cuve cuve) {
+            GregTechMachines.Cuve cuve,
+            GregTechMachines.Interface ui,
+            int circuit) {
         ItemStack restant = original.copy();
         restant.shrink(1);
+        class Vidage implements SequenceEnvoi.Action {
+            private String interruption = "";
+
+            public void envoyer() throws Exception {
+                verifier(meme(menu.getCarried(), un), "Contenant modifié");
+                interruption = problemeCircuit(ui, circuit);
+                if (!interruption.isEmpty()) {
+                    verifier(
+                            src.isActive()
+                                    && src.mayPlace(un)
+                                    && meme(src.getItem(), restant)
+                                    && src.getMaxStackSize(un) >= original.getCount(),
+                            interruption + " · range le contenant tenu par la souris.");
+                    clic(menu, src, 0);
+                    return;
+                }
+                var simulation = cuve.simulation();
+                verifier(
+                        !cuve.peutRemplirContenant()
+                                || simulation.isEmpty()
+                                || !FluidUtil.tryFillContainer(
+                                                un, simulation, Integer.MAX_VALUE, null, false)
+                                        .isSuccess(),
+                        "Le réservoir ne peut plus recevoir ce contenant");
+                var essai =
+                        FluidUtil.tryEmptyContainer(un, simulation, Integer.MAX_VALUE, null, false);
+                verifier(
+                        essai.isSuccess() && meme(essai.getResult(), vide),
+                        "Volume disponible dans la cuve modifié");
+                cuve.viderContenant();
+            }
+
+            public boolean confirmee() {
+                if (interruption.isEmpty()) return meme(menu.getCarried(), vide);
+                return menu.getCarried().isEmpty() && meme(src.getItem(), original);
+            }
+        }
+        var vidage = new Vidage();
         return List.of(
                 new SequenceEnvoi.Action() {
                     public void envoyer() {
+                        verifierCircuit(ui, circuit);
                         verifier(
                                 menu.getCarried().isEmpty()
                                         && src.isActive()
@@ -525,36 +580,12 @@ public final class EnvoiMachine {
                         return meme(menu.getCarried(), un) && meme(src.getItem(), restant);
                     }
                 },
-                new SequenceEnvoi.Action() {
-                    public void envoyer() throws Exception {
-                        verifier(meme(menu.getCarried(), un), "Contenant modifié");
-                        var simulation = cuve.simulation();
-                        verifier(
-                                !cuve.peutRemplirContenant()
-                                        || simulation.isEmpty()
-                                        || !FluidUtil.tryFillContainer(
-                                                        un,
-                                                        simulation,
-                                                        Integer.MAX_VALUE,
-                                                        null,
-                                                        false)
-                                                .isSuccess(),
-                                "Le réservoir ne peut plus recevoir ce contenant");
-                        var essai =
-                                FluidUtil.tryEmptyContainer(
-                                        un, simulation, Integer.MAX_VALUE, null, false);
-                        verifier(
-                                essai.isSuccess() && meme(essai.getResult(), vide),
-                                "Volume disponible dans la cuve modifié");
-                        cuve.viderContenant();
-                    }
-
-                    public boolean confirmee() {
-                        return meme(menu.getCarried(), vide);
-                    }
-                },
+                vidage,
                 new SequenceEnvoi.Action() {
                     public void envoyer() {
+                        // Ce garde arrive après le retour confirmé du plein par Vidage,
+                        // ou laisse ranger le vide après un vidage déjà accepté.
+                        verifier(vidage.interruption.isEmpty(), vidage.interruption);
                         verifier(meme(menu.getCarried(), vide), "Contenant vide non confirmé");
                         verifier(
                                 retour.isActive()

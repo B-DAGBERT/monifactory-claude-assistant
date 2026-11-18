@@ -80,12 +80,6 @@ class NativeProductionLotTests(unittest.TestCase):
             "public BlockPos immutable()",
             "public int getX(){return x;}public int getY(){return y;}public int getZ(){return z;}public BlockPos immutable()",
         )
-        stubs["fr.assistantia.compat.emi.GregTechMachines"] = stubs[
-            "fr.assistantia.compat.emi.GregTechMachines"
-        ].replace(
-            "public static List<Cuve> cuvesSortie(AbstractContainerMenu menu){return List.of();}",
-            "public static List<Cuve> outputTanks=List.of();public static List<Cuve> cuvesSortie(AbstractContainerMenu menu){return outputTanks;}",
-        )
         # The actual resource encoder is independently replayed in test_native_production_catalog.
         stubs["fr.assistantia.compat.emi.RecetteProduction"] = """public class RecetteProduction {
  public static com.google.gson.JsonObject resource(dev.emi.emi.api.stack.EmiStack s){

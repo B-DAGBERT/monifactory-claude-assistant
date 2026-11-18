@@ -14,6 +14,11 @@ from monifactory_assistant.paths import ROOT
 SUITES = {
     "basique": ("tests.scenarios.test_basique",),
     "complexe": ("tests.scenarios.test_complexe",),
+    "fabrication": (
+        "tests.scenarios.test_stock_craft",
+        "tests.scenarios.test_parcours_stock",
+        "tests.test_me_terminal_panel.MeTerminalPanelTests.test_panel_allocates_buffer_before_withdrawable_me_entries",
+    ),
     "parcours-stock": (
         "tests.scenarios.test_parcours_stock",
         "tests.test_buffer_chest.BufferChestTests.test_native_menu_lifecycle_for_multiple_marked_chests",
@@ -49,6 +54,12 @@ class ResultatScenarios(unittest.TextTestResult):
         super().addError(test, err)
         self._retenir(test, "erreur", self._exc_info_to_string(err, test))
 
+    def addSubTest(self, test, subtest, err):
+        super().addSubTest(test, subtest, err)
+        if err is not None:
+            etat = "echec" if issubclass(err[0], test.failureException) else "erreur"
+            self._retenir(subtest, etat, self._exc_info_to_string(err, subtest))
+
     def addSkip(self, test, reason):
         super().addSkip(test, reason)
         self._retenir(test, "ignore", reason)
@@ -57,10 +68,12 @@ class ResultatScenarios(unittest.TextTestResult):
 def charger(nom):
     # Quelques tests historiques s'importent entre eux depuis le dossier tests.
     sys.path.insert(0, str(ROOT / "tests"))
-    modules = [m for cle, valeurs in SUITES.items() if nom in (cle, "tous") for m in valeurs]
+    modules = list(
+        dict.fromkeys(m for cle, valeurs in SUITES.items() if nom in (cle, "tous") for m in valeurs)
+    )
     # Les scénarios basiques et complexes vérifient aussi les clics objets/fluides et
     # le circuit natif. Le contrôle du stock partagé peut se lancer seul.
-    if nom in ("basique", "complexe", "tous"):
+    if nom in ("basique", "complexe", "fabrication", "tous"):
         modules.append(MACHINES)
     return unittest.defaultTestLoader.loadTestsFromNames(modules)
 

@@ -10,11 +10,13 @@ if [[ -z "$suite" ]]; then
     echo "1. Basique — collecte, sorties machine, moules, circuits et fluides"
     echo "2. Complexe — retards, gros lots, sources contradictoires et reprises"
     echo "3. Tous"
+    echo "4. Fabrication — retrait, établi, machines et réception"
     read -r -p "Choix [3] : " choix
     case "${choix:-3}" in
         1) suite=basique ;;
         2) suite=complexe ;;
         3) suite=tous ;;
+        4) suite=fabrication ;;
         *) echo "Choix invalide."; exit 2 ;;
     esac
 fi

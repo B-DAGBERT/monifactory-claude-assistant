@@ -62,7 +62,7 @@ restent disponibles. La mise à jour de l’assistant depuis `main` fonctionne i
 de GitHub Actions.
 
 Les [scénarios EMI à la demande](scenarios.md) se lancent avec **Tester Mac.command**, **Tester.bat**
-ou `python -m monifactory_assistant.commands.scenarios basique|complexe|parcours-stock|tous`.
+ou `python -m monifactory_assistant.commands.scenarios basique|complexe|parcours-stock|fabrication|tous`.
 Ils compilent seulement les contrats Java temporaires, sans reconstruire ni installer le mod.
 Les rapports de chaque cas sont conservés dans `.runtime/scenarios/`.
 

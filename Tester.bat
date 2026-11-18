@@ -11,10 +11,12 @@ if defined suite goto :run
 echo 1. Basique
 echo 2. Complexe
 echo 3. Tous
+echo 4. Fabrication - retrait, etabli, machines et reception
 set /p "choix=Choix [3] : "
 set "suite=tous"
 if "%choix%"=="1" set "suite=basique"
 if "%choix%"=="2" set "suite=complexe"
+if "%choix%"=="4" set "suite=fabrication"
 :run
 .venv\Scripts\python.exe -m monifactory_assistant.commands.scenarios %suite%
 set "resultat=%errorlevel%"

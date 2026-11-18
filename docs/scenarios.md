@@ -1,7 +1,7 @@
 # Rejouer les scénarios EMI
 
 Ouvrir **Tester Mac.command** sur Mac ou **Tester.bat** sur Windows, puis choisir **Basique**,
-**Complexe** ou **Tous**. Minecraft peut rester ouvert : les tests utilisent des données fictives,
+**Complexe**, **Fabrication** ou **Tous**. Minecraft peut rester ouvert : les tests utilisent des données fictives,
 des processus Java temporaires et les vrais contrôleurs du dépôt. Ils ne lancent aucune IA,
 ne déplacent rien en jeu et ne modifient ni coffre, ni configuration personnelle.
 
@@ -11,6 +11,7 @@ En ligne de commande, depuis le dépôt :
 .venv/bin/python -m monifactory_assistant.commands.scenarios basique
 .venv/bin/python -m monifactory_assistant.commands.scenarios complexe
 .venv/bin/python -m monifactory_assistant.commands.scenarios parcours-stock
+.venv/bin/python -m monifactory_assistant.commands.scenarios fabrication
 .venv/bin/python -m monifactory_assistant.commands.scenarios tous
 ```
 
@@ -21,7 +22,7 @@ Le test ne télécharge rien ; un prérequis absent ou un test ignoré ne donne 
 
 ## Basique
 
-Six parcours vérifient le cycle fabrication → coffre jaune → récupération → pose, les livraisons
+Les parcours vérifient le cycle fabrication → coffre jaune → récupération → pose, les livraisons
 partielles, l’arrêt du scan, l’arrivée d’un résultat dans un coffre auparavant vide, le moule unique
 pour tout un lot et sa disponibilité temporaire lorsqu’il est installé dans une machine.
 
@@ -61,10 +62,22 @@ rafraîchissement des panneaux. **Tous** inclut ces contrôles.
 La [recette en jeu](developpement.md#recette-coffre-tampon-en-jeu) indique quoi vérifier dans les
 menus du pack et quoi relever pour la qualification.
 
+## Fabrication
+
+La suite **Fabrication** rejoue la collecte, le remplissage et le craft à l’établi, les mêmes
+stocks dans EMI, Repérage, le terminal ME et les machines, puis le cycle envoi → lot →
+réception. Elle vérifie les quantités autour d’une pile de 64, les livraisons partielles,
+le retour du contenant, le circuit virtuel et la reprise après interruption. Les contrats
+Java utilisent les mécanismes du mod avec des menus et des confirmations simulés.
+
+La [recette en jeu](recette-fabrication.md) contient la préparation d’un atelier, des contrôles de
+quantité dans Minecraft et les parcours GregTech et AE2 à réaliser dans une copie du pack.
+
 ## Résultats et limites
 
 Chaque exécution affiche les cas réussis ou échoués et écrit un rapport JSON daté dans
-`.runtime/scenarios/`. Ce dossier est local et ignoré par Git. Le code de sortie vaut `0` uniquement
+`.runtime/scenarios/`. Ce dossier est local et ignoré par Git. Si un scénario paramétré échoue,
+le rapport identifie aussi le sous-cas dans le champ `cas`. Le code de sortie vaut `0` uniquement
 si tous les cas ont été exécutés avec succès ; un échec, une erreur ou un test ignoré vaut `1`.
 Une erreur de lancement vaut `2`.
 

@@ -1,0 +1,4 @@
+execute unless entity @s[type=player,x=0.5,y=151,z=0.5,distance=..4] run tellraw @s {"text":"QA atelier - place-toi en 0.5 151 0.5 dans le monde de test.","color":"red"}
+execute if entity @s[type=player,x=0.5,y=151,z=0.5,distance=..4] if entity @s[nbt={Inventory:[{id:"minecraft:oak_planks"}]}] run tellraw @s {"text":"QA atelier - vide tes planches de chene avant la preparation.","color":"red"}
+execute if entity @s[type=player,x=0.5,y=151,z=0.5,distance=..4] if entity @s[nbt={Inventory:[{id:"minecraft:crafting_table"}]}] run tellraw @s {"text":"QA atelier - vide tes etablis avant la preparation.","color":"red"}
+execute if entity @s[type=player,x=0.5,y=151,z=0.5,distance=..4] unless entity @s[nbt={Inventory:[{id:"minecraft:oak_planks"}]}] unless entity @s[nbt={Inventory:[{id:"minecraft:crafting_table"}]}] run function moni_qa:atelier/installer_station

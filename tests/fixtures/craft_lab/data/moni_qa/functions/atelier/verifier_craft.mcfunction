@@ -1,0 +1,4 @@
+execute if entity @s[type=player,x=0.5,y=151,z=0.5,distance=..4] run function moni_qa:atelier/lire_quantites
+execute if entity @s[type=player,x=0.5,y=151,z=0.5,distance=..4] if block 1 151 0 minecraft:barrel unless data block 1 151 0 Items[{id:"minecraft:oak_planks"}] if score #planches moni_atelier matches 0 if score #etablis moni_atelier matches 2 run scoreboard players set #ok moni_atelier 1
+execute if entity @s[type=player,x=0.5,y=151,z=0.5,distance=..4] if score #ok moni_atelier matches 1 run tellraw @s {"text":"PASS AT-01 craft - 0 planche portee, 2 etablis, baril vide.","color":"green"}
+execute if entity @s[type=player,x=0.5,y=151,z=0.5,distance=..4] unless score #ok moni_atelier matches 1 run tellraw @s {"text":"FAIL AT-01 craft - attendu 0 planche, 2 etablis et baril vide.","color":"red"}

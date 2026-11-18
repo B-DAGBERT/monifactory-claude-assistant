@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from dataclasses import dataclass
+from itertools import product
 
 from tests.scenarios.test_basique import Parcours, coffre, noeud
 from tests.test_emi_backpack_tree import compiler_contrats
@@ -164,6 +165,54 @@ class ParcoursStock(Parcours, unittest.TestCase):
         # Une nouvelle observation native n'est plus disponible, mais le rôle tampon subsiste.
         self.client.step(tampon=[TAMPON], stock_tampons={})
         self.assertEqual(self.rafraichir(coffres)["quotas"], {str(COFFRE): 8})
+
+    def test_repartition_du_stock_et_priorite_aux_composants_sur_les_quatre_parcours(self):
+        etapes = []
+        for poches, tampon, plaques_reseau in product((0, 3, 8), (0, 5, 8), (0, 2, 9)):
+            # Le bus rend aussi accessibles les plaques du tampon. Seul le complément est distinct.
+            manque_local = max(0, 8 - poches - tampon)
+            a_retirer = min(manque_local, plaques_reseau)
+            etapes.append(
+                Etape(
+                    f"poches={poches} tampon={tampon} réseau indépendant={plaques_reseau}",
+                    poches,
+                    tampon,
+                    tampon + plaques_reseau,
+                    poches + tampon + plaques_reseau,
+                    manque_local,
+                    a_retirer,
+                    manque_local,
+                    lingots_me=8,
+                    lingots_a_retirer=manque_local - a_retirer,
+                )
+            )
+        coffres = [coffre(COFFRE, n=32)]
+        for etape, resultats in zip(etapes, self.rejouer_stock(etapes), strict=True):
+            with self.subTest(repartition=etape.nom):
+                self.client.step(arreter=True)
+                self.client.step(
+                    inventaire={PLAQUE: etape.poches},
+                    tampon=[TAMPON],
+                    stock_tampons={TAMPON: {PLAQUE: etape.tampon}},
+                    temps=self.client.last["temps"] + 1_000,
+                )
+                self.demarrer(arbre=ARBRE)
+                self.assertEqual(
+                    self.rafraichir(coffres)["quotas"],
+                    {str(COFFRE): etape.a_reperer} if etape.a_reperer else {},
+                    "Repérage",
+                )
+                self.assertEqual(
+                    resultats,
+                    (
+                        etape.dans_emi,
+                        etape.a_retirer,
+                        etape.lingots_a_retirer,
+                        etape.a_crafter,
+                        etape.poches + etape.tampon,
+                    ),
+                    "EMI, retraits des plaques et lingots en ME, étapes machine, stock physique",
+                )
 
     def test_une_sortie_attendue_ne_devient_pas_du_stock_physique(self):
         etape = Etape("trois sorties encore attendues", 3, 2, 2, 8, 3, 0, 0, attendus=3)
