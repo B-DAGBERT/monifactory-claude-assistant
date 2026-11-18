@@ -9,7 +9,7 @@
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 15  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_SCRIPT = 16  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
 const VERSION_RECETTES = 2 // export des recettes plus ancien : refait au chargement (2 : durée et EU/t des recettes GregTech)
 const RECETTES_PAR_TICK = 400
 const RECETTES_PAR_FICHIER = 15000
@@ -30,6 +30,9 @@ try {
 try { QuestFile = Java.loadClass('dev.ftb.mods.ftbquests.client.ClientQuestFile') } catch (e) { console.warn('Assistant IA : FTB Quests introuvable') }
 
 let IdentiteMonde = null, MemoireMonde = null, Echanges = null
+let CoffresNatifs = null, PositionBloc = null
+try { CoffresNatifs = Java.loadClass('fr.assistantia.CoffreTampon') } catch (e) { /* Sans le mod. */ }
+try { PositionBloc = Java.loadClass('net.minecraft.core.BlockPos') } catch (e) { /* Vérification indisponible. */ }
 try {
   IdentiteMonde = Java.loadClass('fr.assistantia.IdentiteMonde')
   MemoireMonde = Java.loadClass('fr.assistantia.MemoireMondeKubeJS')
@@ -458,17 +461,26 @@ function jumeauStockage(bloc) {
   } catch (e) { return undefined }
 }
 
-// À l'ouverture d'un écran : le bloc regardé est celui qu'on vient d'ouvrir (coffre, machine...)
+// Avec le mod, l'origine provient de l'interaction ayant ouvert le menu, jamais de la visée tardive.
 function surOuvertureEcran() {
   conteneur = null
-  const visee = Client.player.rayTrace(6)
-  if (visee == null || visee.block == null) return
-  const bloc = visee.block
+  let bloc = null
+  const natif = CoffresNatifs != null && typeof CoffresNatifs.positionOuverte == 'function'
+  if (natif) {
+    let pos = CoffresNatifs.positionOuverte()
+    if (pos != null) bloc = Client.level.getBlock(pos.getX(), pos.getY(), pos.getZ())
+  } else {
+    let visee = Client.player.rayTrace(6)
+    if (visee != null) bloc = visee.block
+  }
+  if (bloc == null) return
   const id = str(bloc.id)
+  const estStockage = STOCKAGE.test(id)
+  if (natif && estStockage && CoffresNatifs.stockageOuvert() != true) return
   const dimension = str(Client.level.dimension)
   conteneur = {
     cle: dimension + '|' + bloc.x + '|' + bloc.y + '|' + bloc.z, bloc: id, nom: texte(Client.screen.getTitle()),
-    dimension: dimension, x: Number(bloc.x), y: Number(bloc.y), z: Number(bloc.z), stockage: STOCKAGE.test(id),
+    dimension: dimension, x: Number(bloc.x), y: Number(bloc.y), z: Number(bloc.z), stockage: estStockage,
     jumeau: jumeauStockage(bloc)
   }
 }
@@ -541,17 +553,27 @@ function verifierCarte(carte, dimension) {
   for (let i = 0; i < cles.length; i++) {
     let c = carte[cles[i]]
     if (c.dimension != dimension) continue
+    let cle = (carte === stockage ? 'stockage|' : 'machines|') + c.cle
     let dx = c.x - p.getX(), dz = c.z - p.getZ()
-    if (dx * dx + dz * dz > 32 * 32 || str(Client.level.getBlock(c.x, c.y, c.z).id) == c.bloc) {
-      delete manquants[c.cle]
-    } else if (manquants[c.cle]) {
+    if (dx * dx + dz * dz > 32 * 32 || !blocCharge(c)
+        || str(Client.level.getBlock(c.x, c.y, c.z).id) == c.bloc) {
+      delete manquants[cle]
+    } else if (manquants[cle]) {
       delete carte[c.cle]
-      delete manquants[c.cle]
+      delete manquants[cle]
       stockageModifie = true
     } else {
-      manquants[c.cle] = true
+      manquants[cle] = true
     }
   }
+}
+
+function blocCharge(c) {
+  if (CoffresNatifs != null && typeof CoffresNatifs.blocCharge == 'function')
+    return CoffresNatifs.blocCharge(c.x, c.y, c.z) == true
+  if (PositionBloc == null) return false
+  const pos = new PositionBloc(c.x, c.y, c.z)
+  return premiereValeur([() => Client.level.isLoaded(pos), () => Client.level.m_46749_(pos)]) == true
 }
 
 function filonsDuMod() {
@@ -601,7 +623,7 @@ function ecrireMinerais() {
 
 function suivreConteneur() {
   const ecran = Client.screen
-  // Chaque nouvel écran est un autre coffre, ou un menu : on regarde à nouveau quel bloc est visé.
+  // Chaque nouvel écran est un autre coffre, ou un menu : retrouver l'origine de ce menu.
   // (Ne surveiller que le passage « aucun écran → écran » confondait deux coffres ouverts coup sur coup.)
   if (ecran == null) conteneur = null
   else if (ecran != ecranPrecedent) surOuvertureEcran()

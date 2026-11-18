@@ -98,6 +98,8 @@ public final class CoffreTampon {
 
     private record Ouverture(AbstractContainerMenu menu, Cible coffre) {}
 
+    private record SourceMenu(Interaction interaction, boolean stockage) {}
+
     private static final class Suivi {
         private final Cible coffre;
         // null si aucun menu synchronisé ne confirme le contenu courant.
@@ -129,6 +131,8 @@ public final class CoffreTampon {
     private static final List<Cible> EXCLUS = new ArrayList<>();
     private static Ouverture ouverture;
     private static Interaction interaction;
+    private static AbstractContainerMenu menuAssocie;
+    private static SourceMenu origineMenu;
     private static Suivi precedent;
     private static long revision;
 
@@ -230,7 +234,7 @@ public final class CoffreTampon {
                 : null;
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void clic(PlayerInteractEvent.RightClickBlock event) {
         var mc = Minecraft.getInstance();
         if (event.getLevel().isClientSide() && event.getEntity() == mc.player)
@@ -248,26 +252,80 @@ public final class CoffreTampon {
         if (!(event.getScreen() instanceof AbstractContainerScreen<?> ecran)
                 || mc.player == null
                 || mc.player.containerMenu != ecran.getMenu()
-                || !RetraitCoffre.estCoffre(ecran.getMenu())
-                || ouverture != null && ouverture.menu() == ecran.getMenu()) return;
+                || menuAssocie == ecran.getMenu()) return;
         var entree = interaction;
         interaction = null;
         ouverture = null;
-        BlockPos position = positionMenu(ecran.getMenu(), mc, entree);
+        menuAssocie = ecran.getMenu();
+        origineMenu = null;
+        boolean coffreNatif = RetraitCoffre.estCoffre(menuAssocie);
+        boolean stockage = coffreNatif || stockageSophisticated(menuAssocie);
+        BlockPos position =
+                stockage ? positionMenu(menuAssocie, mc, entree) : positionInteraction(mc, entree);
         if (position == null) return;
+        var source = new Interaction(mc.getConnection(), mc.level, position, horloge.getAsLong());
+        if (!stockage) {
+            origineMenu = new SourceMenu(source, false);
+            return;
+        }
         var coffre = identifier(mc, position, true);
-        if (coffre != null) ouverture = new Ouverture(ecran.getMenu(), coffre);
+        if (coffre != null) {
+            origineMenu = new SourceMenu(source, true);
+            if (coffreNatif) ouverture = new Ouverture(menuAssocie, coffre);
+        }
+    }
+
+    private static boolean stockageSophisticated(AbstractContainerMenu menu) {
+        // Les tonneaux limités héritent de la position synchronisée, sans élargir les retraits.
+        for (Class<?> type = menu.getClass().getSuperclass();
+                type != null;
+                type = type.getSuperclass())
+            if (type.getName()
+                    .equals("net.p3pp3rf1y.sophisticatedstorage.common.gui.StorageContainerMenu"))
+                return true;
+        return false;
+    }
+
+    private static BlockPos positionInteraction(Minecraft mc, Interaction entree) {
+        return entree != null
+                        && entree.niveau() == mc.level
+                        && entree.connexion() == mc.getConnection()
+                        && horloge.getAsLong() - entree.date() <= 5_000_000_000L
+                ? entree.position()
+                : null;
+    }
+
+    /** Le script client et les retraits utilisent la même origine de menu. */
+    public static BlockPos positionOuverte() {
+        var mc = Minecraft.getInstance();
+        var source = origineMenu == null ? null : origineMenu.interaction();
+        return source != null
+                        && mc.player != null
+                        && mc.player.containerMenu == menuAssocie
+                        && source.niveau() == mc.level
+                        && source.connexion() == mc.getConnection()
+                        && blocCharge(
+                                source.position().getX(),
+                                source.position().getY(),
+                                source.position().getZ())
+                ? source.position()
+                : null;
+    }
+
+    /** Un autre type de menu ne constitue jamais une preuve du contenu d'un coffre. */
+    public static boolean stockageOuvert() {
+        return origineMenu != null && origineMenu.stockage() && positionOuverte() != null;
+    }
+
+    public static boolean blocCharge(int x, int y, int z) {
+        var niveau = Minecraft.getInstance().level;
+        return niveau != null && niveau.hasChunkAt(new BlockPos(x, y, z));
     }
 
     private static BlockPos positionMenu(
             AbstractContainerMenu menu, Minecraft mc, Interaction entree) {
         if (menu instanceof ChestMenu || menu instanceof ShulkerBoxMenu)
-            return entree != null
-                            && entree.niveau() == mc.level
-                            && entree.connexion() == mc.getConnection()
-                            && horloge.getAsLong() - entree.date() <= 5_000_000_000L
-                    ? entree.position()
-                    : null;
+            return positionInteraction(mc, entree);
         // Sophisticated synchronise la position du bloc avec son menu, y compris pour un double.
         try {
             var valeur = menu.getClass().getMethod("getBlockPosition").invoke(menu);
@@ -284,6 +342,10 @@ public final class CoffreTampon {
         if (event.phase != TickEvent.Phase.END) return;
         var mc = Minecraft.getInstance();
         nettoyer(mc);
+        if (mc.player == null || mc.player.containerMenu != menuAssocie) {
+            menuAssocie = null;
+            origineMenu = null;
+        }
         if (!menuCourant(mc)) ouverture = null;
         else if (!RetraitCoffre.occupe()) releverMenu();
         long maintenant = horloge.getAsLong();

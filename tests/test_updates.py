@@ -1,5 +1,6 @@
-"""Exercise the actual update launcher against a local Git remote (no network)."""
+"""Exercise the manual launcher and shared updater against a local Git remote."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -12,6 +13,33 @@ GIT = next(
     (p for p in ("/opt/homebrew/bin/git", "/usr/local/bin/git") if Path(p).is_file()),
     shutil.which("git"),
 )
+
+TEST_BUILD = """
+import os
+from importlib.util import find_spec
+
+if find_spec("monifactory_assistant") is not None:
+    from monifactory_assistant.commands import auto_update
+
+    class FixtureUpdater(auto_update.AutoUpdater):
+        def __init__(self, root, instance):
+            super().__init__(root, instance, game_running=lambda: os.environ["TEST_UPDATE_GAME"] == "running")
+
+        def build(self, stage):
+            if os.environ["TEST_UPDATE_GAME"] == "build-failure":
+                raise RuntimeError("failing fixture build")
+            jar = stage / "mod/build/libs/assistantia-test.jar"
+            jar.parent.mkdir(parents=True)
+            jar.write_bytes((stage / "mod/source.txt").read_bytes())
+
+        def deploy(self, stage, before, target):
+            backup = super().deploy(stage, before, target)
+            if os.environ["TEST_UPDATE_GAME"] == "interrupted-install":
+                raise OSError("interrupted fixture installation")
+            return backup
+
+    auto_update.AutoUpdater = FixtureUpdater
+"""
 
 
 class UpdateTests(unittest.TestCase):
@@ -32,6 +60,16 @@ class UpdateTests(unittest.TestCase):
         self.source.mkdir()
         self.remote = self.root / "remote.git"
         self.client = self.root / "client"
+        self.support = self.root / "support"
+        self.support.mkdir()
+        (self.support / "sitecustomize.py").write_text(TEST_BUILD, encoding="utf-8")
+        self.instance = self.root / "instance"
+        (self.instance / "mods").mkdir(parents=True)
+        (self.instance / "kubejs/client_scripts").mkdir(parents=True)
+        self.jar = self.instance / "mods/assistantia-previous.jar"
+        self.script = self.instance / "kubejs/client_scripts/assistant_ia.js"
+        self.jar.write_text("previous jar")
+        self.script.write_text("previous script")
         self.git("init", "--bare", str(self.remote))
         self.git("init", "-b", "main")
         self.git("config", "user.name", "Update Test")
@@ -45,8 +83,15 @@ class UpdateTests(unittest.TestCase):
         )
         (self.source / "Installer Mac.command").write_text("#!/bin/bash\necho INSTALLER_CALLED\n")
         (self.source / "tracked.txt").write_text("before\n")
+        (self.source / "requirements.txt").write_text("")
+        (self.source / "mod").mkdir()
+        (self.source / "mod/gradle.properties").write_text("mod_version=test\n")
+        (self.source / "mod/source.txt").write_text("release jar")
+        (self.source / "jeu").mkdir()
+        (self.source / "jeu/assistant_ia.js").write_text("release script")
         (self.source / ".gitignore").write_text(
-            "__pycache__/\ncodex.local.json\nassistant.local.json\nsession_claude.json\nsession.json\nplan_ia.json\nmonde_memoire.json\n"
+            "__pycache__/\n.runtime/\nbackups/\nassistant.lock\ncodex.local.json\nassistant.local.json\n"
+            "session_claude.json\nsession.json\nplan_ia.json\nmonde_memoire.json\n"
         )
         self.git("add", ".")
         self.git("commit", "-m", "Initial")
@@ -67,19 +112,41 @@ class UpdateTests(unittest.TestCase):
         self.git("commit", "-am", "Published update")
         self.git("push", "origin", "main")
 
-    def update(self):
+    def update(self, mode="closed"):
         return subprocess.run(
             ["bash", "Mettre à jour.command"],
             cwd=self.client,
-            env=dict(os.environ, GIT_TERMINAL_PROMPT="0"),
+            env=dict(
+                os.environ,
+                GIT_TERMINAL_PROMPT="0",
+                MINECRAFT_DIR=str(self.instance),
+                PYTHONPATH=os.pathsep.join(map(str, (self.client, self.support))),
+                TEST_UPDATE_GAME=mode,
+            ),
             capture_output=True,
             text=True,
+            timeout=20,
         )
+
+    def assert_transaction_installed(self, result):
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("INSTALLER_CALLED", result.stdout)
+        installed = json.loads((self.client / ".runtime/installed-update.json").read_text())
+        self.assertEqual(installed["revision"], self.git("rev-parse", "HEAD", cwd=self.client))
+        self.assertEqual(installed["jar"], "assistantia-test.jar")
+        self.assertFalse(self.jar.exists())
+        self.assertEqual(self.jar.with_name(installed["jar"]).read_text(), "release jar")
+        self.assertEqual(self.script.read_text(), "release script")
+        self.assertFalse((self.client / ".runtime/install-pending.json").exists())
+
+    def assert_original_pair(self):
+        self.assertEqual(list(self.instance.glob("mods/assistantia-*.jar")), [self.jar])
+        self.assertEqual(self.jar.read_text(), "previous jar")
+        self.assertEqual(self.script.read_text(), "previous script")
 
     def test_fast_forward_preserves_local_configuration_then_installs(self):
         result = self.update()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("INSTALLER_CALLED", result.stdout)
+        self.assert_transaction_installed(result)
         self.assertEqual(
             (self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n'
         )
@@ -104,6 +171,7 @@ class UpdateTests(unittest.TestCase):
         self.assertNotIn("INSTALLER_CALLED", result.stdout)
         self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), before)
         self.assertEqual(self.git("branch", "--show-current", cwd=self.client), branch)
+        self.assert_original_pair()
         for name, text in self.personal.items():
             self.assertEqual((self.client / name).read_text(), text)
 
@@ -135,8 +203,7 @@ class UpdateTests(unittest.TestCase):
             with self.subTest(branch=branch):
                 self.git("branch", "-m", branch, cwd=self.client)
                 result = self.update()
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("INSTALLER_CALLED", result.stdout)
+                self.assert_transaction_installed(result)
                 self.assertEqual(self.git("branch", "--show-current", cwd=self.client), "main")
                 self.assertEqual(
                     self.git("rev-parse", "--abbrev-ref", "@{upstream}", cwd=self.client),
@@ -178,6 +245,37 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.git("branch", "--show-current", cwd=self.client), "main")
         self.assertEqual((self.client / "tracked.txt").read_text(), "after\n")
+        self.assert_transaction_installed(result)
+
+    def test_minecraft_running_preserves_legacy_checkout_and_installation(self):
+        self.git("branch", "-m", "shared-assistant", cwd=self.client)
+        before = self.git("rev-parse", "HEAD", cwd=self.client)
+        result = self.update("running")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.git("branch", "--show-current", cwd=self.client), "shared-assistant")
+        self.assertEqual(self.git("branch", "--list", "main", cwd=self.client), "")
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), before)
+        self.assertEqual((self.client / "tracked.txt").read_text(), "before\n")
+        self.assert_original_pair()
+
+    def test_failed_build_preserves_main_and_installation(self):
+        before = self.git("rev-parse", "HEAD", cwd=self.client)
+        result = self.update("build-failure")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), before)
+        self.assertEqual((self.client / "tracked.txt").read_text(), "before\n")
+        self.assert_original_pair()
+
+    def test_legacy_checkout_with_pending_installation_restarts_from_main(self):
+        self.git("branch", "-m", "shared-assistant", cwd=self.client)
+        before = self.git("rev-parse", "HEAD", cwd=self.client)
+        result = self.update("interrupted-install")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.git("branch", "--show-current", cwd=self.client), "main")
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), before)
+        self.assertEqual(self.git("rev-parse", "shared-assistant", cwd=self.client), before)
+        self.assertTrue((self.client / ".runtime/install-pending.json").is_file())
+        self.assert_transaction_installed(self.update())
 
     def test_single_branch_legacy_clone_migrates_and_future_plain_pull_works(self):
         self.git("push", "origin", "HEAD:shared-assistant")
@@ -232,10 +330,12 @@ class UpdateTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-m", "Organized package layout")
         self.git("push", "origin", "main")
-        for _ in range(2):
-            result = self.update()
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("INSTALLER_CALLED", result.stdout)
+        result = self.update()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "INSTALLER_CALLED", result.stdout
+        )  # The historical launcher bootstraps the package.
+        self.assert_transaction_installed(self.update())
         self.assertTrue((self.client / "monifactory_assistant/commands/update.py").is_file())
         self.assertEqual(
             (self.client / "assistant.local.json").read_text(), '{"provider":"claude"}\n'

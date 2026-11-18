@@ -89,11 +89,27 @@ public class ClientLevel {
      public static final Registry BLOCKS=new Registry();
      public record Registry(){public Id getKey(Object b){return new Id();}}
      public record Id(){public String getNamespace(){return "sophisticatedstorage";}}}""",
+        "net.p3pp3rf1y.sophisticatedstorage.common.gui.StorageContainerMenu": """
+     public class StorageContainerMenu extends net.minecraft.world.inventory.AbstractContainerMenu {
+       private final net.minecraft.core.BlockPos position;
+       public StorageContainerMenu(net.minecraft.core.BlockPos position){this.position=position;}
+       public java.util.Optional<net.minecraft.core.BlockPos> getBlockPosition(){
+         return java.util.Optional.of(position);
+       }
+     }""",
+        "net.p3pp3rf1y.sophisticatedstorage.common.gui.LimitedBarrelContainerMenu": """
+     public class LimitedBarrelContainerMenu extends StorageContainerMenu {
+       public LimitedBarrelContainerMenu(net.minecraft.core.BlockPos position){super(position);}
+     }""",
         "fr.assistantia.RetraitCoffre": """public class RetraitCoffre {
      static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
      public static boolean retrait;
      public static boolean occupe(){return retrait;}
-     public static boolean estCoffre(net.minecraft.world.inventory.AbstractContainerMenu menu){return true;}
+     public static boolean estCoffre(net.minecraft.world.inventory.AbstractContainerMenu menu){
+       return menu instanceof net.minecraft.world.inventory.ChestMenu
+           || menu instanceof net.minecraft.world.inventory.ShulkerBoxMenu
+           || menu.getClass() == net.p3pp3rf1y.sophisticatedstorage.common.gui.StorageContainerMenu.class;
+     }
      public static java.util.List<net.minecraft.world.item.ItemStack> pilesTampon(net.minecraft.world.inventory.AbstractContainerMenu m){return piles;}}""",
         "fr.assistantia.StockProduction": """public class StockProduction {
      static boolean initialise;
@@ -116,17 +132,12 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.p3pp3rf1y.sophisticatedstorage.common.gui.LimitedBarrelContainerMenu;
+import net.p3pp3rf1y.sophisticatedstorage.common.gui.StorageContainerMenu;
 
 public class CoffreTamponTest {
     private static final Minecraft MC = Minecraft.getInstance();
     private static long maintenant = 100_000_000_000L;
-
-    public static class StorageMenu extends AbstractContainerMenu {
-        private final BlockPos position;
-
-        StorageMenu(BlockPos position) { this.position = position; }
-        public Optional<BlockPos> getBlockPosition() { return Optional.of(position); }
-    }
 
     static void tick() { CoffreTampon.tick(new TickEvent.ClientTickEvent()); }
     static int stock() { return CoffreTampon.piles().stream().mapToInt(ItemStack::getCount).sum(); }
@@ -180,7 +191,22 @@ public class CoffreTamponTest {
         MC.level.types.put(left, ChestType.LEFT);
         MC.level.types.put(right, ChestType.RIGHT);
 
-        var screen = open(new StorageMenu(pos));
+        var autreMenu = new AbstractContainerMenu();
+        CoffreTampon.clic(new PlayerInteractEvent.RightClickBlock(MC.level, MC.player, pos));
+        var autreEcran = open(autreMenu);
+        assert !CoffreTampon.stockageOuvert() : "an unrelated screen does not attest chest contents";
+        close(autreEcran);
+        var tonneau = new LimitedBarrelContainerMenu(pos);
+        var autreCoffre = open(tonneau);
+        assert pos.equals(CoffreTampon.positionOuverte()) && CoffreTampon.stockageOuvert();
+        assert !RetraitCoffre.estCoffre(tonneau) : "native storage proof does not enable withdrawals";
+        close(autreCoffre);
+        var screen = open(new StorageContainerMenu(pos));
+        MC.hitResult = new BlockHitResult(right);
+        assert pos.equals(CoffreTampon.positionOuverte()) && CoffreTampon.stockageOuvert();
+        MC.level.unloaded.add(pos);
+        assert !CoffreTampon.blocCharge(7, 90, -4) && CoffreTampon.positionOuverte() == null;
+        MC.level.unloaded.clear();
         var item = new Item("test:iron");
         var stored = new ItemStack(item, 5);
         RetraitCoffre.piles = List.of(stored);
@@ -245,7 +271,7 @@ public class CoffreTamponTest {
         close(doubleChest);
         assert stock() == 18;
 
-        var reopened = open(new StorageMenu(pos));
+        var reopened = open(new StorageContainerMenu(pos));
         assert stockOutsideMenu() == 13;
         RetraitCoffre.piles = List.of(stored);
         stored.count = 8;
@@ -262,7 +288,7 @@ public class CoffreTamponTest {
         toggle(pos);
         toggle(pos);
         assert stock() == 13 : "the invalidated snapshot cannot be reused";
-        reopened = open(new StorageMenu(pos));
+        reopened = open(new StorageContainerMenu(pos));
         tick();
         assert stock() == 16 : "a native observation restores the authoritative stock";
         close(reopened);
@@ -286,7 +312,7 @@ public class CoffreTamponTest {
         assert stock() == 0 && positions().isEmpty() : "replacement clears its stock";
 
         toggle(pos);
-        reopened = open(new StorageMenu(pos));
+        reopened = open(new StorageContainerMenu(pos));
         tick();
         assert stock() == 13;
         close(reopened);
@@ -317,7 +343,7 @@ public class CoffreTamponTest {
 
     static void verifierFraicheur(BlockPos pos, Item item) {
         toggle(pos);
-        var menu = open(new StorageMenu(pos));
+        var menu = open(new StorageContainerMenu(pos));
         RetraitCoffre.piles = List.of(new ItemStack(item, 5));
         tick();
         assert etat(pos) == CoffreTampon.EtatReleve.DIRECT && stock() == 5;
@@ -337,7 +363,7 @@ public class CoffreTamponTest {
         assert CoffreTampon.revision() == derniereRevision + 1 : "expiry is signalled once";
 
         StockProduction.initialise = false;
-        menu = open(new StorageMenu(pos));
+        menu = open(new StorageContainerMenu(pos));
         tick();
         assert stock() == 0 && etat(pos) == CoffreTampon.EtatReleve.A_REVOIR;
         StockProduction.initialise = true;

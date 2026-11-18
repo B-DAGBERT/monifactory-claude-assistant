@@ -20,7 +20,14 @@ class ConnectionDisplayTests(unittest.TestCase):
             n
             for n in app.body
             if isinstance(n, ast.FunctionDef)
-            and n.name in {"on_answer", "on_error", "on_connection_ready", "on_connection_problem"}
+            and n.name
+            in {
+                "on_answer",
+                "on_error",
+                "on_connection_ready",
+                "on_connection_problem",
+                "question_scope_valid",
+            }
         ]
         actions = [{"type": "test"}]
         namespace = {

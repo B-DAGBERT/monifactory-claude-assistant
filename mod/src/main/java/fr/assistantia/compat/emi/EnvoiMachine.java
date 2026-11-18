@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -463,6 +464,28 @@ public final class EnvoiMachine {
         verifier(probleme.isEmpty(), probleme);
     }
 
+    private abstract static class Depot implements SequenceEnvoi.Action {
+        private final Object machine;
+        private boolean enCoursAvant;
+        private EmiRecipe recetteFinale;
+
+        Depot(Object machine) {
+            this.machine = machine;
+        }
+
+        final void avantDepot() {
+            enCoursAvant = recetteFinale != null && GregTechMachines.enMarche(machine);
+        }
+
+        final boolean confirmeDestination(BooleanSupplier destinationAttendue) {
+            // Les derniers ingrédients peuvent être consommés avant la mise à jour du menu.
+            return destinationAttendue.getAsBoolean()
+                    || recetteFinale != null
+                            && !enCoursAvant
+                            && GregTechMachines.execute(machine, recetteFinale);
+        }
+    }
+
     private static SequenceEnvoi.Action objets(
             AbstractContainerMenu menu,
             Slot src,
@@ -473,7 +496,9 @@ public final class EnvoiMachine {
             int circuit) {
         ItemStack restant = original.copy();
         restant.shrink(n);
-        return new SequenceEnvoi.Action() {
+        return new Depot(ui.machine()) {
+            private ItemStack destinationAttendue;
+
             public void envoyer() {
                 verifierCircuit(ui, circuit);
                 verifier(
@@ -489,6 +514,9 @@ public final class EnvoiMachine {
                                         || ItemStack.isSameItemSameTags(dest.getItem(), original))
                                 && dest.getMaxStackSize(original) - dest.getItem().getCount() >= n,
                         "Entrée modifiée ou pleine");
+                destinationAttendue = original.copy();
+                destinationAttendue.setCount(dest.getItem().getCount() + n);
+                avantDepot();
                 clic(menu, src, 0);
                 if (n == original.getCount()) clic(menu, dest, 0);
                 else {
@@ -504,7 +532,10 @@ public final class EnvoiMachine {
             }
 
             public boolean confirmee() {
-                return menu.getCarried().isEmpty() && meme(src.getItem(), restant);
+                return menu.getCarried().isEmpty()
+                        && meme(src.getItem(), restant)
+                        && confirmeDestination(
+                                () -> dest.isActive() && meme(dest.getItem(), destinationAttendue));
             }
         };
     }
@@ -521,8 +552,13 @@ public final class EnvoiMachine {
             int circuit) {
         ItemStack restant = original.copy();
         restant.shrink(1);
-        class Vidage implements SequenceEnvoi.Action {
+        class Vidage extends Depot {
             private String interruption = "";
+            private FluidStack destinationAttendue;
+
+            Vidage() {
+                super(ui.machine());
+            }
 
             public void envoyer() throws Exception {
                 verifier(meme(menu.getCarried(), un), "Contenant modifié");
@@ -546,15 +582,25 @@ public final class EnvoiMachine {
                                         .isSuccess(),
                         "Le réservoir ne peut plus recevoir ce contenant");
                 var essai =
-                        FluidUtil.tryEmptyContainer(un, simulation, Integer.MAX_VALUE, null, false);
+                        FluidUtil.tryEmptyContainer(un, simulation, Integer.MAX_VALUE, null, true);
                 verifier(
                         essai.isSuccess() && meme(essai.getResult(), vide),
                         "Volume disponible dans la cuve modifié");
+                destinationAttendue = simulation.getFluid().copy();
+                avantDepot();
                 cuve.viderContenant();
             }
 
             public boolean confirmee() {
-                if (interruption.isEmpty()) return meme(menu.getCarried(), vide);
+                if (interruption.isEmpty())
+                    return meme(menu.getCarried(), vide)
+                            && confirmeDestination(
+                                    () -> {
+                                        var contenu = cuve.contenu();
+                                        return contenu.getAmount()
+                                                        == destinationAttendue.getAmount()
+                                                && contenu.isFluidEqual(destinationAttendue);
+                                    });
                 return menu.getCarried().isEmpty() && meme(src.getItem(), original);
             }
         }
@@ -620,6 +666,11 @@ public final class EnvoiMachine {
             verifier(entrees.ui().machine() == plan.machine(), "Machine changée");
             var confirme = calculer(entrees, plan.recette(), courant, plan.fois(), actions);
             verifier(confirme.possible(), confirme.probleme());
+            for (int i = actions.size() - 1; i >= 0; i--)
+                if (actions.get(i) instanceof Depot depot) {
+                    depot.recetteFinale = plan.recette();
+                    break;
+                }
             arbre = courant;
         } catch (IllegalStateException e) {
             statut =

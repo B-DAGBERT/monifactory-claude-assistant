@@ -1,20 +1,18 @@
 """Local engine selector. Does not start an AI request or replace gameplay data."""
 
 import argparse
-import json
 
-from monifactory_assistant.config import HERE, load_config, write_json
+from monifactory_assistant.config import HERE, load_config
+from monifactory_assistant.persistence import atomic_json, load_json
 from monifactory_assistant.providers import provider
 
 
 def select(name):
     provider({"provider": name})
     path = HERE / "assistant.local.json"
-    settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    if not isinstance(settings, dict):
-        raise ValueError("assistant.local.json doit contenir un objet JSON.")
+    settings = load_json(path, {}, strict=True)
     settings["provider"] = name
-    write_json(path, settings)
+    atomic_json(path, settings, backup_kind=dict)
 
 
 def main():

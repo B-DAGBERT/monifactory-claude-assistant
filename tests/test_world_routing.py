@@ -242,6 +242,7 @@ class WorldRoutingTests(unittest.TestCase):
         app = GameController()
         app.bridge = self.bridge
         app.world = World(enabled=False)
+        app.speaker = Mock()
         first = self.root / "mondes" / WORLD_A
         # An old project save of this world is kept as is, never read nor rewritten.
         dump(first / "plan_ia.json", {"plan": {"objectif": "Mine A"}, "objectif_en_pause": True})
@@ -251,8 +252,12 @@ class WorldRoutingTests(unittest.TestCase):
             self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A))
             app.apply_world_scope(self.bridge.scope)
             self.assertEqual(app.places, {"Base A": {"x": 0}})
+            app.speaker.stop.reset_mock()
             self.assertTrue(enter(self.bridge, WORLD_B, SESSION_B))
             app.apply_world_scope(self.bridge.scope)
+            app.speaker.stop.assert_called_once_with()
+            app.apply_world_scope(self.bridge.scope)
+            app.speaker.stop.assert_called_once_with()
             self.assertEqual(app.places, {})
             app.places["Base B"] = {"x": 0}
             app.save_places()

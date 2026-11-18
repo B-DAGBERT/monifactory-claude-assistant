@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.world.item.ItemStack;
@@ -24,7 +25,35 @@ public record InstantaneArbreEmi(
         List<String> cible) {
 
     private record Lecture(
-            ArbreCollecte.Noeud collecte, PlanMachines.Noeud<EmiStack, EmiRecipe> machines) {}
+            ArbreCollecte.Noeud collecte,
+            PlanMachines.Noeud<EmiStack, EmiRecipe> machines,
+            CleBranche branche) {}
+
+    /** L'identité de recette et le détail des choix EMI doivent être communs aux deux branches. */
+    private record RecetteNative(EmiRecipe recette) {
+        @Override
+        public boolean equals(Object autre) {
+            return autre instanceof RecetteNative nativeEmi && recette == nativeEmi.recette;
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(recette);
+        }
+    }
+
+    private record CleBranche(
+            RecetteNative recette,
+            List<String> variantes,
+            long quantite,
+            long production,
+            boolean reutilisable,
+            float chance,
+            List<CleBranche> enfants) {
+        CleBranche sansQuantite() {
+            return new CleBranche(recette, variantes, 0, production, reutilisable, chance, enfants);
+        }
+    }
 
     private record NoeudLu(
             Object noeud,
@@ -139,6 +168,25 @@ public record InstantaneArbreEmi(
         return stacks.stream().map(s -> s.getId() + "|" + s.getNbt()).sorted().toList();
     }
 
+    private static boolean produitGaranti(
+            EmiRecipe recette, List<EmiStack> variantes, long production) {
+        if (recette == null || variantes.size() != 1 || production <= 1) return false;
+        var produit = variantes.get(0);
+        long encore = production;
+        for (var sortie : recette.getOutputs())
+            if (!sortie.isEmpty() && sortie.getChance() >= 1 && memeVariante(sortie, produit)) {
+                if (sortie.getAmount() >= encore) return true;
+                encore -= sortie.getAmount();
+            }
+        return false;
+    }
+
+    private static boolean memeVariante(EmiStack a, EmiStack b) {
+        return a.getItemStack().isEmpty() == b.getItemStack().isEmpty()
+                && a.getId().equals(b.getId())
+                && Objects.equals(a.getNbt(), b.getNbt());
+    }
+
     private static Lecture lireNoeud(
             Object node,
             EmiRecipe parent,
@@ -153,9 +201,8 @@ public record InstantaneArbreEmi(
         try {
             var type = node.getClass();
             var ingredient = (EmiIngredient) type.getField("ingredient").get(node);
-            boolean reutilisable =
-                    type.getField("catalyst").getBoolean(node)
-                            || type.getField("consumeChance").getFloat(node) == 0;
+            float chance = type.getField("consumeChance").getFloat(node);
+            boolean reutilisable = type.getField("catalyst").getBoolean(node) || chance == 0;
             if (ComparaisonEmi.circuitVirtuel(parent, ingredient, reutilisable)) return null;
             var recette = (EmiRecipe) type.getField("recipe").get(node);
             long quantite = type.getField("amount").getLong(node);
@@ -178,6 +225,7 @@ public record InstantaneArbreEmi(
             reutilisable |= outil && !ids.isEmpty();
             var collecte = new ArrayList<ArbreCollecte.Noeud>();
             var machines = new ArrayList<PlanMachines.Noeud<EmiStack, EmiRecipe>>();
+            var branches = new ArrayList<CleBranche>();
             if (type.getField("children").get(node) instanceof List<?> enfants) {
                 for (Object enfant : enfants) {
                     var lu =
@@ -192,6 +240,7 @@ public record InstantaneArbreEmi(
                     if (lu == null) continue;
                     collecte.add(lu.collecte());
                     machines.add(lu.machines());
+                    branches.add(lu.branche());
                 }
             }
             structure.add(
@@ -203,8 +252,31 @@ public record InstantaneArbreEmi(
                             reutilisable,
                             cles(variantesMachine),
                             machines.size()));
+            var variantesExactes =
+                    variantesMachine.stream()
+                            .map(
+                                    s ->
+                                            (s.getItemStack().isEmpty() ? "fluide|" : "objet|")
+                                                    + s.getId()
+                                                    + "|"
+                                                    + s.getNbt())
+                            .sorted()
+                            .toList();
+            var branche =
+                    new CleBranche(
+                            new RecetteNative(recette),
+                            variantesExactes,
+                            quantite,
+                            production,
+                            reutilisable,
+                            chance,
+                            List.copyOf(branches));
+            var lot =
+                    !reutilisable && produitGaranti(recette, variantesMachine, production)
+                            ? branche.sansQuantite()
+                            : null;
             return new Lecture(
-                    new ArbreCollecte.Noeud(ids, quantite, production, reutilisable, collecte),
+                    new ArbreCollecte.Noeud(ids, quantite, production, reutilisable, collecte, lot),
                     new PlanMachines.Noeud<>(
                             pile ->
                                     variantesMachine.stream()
@@ -213,7 +285,9 @@ public record InstantaneArbreEmi(
                             production,
                             reutilisable,
                             recette,
-                            List.copyOf(machines)));
+                            List.copyOf(machines),
+                            lot),
+                    branche);
         } finally {
             chemin.remove(node);
         }

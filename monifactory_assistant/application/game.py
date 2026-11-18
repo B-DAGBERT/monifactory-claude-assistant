@@ -54,6 +54,12 @@ class GameController:
         if previous == scope:
             return
         self.active_world_scope = None
+        speaker = getattr(self, "speaker", None)
+        if speaker is not None:
+            try:
+                speaker.stop()
+            except Exception:
+                log(traceback.format_exc())
         self.game = self.previous_state = None
         self.guide = self.search = self.info = None
         self.message, self.message_until = "", 0

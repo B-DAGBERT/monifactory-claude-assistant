@@ -2,10 +2,15 @@ package fr.assistantia;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
@@ -20,6 +25,75 @@ import java.util.function.Supplier;
 final class SauvegardeFilons {
     interface Ecriture {
         void ecrire(Path destination, String contenu) throws IOException;
+    }
+
+    interface Lecture<T> {
+        T lire(String contenu) throws IOException;
+    }
+
+    /** Fichiers du repérage. Utiliser le même exécuteur séquentiel pour lire et écrire. */
+    static final class Fichiers {
+        private final Set<Path> sains = new HashSet<>();
+        private final Set<Path> versionsVerifiees = new HashSet<>();
+
+        <T> T lirePrimaire(Path chemin, Lecture<T> lecture) throws IOException {
+            sains.remove(chemin);
+            String texte;
+            try {
+                texte = Files.readString(chemin, StandardCharsets.UTF_8);
+            } catch (NoSuchFileException absent) {
+                return null;
+            }
+            T resultat = lecture.lire(texte);
+            sains.add(chemin);
+            return resultat;
+        }
+
+        void ecrire(Path destination, String texte) throws IOException {
+            Path dossier = destination.getParent();
+            Files.createDirectories(dossier);
+            Path temporaire =
+                    Files.createTempFile(dossier, "." + destination.getFileName(), ".tmp");
+            boolean natif = dossier.getFileName().toString().equals("filons_gregtech");
+            try {
+                Files.writeString(temporaire, texte, StandardCharsets.UTF_8);
+                if (natif && Files.exists(destination)) {
+                    if (!versionsVerifiees.contains(destination)) {
+                        conserverVersion1(destination);
+                        versionsVerifiees.add(destination);
+                    }
+                    if (sains.contains(destination)) copierSecours(destination);
+                }
+                remplacer(temporaire, destination);
+                if (natif) sains.add(destination);
+            } finally {
+                Files.deleteIfExists(temporaire);
+            }
+        }
+
+        private static void copierSecours(Path fichier) throws IOException {
+            Path secours = fichier.resolveSibling(fichier.getFileName() + ".bak");
+            Path temporaire =
+                    Files.createTempFile(fichier.getParent(), "." + secours.getFileName(), ".tmp");
+            try {
+                Files.copy(fichier, temporaire, StandardCopyOption.REPLACE_EXISTING);
+                remplacer(temporaire, secours);
+            } finally {
+                Files.deleteIfExists(temporaire);
+            }
+        }
+
+        private static void remplacer(Path temporaire, Path destination) throws IOException {
+            try {
+                Files.move(
+                        temporaire,
+                        destination,
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporaire, destination, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
     }
 
     /** Texte calculé à la demande et mémorisé ; {@link #source} garde l'objet d'origine. */

@@ -232,6 +232,9 @@ class ParityTests(unittest.TestCase):
             "App.check_craftable",  # renamed check_recipes; test_recipe_loading.py
             "App.load_recipes",
             "App.describe_journal",  # retain usable records beside a damaged record; test_journal_tail.py
+            "App.on_talk_start",  # serialize typed and voice questions; test_discussion_menu.py
+            "App.on_talk_end",
+            "App.submit",
         }
         tested_action_guard_changes = {
             "App.run_actions",  # Closed model-action boundary; test_ai_action_guard.py.
@@ -269,6 +272,8 @@ class ParityTests(unittest.TestCase):
             # Export the other half from the opened block state; test_client_commands.py.
             "surOuvertureEcran",
             "lireConteneur",
+            # Deux absences confirmées dans un chunk chargé, test_kubejs_exports.py.
+            "verifierCarte",
             "chargerMinerais",
             "ecrireMinerais",
             # The mod tracks GregTech veins itself: no KubeJS ore relevé nor filons.json write then.

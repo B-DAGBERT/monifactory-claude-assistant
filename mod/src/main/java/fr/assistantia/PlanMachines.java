@@ -13,7 +13,18 @@ public final class PlanMachines {
             long production,
             boolean reutilisable,
             R recette,
-            List<Noeud<T, R>> enfants) {}
+            List<Noeud<T, R>> enfants,
+            Object lotIdentique) {
+        public Noeud(
+                Predicate<T> accepte,
+                long quantite,
+                long production,
+                boolean reutilisable,
+                R recette,
+                List<Noeud<T, R>> enfants) {
+            this(accepte, quantite, production, reutilisable, recette, enfants, null);
+        }
+    }
 
     public record Operation<R>(R recette, int fois) {}
 
@@ -41,6 +52,7 @@ public final class PlanMachines {
         int[] outilsPris = prises == null ? null : new int[stock.size()];
         var operations = new LinkedHashMap<R, Integer>();
         var outilsPrevus = new LinkedHashMap<R, Integer>();
+        var surplus = new PlanRetrait.Surplus();
         List<Demande<T, R>> niveau =
                 List.of(new Demande<>(root, produit(root.quantite(), batches)));
         int visites = 0, profondeur = 0;
@@ -89,9 +101,13 @@ public final class PlanMachines {
                     int deja = outilsPrevus.getOrDefault(d.node().recette(), 0);
                     manque = Math.max(0, manque - deja);
                 }
+                if (!d.node().reutilisable())
+                    manque = surplus.deduire(d.node().lotIdentique(), manque);
                 if (manque <= 0) continue;
                 long production = Math.max(1, d.node().production());
                 int fois = (int) (manque / production + (manque % production == 0 ? 0 : 1));
+                if (!d.node().reutilisable())
+                    surplus.retenir(d.node().lotIdentique(), manque, production);
                 if (d.node().reutilisable() && d.node().recette() != null)
                     outilsPrevus.merge(
                             d.node().recette(),

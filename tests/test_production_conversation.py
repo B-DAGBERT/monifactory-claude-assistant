@@ -110,6 +110,48 @@ class ProductionConversationTests(unittest.TestCase):
         app.production.context_valid.assert_not_called()
 
     @patch("monifactory_assistant.application.conversation.log")
+    def test_late_ordinary_answer_is_neither_previewed_nor_spoken(self, _log):
+        app = Fixture()
+        app.question_scope = "session-a"
+        app.bridge.isolated = True
+        app.bridge.scope = app.question_scope
+        app.bridge.scope_valid = Mock(return_value=True)
+        app.production.context.return_value = None
+
+        def ask(_prompt, on_text, _on_tool, on_preview):
+            app.bridge.scope = "session-b"
+            on_preview("Ancienne réponse")
+            on_text("Ancienne réponse.")
+            return "Ancienne réponse."
+
+        app.conversation.ask.side_effect = ask
+        app.work_question("Une question ordinaire", None, None)
+        self.assertFalse(app.results("live_text"))
+        self.assertFalse(app.results("voice_text"))
+        app.on_answer(*app.results("answer")[0][1:])
+        app.speaker.add.assert_not_called()
+        app.run_actions.assert_not_called()
+        self.assertIn("connexion précédente", app.history[-1]["texte"])
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_voice_event_revalidates_connection_when_tk_delivers_it(self, _log):
+        app = Fixture()
+        app.question_scope = "session-a"
+        app.bridge.isolated = True
+        app.bridge.scope = app.question_scope
+        app.bridge.scope_valid = Mock(return_value=True)
+        app.production.context.return_value = None
+        app.conversation.ask.return_value = "Réponse en file."
+        app.work_question("Une question ordinaire", None, None)
+        ((_kind, words, scope),) = app.results("voice_text")
+        app.on_voice_text(words, scope)
+        app.speaker.add.assert_called_once_with(words)
+        app.speaker.add.reset_mock()
+        app.bridge.scope = "session-b"
+        app.on_voice_text(words, scope)
+        app.speaker.add.assert_not_called()
+
+    @patch("monifactory_assistant.application.conversation.log")
     def test_unverifiable_v2_never_falls_back_to_an_action_enabled_turn(self, _log):
         app = Fixture()
         app.production.context.side_effect = ValueError("Preuve native indisponible")

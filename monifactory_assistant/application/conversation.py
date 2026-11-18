@@ -123,12 +123,15 @@ class ConversationController:
             self.events.put(("talk_end",))
 
     def on_talk_start(self):
+        if self.recorder.stream is not None:
+            return
         self.talk_cancelled = self.busy or self.popup is not None
         if self.busy:
             self.notify("Patience, je réfléchis encore…", 4)
             return
         if self.talk_cancelled:
             return
+        self.recording_scope = self.world_scope()
         self.speaker.stop()
         self.shot = self.safe_screenshot()
         self.recorder.start()
@@ -144,11 +147,16 @@ class ConversationController:
         if self.talk_cancelled:
             return
         audio = self.recorder.stop()
+        if self.busy:
+            return
         self.set_status("")
+        if not self.question_scope_valid(self.recording_scope):
+            self.notify("Le monde a changé pendant l’enregistrement. Repose ta question.", 6)
+            return
         if audio is None or len(audio) < SAMPLE_RATE * 0.5:
             self.notify(f"Maintiens {HOTKEY_TALK.upper()} pendant que tu parles.", 4)
             return
-        self.start_question(None, audio)
+        self.start_question(None, audio, self.shot)
 
     def context(self, shot, with_storage=False, *, question=None):
         selection = (
@@ -211,22 +219,41 @@ class ConversationController:
             )
         return "\n".join(parts)
 
-    def start_question(self, text, audio):
-        self.question_scope = getattr(getattr(self, "bridge", None), "scope", None)
-        self.busy = True
-        self.set_status(
-            "Je transcris ta question…"
-            if audio is not None
-            else f"{ai_provider.label()} réfléchit…"
+    def world_scope(self):
+        return getattr(getattr(self, "bridge", None), "scope", None)
+
+    def question_scope_valid(self, scope):
+        bridge = getattr(self, "bridge", None)
+        return getattr(bridge, "isolated", False) is not True or (
+            bridge.scope == scope and (scope is None or bridge.scope_valid(scope))
         )
-        threading.Thread(
-            target=self.work_question, args=(text, audio, self.shot), daemon=True
-        ).start()
+
+    def start_question(self, text, audio, shot=None):
+        if self.busy:
+            self.notify("Patience, je réfléchis encore…", 4)
+            return False
+        if getattr(getattr(self, "recorder", None), "stream", None) is not None:
+            self.notify("Termine l’enregistrement vocal avant de poser une autre question.", 4)
+            return False
+        self.question_scope = self.world_scope()
+        self.busy = True
+        try:
+            self.set_status(
+                "Je transcris ta question…"
+                if audio is not None
+                else f"{ai_provider.label()} réfléchit…"
+            )
+            threading.Thread(
+                target=self.work_question, args=(text, audio, shot), daemon=True
+            ).start()
+        except Exception:
+            self.busy = False
+            self.status = ""
+            raise
+        return True
 
     def work_question(self, text, audio, shot):
-        bridge = getattr(self, "bridge", None)
         scope = getattr(self, "question_scope", None)
-        scoped = getattr(bridge, "isolated", False) is True
         timing = {"début": time.time()}  # pour le journal : où passe le temps
         try:
             if audio is not None:
@@ -236,6 +263,8 @@ class ConversationController:
                     raise RuntimeError(
                         "Je n'ai rien entendu : parle plus près du micro en tenant F8."
                     )
+            if not self.question_scope_valid(scope):
+                raise ValueError("Le monde a changé pendant la demande.")
             self.events.put(("status", f"« {text} » : {ai_provider.label()} réfléchit…"))
             self.events.put(("history", "toi", text))
             spoken = [0]
@@ -243,6 +272,8 @@ class ConversationController:
 
             def show_preview(partial):
                 nonlocal last_preview
+                if not self.question_scope_valid(scope):
+                    return None
                 now = time.monotonic()
                 if proof is not None:
                     if now - last_preview < 0.35 or not production.context_valid(proof):
@@ -256,7 +287,7 @@ class ConversationController:
             def on_text(partial):
                 timing.setdefault("premier mot", time.time())
                 partial = show_preview(partial)
-                if proof is not None:
+                if partial is None or proof is not None:
                     return  # Read the completed V2 explanation after revalidating it.
                 if len(partial) < spoken[0]:  # nouveau message de Codex
                     spoken[0] = 0
@@ -264,13 +295,9 @@ class ConversationController:
                 for match in SENTENCE_END.finditer(partial, spoken[0]):
                     cut = match.end()
                 if cut > spoken[0] and self.speak:
-                    self.speaker.add(partial[spoken[0] : cut])
+                    self.events.put(("voice_text", partial[spoken[0] : cut], scope))
                 spoken[0] = cut
 
-            if scoped and (
-                bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
-            ):
-                raise ValueError("Le monde a changé pendant la demande.")
             self.speaker.stop()
             production = getattr(self, "production", None)
             evidence = (
@@ -294,11 +321,12 @@ class ConversationController:
                 + guidance
                 + f"Ma question : {text}"
             )
-            on_tool = lambda name, data: self.events.put(("status", tool_status(name, data)))  # noqa: E731
 
-            if scoped and (
-                bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
-            ):
+            def on_tool(name, data):
+                if self.question_scope_valid(scope):
+                    self.events.put(("status", tool_status(name, data)))
+
+            if not self.question_scope_valid(scope):
                 raise ValueError("Le monde a changé pendant la préparation de la demande.")
             if proof is not None and not production.context_valid(proof):
                 raise ValueError(
@@ -306,8 +334,13 @@ class ConversationController:
                 )
             answer = self.conversation.ask(prompt, on_text, on_tool, show_preview)
             shown = readable(split_actions(answer)[0])
-            if self.speak and spoken[0] < len(shown) and proof is None:
-                self.speaker.add(shown[spoken[0] :])
+            if (
+                self.speak
+                and spoken[0] < len(shown)
+                and proof is None
+                and self.question_scope_valid(scope)
+            ):
+                self.events.put(("voice_text", shown[spoken[0] :], scope))
             result = ("answer", text, answer)
             self.events.put(result if proof is None else (*result, proof))
             timing["fin"] = time.time()
@@ -326,6 +359,10 @@ class ConversationController:
     def on_status(self, text):
         self.set_status(text)
 
+    def on_voice_text(self, text, scope):
+        if self.speak and self.question_scope_valid(scope):
+            self.speaker.add(text)
+
     def on_live_text(self, text, production_proof=None):
         if production_proof is not None and not self.production.context_valid(production_proof):
             visible = getattr(self, "production_message_proof", None)
@@ -338,11 +375,8 @@ class ConversationController:
                 self.message, self.message_until = "", 0
                 self.refresh(force=True)
             return
-        bridge = getattr(self, "bridge", None)
-        if getattr(bridge, "isolated", False) is True:
-            scope = getattr(self, "question_scope", None)
-            if bridge.scope != scope or scope is not None and not bridge.scope_valid(scope):
-                return
+        if not self.question_scope_valid(getattr(self, "question_scope", None)):
+            return
         self.message, self.message_until = text, 0
         self.production_message_proof = (text, 0, production_proof) if production_proof else None
         self.refresh()
@@ -362,9 +396,7 @@ class ConversationController:
         log(f"Q : {question}\nR : {answer}")
         answer, actions = split_actions(answer)
         answer = readable(answer)
-        if scoped and (
-            bridge.scope != scope or scope is not None and not bridge.scope_valid(scope)
-        ):
+        if not self.question_scope_valid(scope):
             self.add_history("claude", "Réponse de la connexion précédente · " + answer)
             self.refresh(force=True)
             return

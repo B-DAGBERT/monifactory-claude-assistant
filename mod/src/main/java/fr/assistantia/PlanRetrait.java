@@ -2,7 +2,9 @@ package fr.assistantia;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Predicate;
 
 /** Allocation exacte, indépendante de Minecraft. Les variantes partagent les mêmes réserves. */
@@ -17,6 +19,27 @@ public final class PlanRetrait {
             List<Prise> prises, long manquants, List<Integer> fournis, List<Integer> utilises) {
         public int total() {
             return prises.stream().mapToInt(Prise::quantite).sum();
+        }
+    }
+
+    /** Reste d'un lot calculé, réservé aux occurrences du même produit et de la même branche. */
+    static final class Surplus {
+        private final Map<Object, Long> restants = new HashMap<>();
+
+        int deduire(Object lot, int besoin) {
+            if (lot == null || besoin <= 0) return besoin;
+            Long reste = restants.get(lot);
+            if (reste == null) return besoin;
+            int utilise = (int) Math.min(besoin, reste);
+            if (reste == utilise) restants.remove(lot);
+            else restants.put(lot, reste - utilise);
+            return besoin - utilise;
+        }
+
+        void retenir(Object lot, int besoin, long production) {
+            if (lot == null) return;
+            long reste = besoin % production;
+            if (reste != 0) restants.put(lot, production - reste);
         }
     }
 

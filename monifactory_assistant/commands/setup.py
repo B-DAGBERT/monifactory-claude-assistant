@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.config import CONFIG, HERE, minecraft_dir, write_json
+from monifactory_assistant.persistence import atomic_json
 
 
 def check_instance(instance):
@@ -94,10 +96,22 @@ def artifact(root=None):
     return path
 
 
+def backup_manifest(backup):
+    manifest = json.loads((backup / "installation.json").read_text())
+    if (
+        not isinstance(manifest, dict)
+        or not isinstance(manifest.get("mods"), list)
+        or not all(assistant_jar(name) for name in manifest["mods"])
+        or type(manifest.get("script")) is not bool
+    ):
+        raise RuntimeError("Manifeste de sauvegarde du mod invalide.")
+    return manifest
+
+
 def restore_install(instance, backup):
     """Restore only this mod and its client script from a completed installation backup."""
     instance, backup = Path(instance), Path(backup)
-    manifest = json.loads((backup / "installation.json").read_text())
+    manifest = backup_manifest(backup)
     for name in manifest["mods"]:
         target = instance / "mods" / name
         temporary = target.with_suffix(".jar.tmp")
@@ -115,20 +129,127 @@ def restore_install(instance, backup):
         script.unlink(missing_ok=True)
 
 
-def install(instance, dry_run=False, *, jar=None, client_script=None):
+def assistant_jar(name):
+    return (
+        isinstance(name, str)
+        and name == Path(name).name
+        and "\\" not in name
+        and name.startswith("assistantia-")
+        and name.endswith(".jar")
+    )
+
+
+def pending_path(root):
+    return Path(root) / ".runtime/install-pending.json"
+
+
+def require_closed(game_running):
+    if game_running() is not False:
+        raise RuntimeError("Ferme Minecraft pour installer ou reprendre la mise à jour.")
+
+
+def stage_pair(instance, jar, script):
+    target = instance / "mods" / jar.name
+    client = instance / "kubejs/client_scripts/assistant_ia.js"
+    client.parent.mkdir(parents=True, exist_ok=True)
+    staged_jar, staged_script = target.with_suffix(".jar.tmp"), client.with_suffix(".js.tmp")
+    shutil.copy2(jar, staged_jar)
+    shutil.copy2(script, staged_script)
+    return target, client, staged_jar, staged_script
+
+
+def replace_pair(target, client, staged_jar, staged_script, replaced):
+    staged_jar.replace(target)
+    staged_script.replace(client)
+    for path in replaced:
+        if path != target:
+            path.unlink(missing_ok=True)
+
+
+def recover_install(instance, root, game_running, *, revision=None, remember=None):
+    """Restore the old pair or finish the target pair using only the durable local copies."""
+    from monifactory_assistant.commands.auto_update import digest
+
+    pending = pending_path(root)
+    try:
+        data = json.loads(pending.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False
+    if not isinstance(data, dict) or data.get("v") != 1:
+        raise RuntimeError("Journal de mise à jour invalide.")
+    if data.get("instance") != str(instance.resolve()) or not assistant_jar(data.get("jar")):
+        raise RuntimeError("La reprise concerne une autre instance Minecraft.")
+    ident = data.get("backup")
+    if not isinstance(ident, str) or not re.fullmatch(r"\d{8}-\d{6}-\d{6}", ident):
+        raise RuntimeError("Sauvegarde de la mise à jour non identifiable.")
+    backup = Path(root) / "backups" / ident
+    manifest = backup_manifest(backup)
+    before, target = data.get("before"), data.get("target")
+    if target is not None and (revision is None or revision not in (before, target)):
+        raise RuntimeError("La révision Git ne correspond plus à la mise à jour interrompue.")
+    jars = list((instance / "mods").glob("assistantia-*.jar"))
+    if {jar.name for jar in jars} - set(manifest["mods"]) - {data["jar"]}:
+        raise RuntimeError("Un autre JAR a été ajouté depuis l’interruption.")
+    script = instance / "kubejs/client_scripts/assistant_ia.js"
+    installed = (
+        len(jars) == 1
+        and jars[0].name == data["jar"]
+        and script.is_file()
+        and digest(jars[0]) == data.get("jar_sha256")
+        and digest(script) == data.get("script_sha256")
+    )
+    if target is not None and revision == target and (before != target or installed):
+        if not installed:
+            jar = backup / "nouvelle-version" / data["jar"]
+            client = jar.with_name("assistant_ia.js")
+            if digest(jar) != data.get("jar_sha256") or digest(client) != data.get("script_sha256"):
+                raise RuntimeError("Copie de la nouvelle version invalide.")
+            staged = stage_pair(instance, jar, client)
+            require_closed(game_running)
+            replace_pair(*staged, jars)
+        if remember is None:
+            raise RuntimeError("La mise à jour doit reprendre depuis son lanceur.")
+        remember(target, expected=data)
+    elif target is not None or not installed:
+        require_closed(game_running)
+        restore_install(instance, backup)
+    pending.unlink()
+    return True
+
+
+def install(
+    instance,
+    dry_run=False,
+    *,
+    jar=None,
+    client_script=None,
+    root=None,
+    game_running=None,
+    revisions=None,
+):
+    from monifactory_assistant.commands.auto_update import digest, minecraft_running
+
+    root = HERE if root is None else Path(root)
+    game_running = minecraft_running if game_running is None else game_running
     check_instance(instance)
     jar = artifact() if jar is None else Path(jar)
     client_script = HERE / "jeu/assistant_ia.js" if client_script is None else Path(client_script)
-    if not jar.is_file() or not client_script.is_file():
+    if not assistant_jar(jar.name) or not jar.is_file() or not client_script.is_file():
         raise RuntimeError("Compilation ou script client manquant : aucun fichier installé.")
-    target = instance / "mods" / jar.name
     script = instance / "kubejs/client_scripts/assistant_ia.js"
     replaced = sorted((instance / "mods").glob("assistantia-*.jar"))
     print(f"Instance : {instance}\nMod : {jar.name}\nScript client : {script}")
     if dry_run:
         print("Simulation : aucun fichier modifié.")
         return
-    backup = HERE / "backups" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    require_closed(game_running)
+    if revisions is None:
+        recover_install(instance, root, game_running)
+        replaced = sorted((instance / "mods").glob("assistantia-*.jar"))
+    pending = pending_path(root)
+    if pending.exists():
+        raise RuntimeError("Une mise à jour précédente est encore en attente de reprise.")
+    backup = root / "backups" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup.mkdir(parents=True)
     for path in [*replaced, script]:
         if path.is_file():
@@ -137,26 +258,40 @@ def install(instance, dry_run=False, *, jar=None, client_script=None):
         backup / "installation.json",
         {"mods": [p.name for p in replaced], "script": script.is_file()},
     )
-    publishing = False
+    # Préparer les deux membres et une copie durable avant de modifier l'installation.
+    staged = stage_pair(instance, jar, client_script)
+    incoming = backup / "nouvelle-version"
+    incoming.mkdir()
+    shutil.copy2(staged[2], incoming / jar.name)
+    shutil.copy2(staged[3], incoming / script.name)
+    require_closed(game_running)
+    before, revision = revisions or (None, None)
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(
+        pending,
+        dict(
+            v=1,
+            instance=str(instance.resolve()),
+            backup=backup.name,
+            before=before,
+            target=revision,
+            jar=jar.name,
+            jar_sha256=digest(staged[2]),
+            script_sha256=digest(staged[3]),
+        ),
+        backup=False,
+    )
+    require_closed(game_running)
     try:
-        temporary_jar = target.with_suffix(".jar.tmp")
-        temporary_script = script.with_suffix(".js.tmp")
-        script.parent.mkdir(parents=True, exist_ok=True)
-        # Finish both copies before replacing either member of the installed pair.
-        shutil.copy2(jar, temporary_jar)
-        shutil.copy2(client_script, temporary_script)
-        publishing = True
-        temporary_jar.replace(target)
-        temporary_script.replace(script)
-        for path in replaced:
-            if path != target:
-                path.unlink()  # already backed up, avoid duplicate mod IDs in Forge
+        replace_pair(*staged, replaced)
     except (Exception, KeyboardInterrupt, SystemExit):
         # Catchable cancellation also restores the pair, without swallowing the exit.
         # SIGKILL/power loss cannot run this rollback; the backup remains available.
-        if publishing:
-            restore_install(instance, backup)
+        restore_install(instance, backup)
+        pending.unlink()
         raise
+    if revisions is None:
+        pending.unlink()
     print(
         f"Installé. Sauvegarde de la version précédente : {backup}\nRedémarre Minecraft pour charger le nouveau .jar."
     )
@@ -193,19 +328,28 @@ def main():
             raise RuntimeError("--dry-run s’utilise avec setup ou install.")
         install(instance, dry_run=True)
         return
-    if args.command == "setup":
-        if not ai_provider.executable():
-            raise RuntimeError(
-                f"{ai_provider.label()} introuvable. Installe son CLI et connecte ton compte, ou ouvre Choisir IA."
-            )
-        write_json(
-            HERE / "assistant.local.json",
-            dict(CONFIG, provider=ai_provider.provider(), minecraft_dir=str(instance)),
-        )
-    if args.command in ("build", "setup"):
+    if args.command == "build":
         build(instance)
-    if args.command in ("install", "setup"):
-        install(instance)
+        return
+    from monifactory_assistant.commands.auto_update import minecraft_running
+    from monifactory_assistant.platform.support import SingleInstance
+
+    with SingleInstance() as acquired:
+        if not acquired:
+            raise RuntimeError("Arrête l’assistant avant d’installer le mod.")
+        require_closed(minecraft_running)
+        if args.command == "setup":
+            if not ai_provider.executable():
+                raise RuntimeError(
+                    f"{ai_provider.label()} introuvable. Installe son CLI et connecte ton compte, ou ouvre Choisir IA."
+                )
+            build(instance)
+        install(instance, game_running=minecraft_running)
+        if args.command == "setup":
+            write_json(
+                HERE / "assistant.local.json",
+                dict(CONFIG, provider=ai_provider.provider(), minecraft_dir=str(instance)),
+            )
 
 
 def cli():

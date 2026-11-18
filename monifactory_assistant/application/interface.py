@@ -124,15 +124,17 @@ class InterfaceController:
             log(traceback.format_exc())
 
     def check_mod_requests(self):
-        production = getattr(self, "production", None)
-        if production is not None and production.poll(self):
-            self.refresh(force=True)
-        if getattr(
-            getattr(self, "bridge", None), "isolated", False
-        ) is True and not self.bridge.scope_valid(self.bridge.scope):
-            self.root.after(300, self.check_mod_requests)
-            return
         try:
+            production = getattr(self, "production", None)
+            if production is not None and production.poll(self):
+                self.refresh(force=True)
+        except Exception:
+            log(traceback.format_exc())
+        try:
+            if getattr(
+                getattr(self, "bridge", None), "isolated", False
+            ) is True and not self.bridge.scope_valid(self.bridge.scope):
+                return
             ai_settings = getattr(self, "ai_settings", None)
             if ai_settings is not None and ai_settings.poll(self.bridge, self):
                 self.refresh(force=True)
@@ -166,7 +168,6 @@ class InterfaceController:
                 if getattr(
                     getattr(self, "bridge", None), "isolated", False
                 ) is True and not self.bridge.accepts(request):
-                    self.root.after(300, self.check_mod_requests)
                     return
                 legacy_n = getattr(self, "legacy_request_n", None)
                 if request.get("n") != legacy_n and recent:
@@ -192,7 +193,8 @@ class InterfaceController:
             pass  # fichier en cours d'écriture : on relira au prochain passage
         except Exception:
             log(traceback.format_exc())
-        self.root.after(300, self.check_mod_requests)
+        finally:
+            self.root.after(300, self.check_mod_requests)
 
     def restore_request_reply(self, request, result):
         if getattr(
@@ -252,15 +254,15 @@ class InterfaceController:
         kind = request.get("type")
         # Les demandes d'un ancien mod (projet, objectif, étape) sont ignorées sans erreur.
         if kind == "question" and request.get("texte"):
-            self.question_ack = {
-                "n": request.get("n"),
-                "etat": "refusee" if self.busy else "acceptee",
-            }
+            accepted = False
             if self.busy:
                 self.notify("Patience, je réfléchis encore…", 4)
             else:
-                self.shot = None
-                self.start_question(str(request["texte"]), None)
+                accepted = self.start_question(str(request["texte"]), None)
+            self.question_ack = {
+                "n": request.get("n"),
+                "etat": "acceptee" if accepted else "refusee",
+            }
         elif kind == "info" and request.get("item"):
             self.show_info(request)
         elif kind == "reglage":
@@ -295,7 +297,7 @@ class InterfaceController:
         if self.busy:
             self.notify("Patience, je réfléchis encore…", 4)
             return
-        if self.popup:
+        if self.popup or getattr(getattr(self, "recorder", None), "stream", None) is not None:
             return
         self.speaker.stop()
         self.previous_window = user32.GetForegroundWindow() if user32 else None
@@ -385,7 +387,7 @@ class InterfaceController:
         text = self.entry.get().strip()
         self.close_popup()
         if text:
-            self.start_question(text, None)
+            self.start_question(text, None, self.shot)
 
     def build_overlay(self):
         self.overlay = overlay = tk.Toplevel(self.root, bg=BG)

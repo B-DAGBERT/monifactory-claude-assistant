@@ -1,78 +1,100 @@
 """Update from main; migrate clean legacy checkouts without discarding any commits."""
 
-import os
-import shutil
 import subprocess
 import sys
-from pathlib import Path
 
-from monifactory_assistant.paths import ROOT as HERE
+from monifactory_assistant.commands.auto_update import AutoUpdater
+from monifactory_assistant.commands.setup import pending_path
+from monifactory_assistant.config import HERE, minecraft_dir
+from monifactory_assistant.platform.support import SingleInstance
 
 BRANCH = "main"
 LEGACY_BRANCHES = ("shared-assistant", "codex-compat")
+TARGET = "origin/" + BRANCH
+MAIN_REFSPEC = f"refs/heads/{BRANCH}:refs/remotes/{TARGET}"
+COMPLETE = {"updated", "current"}
+
+
+def switch_legacy_to_main(updater):
+    if updater.git("status", "--porcelain"):
+        raise RuntimeError("Mise à jour annulée. Conserve d’abord tes modifications dans Git.")
+    # Explicit destination also works for old --single-branch clones.
+    updater.git("fetch", "origin", MAIN_REFSPEC)
+    existing_main = bool(updater.git("branch", "--list", BRANCH))
+    for ref in ("HEAD", BRANCH) if existing_main else ("HEAD",):
+        try:
+            updater.git("merge-base", "--is-ancestor", ref, TARGET)
+        except subprocess.CalledProcessError as error:
+            raise RuntimeError(
+                f"Mise à jour annulée. {ref} contient des commits absents de main."
+            ) from error
+    if existing_main:
+        updater.git("switch", "--no-overwrite-ignore", BRANCH)
+    else:
+        # Create the alias at the installed checkout, leaving the release advance to the updater.
+        updater.git("switch", "--no-overwrite-ignore", "--no-track", "-c", BRANCH)
+    return not existing_main
+
+
+def track_main(updater):
+    # Register main for future plain git pull commands, including single-branch clones.
+    try:
+        refspecs = updater.git("config", "--get-all", "remote.origin.fetch").splitlines()
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 1:
+            raise
+        refspecs = []
+    if not any(
+        ref.lstrip("+") in (MAIN_REFSPEC, "refs/heads/*:refs/remotes/origin/*") for ref in refspecs
+    ):
+        updater.git("config", "--add", "remote.origin.fetch", "+" + MAIN_REFSPEC)
+    updater.git("branch", "--set-upstream-to=" + TARGET, BRANCH)
 
 
 def main():
-    git = next(
-        (p for p in ("/opt/homebrew/bin/git", "/usr/local/bin/git") if Path(p).is_file()),
-        shutil.which("git"),
-    )
-    if not git:
-        raise RuntimeError("Git introuvable. Installe Git avant de mettre à jour.")
-
-    def run(*args):
-        return subprocess.check_output([git, *args], cwd=HERE, text=True).strip()
-
-    current = run("branch", "--show-current")
-    if current not in (BRANCH, *LEGACY_BRANCHES):
-        raise RuntimeError(
-            "Mise à jour annulée : utilise la branche main, pas une branche de développement."
-        )
-    if run("status", "--porcelain"):
-        raise RuntimeError("Mise à jour annulée : conserve d'abord tes modifications dans Git.")
-    # Explicit destination also works for old --single-branch clones.
-    target = "origin/" + BRANCH
-    run("fetch", "origin", f"refs/heads/{BRANCH}:refs/remotes/{target}")
-
-    def require_published(ref):
+    with SingleInstance() as acquired:
+        if not acquired:
+            raise RuntimeError("Arrête l’assistant puis relance la mise à jour.")
+        updater = AutoUpdater(HERE, minecraft_dir())
+        if not updater.git_bin:
+            raise RuntimeError("Git introuvable. Installe Git avant de mettre à jour.")
+        current = updater.git("branch", "--show-current")
+        if current not in (BRANCH, *LEGACY_BRANCHES):
+            raise RuntimeError("Mise à jour annulée. Utilise la branche main.")
+        legacy = current != BRANCH
+        created = switch_legacy_to_main(updater) if legacy else False
+        before = updater.git("rev-parse", "HEAD") if legacy else None
+        state = None
         try:
-            run("merge-base", "--is-ancestor", ref, target)
-        except subprocess.CalledProcessError as error:
-            raise RuntimeError(
-                f"Mise à jour annulée : {ref} contient des commits absents de main. "
-                "Fais-les intégrer avant de mettre à jour ; aucun commit n’a été supprimé."
-            ) from error
-
-    require_published("HEAD")
-    if current != BRANCH and run("branch", "--list", BRANCH):
-        require_published(BRANCH)
-    if current != BRANCH:
-        if run("branch", "--list", BRANCH):
-            run("switch", "--no-overwrite-ignore", BRANCH)
-        else:
-            run("switch", "--no-overwrite-ignore", "--no-track", "-c", BRANCH, target)
-    run("merge", "--no-overwrite-ignore", "--ff-only", target)
-    # Register main for future plain git pull commands, including single-branch clones.
-    refspecs = run("config", "--get-all", "remote.origin.fetch").splitlines()
-    main_refspec = f"refs/heads/{BRANCH}:refs/remotes/origin/{BRANCH}"
-    if not any(
-        ref.lstrip("+") in (main_refspec, "refs/heads/*:refs/remotes/origin/*") for ref in refspecs
-    ):
-        run("config", "--add", "remote.origin.fetch", "+" + main_refspec)
-    run("branch", "--set-upstream-to=" + target, BRANCH)
-    print("Source des mises à jour : main (Claude et Codex).", flush=True)
-    installer = (
-        ["cmd", "/c", "Installer.bat"] if os.name == "nt" else ["bash", "Installer Mac.command"]
-    )
-    subprocess.run(installer, cwd=HERE, check=True)
+            state = updater.check()["state"]
+        finally:
+            # An interrupted installation must resume from main with its journal intact.
+            if (
+                legacy
+                and state not in COMPLETE
+                and not pending_path(HERE).exists()
+                and updater.git("branch", "--show-current") == BRANCH
+                and updater.git("rev-parse", "HEAD") == before
+                and not updater.git("status", "--porcelain")
+            ):
+                updater.git("switch", "--no-overwrite-ignore", current)
+                if created:
+                    updater.git("branch", "-d", BRANCH)
+        if state in COMPLETE:
+            track_main(updater)
+            if state == "current":
+                print("Monifactory Assistant est à jour.", flush=True)
+            return 0
+        return 1
 
 
 def cli():
     try:
-        main()
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        result = main()
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         print(f"Erreur : {error}", file=sys.stderr)
-        sys.exit(1)
+        result = 1
+    sys.exit(result)
 
 
 if __name__ == "__main__":

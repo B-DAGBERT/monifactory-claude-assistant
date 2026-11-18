@@ -5,6 +5,7 @@ import queue
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -84,6 +85,54 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual((root / name).read_text(), '{"preserve":true}')
             self.assertEqual(json.loads((root / "codex.local.json").read_text()), legacy)
 
+    def test_selection_recovers_local_settings_when_only_backup_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backup = root / "assistant.local.json.bak"
+            saved = {
+                "provider": "codex",
+                "minecraft_dir": "fixture",
+                "providers": {
+                    "claude": {
+                        "model_question": "opus",
+                    }
+                },
+            }
+            backup.write_text(json.dumps(saved))
+            with patch.object(choose_ai, "HERE", root):
+                choose_ai.select("claude")
+            self.assertEqual(
+                json.loads((root / "assistant.local.json").read_text()),
+                {**saved, "provider": "claude"},
+            )
+            self.assertEqual(json.loads(backup.read_text()), saved)
+
+    def test_selection_does_not_rotate_a_json_array_over_a_valid_settings_backup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main = root / "assistant.local.json"
+            backup = root / "assistant.local.json.bak"
+            main.write_text("[]")
+            saved = {"provider": "codex", "auto_update": False}
+            backup.write_text(json.dumps(saved))
+            with patch.object(choose_ai, "HERE", root):
+                choose_ai.select("claude")
+            self.assertEqual(json.loads(main.read_text()), {**saved, "provider": "claude"})
+            self.assertEqual(json.loads(backup.read_text()), saved)
+
+    def test_selection_refuses_to_replace_unreadable_settings_and_backup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main, backup = (
+                root / name for name in ("assistant.local.json", "assistant.local.json.bak")
+            )
+            main.write_text("{interrupted")
+            backup.write_text("[]")
+            with patch.object(choose_ai, "HERE", root), self.assertRaises(ValueError):
+                choose_ai.select("claude")
+            self.assertEqual(main.read_text(), "{interrupted")
+            self.assertEqual(backup.read_text(), "[]")
+
     def test_setup_claude_does_not_require_codex(self):
         with (
             tempfile.TemporaryDirectory() as directory,
@@ -93,6 +142,13 @@ class SelectionTests(unittest.TestCase):
             patch.object(codex_setup, "check_instance"),
             patch.object(codex_setup, "build"),
             patch.object(codex_setup, "install"),
+            patch(
+                "monifactory_assistant.commands.auto_update.minecraft_running", return_value=False
+            ),
+            patch(
+                "monifactory_assistant.platform.support.SingleInstance",
+                return_value=nullcontext(True),
+            ),
             patch.object(ai_provider, "CONFIG", {"provider": "claude"}),
             patch.object(ai_provider, "find_claude", return_value="/fake/claude"),
             patch.object(

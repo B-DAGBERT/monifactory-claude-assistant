@@ -33,6 +33,7 @@ public final class PlanArbre {
         int[] retraits = new int[stocks.size()];
         List<MemoireCollecte.Ingredient> manquants = new ArrayList<>();
         Map<Set<String>, Integer> outils = new LinkedHashMap<>();
+        var surplus = new PlanRetrait.Surplus();
         List<Demande> niveau =
                 List.of(new Demande(racine, multiplier(racine.quantite(), Math.max(1, lots))));
         int profondeur = 0, visites = 0;
@@ -60,11 +61,13 @@ public final class PlanArbre {
             for (int i = 0; i < niveau.size(); i++) {
                 var node = niveau.get(i).noeud();
                 int manque = demandes.get(i) - allocation.fournis().get(i);
+                if (!node.reutilisable()) manque = surplus.deduire(node.lotIdentique(), manque);
                 if (manque <= 0) continue; // Le composant couvre toute sa branche.
                 if (!node.variantes().isEmpty())
                     manquants.add(new MemoireCollecte.Ingredient(node.variantes(), manque));
                 long production = Math.max(1, node.production());
                 long fabrications = manque / production + (manque % production == 0 ? 0 : 1);
+                if (!node.reutilisable()) surplus.retenir(node.lotIdentique(), manque, production);
                 for (var enfant : node.enfants())
                     suite.add(
                             new Demande(

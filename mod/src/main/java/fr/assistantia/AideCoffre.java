@@ -31,9 +31,6 @@ public final class AideCoffre {
     private static long actualise, signature, revision;
     private static int page;
 
-    /** Bloc visé à l'ouverture : son contenu réel remplace sa copie mémorisée. */
-    private static net.minecraft.core.BlockPos ouvert;
-
     private AideCoffre() {}
 
     @SubscribeEvent
@@ -44,17 +41,11 @@ public final class AideCoffre {
                 || !RetraitCoffre.estCoffre(screen.getMenu())) return;
         ecran = screen;
         occupee = PanneauAssistant.occupee(screen);
-        var mc = Minecraft.getInstance();
-        ouvert =
-                mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult bloc
-                                && bloc.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
-                        ? bloc.getBlockPos().immutable()
-                        : null;
     }
 
-    /** Position du coffre de cet écran, si le joueur l'a ouvert en le visant. */
+    /** Position liée à ce menu, pour remplacer son relevé mémorisé par ses vraies cases. */
     public static net.minecraft.core.BlockPos position(Screen screen) {
-        return screen == ecran ? ouvert : null;
+        return screen == ecran ? CoffreTampon.positionOuverte() : null;
     }
 
     public static void vider() {

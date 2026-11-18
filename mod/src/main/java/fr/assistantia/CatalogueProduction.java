@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.loading.FMLPaths;
 
@@ -52,6 +53,9 @@ public final class CatalogueProduction {
     private static boolean writing;
     private static String lastProof = "";
     private static BasicFileAttributes lastProofFile;
+    private static PreuvePreparee preuvePreparee;
+
+    private record PreuvePreparee(JsonObject preuve, long token, Path temporaire) {}
 
     private CatalogueProduction() {}
 
@@ -118,20 +122,16 @@ public final class CatalogueProduction {
         }
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
         synchronized (LOCK) {
-            if (capture == null) return;
-            if (!valide()) {
+            if (capture != null && !valide())
                 echec("L'arbre EMI ou le monde a changé. Relance le calcul.");
-                return;
-            }
-            if ("pret".equals(chaine(state, "etat"))) {
-                repondrePreuve();
-                return;
-            }
-            if (writing) return;
+            boolean pret = capture != null && "pret".equals(chaine(state, "etat"));
+            if (pret) repondrePreuve();
+            publierPreuvePreparee(pret);
+            if (capture == null || pret || writing) return;
             try {
                 if (!(boolean) call("avancer")) {
                     JsonObject progress = (JsonObject) call("metadata");
@@ -186,11 +186,9 @@ public final class CatalogueProduction {
                     || proof.size() != PROOF_CONTEXT.size() + 4
                     || !new com.google.gson.JsonPrimitive(2).equals(proof.get("v"))) return;
             for (String key : PROOF_CONTEXT) if (!state.get(key).equals(proof.get(key))) return;
-            if (!InventaireProduction.valideCapture(
-                    chaine(proof, "capture"), chaine(proof, "capture_sha256"))) return;
             lastProof = nonce;
             long token = request;
-            WRITER.execute(() -> ecrirePreuve(proof, token));
+            WRITER.execute(() -> preparerPreuve(proof, token));
         } catch (Exception ignored) {
             // A missing, locked or malformed challenge receives no positive attestation.
         }
@@ -221,18 +219,45 @@ public final class CatalogueProduction {
                 WRITER);
     }
 
-    private static void ecrirePreuve(JsonObject proof, long token) {
+    private static void preparerPreuve(JsonObject proof, long token) {
         if (token != EPOCH.get()) return;
         Path temporary = null;
         try {
             temporary = PublicationCatalogue.preparer(PROOF_REPLY, proof);
             synchronized (LOCK) {
-                if (token == EPOCH.get()) PublicationCatalogue.publier(temporary, PROOF_REPLY);
+                if (token != EPOCH.get() || !lastProof.equals(chaine(proof, "nonce"))) return;
+                var ancienne = preuvePreparee;
+                preuvePreparee = new PreuvePreparee(proof, token, temporary);
+                temporary = ancienne == null ? null : ancienne.temporaire();
             }
         } catch (Exception ignored) {
             // Python times out instead of accepting an acknowledgement from an older challenge.
         } finally {
             nettoyer(temporary);
+        }
+    }
+
+    /** Sous LOCK, après mise à jour de l'inventaire et validation du catalogue au tick client. */
+    private static void publierPreuvePreparee(boolean pret) {
+        var preparee = preuvePreparee;
+        if (preparee == null) return;
+        preuvePreparee = null;
+        boolean published = false;
+        try {
+            var proof = preparee.preuve();
+            if (!pret
+                    || preparee.token() != EPOCH.get()
+                    || !lastProof.equals(chaine(proof, "nonce"))
+                    || !InventaireProduction.valideCapture(
+                            chaine(proof, "capture"), chaine(proof, "capture_sha256"))) return;
+            // Seul le renommage reste sur le thread client. Les données natives et l'arbre ne
+            // peuvent pas changer entre cette dernière vérification et la publication.
+            PublicationCatalogue.publier(preparee.temporaire(), PROOF_REPLY);
+            published = true;
+        } catch (Exception ignored) {
+            // Un problème de validation ou de remplacement ne produit pas d'acquittement.
+        } finally {
+            if (!published) WRITER.execute(() -> nettoyer(preparee.temporaire()));
         }
     }
 

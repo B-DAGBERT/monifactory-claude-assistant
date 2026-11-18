@@ -157,6 +157,12 @@ l’appliquer. Il n’y a pas de surveillance permanente ni de remplacement à c
 Sur Windows, la fenêtre de lancement affiche la préparation ; les détails sont dans
 `.runtime/update.log`. Une erreur réseau ou de compilation laisse la version installée en place.
 
+Après une interruption de l’installation, fermer Minecraft et relancer l’assistant ou **Mettre à jour**.
+Le journal local permet de restaurer le JAR et le script précédents si Git est encore sur l’ancienne
+révision, ou de terminer l’installation du couple prévu si Git a déjà avancé. La reprise fonctionne
+hors ligne. Si Git a changé entre-temps ou si les fichiers sont verrouillés, le lanceur suspend le
+démarrage et conserve le journal et la sauvegarde pour le prochain essai.
+
 Si une mise à jour Python est déjà installée mais que **Réglages** affiche encore d’anciennes
 options, relancer l’assistant seul actualise la liste pendant que Minecraft reste ouvert.
 **Y → Réglages → Diagnostic…** affiche la révision de l’assistant en cours d’exécution.
@@ -169,8 +175,9 @@ Pour activer cette nouveauté sur une ancienne installation, effectuer une fois 
 manuelle ci-dessous. Elle reste également disponible en dépannage.
 
 Fermer l’assistant et Minecraft, puis lancer **Mettre à jour.command** ou **Mettre à jour.bat**.
-Le lanceur récupère `origin/main`, vérifie l’absence de modifications locales et accepte uniquement
-une avance rapide. Les installations sur `shared-assistant` ou `codex-compat` passent sur `main`
+La commande suit la même procédure d’installation que le lanceur automatique. Elle récupère
+`origin/main`, vérifie l’absence de modifications locales et accepte uniquement une avance
+rapide. Les installations sur `shared-assistant` ou `codex-compat` passent sur `main`
 si tous leurs commits y sont déjà intégrés. Une branche de développement, un HEAD détaché ou
 un commit local absent de main arrête la mise à jour. Une branche locale main contenant des
 commits non publiés est également conservée, sans changer de branche ni lancer l’installation.

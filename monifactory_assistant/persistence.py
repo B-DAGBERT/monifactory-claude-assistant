@@ -81,7 +81,7 @@ def backup_json(path, raw=None):
         _replace_bytes(path.with_name(path.name + ".bak"), raw, mode)
 
 
-def atomic_json(path, value, *, backup=True, compact=False):
+def atomic_json(path, value, *, backup=True, compact=False, backup_kind=None):
     path = Path(path)
     raw = json.dumps(
         value,
@@ -98,7 +98,7 @@ def atomic_json(path, value, *, backup=True, compact=False):
                 if previous == raw:
                     return
                 try:
-                    json.loads(previous)
+                    _decode(previous, backup_kind)
                 except (ValueError, UnicodeError):
                     pass  # Never replace a valid backup with an interrupted old file.
                 else:

@@ -341,6 +341,7 @@ public final class ProductionCatalogueTest {
         Files.writeString(proofRequest, proof.toString());
         CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
         check(
                 !Files.exists(proofReply),
                 "a correct capture ID with a substituted digest cannot be attested");
@@ -349,12 +350,65 @@ public final class ProductionCatalogueTest {
         Files.writeString(proofRequest, proof.toString());
         CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        check(!Files.exists(proofReply), "writer prepares without publishing a proof");
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
         check(
                 JsonParser.parseString(Files.readString(proofReply)).equals(proof),
                 "fresh catalogue and capture attest together");
         var preview = new JsonObject();
         preview.add("catalogue_production", proof.deepCopy());
         check(CatalogueProduction.apercuCourant(preview), "live preview is visible");
+        var staleCapture = proof.deepCopy();
+        staleCapture.addProperty("nonce", "e".repeat(32));
+        CountDownLatch unblockPreparation = new CountDownLatch(1);
+        writer.execute(
+                () -> {
+                    try {
+                        unblockPreparation.await();
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+        try {
+            Files.writeString(proofRequest, staleCapture.toString());
+            CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+            InventaireProduction.expected = "";
+            check(!CatalogueProduction.apercuCourant(preview), "stock changed after queueing");
+        } finally {
+            unblockPreparation.countDown();
+        }
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        check(
+                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                "capture invalidated while the writer was blocked cannot attest");
+        InventaireProduction.expected = frameDigest;
+
+        proof.addProperty("nonce", "f".repeat(32));
+        Files.writeString(proofRequest, proof.toString());
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        check(
+                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                "a fresh nonce still works after rejection");
+
+        staleCapture.addProperty("nonce", "a".repeat(32));
+        Files.writeString(proofRequest, staleCapture.toString());
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        InventaireProduction.expected = "";
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        check(
+                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                "capture invalidated after preparation cannot attest");
+        InventaireProduction.expected = frameDigest;
+
+        var staleEpoch = proof.deepCopy();
+        staleEpoch.addProperty("nonce", "b".repeat(32));
+        Files.writeString(proofRequest, staleEpoch.toString());
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
         CountDownLatch unblockWriter = new CountDownLatch(1);
         writer.execute(
                 () -> {
@@ -367,8 +421,6 @@ public final class ProductionCatalogueTest {
         try {
             CatalogueProduction.rechargement();
             CatalogueProduction.rechargement();
-            proof.addProperty("nonce", "b".repeat(32));
-            Files.writeString(proofRequest, proof.toString());
             CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
             check(
                     !CatalogueProduction.apercuCourant(preview),
@@ -381,8 +433,8 @@ public final class ProductionCatalogueTest {
         }
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
         check(
-                !JsonParser.parseString(Files.readString(proofReply)).equals(proof),
-                "old marker cannot attest a new nonce");
+                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                "prepared proof cannot be published after a catalogue reload");
         status = JsonParser.parseString(Files.readString(marker)).getAsJsonObject();
         check(
                 status.get("etat").getAsString().equals("indisponible"),

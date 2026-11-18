@@ -162,19 +162,24 @@ class AutoUpdater:
         except OSError:
             return False
 
-    def remember_install(self, revision):
+    def remember_install(self, revision, *, expected=None):
         jars = list((self.instance / "mods").glob("assistantia-*.jar"))
         if len(jars) != 1:
             raise RuntimeError("Un seul mod assistantia doit être installé.")
+        files = dict(
+            jar=jars[0].name,
+            jar_sha256=digest(jars[0]),
+            script_sha256=digest(self.instance / "kubejs/client_scripts/assistant_ia.js"),
+        )
+        if expected is not None and any(expected.get(key) != value for key, value in files.items()):
+            raise RuntimeError("Le JAR ou le script a changé avant la confirmation.")
         atomic_json(
             self.receipt,
             dict(
                 revision=revision,
                 payload=self.payload(revision),
                 instance=str(self.instance.resolve()),
-                jar=jars[0].name,
-                jar_sha256=digest(jars[0]),
-                script_sha256=digest(self.instance / "kubejs/client_scripts/assistant_ia.js"),
+                **files,
             ),
         )
 
@@ -242,25 +247,53 @@ class AutoUpdater:
             180,
         )
 
-    def deploy(self, stage):
+    def deploy(self, stage, before, target):
         from monifactory_assistant.commands import setup
 
         return setup.install(
-            self.instance, jar=setup.artifact(stage), client_script=stage / "jeu/assistant_ia.js"
+            self.instance,
+            jar=setup.artifact(stage),
+            client_script=stage / "jeu/assistant_ia.js",
+            root=self.root,
+            game_running=self.game_running,
+            revisions=(before, target),
         )
 
-    def restore(self, backup):
-        from monifactory_assistant.commands.setup import restore_install
+    def recover(self):
+        from monifactory_assistant.commands.setup import pending_path, recover_install
 
-        restore_install(self.instance, backup)
+        if not pending_path(self.root).exists():
+            return False
+        revision = None
+        if self.git_bin and (self.root / ".git").exists():
+            revision = self.git("rev-parse", "HEAD")
+            if self.git("status", "--porcelain"):
+                raise RuntimeError(
+                    "Le dépôt a changé pendant l’installation. La reprise est suspendue."
+                )
+        return recover_install(
+            self.instance,
+            self.root,
+            self.game_running,
+            revision=revision,
+            remember=self.remember_install,
+        )
 
-    def check(self):
+    def check(self, *, update=True):
+        from monifactory_assistant.commands.setup import pending_path
+
         self.runtime.mkdir(parents=True, exist_ok=True)
         try:
-            return self._check()
+            self.recover()
+            return self._check() if update else self.status("disabled")
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
             with (self.runtime / "update.log").open("a", encoding="utf-8") as log:
                 traceback.print_exc(file=log)
+            if pending_path(self.root).exists():
+                return self.status(
+                    "repair_pending",
+                    "Installation à reprendre · ferme Minecraft et relance l’assistant. Voir .runtime/update.log.",
+                )
             return self.status(
                 "failed",
                 "Mise à jour reportée : vérifie .runtime/update.log. La version disponible démarre.",
@@ -290,7 +323,8 @@ class AutoUpdater:
             return self.status(
                 "local_commits", "Mise à jour suspendue : commits locaux à publier sur main."
             )
-        need_mod = not self.installed(self.payload(target))
+        payload = self.payload(target)
+        need_mod = not self.installed(payload)
         if before == target and not need_mod:
             return self.status("current")
         if self.game_running() is not False:
@@ -344,14 +378,20 @@ class AutoUpdater:
                     "Mise à jour reportée : le dossier a changé pendant la préparation.",
                 )
             if need_mod:
-                backup = self.deploy(stage)
+                backup = self.deploy(stage, before, target)
+            elif not self.installed(payload):
+                return self.status(
+                    "local_changes",
+                    "Mise à jour reportée : le JAR ou le script a changé pendant la préparation.",
+                )
             try:
                 self.git("merge", "--no-overwrite-ignore", "--ff-only", target, timeout=30)
             except (OSError, subprocess.SubprocessError):
                 if backup is not None:
-                    self.restore(backup)
+                    self.recover()
                 raise
-            self.remember_install(target)
+            if backup is not None:
+                self.recover()
             return self.status(
                 "updated", "Mise à jour installée · tu peux lancer Minecraft.", revision=target
             )
@@ -367,6 +407,4 @@ def check_at_startup():
     from monifactory_assistant.config import CONFIG, minecraft_dir
 
     updater = AutoUpdater(ROOT, minecraft_dir())
-    if CONFIG.get("auto_update", True) is False:
-        return updater.status("disabled")
-    return updater.check()
+    return updater.check(update=CONFIG.get("auto_update", True) is not False)

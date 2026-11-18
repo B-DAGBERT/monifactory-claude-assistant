@@ -146,6 +146,7 @@ import net.minecraftforge.fluids.capability.templates.FluidTank;
 import net.minecraftforge.fluids.FluidUtil;
 public class GregTechMachines {
     public static Interface ui;public static boolean busy;public static int configuration=7,machineCircuit=-2;
+    public static dev.emi.emi.api.recipe.EmiRecipe recetteActive;
     public static List<Slot> outputSlots=List.of();
     public static List<Slot> sorties(AbstractContainerMenu menu)throws ReflectiveOperationException{return outputSlots;}
     public record Content(Object content) {}
@@ -163,6 +164,8 @@ public class GregTechMachines {
     public static Interface ouvrir(AbstractContainerMenu menu)throws ReflectiveOperationException{return ui;}
     public static boolean compatible(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return true;}
     public static boolean occupe(Object m){return busy;}
+    public static boolean enMarche(Object m){return busy;}
+    public static boolean execute(Object m,dev.emi.emi.api.recipe.EmiRecipe r){return busy&&recetteActive==r;}
     public static int circuit(ItemStack s){return s.tag;}
     public static int circuitConfigure(Interface ui) throws ReflectiveOperationException {return machineCircuit!=-2?machineCircuit:ui.circuit() instanceof ItemStack s&&!s.isEmpty()?s.tag:-1;}
     public static void reglerCircuit(Object w,int v){throw new AssertionError("Le réglage machine ne doit pas être modifié");}
@@ -285,6 +288,14 @@ class MachineInputTests(unittest.TestCase):
 
     def test_machine_preview_refuses_blocked_destinations_without_moving_inputs(self):
         self.rejouer_cycle("preconditions")
+
+    def test_machine_requires_destination_confirmation_or_the_expected_recipe_started(self):
+        self.rejouer_cycle(
+            "destination-corrigee",
+            "cuve-corrigee",
+            "consommation-immediate",
+            "autre-recette-demarree",
+        )
 
     def test_machine_circuit_changes_preserve_items_and_stop_unconfirmed_transfers(self):
         self.rejouer_cycle(

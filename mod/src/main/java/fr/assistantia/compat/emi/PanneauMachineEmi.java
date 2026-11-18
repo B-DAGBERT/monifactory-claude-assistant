@@ -173,7 +173,7 @@ final class PanneauMachineEmi {
                         d.prendre(),
                         circuit ? "Circuit" : "Envoyer",
                         Theme.Genre.PRINCIPAL,
-                        libre && plan != null && plan.possible(),
+                        libre && synchronise && plan != null && plan.possible(),
                         mx,
                         my);
         boolean surDeclaration =
@@ -216,7 +216,7 @@ final class PanneauMachineEmi {
                                                 + "/"
                                                 + ((locales.size() - 1) / d.parPage() + 1)));
         }
-        if (surEnvoi || d.titre().contient(mx, my)) {
+        if (surEnvoi || d.prendre().contient(mx, my) || d.titre().contient(mx, my)) {
             tooltip = new ArrayList<>();
             tooltip.add(Component.literal(nom));
             if (!titre.equals(nom))
@@ -238,6 +238,10 @@ final class PanneauMachineEmi {
                                     "Règle le numéro dans la configuration de la machine. Aucun envoi avant confirmation du bon réglage."));
                 for (String s : plan.details()) tooltip.add(Component.literal(s));
             }
+            if (!synchronise)
+                tooltip.add(
+                        Component.literal(
+                                "Inventaire en cours de synchronisation. Ouvre le backpack si la lecture n’aboutit pas."));
             if (!statut.isEmpty() && !statut.equals(nom)) tooltip.add(Component.literal(statut));
         }
         if (surDeclaration)

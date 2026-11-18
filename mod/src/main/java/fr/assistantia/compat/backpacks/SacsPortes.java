@@ -14,6 +14,9 @@ import net.minecraftforge.registries.ForgeRegistries;
  * tick : sans changement, rien n'est copié ni recompté et le même relevé est rendu.
  */
 public final class SacsPortes {
+    private static final long DELAI_REPRISE = 4000;
+    private static final int MAX_REQUETES = 3;
+
     public record Etat(List<ItemStack> objets, boolean synchronise) {}
 
     public interface Reponse {
@@ -52,7 +55,7 @@ public final class SacsPortes {
         List<ItemStack> objets = List.of(); // copies privées, jamais modifiées ensuite
         List<UUID> imbriques = List.of(); // sacs contenus, dans l'ordre des objets
         long requete = -10000, recu = -1, revisionRequete = -1, revisionRecue = -1;
-        boolean attente;
+        int enVol;
         Tag marqueur;
 
         void contenu(List<ItemStack> copies) {
@@ -149,13 +152,16 @@ public final class SacsPortes {
     public void accepter(UUID id, CompoundTag nbt) {
         var r = releves.get(id);
         if (r == null || nbt == null) return;
-        r.contenu(decoder(nbt));
         r.marqueur = nbt.get("inventory");
+        if (r.enVol > 0) {
+            r.enVol--;
+            // Les réponses n'ont pas de numéro. Toute reprise d'une demande en vol porte
+            // la même révision. Elle ne doit jamais valider un inventaire modifié entre-temps.
+            if (r.revisionRequete != revision) return;
+            r.revisionRecue = r.revisionRequete;
+        }
+        r.contenu(decoder(nbt));
         r.recu = maintenant;
-        // Une réponse partie avant le dernier déplacement d'inventaire ne valide pas ce
-        // déplacement.
-        if (r.attente) r.revisionRecue = r.revisionRequete;
-        r.attente = false;
     }
 
     /**
@@ -270,21 +276,19 @@ public final class SacsPortes {
             if (!memes(ouvert, r.objets)) r.contenu(copies(ouvert));
             r.revisionRecue = revision;
             r.recu = maintenant;
-        } else if (r.attente || demandeDue(r)) {
+        } else if (r.enVol > 0 || demandeDue(r)) {
             CompoundTag donnees = lecteur.donnees(id);
             // Repli pour les versions où le hook de réception n'est pas disponible.
-            if (r.attente && donnees.get("inventory") != r.marqueur) accepter(id, donnees);
-            // Une seule requête en vol : une réponse tardive ne doit pas valider la suivante.
+            if (r.enVol > 0 && donnees.get("inventory") != r.marqueur) accepter(id, donnees);
             if (demandeDue(r)) {
                 r.marqueur = donnees.get("inventory");
                 r.requete = maintenant;
                 r.revisionRequete = revision;
-                r.attente = true;
+                r.enVol++;
                 try {
                     lecteur.demander(id);
                 } catch (ReflectiveOperationException | RuntimeException e) {
-                    // L'envoi a échoué : aucune réponse ne viendra libérer cette attente.
-                    r.attente = false;
+                    r.enVol--;
                     throw e;
                 }
             }
@@ -296,9 +300,11 @@ public final class SacsPortes {
     }
 
     private boolean demandeDue(Releve r) {
-        return !r.attente
-                && maintenant - r.requete >= 500
-                && (r.revisionRecue < revision || maintenant - r.recu >= 2000);
+        if (r.revisionRecue == revision && maintenant - r.recu < 2000) return false;
+        if (r.enVol == 0) return maintenant - r.requete >= 500;
+        return r.revisionRequete == revision
+                && r.enVol < MAX_REQUETES
+                && maintenant - r.requete >= DELAI_REPRISE;
     }
 
     private static boolean memes(List<ItemStack> affiches, List<ItemStack> connus) {

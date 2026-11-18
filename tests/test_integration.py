@@ -154,7 +154,7 @@ class IntegrationTests(unittest.TestCase):
                 codex_setup.install(instance, dry_run=True)
                 self.assertTrue(old.exists())
                 self.assertFalse((root / "backups").exists())
-                codex_setup.install(instance)
+                codex_setup.install(instance, game_running=lambda: False)
             self.assertFalse(old.exists())
             self.assertEqual(unrelated.read_bytes(), b"keep")
             self.assertEqual(script.read_text(), "new script")

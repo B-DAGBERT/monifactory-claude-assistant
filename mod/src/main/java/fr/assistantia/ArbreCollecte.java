@@ -13,7 +13,17 @@ public final class ArbreCollecte {
             long quantite,
             long production,
             boolean reutilisable,
-            List<Noeud> enfants) {
+            List<Noeud> enfants,
+            Object lotIdentique) {
+        public Noeud(
+                Set<String> variantes,
+                long quantite,
+                long production,
+                boolean reutilisable,
+                List<Noeud> enfants) {
+            this(variantes, quantite, production, reutilisable, enfants, null);
+        }
+
         public Noeud {
             variantes = Set.copyOf(variantes);
             enfants = List.copyOf(enfants);

@@ -105,7 +105,9 @@ def command_scenarios():
 def chest_identity_scenarios():
     client = (ROOT / "jeu/assistant_ia.js").read_text(encoding="utf-8")
     types = re.search(r"^const COFFRES_DOUBLES = .*?$", client, re.M)[0]
-    helper = client[client.index("function jumeauStockage(") : client.index("// À l'ouverture")]
+    helper = client[
+        client.index("function jumeauStockage(") : client.index("function surOuvertureEcran(")
+    ]
     return (
         types
         + "\n"

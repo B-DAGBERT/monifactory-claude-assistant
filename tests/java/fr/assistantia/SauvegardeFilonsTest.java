@@ -26,6 +26,7 @@ public final class SauvegardeFilonsTest {
         departSansPublication(dossier);
         contenuParesseux(dossier);
         copieVersion1(dossier);
+        garderSecoursApresCorruption(dossier);
         System.out.println(
                 "Publication filons : reconnexion, reprise, ordre, acquittements et texte calcule"
                         + " sur le thread IO valides");
@@ -59,6 +60,40 @@ public final class SauvegardeFilonsTest {
         SauvegardeFilons.conserverVersion1(v2);
         assert !Files.exists(dossier.resolve("monde-v2.json.v1.bak"))
                 : "Pas de copie d'un fichier v2";
+    }
+
+    static void garderSecoursApresCorruption(Path dossier) throws Exception {
+        Path natif = Files.createDirectory(dossier.resolve("filons_gregtech"));
+        Path primaire = natif.resolve("monde.json");
+        Path secours = natif.resolve("monde.json.bak");
+        var fichiers = new SauvegardeFilons.Fichiers();
+        SauvegardeFilons.Lecture<String> lire =
+                texte -> {
+                    if (!texte.startsWith("{")) throw new IOException("Primaire tronqué");
+                    return texte;
+                };
+        Files.writeString(primaire, APRES);
+        Files.writeString(secours, AVANT);
+        assert fichiers.lirePrimaire(primaire, lire).equals(APRES);
+
+        Files.writeString(primaire, "Primaire tronqué");
+        try {
+            fichiers.lirePrimaire(primaire, lire);
+            throw new AssertionError("Le primaire corrompu doit déclencher la récupération");
+        } catch (IOException e) {
+            assert lire.lire(Files.readString(secours)).equals(AVANT);
+        }
+        fichiers.ecrire(primaire, APRES);
+        assert Files.readString(primaire).equals(APRES);
+        assert Files.readString(secours).equals(AVANT)
+                : "Le fichier rejeté ne peut pas remplacer la dernière bonne sauvegarde";
+
+        fichiers.ecrire(primaire, AVANT);
+        assert Files.readString(secours).equals(APRES)
+                : "La rotation reprend une fois le primaire sain de nouveau publié";
+        try (var entrees = Files.list(natif)) {
+            assert entrees.noneMatch(p -> p.toString().endsWith(".tmp"));
+        }
     }
 
     /** Le texte se calcule une seule fois, sur l'exécuteur IO, jamais au moment d'enregistrer. */

@@ -11,8 +11,10 @@ import traceback
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+from monifactory_assistant.application.conversation import ConversationController
+from monifactory_assistant.application.interface import InterfaceController
 from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +109,24 @@ class DiscussionMenuTests(unittest.TestCase):
         self.assertEqual(self.app.question_ack, {})
         self.app.start_question.assert_not_called()
 
+    def test_production_failure_keeps_native_requests_running_and_rearms_once(self):
+        self.app.production = SimpleNamespace(
+            poll=Mock(side_effect=PermissionError("transient production failure"))
+        )
+        self.write(self.request)
+        self.app.check_mod_requests()
+        self.app.start_question.assert_called_once_with(self.request["texte"], None)
+        self.app.root.after.assert_called_once_with(300, self.app.check_mod_requests)
+
+    def test_invalid_scope_rearms_once_without_handling_pending_requests(self):
+        self.app.bridge.isolated = True
+        self.app.bridge.scope = None
+        self.app.bridge.scope_valid = Mock(return_value=False)
+        self.write(self.request)
+        self.app.check_mod_requests()
+        self.app.start_question.assert_not_called()
+        self.app.root.after.assert_called_once_with(300, self.app.check_mod_requests)
+
     def test_java_drafts_duplicate_protection_and_scroll(self):
         java_home = Path(os.environ.get("JAVA_HOME", "/nonexistent"))
         if not (java_home / "bin/javac").exists():
@@ -146,3 +166,75 @@ class DiscussionMenuTests(unittest.TestCase):
                 timeout=30,
             )
             self.assertIn("défilement validés", result.stdout)
+
+
+class QuestionInputTests(unittest.TestCase):
+    def setUp(self):
+        class QuestionApp(ConversationController, InterfaceController):
+            pass
+
+        self.app = app = QuestionApp()
+        app.bridge = SimpleNamespace(
+            isolated=True,
+            scope="session-a",
+            scope_valid=Mock(return_value=True),
+            accepts=Mock(return_value=True),
+        )
+        app.busy, app.popup = False, None
+        app.speaker = Mock()
+        app.recorder = SimpleNamespace(stream=None)
+        app.safe_screenshot = Mock(return_value="capture vocale")
+        app.notify = Mock()
+        app.set_status = Mock()
+        app.work_question = Mock()
+        self.samples = [0.5] * 16_000
+
+        def start_mic():
+            app.recorder.stream = object()
+
+        def stop_mic():
+            app.recorder.stream = None
+            return self.samples
+
+        app.recorder.start = Mock(side_effect=start_mic)
+        app.recorder.stop = Mock(side_effect=stop_mic)
+        thread = patch("monifactory_assistant.application.conversation.threading.Thread")
+        self.worker = thread.start()
+        self.addCleanup(thread.stop)
+
+    def test_mod_cannot_start_text_during_recording_and_voice_starts_once(self):
+        app = self.app
+        app.on_talk_start()
+        app.handle_mod_request({"type": "question", "n": 1, "texte": "Une seconde question"})
+        self.assertEqual(app.question_ack, {"n": 1, "etat": "refusee"})
+        self.assertFalse(app.busy)
+        self.worker.assert_not_called()
+        app.on_talk_start()  # A duplicate start cannot cancel the live recording.
+        app.on_talk_end()
+        app.recorder.stop.assert_called_once()
+        self.worker.assert_called_once_with(
+            target=app.work_question, args=(None, self.samples, "capture vocale"), daemon=True
+        )
+        self.assertTrue(app.busy)
+
+    def test_a_popup_submission_cannot_start_a_second_question(self):
+        app = self.app
+        app.entry = SimpleNamespace(get=lambda: "Brouillon local")
+        app.shot = "capture du brouillon"
+        app.close_popup = Mock()
+        app.handle_mod_request({"type": "question", "n": 1, "texte": "Question du mod"})
+        app.submit()
+        self.worker.assert_called_once_with(
+            target=app.work_question, args=("Question du mod", None, None), daemon=True
+        )
+
+    def test_switching_connections_during_recording_discards_the_old_audio(self):
+        app = self.app
+        app.on_talk_start()
+        app.bridge.scope = "session-b"
+        app.on_talk_end()
+        app.recorder.stop.assert_called_once()
+        app.notify.assert_called_once()
+        self.assertIn("Le monde a changé", app.notify.call_args.args[0])
+        self.worker.assert_not_called()
+        self.assertFalse(app.busy)

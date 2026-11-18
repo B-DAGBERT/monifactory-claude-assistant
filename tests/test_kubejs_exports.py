@@ -402,6 +402,51 @@ class KubeJSChangeOnlyTests(unittest.TestCase):
         )
         self.assertEqual(r["etat"], 6, "state still written on change or every 2 s")
 
+    def test_native_menu_position_and_loaded_chunk_control_chest_history(self):
+        r = run_script(
+            self,
+            r"""
+        tick(20);
+        var charge = true, air = false, connu = true, menuCoffre = true;
+        CoffresNatifs = {
+          positionOuverte: () => connu ? {getX: () => 1, getY: () => 64, getZ: () => 2} : null,
+          stockageOuvert: () => menuCoffre,
+          blocCharge: () => charge
+        };
+        Client.level.getBlock = (x, y, z) => ({id: air ? 'minecraft:air' : 'minecraft:chest', x, y, z});
+        Client.screen = {getTitle: () => composant('Coffre A')};
+        visee = {block: {id: 'minecraft:chest', x: 6, y: 64, z: 9}};
+        coffre[0] = pile('minecraft:coal', 5); tick(5);
+        r.sauve = dernier(ecritures, 'kubejs/assistant/stockage.json').conteneurs[0];
+        connu = false;
+        Client.screen = {getTitle: () => composant('Autre menu')};
+        coffre[0] = pile('minecraft:coal', 8); tick(5);
+        r.sansPreuve = Object.values(stockage).map(c => c.objets[0].n);
+        connu = true; menuCoffre = false;
+        Client.screen = {getTitle: () => composant('Sac porté')};
+        tick(5);
+        r.autreMenu = Object.values(stockage).map(c => c.objets[0].n);
+        charge = false; air = true;
+        verifierCarte(stockage, 'minecraft:overworld');
+        verifierCarte(stockage, 'minecraft:overworld');
+        r.nonCharge = Object.keys(stockage).length;
+        charge = true;
+        const cle = Object.keys(stockage)[0];
+        machines[cle] = {...stockage[cle]};
+        verifierCarte(stockage, 'minecraft:overworld');
+        verifierCarte(machines, 'minecraft:overworld');
+        r.premiereAbsence = Object.keys(stockage).length;
+        r.premiereAbsenceMachine = Object.keys(machines).length;
+        verifierCarte(stockage, 'minecraft:overworld');
+        r.absenceConfirmee = Object.keys(stockage).length;
+        """,
+        )
+        self.assertEqual((r["sauve"]["x"], r["sauve"]["z"]), (1, 2))
+        self.assertEqual(r["sansPreuve"], [5])
+        self.assertEqual(r["autreMenu"], [5])
+        self.assertEqual((r["nonCharge"], r["premiereAbsence"], r["absenceConfirmee"]), (1, 1, 0))
+        self.assertEqual(r["premiereAbsenceMachine"], 1)
+
     def test_chest_memory_is_written_at_most_every_two_seconds_and_on_close(self):
         r = run_script(
             self,

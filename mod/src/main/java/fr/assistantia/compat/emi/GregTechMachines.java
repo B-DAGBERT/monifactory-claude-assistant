@@ -246,6 +246,23 @@ public final class GregTechMachines {
         }
     }
 
+    /**
+     * La recette en cours doit être celle du dépôt : un démarrage seul peut venir d'un autre lot.
+     */
+    static boolean execute(Object machine, EmiRecipe attendue) {
+        if (!enMarche(machine)) return false;
+        try {
+            var logique = appeler(machine, "getRecipeLogic");
+            var active = appeler(logique, "getLastRecipe");
+            var recette = recette(attendue);
+            if (active == null || recette == null) return false;
+            var id = recette.getClass().getField("id").get(recette);
+            return id != null && id.equals(active.getClass().getField("id").get(active));
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return false;
+        }
+    }
+
     public static boolean occupe(Object machine) {
         try {
             Object logique = appeler(machine, "getRecipeLogic");

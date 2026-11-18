@@ -23,8 +23,19 @@ def main():
         try:
             from monifactory_assistant.commands.auto_update import check_at_startup
 
-            check_at_startup()
+            if check_at_startup()["state"] == "repair_pending":
+                return
         except Exception as error:
+            try:
+                (ROOT / ".runtime/install-pending.json").stat()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                print("Le journal d’installation est inaccessible. Démarrage suspendu.", flush=True)
+                return
+            else:
+                print("Installation à reprendre. Démarrage suspendu.", flush=True)
+                return
             print(
                 f"Mise à jour indisponible ({type(error).__name__}) : démarrage local.", flush=True
             )

@@ -68,6 +68,10 @@ Les rapports de chaque cas sont conservés dans `.runtime/scenarios/`.
 
 Les scénarios de mise à jour utilisent de vrais dépôts Git temporaires. Les tests des moteurs
 utilisent des CLI simulés : aucun compte IA ni appel facturé n’est nécessaire.
+Les tests de reprise interrompent le remplacement des artefacts avant et après l’avance Git,
+puis comparent le JAR, le script et le reçu sur une relance hors ligne. Ils isolent les cas de jeu
+ouvert et de dépôt modifié. Ces injections couvrent les arrêts de processus, avec une qualification
+distincte pour les coupures électriques, le verrouillage NTFS et l’installation des dépendances.
 
 ## Vérification des parcours de stock
 
@@ -706,7 +710,7 @@ la tâche. Les temporaires s’appellent `.ecriture-<nom>-<n>.tmp`, hors des mot
 de la sauvegarde. `IdentiteMonde` ne garde qu’une référence faible au serveur solo.
 
 Sans le mod, le script écrit directement comme avant. Il ne dessine plus de panneau et l’assistant
-n’écrit plus `plan.json` ; `fabrication_emi.json` a aussi disparu. `VERSION_SCRIPT` vaut 13 :
+n’écrit plus `plan.json` ; `fabrication_emi.json` a aussi disparu. `VERSION_SCRIPT` vaut 16 :
 l’assistant demande F3 + T si le jeu exécute un script plus ancien.
 
 `RelachementSouris` empêche qu’un clic sur la barre EMI ou un panneau de l’assistant (bouton grisé

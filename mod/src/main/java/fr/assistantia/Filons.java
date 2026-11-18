@@ -49,8 +49,9 @@ public final class Filons {
                         t.setDaemon(true);
                         return t;
                     });
+    private static final SauvegardeFilons.Fichiers FICHIERS = new SauvegardeFilons.Fichiers();
     private static final SauvegardeFilons PUBLICATION =
-            new SauvegardeFilons(IO, Filons::ecrire, System::currentTimeMillis);
+            new SauvegardeFilons(IO, FICHIERS::ecrire, System::currentTimeMillis);
     private static final MultiBufferSource.BufferSource TAMPONS_FILONS =
             MultiBufferSource.immediate(new BufferBuilder(65536));
     private static final LongSupplier HORLOGE = System::nanoTime;
@@ -91,12 +92,6 @@ public final class Filons {
     private static volatile String message = "";
     private static CompletableFuture<FilonMemoire> chargement;
     private static volatile String messageChargement = "";
-    private static final Set<Path> VERSIONS_VERIFIEES =
-            java.util.concurrent.ConcurrentHashMap.newKeySet();
-
-    /** Fichiers lus ou écrits sans erreur : seuls eux deviennent la copie de secours .bak. */
-    private static final Set<Path> FICHIERS_SAINS =
-            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private static final Map<String, String> NOMS = new HashMap<>();
     private static final Set<String> DANGERS =
@@ -440,17 +435,12 @@ public final class Filons {
                 && s.monde().equals(id)) return s.memoire();
         Path secours = chemin.resolveSibling(chemin.getFileName() + ".bak");
         try {
-            String texte =
-                    attente != null
-                            ? attente.texte()
-                            : Files.exists(chemin)
-                                    ? Files.readString(chemin, StandardCharsets.UTF_8)
-                                    : Files.exists(secours)
-                                            ? Files.readString(secours, StandardCharsets.UTF_8)
-                                            : null;
-            var lue = texte == null ? new FilonMemoire() : FormatFilons.lire(texte, id);
-            if (attente == null && Files.exists(chemin)) FICHIERS_SAINS.add(chemin);
-            return lue;
+            if (attente != null) return FormatFilons.lire(attente.texte(), id);
+            var lue = FICHIERS.lirePrimaire(chemin, texte -> FormatFilons.lire(texte, id));
+            if (lue != null) return lue;
+            return Files.exists(secours)
+                    ? FormatFilons.lire(Files.readString(secours, StandardCharsets.UTF_8), id)
+                    : new FilonMemoire();
         } catch (Exception e) {
             LogUtils.getLogger().warn("Lecture des filons", e);
             try {
@@ -537,36 +527,6 @@ public final class Filons {
                                     });
                     LogUtils.getLogger().warn("Écriture des filons", e);
                 });
-    }
-
-    /** Écriture atomique ; la sauvegarde native garde sa version précédente en .bak. */
-    private static void ecrire(Path p, String texte) throws java.io.IOException {
-        Files.createDirectories(p.getParent());
-        Path tmp = p.resolveSibling(p.getFileName() + ".tmp");
-        Files.writeString(tmp, texte, StandardCharsets.UTF_8);
-        boolean natif = p.getParent().getFileName().toString().equals("filons_gregtech");
-        if (natif && Files.exists(p)) {
-            conserverAncienFormat(p);
-            // Un fichier illisible ne remplace jamais une bonne copie de secours.
-            if (FICHIERS_SAINS.contains(p))
-                Files.copy(
-                        p,
-                        p.resolveSibling(p.getFileName() + ".bak"),
-                        StandardCopyOption.REPLACE_EXISTING);
-        }
-        try {
-            Files.move(tmp, p, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(tmp, p, StandardCopyOption.REPLACE_EXISTING);
-        }
-        if (natif) FICHIERS_SAINS.add(p);
-    }
-
-    /** Avant la première sauvegarde v2, l'ancien fichier v1 est gardé une fois pour toutes. */
-    private static void conserverAncienFormat(Path p) throws java.io.IOException {
-        if (VERSIONS_VERIFIEES.contains(p)) return;
-        SauvegardeFilons.conserverVersion1(p);
-        VERSIONS_VERIFIEES.add(p); // seulement après une copie réussie : sinon retentée
     }
 
     // ---------- Tick ----------

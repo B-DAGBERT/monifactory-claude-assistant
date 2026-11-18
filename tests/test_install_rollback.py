@@ -42,7 +42,12 @@ class InstallRollbackTests(unittest.TestCase):
         self.patches.enter_context(contextlib.redirect_stdout(io.StringIO()))
 
     def install(self):
-        return setup.install(self.instance, jar=self.jar, client_script=self.client_script)
+        return setup.install(
+            self.instance,
+            jar=self.jar,
+            client_script=self.client_script,
+            game_running=lambda: False,
+        )
 
     def assert_original(self):
         self.assertEqual(
@@ -97,6 +102,30 @@ class InstallRollbackTests(unittest.TestCase):
             restore.assert_not_called()
         self.assert_original()
         self.assert_backup()
+
+    def test_game_launched_during_journal_publication_blocks_replacement(self):
+        game_open = False
+        publish = setup.atomic_json
+
+        def journal_written(*args, **kwargs):
+            nonlocal game_open
+            publish(*args, **kwargs)
+            game_open = True
+
+        with patch.object(setup, "atomic_json", side_effect=journal_written):
+            with self.assertRaisesRegex(RuntimeError, "Ferme Minecraft"):
+                setup.install(
+                    self.instance,
+                    jar=self.jar,
+                    client_script=self.client_script,
+                    game_running=lambda: game_open,
+                )
+        self.assert_original()
+        self.assertTrue(setup.pending_path(self.root).exists())
+        game_open = False
+        self.assertTrue(setup.recover_install(self.instance, self.root, lambda: game_open))
+        self.assert_original()
+        self.assertFalse(setup.pending_path(self.root).exists())
 
     def test_interruptions_after_each_replacement_restore_both_files(self):
         replace = Path.replace
@@ -191,6 +220,39 @@ class InstallRollbackTests(unittest.TestCase):
         self.assert_backup()
         self.assertEqual(b"other mod", self.other.read_bytes())
         self.assertEqual(b'{"valuable":"stock"}', self.world.read_bytes())
+
+    def test_running_or_unknown_game_blocks_direct_install(self):
+        for state in (True, None):
+            with self.subTest(state=state), self.assertRaisesRegex(RuntimeError, "Ferme Minecraft"):
+                setup.install(
+                    self.instance,
+                    jar=self.jar,
+                    client_script=self.client_script,
+                    game_running=lambda: state,
+                )
+            self.assert_original()
+            self.assertFalse((self.root / "backups").exists())
+
+    def test_direct_install_recovers_after_uncaught_interruption(self):
+        class Interruption(BaseException):
+            pass
+
+        replace = Path.replace
+
+        def replace_jar(path, target):
+            result = replace(path, target)
+            if target == self.new:
+                raise Interruption
+            return result
+
+        with patch.object(Path, "replace", replace_jar), self.assertRaises(Interruption):
+            self.install()
+        self.assertTrue(setup.pending_path(self.root).is_file())
+        self.assertTrue(self.new.is_file())
+        self.assertTrue(setup.recover_install(self.instance, self.root, lambda: False))
+        self.assert_original()
+        self.assert_backup()
+        self.assertFalse(setup.recover_install(self.instance, self.root, lambda: False))
 
 
 if __name__ == "__main__":

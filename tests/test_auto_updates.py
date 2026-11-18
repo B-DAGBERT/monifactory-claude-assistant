@@ -33,9 +33,9 @@ class Harness(AutoUpdater):
     def dependencies(self, stage):
         self.dependency_updates += 1
 
-    def deploy(self, stage):
+    def deploy(self, stage, before, target):
         with patch.object(setup, "HERE", self.root):
-            return super().deploy(stage)
+            return super().deploy(stage, before, target)
 
 
 class UpdateNoticeTests(unittest.TestCase):
@@ -212,6 +212,59 @@ class AutomaticUpdateTests(unittest.TestCase):
             self.assertEqual(self.updater.check()["state"], "failed")
         self.assert_unchanged()
 
+    def test_resume_before_git_merge_rolls_back_even_offline(self):
+        class Interruption(BaseException):
+            pass
+
+        replace = Path.replace
+
+        def replace_jar(path, target):
+            result = replace(path, target)
+            if target == self.jar:
+                raise Interruption
+            return result
+
+        with patch.object(Path, "replace", replace_jar), self.assertRaises(Interruption):
+            self.updater.check()
+        self.assertEqual(self.jar.read_text(), "new jar")
+        self.assertEqual(self.script.read_text(), "old script")
+        self.assertTrue(setup.pending_path(self.client).exists())
+        self.remote.rename(self.remote.with_name("unavailable.git"))
+        self.updater.game_running.return_value = True
+        self.assertEqual(self.updater.check()["state"], "repair_pending")
+        self.assertEqual(self.jar.read_text(), "new jar")
+        self.updater.game_running.return_value = False
+        source = self.client / "app.py"
+        old_source = source.read_bytes()
+        source.write_text("changed after interrupted Git merge")
+        self.assertEqual(self.updater.check()["state"], "repair_pending")
+        self.assertEqual(source.read_text(), "changed after interrupted Git merge")
+        self.assertTrue(setup.pending_path(self.client).exists())
+        source.write_bytes(old_source)
+        self.assertEqual(self.updater.check()["state"], "offline")
+        self.assert_unchanged()
+        self.assertFalse(setup.pending_path(self.client).exists())
+
+    def test_resume_after_git_merge_reinstalls_exact_pair_and_receipt_offline(self):
+        class Interruption(BaseException):
+            pass
+
+        with (
+            patch.object(self.updater, "remember_install", side_effect=Interruption),
+            self.assertRaises(Interruption),
+        ):
+            self.updater.check()
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), self.target)
+        self.assertTrue(setup.pending_path(self.client).exists())
+        # Disc persistence at the interruption boundary may still carry one old member.
+        self.script.write_text("old script")
+        self.remote.rename(self.remote.with_name("unavailable.git"))
+        self.assertEqual(self.updater.check()["state"], "offline")
+        self.assertEqual(self.jar.read_text(), "new jar")
+        self.assertEqual(self.script.read_text(), "new script")
+        self.assertTrue(self.updater.installed(self.updater.payload(self.target)))
+        self.assertFalse(setup.pending_path(self.client).exists())
+
     def test_dirty_edit_during_compilation_prevents_install(self):
         build = self.updater.build
 
@@ -233,10 +286,25 @@ class AutomaticUpdateTests(unittest.TestCase):
 
     def test_python_only_update_skips_rebuilding_unchanged_mod(self):
         self.updater.check()
+        receipt = self.updater.receipt.read_bytes()
         self.publish(python_only=True)
         self.assertEqual(self.updater.check()["state"], "updated")
         self.assertEqual(self.updater.builds, 1)
+        self.assertEqual(self.updater.receipt.read_bytes(), receipt)
         self.assertEqual((self.client / "app.py").read_text(), "new app")
+
+    def test_python_only_update_cannot_certify_a_jar_changed_during_preparation(self):
+        self.updater.check()
+        previous = self.target
+        receipt = self.updater.receipt.read_bytes()
+        self.publish(python_only=True, dependencies=True)
+        with patch.object(
+            self.updater, "dependencies", side_effect=lambda stage: self.jar.write_text("foreign")
+        ):
+            self.assertEqual(self.updater.check()["state"], "local_changes")
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), previous)
+        self.assertEqual(self.updater.receipt.read_bytes(), receipt)
+        self.assertFalse(self.updater.installed(self.updater.payload(self.target)))
 
     def test_requirements_are_installed_only_when_changed(self):
         self.updater.check()

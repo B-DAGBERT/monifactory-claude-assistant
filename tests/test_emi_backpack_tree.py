@@ -88,7 +88,8 @@ public class FluidUtil {
  }
 }
 """,
-    "dev.emi.emi.api.recipe.EmiRecipe": "public interface EmiRecipe {}",
+    "dev.emi.emi.api.recipe.EmiRecipe": """public interface EmiRecipe {
+ default java.util.List<dev.emi.emi.api.stack.EmiStack> getOutputs(){return java.util.List.of();}}""",
     "dev.emi.emi.api.stack.EmiIngredient": "public interface EmiIngredient {java.util.List<EmiStack> getEmiStacks();}",
     "fr.assistantia.compat.emi.ComparaisonEmi": """
 public class ComparaisonEmi {public static dev.emi.emi.api.stack.EmiStack pourInventaire(dev.emi.emi.api.stack.EmiStack s){return s.copy();}
@@ -119,6 +120,7 @@ public class EmiStack implements EmiIngredient {private final ItemStack item;pri
  private EmiStack(net.minecraft.world.level.material.Fluid fluid,long n){item=ItemStack.EMPTY;key=fluid;this.n=n;}
  public static EmiStack of(net.minecraft.world.level.material.Fluid fluid,net.minecraft.nbt.CompoundTag tag,long n){return new EmiStack(fluid,n);}
  public Object getKey(){return key;}public EmiStack getRemainder(){return of(ItemStack.EMPTY);}public boolean isEmpty(){return n==0;}
+ public float getChance(){return 1;}
  public EmiStack copy(){return key instanceof net.minecraft.world.level.material.Fluid f?new EmiStack(f,n):new EmiStack(item).setAmount(n);}public long getAmount(){return n;}
  public java.util.List<EmiStack> getEmiStacks(){return java.util.List.of(this);}public net.minecraft.nbt.CompoundTag getNbt(){return item.getTag();}
  public EmiStack setAmount(long value){n=value;return this;}

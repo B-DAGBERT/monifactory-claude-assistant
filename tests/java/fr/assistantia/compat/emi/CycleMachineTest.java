@@ -48,6 +48,7 @@ public final class CycleMachineTest {
         GregTechMachines.machineCircuit = 7;
         GregTechMachines.configuration = 7;
         GregTechMachines.busy = false;
+        GregTechMachines.recetteActive = null;
         GregTechMachines.outputSlots = List.of(sortie);
         GregTechMachines.outputTanks = List.of(cuveSortie);
         menu.slots.addAll(List.of(entree, moule, sortie));
@@ -135,6 +136,34 @@ public final class CycleMachineTest {
         var circuit = item("gtceu:programmed_circuit", 1);
         circuit.chance = 0;
         return circuit;
+    }
+
+    private void confirmerDestination(String scenario) {
+        boolean fluide = scenario.equals("cuve-corrigee");
+        var recette =
+                new EmiRecipe(List.of(fluide ? fluide(EAU, 1_000) : item(ETAIN, 2)), List.of());
+        recette.outputs = List.of(item(PLAQUE, 1));
+        var source = menu.slots.get(3);
+        source.item =
+                fluide ? contenant("test:water_cell", 1, EAU, 1_000) : new ItemStack(ETAIN, 2);
+        var plan = EnvoiMachine.preparer(ecran, recette, 1);
+        assert plan.possible() : plan.probleme();
+        envoyer(plan);
+        for (int i = 0; i < 50 && entree.item.isEmpty() && cuveEntree.calls == 0; i++)
+            EnvoiMachine.tick(new TickEvent.ClientTickEvent());
+        assert fluide ? cuveEntree.tank.getFluidAmount() == 1_000 : entree.item.getCount() == 2;
+        assert source.item.isEmpty();
+        entree.item = ItemStack.EMPTY;
+        cuveEntree.tank.setFluid(FluidStack.EMPTY);
+        boolean demarre = scenario.equals("consommation-immediate");
+        GregTechMachines.busy = demarre || scenario.equals("autre-recette-demarree");
+        GregTechMachines.recetteActive = demarre ? recette : new EmiRecipe(List.of(), List.of());
+        attendreFinEnvoi();
+        if (demarre) assert lot().fois() == 1;
+        else {
+            assert suivi.actifs().isEmpty() : "aucun lot quand le dépôt est resté sans preuve";
+            assert EnvoiMachine.statut().contains("non confirmé") : EnvoiMachine.statut();
+        }
     }
 
     private void fournirIngredients() {
@@ -498,6 +527,10 @@ public final class CycleMachineTest {
             case "circuit-retour-bloque" -> fixture.changerCircuit(false, true);
             case "circuit-entre-objets" -> fixture.changerCircuitEntreObjets();
             case "preconditions" -> fixture.preconditions();
+            case "destination-corrigee",
+                    "cuve-corrigee",
+                    "consommation-immediate",
+                    "autre-recette-demarree" -> fixture.confirmerDestination(scenario);
             case "deux-lots" -> fixture.deuxLots();
             case "63" -> fixture.lotLimite(63, false);
             case "64" -> fixture.lotLimite(64, false);

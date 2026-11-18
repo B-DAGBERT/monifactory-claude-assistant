@@ -142,9 +142,24 @@ public class SacsPortesTest {
         int demandes = SBPPacketHandler.requested.size();
         lecteur.lire(p, base, lecteur, 7500); // nouvelle connexion, une seule demande
         demandes = SBPPacketHandler.requested.size();
+        lecteur.lire(p, base, lecteur, 11499);
+        assert SBPPacketHandler.requested.size() == demandes;
         lecteur.lire(p, base, lecteur, 14000);
-        assert SBPPacketHandler.requested.size() == demandes
-                : "réponse tardive : pas de requêtes concurrentes ambiguës";
+        assert SBPPacketHandler.requested.size() == demandes + 1 : "relance de la même révision";
+        repondre(A, contenu(item("iron", 12)));
+        assert lecteur.lire(p, base, lecteur, 14001).synchronise()
+                : "la seconde lecture rend le sac disponible";
+        var deplace = List.of(item("iron", 4));
+        assert !lecteur.lire(p, deplace, lecteur, 18500).synchronise();
+        assert SBPPacketHandler.requested.size() == demandes + 1
+                : "une demande en vol d'une ancienne révision interdit une nouvelle demande ambiguë";
+        repondre(A, contenu(item("iron", 12)));
+        e = lecteur.lire(p, deplace, lecteur, 18501);
+        assert !e.synchronise() && SBPPacketHandler.requested.size() == demandes + 2
+                : "seule une réponse de la nouvelle révision peut valider le déplacement";
+        repondre(A, contenu(item("iron", 11)));
+        e = lecteur.lire(p, deplace, lecteur, 18502);
+        assert e.synchronise() && nombre(e.objets(), "iron") == 11;
         // Un échec d'envoi ne doit pas laisser une requête fantôme en attente pour toujours.
         int[] tentatives = {0};
         var instable =
