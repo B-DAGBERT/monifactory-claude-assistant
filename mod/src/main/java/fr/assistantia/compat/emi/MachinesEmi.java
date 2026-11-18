@@ -549,7 +549,12 @@ public final class MachinesEmi {
                         .filter(net.minecraft.world.inventory.Slot::isActive)
                         .map(s -> s.getItem().copy())
                         .filter(s -> !s.isEmpty())
-                        .map(s -> new PlanRetrait.Stock<>(EmiStack.of(s), s.getCount(), true))
+                        .map(
+                                s ->
+                                        new PlanRetrait.Stock<>(
+                                                ComparaisonEmi.pourInventaire(EmiStack.of(s)),
+                                                s.getCount(),
+                                                true))
                         .toList();
         var precedent =
                 entreesConnues.put(
@@ -576,8 +581,8 @@ public final class MachinesEmi {
                 .entrySet()
                 .removeIf(
                         e ->
-                                mc.level.hasChunkAt(e.getKey())
-                                        && GregTechMachines.machine(
+                                !mc.level.hasChunkAt(e.getKey())
+                                        || GregTechMachines.machine(
                                                         mc.level.getBlockEntity(e.getKey()))
                                                 != e.getValue().machine())) entreesVersion++;
         long cleInstalles = fr.assistantia.CoffresConnus.revisionProches();
@@ -743,13 +748,14 @@ public final class MachinesEmi {
         var mc = Minecraft.getInstance();
         Object current = actif();
         String dim = mc.level == null ? "" : mc.level.dimension().location().toString();
-        if (current != arbre || connexion != mc.getConnection() || !dim.equals(dimension)) {
+        boolean contexteChange = connexion != mc.getConnection() || !dim.equals(dimension);
+        if (current != arbre || contexteChange) {
             recetteSac = null;
             arbreSac = null;
             OrdonnancementEmi.invalider();
             EnvoiMachine.arreter();
-            if (current == null || connexion != mc.getConnection() || !dim.equals(dimension)) {
-                lots.vider();
+            if (current == null || contexteChange) lots.vider();
+            if (contexteChange) {
                 entreesConnues.clear();
                 entreesVersion++;
                 outilsConnus = List.of();
@@ -831,8 +837,7 @@ public final class MachinesEmi {
         var mc = Minecraft.getInstance();
         Object courant = actif();
         boolean panneau =
-                courant != null
-                        && affiche(mc.screen)
+                affiche(mc.screen)
                         && !EnvoiMachine.occupe()
                         && (actualise == 0
                                 || courant != arbre
@@ -943,7 +948,6 @@ public final class MachinesEmi {
         contextePlan = null;
         actualiserArbre();
         actualise = System.nanoTime();
-        if (instantane == null) return;
         try {
             var ui = GregTechMachines.ouvrir(ecran.getMenu());
             if (ui == null) {
@@ -951,6 +955,7 @@ public final class MachinesEmi {
                 return;
             }
             retenirEntrees(ui);
+            if (instantane == null) return;
             var precedent = selection();
             List<PlanMachines.Operation<EmiRecipe>> visibles =
                     new ArrayList<>(

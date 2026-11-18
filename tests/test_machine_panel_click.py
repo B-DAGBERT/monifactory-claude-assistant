@@ -63,6 +63,23 @@ class MachinePanelClickTests(unittest.TestCase):
         selection = corps(machines, "private static boolean selectionnerAffichee(")
         self.assertLess(selection.index("actualiserInterface();"), selection.index("for (int i"))
 
+    def test_observing_machine_inputs_does_not_require_an_emi_tree(self):
+        machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
+        tick = corps(machines, "public static void tick(TickEvent.ClientTickEvent event)")
+        observation = tick.split("boolean panneau =", 1)[1].split(";", 1)[0]
+        self.assertIn("affiche(mc.screen)", observation)
+        self.assertNotIn("courant != null", observation)
+        interface = corps(machines, "private static void actualiserInterface()")
+        self.assertLess(
+            interface.index("retenirEntrees(ui)"), interface.index("instantane == null")
+        )
+        arbre = corps(machines, "private static void actualiserArbre()")
+        self.assertIn("entreesConnues.clear()", corps(arbre, "if (contexteChange)"))
+        outils = corps(
+            machines, "private static List<PlanRetrait.Stock<EmiStack>> outilsMachines()"
+        )
+        self.assertIn("!mc.level.hasChunkAt(e.getKey())", outils)
+
 
 if __name__ == "__main__":
     unittest.main()
