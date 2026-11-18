@@ -88,10 +88,18 @@ assert "monifactory_assistant.providers.claude" not in sys.modules
                 self.assertIn("Fonction retirée", result["message"])
                 self.assertIn("relance Minecraft", result["message"])
                 App.handle_mod_request(app, dict(request))
+        for key in ("enchainer", "surbrillance"):
+            with self.subTest(setting=key):
+                result = App.dispatch_queued_request(
+                    app, {"type": "reglage", "cle": key, "valeur": True, "n": 6}
+                )
+                self.assertEqual(result["etat"], "refusee")
+                self.assertIn("Fonction retirée", result["message"])
         for request in (
             {"type": "inconnu", "n": 7},
             {"type": "action", "action": "teleporter", "n": 8},
             {"n": 9},
+            {"type": "reglage", "cle": "inconnu", "valeur": True, "n": 10},
         ):
             with self.subTest(request=request):
                 result = App.dispatch_queued_request(app, dict(request))
@@ -100,9 +108,14 @@ assert "monifactory_assistant.providers.claude" not in sys.modules
         for mock in (app.notify, app.set_setting, app.start_question, app.on_hide, app.on_voice):
             mock.assert_not_called()
         # Supported requests keep their normal receipt.
-        result = App.dispatch_queued_request(app, {"type": "action", "action": "voix", "n": 10})
+        result = App.dispatch_queued_request(app, {"type": "action", "action": "voix", "n": 11})
         self.assertEqual(result["etat"], "traitee")
         app.on_voice.assert_called_once()
+        result = App.dispatch_queued_request(
+            app, {"type": "reglage", "cle": "panneau", "valeur": False, "n": 12}
+        )
+        self.assertEqual(result["etat"], "traitee")
+        app.set_setting.assert_called_once_with("panneau", False)
         # The question protocol of the same requests keeps working.
         App.handle_mod_request(app, {"type": "question", "texte": "Recette ?", "n": 6})
         app.start_question.assert_called_once_with("Recette ?", None)

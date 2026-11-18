@@ -194,7 +194,11 @@ public class DashboardLayoutTest {
   var ecran=new JsonObject();Pont.vue.add("ecran",ecran);Pont.vue.addProperty("moteur","Codex");
   ecran.add("question_recue",new JsonObject());ecran.addProperty("serveur",true);ecran.addProperty("coffres",12);
   var reglages=new JsonArray();
-  reglages.add(reglage("voix","Lecture à voix haute","Les réponses et les messages de l'assistant sont lus à voix haute.",false));
+  reglages.add(reglage("enchainer","Objectif suivant automatique","Un objectif terminé, le suivant du plan se prépare tout seul.",true));
+  reglages.add(reglage("surbrillance","Surbrillance des besoins","Les objets nécessaires à l'objectif brillent dans les coffres.",true));
+  reglages.add("ancienne entrée invalide");
+  var voixPubliee=reglage("voix","Lecture à voix haute","Les réponses et les messages de l'assistant sont lus à voix haute.",false);
+  reglages.add(voixPubliee);
   reglages.add(reglage("panneau","Panneau en jeu","En haut à gauche, la prochaine étape du plan de l'onglet Recette. Les réponses restent dans leur bulle.",true));
   reglages.add(reglage("progression","Annonces de progression","Un message quand une quête est terminée, un filon repéré ou une machine retenue.",true));
   reglages.add(reglage("faisceaux","Faisceau de guidage","Le faisceau bleu vers la destination (coffre, filon, lieu demandé).",true));
@@ -264,6 +268,7 @@ public class DashboardLayoutTest {
    masquer.onPress();render(s);assert !masquer.visible&&OngletRecette.zone[1]<masquer.getY()+Theme.BOUTON:cas+": hidden banner frees its row";
    // Réglages: each toggle is a theme button drawn in the scrolled list; a click changes the setting.
    onglets.get(4).onPress();render(s);
+   assert ecrit("Objectif suivant")==null&&ecrit("Surbrillance des besoins")==null:cas+": retired settings from an old assistant stay hidden";
    assert GuiGraphics.textes.contains("✘ Désactivé")&&GuiGraphics.textes.contains("✔ Activé"):cas+": toggles drawn";
    int avantSac=Pont.envois.size();int[] sac=interrupteur("Backpacks","✔ Activé");
    assert sac!=null:cas+": backpack option visible and on by default";
@@ -279,8 +284,8 @@ public class DashboardLayoutTest {
    int avant=Pont.envois.size();s.mouseClicked(voix[0]+2,voix[1]+2,0);
    assert Pont.envois.size()==avant+1&&Pont.texte(Pont.envois.get(avant),"cle").equals("voix")&&Pont.vrai(Pont.envois.get(avant),"valeur"):cas+": toggle click sends the setting";
    render(s);assert interrupteur("Lecture à voix","✔ Activé")!=null:cas+": toggle shows the new value at once";
-   reglages.get(0).getAsJsonObject().addProperty("valeur",true);render(s);
-   reglages.get(0).getAsJsonObject().addProperty("valeur",false);render(s);
+   voixPubliee.addProperty("valeur",true);render(s);
+   voixPubliee.addProperty("valeur",false);render(s);
    // Discussion: scrolling up shows « Derniers messages », a theme button inside the view.
    onglets.get(2).onPress();render(s);
    assert !bouton(s,"Derniers messages ↓").visible:cas+": follows the last message";

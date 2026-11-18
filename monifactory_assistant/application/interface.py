@@ -47,6 +47,12 @@ def unsupported_request(request):
     kind, action = request.get("type"), request.get("action")
     if kind == "projet" or kind == "action" and action in RETIRED_ACTIONS:
         return RETIRED_MESSAGE
+    if kind == "reglage":
+        key = request.get("cle")
+        if key in ("enchainer", "surbrillance"):
+            return RETIRED_MESSAGE
+        if not isinstance(key, str) or key not in SETTINGS:
+            return UNKNOWN_MESSAGE
     if kind not in MOD_REQUESTS or kind == "action" and action not in MOD_ACTIONS:
         return UNKNOWN_MESSAGE
     return ""

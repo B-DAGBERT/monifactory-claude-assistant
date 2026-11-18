@@ -157,6 +157,10 @@ l’appliquer. Il n’y a pas de surveillance permanente ni de remplacement à c
 Sur Windows, la fenêtre de lancement affiche la préparation ; les détails sont dans
 `.runtime/update.log`. Une erreur réseau ou de compilation laisse la version installée en place.
 
+Si une mise à jour Python est déjà installée mais que **Réglages** affiche encore d’anciennes
+options, relancer l’assistant seul actualise la liste pendant que Minecraft reste ouvert.
+**Y → Réglages → Diagnostic…** affiche la révision de l’assistant en cours d’exécution.
+
 La branche doit être `main`, sans fichiers locaux non enregistrés ni commits absents du serveur.
 Le lanceur ne supprime aucun travail local. Pour désactiver l’automatisme, ajouter
 `"auto_update": false` à l’objet JSON existant dans `assistant.local.json`.

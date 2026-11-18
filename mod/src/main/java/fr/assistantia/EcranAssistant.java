@@ -484,8 +484,7 @@ public class EcranAssistant extends Screen {
         if (Fullbright.CLE.equals(cle)) return Fullbright.actif();
         if (SacsFabrication.CLE.equals(cle)) return SacsFabrication.actif();
         for (JsonElement e : Pont.liste(ecran(), "reglages")) {
-            JsonObject r = e.getAsJsonObject();
-            if (cle.equals(Pont.texte(r, "cle"))) {
+            if (e instanceof JsonObject r && cle.equals(Pont.texte(r, "cle"))) {
                 boolean valeur = Pont.vrai(r, "valeur");
                 Boolean choisi = REGLAGES_EN_ATTENTE.get(cle);
                 if (choisi != null && choisi == valeur) {
@@ -546,7 +545,13 @@ public class EcranAssistant extends Screen {
         sac.addProperty("nom", "Backpacks dans les crafts");
         sac.addProperty("description", SacsFabrication.description());
         reglages.add(sac);
-        for (JsonElement reglage : Pont.liste(ecran, "reglages")) reglages.add(reglage);
+        for (JsonElement reglage : Pont.liste(ecran, "reglages")) {
+            if (!(reglage instanceof JsonObject ligne)) continue;
+            String cle = Pont.texte(ligne, "cle");
+            // Un assistant Python encore ouvert peut republier les réglages des anciens objectifs.
+            if (!cle.isBlank() && !cle.equals("enchainer") && !cle.equals("surbrillance"))
+                reglages.add(ligne);
+        }
         // Les cartes s'arrêtent avant la colonne de la barre ; 5 px de marge dans chaque carte.
         int fin = x + largeur - Theme.DEFILEMENT - Theme.ECART, marge = 5;
         int texte = Math.max(30, fin - x - 2 * marge - largeurInterrupteur - Theme.ECART);
