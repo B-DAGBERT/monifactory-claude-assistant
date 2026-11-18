@@ -2,6 +2,9 @@
 
 ## Repères
 
+[AGENTS.md](../AGENTS.md) indexe les fiches de chaque parcours. Elles indiquent quoi lire et
+quels tests lancer pour une modification ciblée.
+
 - `monifactory_assistant/app.py` assemble les composants, branche les raccourcis et supervise le processus.
 - `application/game.py` suit les relevés du monde, les quêtes, le journal et les actions de jeu.
 - `application/conversation.py` traite les questions, les fiches et les événements vocaux.
