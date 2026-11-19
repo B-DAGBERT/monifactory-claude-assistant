@@ -7,8 +7,9 @@ import time
 import unittest
 from concurrent.futures import Future
 from pathlib import Path
+from queue import Queue
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from monifactory_assistant.game.requests import CommandQueue
 from monifactory_assistant.game.world_scope import WorldScope
@@ -29,6 +30,7 @@ from monifactory_assistant.production.recipes import (
     Resource,
 )
 from monifactory_assistant.production.service import ProductionService, _historical_lines
+from tests.benchmarks.question_context import fixture as conversation_fixture
 
 IRON = Resource("item", "minecraft:iron_ingot", "item")
 PLATE = Resource("item", "gtceu:iron_plate", "item")
@@ -409,6 +411,37 @@ class ProductionServiceTests(unittest.TestCase):
         self.reconnect()
         self.assertFalse(self.service.context_valid(proof))
         self.assertEqual(len(self.executor.calls), 1)
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_question_uses_the_selected_recipe_and_revalidates_generation_at_delivery(self, _log):
+        self.service.submit(self.request(recette=RECIPE.id))
+        self.assertEqual(self.finish()["etat"], "pret")
+        question = "Explique cette recette de production"
+        summary, proof = self.service.context(question, require_current=True)
+        self.assertIn(RECIPE.id, summary)
+        app = conversation_fixture()
+        app.production = self.service
+        app.events, app.speaker, app.speak = Queue(), Mock(), False
+        app.history, app.notify, app.refresh, app.run_actions = [], Mock(), Mock(), Mock()
+        answer = 'Détail de la recette.<actions>[{"type":"voix","active":true}]</actions>'
+        app.conversation = SimpleNamespace(ask=Mock(return_value=answer))
+        app.work_question(question, None, None)
+        prompt = app.conversation.ask.call_args.args[0]
+        self.assertTrue(
+            prompt.endswith(
+                json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+                + f"\n\nMa question : {question}"
+            )
+        )
+        result = list(app.events.queue)[-1]
+        self.assertEqual(result, ("answer", question, answer, proof))
+        self.write("catalogue_production_etat.json", {**self.metadata, "generation": 2})
+        app.on_answer(*result[1:])
+        app.notify.assert_called_once_with(
+            "Le calcul de production n’est plus courant. Relance-le dans Minecraft.", 8
+        )
+        self.assertEqual(app.history, [])
+        app.run_actions.assert_not_called()
 
     def test_readable_old_catalogue_without_live_client_cannot_authorize_ai(self):
         self.service.submit(self.request())

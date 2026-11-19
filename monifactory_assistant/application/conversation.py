@@ -6,14 +6,10 @@ import time
 import traceback
 
 import monifactory_assistant.providers as ai_provider
-from monifactory_assistant.game.context import (
-    QuestionContext,
-    describe_state,
-    describe_storage,
-    question_context,
+from monifactory_assistant.application.question_context import (
+    QuestionContextSources,
+    build_question_context,
 )
-from monifactory_assistant.game.veins import describe_veins
-from monifactory_assistant.game.world import describe_machines, describe_world
 from monifactory_assistant.persistence import atomic_json
 from monifactory_assistant.platform.hooks import keyboard
 from monifactory_assistant.prompts import ACTIONS_HELP, INFO_REQUEST
@@ -159,65 +155,25 @@ class ConversationController:
         self.start_question(None, audio, self.shot)
 
     def context(self, shot, with_storage=False, *, question=None):
-        selection = (
-            question_context(question, self.recipe_index)
-            if with_storage and question is not None
-            else QuestionContext()
+        def world_hint():
+            bridge = getattr(self, "bridge", None)
+            if getattr(bridge, "isolated", False) is True:
+                return bridge.context_hint()
+            return None
+
+        sources = QuestionContextSources(
+            read_recipe_index=lambda: self.recipe_index,
+            read_world_hint=world_hint,
+            read_game=lambda: self.game,
+            read_storage=lambda: self.storage,
+            read_veins=lambda: self.veins,
+            read_world=lambda: self.world,
+            read_journal=lambda count: self.describe_journal(count),
+            read_places=lambda: self.places,
+            read_guide=lambda: self.guide,
+            read_removed_chests=lambda: self.removed_chests,
         )
-        parts = []
-        bridge = getattr(self, "bridge", None)
-        if getattr(bridge, "isolated", False) is True:
-            parts.append(bridge.context_hint())
-        if self.game:
-            parts.append(describe_state(self.game, items=selection.items))
-        if with_storage:
-            if selection.profile != "reglage":
-                parts.append(describe_storage(self.storage, items=selection.items))
-                prefix = "Machines ciblées. " if selection.machines is not None else ""
-                parts.append(
-                    prefix + describe_machines(self.storage, machine_ids=selection.machines)
-                )
-                parts.append(describe_veins(self.veins, self.game))
-            world = describe_world(self.world, machine_ids=selection.machines)
-            if world:
-                parts.append(world)
-            if selection.focused:
-                parts.append(
-                    "Contexte ciblé pour cette question ; les autres stocks et événements ne sont pas détaillés. "
-                    "Si une information manque, consulte les fichiers locaux en lecture seule "
-                    "(stockage.txt, recettes_*.json, machines_recettes.txt, inventaire_joueur.json). "
-                    "Ne conclus pas qu'un objet absent de cet extrait n'existe pas. "
-                    "Ajoute « contexte complet » dans une question pour joindre le contexte étendu à ce tour."
-                )
-        if with_storage and not selection.focused:
-            journal = self.describe_journal(25)
-            if journal:
-                parts.append(journal)
-        if self.places and selection.profile != "reglage":
-            parts.append(
-                "Lieux mémorisés : "
-                + " ; ".join(
-                    f"{name} ({p['x']} {p['y']} {p['z']}, {p['dimension']})"
-                    for name, p in self.places.items()
-                )
-            )
-        if self.guide:
-            parts.append(f"Guidage en cours vers : {self.guide['label']}")
-        removed = [
-            f"{int(c['x'])} {int(c['y'])} {int(c['z'])} (il y a {int((time.time() - t) / 60)} min)"
-            for t, c, broken in self.removed_chests
-            if broken
-        ]
-        if removed:
-            parts.append(
-                "Coffres retirés automatiquement de la mémoire (cassés) : " + ", ".join(removed)
-            )
-        if shot:
-            parts.append(
-                f"Capture de mon écran : {shot} (lis-la avec view_image SEULEMENT si ma question porte sur ce que "
-                "je vois : « ça », « ce bloc », « cet écran »… ; sinon ne l'ouvre pas, ça ralentit)"
-            )
-        return "\n".join(parts)
+        return build_question_context(sources, shot, with_storage=with_storage, question=question)
 
     def world_scope(self):
         return getattr(getattr(self, "bridge", None), "scope", None)
