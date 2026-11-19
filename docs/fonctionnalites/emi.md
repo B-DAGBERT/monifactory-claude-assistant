@@ -13,6 +13,11 @@
 - Pour l’onglet Recette, `MachinesEmi.planSuivi()` réunit l’arbre suivi, son instantané et
   les opérations utiles après couverture par les coffres connus. `AnalyseRecette` compare les
   identités de l’arbre et de l’instantané avant de reprendre ces opérations.
+- `AnalyseRecette` signale l’absence d’un poste ou d’un type de machine par
+  `OrdreMachines.Motif.POSTE_MANQUANT`. `OrdreMachines` transmet le motif à `RangsRecette`
+  pour le statut, et la vue choisit le libellé court selon le type de poste.
+  La tension insuffisante garde son statut de blocage distinct. Les constructeurs historiques
+  de `Condition` et `Ligne` acceptent encore les deux anciens préfixes.
 
 ## Règles à préserver
 

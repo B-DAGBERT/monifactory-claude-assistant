@@ -971,26 +971,25 @@ public final class AnalyseRecette {
             case POSEE -> OrdreMachines.Condition.prete();
             case RANGEE -> OrdreMachines.Condition.preparer(
                     (machine ? "Machine à poser : " : "Poste à poser : ") + nom);
-            case AUCUNE -> new OrdreMachines.Condition(
-                    OrdreMachines.Mode.BLOQUE, manque(poste, nom));
+            case AUCUNE -> conditionPosteAbsent(poste, nom);
             case INCONNUE -> new OrdreMachines.Condition(
                     OrdreMachines.Mode.INCONNU, "Poste à vérifier : " + nom);
         };
     }
 
     /**
-     * Raison d'un poste absent. Décision C : quand la tension manque, on le dit sans nommer de
+     * Condition d'un poste absent. Décision C : quand la tension manque, on le dit sans nommer de
      * machine plus puissante ; seul un type de machine absent, dans les tensions déjà possédées,
      * est nommé « manquant ».
      */
-    private static String manque(Object poste, String nom) {
+    private static OrdreMachines.Condition conditionPosteAbsent(Object poste, String nom) {
         if (poste instanceof PossessionsRecette.PosteGT gt) {
             var possedee = PossessionsRecette.atelierSousTier(gt);
             var nommable = PossessionsRecette.atelier(gt);
-            return DecisionTension.raison(
+            return DecisionTension.condition(
                     possedee == null ? null : possedee.nom(), nommable == null ? null : nom);
         }
-        return "Poste manquant : " + nom;
+        return OrdreMachines.Condition.posteManquant("Poste manquant : " + nom);
     }
 
     /** Le poste manque faute de tension, pas de type de machine (décision C). */
@@ -1251,7 +1250,12 @@ public final class AnalyseRecette {
                         : atelier != null ? atelier.icone() : ItemStack.EMPTY;
         String circuit = circuit(recette);
         String entrees = entrees(recette, e.fois());
-        String etat = RangsRecette.texte(e, AnalyseRecette::court);
+        String etat =
+                e.statut() == RangsRecette.Statut.POSTE_MANQUANT
+                        ? poste instanceof PossessionsRecette.PosteGT
+                                ? "Machine manquante"
+                                : "Poste manquant"
+                        : RangsRecette.texte(e, AnalyseRecette::court);
         VueRecette.Ton ton =
                 switch (e.statut()) {
                     case PRETE -> VueRecette.Ton.PRET;
@@ -1328,9 +1332,7 @@ public final class AnalyseRecette {
     /** Texte court pour la colonne d'état ; la raison complète reste au survol. */
     private static String court(String raison) {
         if (raison.startsWith("Manque : ")) return "Manque " + raison.substring(9);
-        if (raison.startsWith("Machine manquante")) return "Machine manquante";
         if (raison.startsWith("Tension insuffisante")) return "Tension insuffisante";
-        if (raison.startsWith("Poste manquant")) return "Poste manquant";
         if (raison.startsWith("Machine à poser")) return "Machine à poser";
         if (raison.startsWith("Poste à poser")) return "Poste à poser";
         if (raison.startsWith("Poste à vérifier")) return "Poste à vérifier";

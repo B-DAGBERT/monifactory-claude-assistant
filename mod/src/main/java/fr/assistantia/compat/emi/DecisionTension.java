@@ -1,5 +1,7 @@
 package fr.assistantia.compat.emi;
 
+import fr.assistantia.OrdreMachines;
+
 /**
  * Décision C du joueur : jamais de « machine pas assez puissante / passe au tier supérieur ». Une
  * étape qui demande plus de tension que les machines possédées le dit sans nommer de machine plus
@@ -16,9 +18,18 @@ public final class DecisionTension {
      * @param nommable atelier qu'on peut nommer sans monter de tier, ou null
      */
     public static String raison(String possedee, String nommable) {
-        if (possedee != null) return "Tension insuffisante (" + possedee + " possédé)";
-        if (nommable == null) return "Tension insuffisante (au-dessus de tes machines)";
-        return "Machine manquante : " + nommable;
+        return condition(possedee, nommable).raison();
+    }
+
+    static OrdreMachines.Condition condition(String possedee, String nommable) {
+        if (possedee == null && nommable != null)
+            return OrdreMachines.Condition.posteManquant("Machine manquante : " + nommable);
+        String raison =
+                possedee == null
+                        ? "Tension insuffisante (au-dessus de tes machines)"
+                        : "Tension insuffisante (" + possedee + " possédé)";
+        return new OrdreMachines.Condition(
+                OrdreMachines.Mode.BLOQUE, raison, OrdreMachines.Motif.AUTRE);
     }
 
     /**

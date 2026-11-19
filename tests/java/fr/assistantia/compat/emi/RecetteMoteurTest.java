@@ -133,6 +133,14 @@ public final class RecetteMoteurTest {
             case "rangs" -> rangs();
             case "reperes" -> reperes();
             case "ordre" -> ordre();
+            case "ordre-mixte" -> ordreMixte(
+                    new OrdreMachines.Condition(
+                            OrdreMachines.Mode.BLOQUE, "Poste manquant : Atelier"));
+            case "libelle-poste" -> {
+                ordreMixte(OrdreMachines.Condition.posteManquant("Poste manquant : Atelier"));
+                ordreMixte(
+                        OrdreMachines.Condition.posteManquant("Manque : aucun atelier disponible"));
+            }
             case "facile" -> facile();
             case "racine" -> racine();
             case "outils" -> outils();
@@ -732,6 +740,144 @@ public final class RecetteMoteurTest {
                 RangsRecette.reperes(
                         etapes, List.of("bender"), (p, r) -> r.equals("bend"), Map.of(), 16);
         assert reperes.get("bender").attenue() && !reperes.get("bender").etoile();
+    }
+
+    private static void ordreMixte(OrdreMachines.Condition posteAbsent) {
+        var arbre =
+                noeudOrdre(
+                        null,
+                        noeudOrdre("attend", noeudOrdre("pret")),
+                        noeudOrdre("poste"),
+                        noeudOrdre("conflit"),
+                        noeudOrdre("manque"),
+                        noeudOrdre("attend-lot"),
+                        noeudOrdre("cycle", noeudOrdre("cycle")));
+        var operations =
+                List.of(
+                        new PlanMachines.Operation<>("poste", 5),
+                        new PlanMachines.Operation<>("conflit", 3),
+                        new PlanMachines.Operation<>("manque", 2),
+                        new PlanMachines.Operation<>("attend-lot", 6),
+                        new PlanMachines.Operation<>("attend", 8),
+                        new PlanMachines.Operation<>("pret", 4),
+                        new PlanMachines.Operation<>("cycle", 1));
+        var fer = new OrdreMachines.Regle<String>("fer"::equals, 1, false, "Fer");
+        Map<String, List<OrdreMachines.Regle<String>>> regles =
+                Map.of(
+                        "pret", List.of(fer),
+                        "conflit", List.of(fer),
+                        "manque", List.of(new OrdreMachines.Regle<>("or"::equals, 2, false, "Or")),
+                        "attend-lot",
+                                List.of(
+                                        new OrdreMachines.Regle<>(
+                                                "acier"::equals, 1, false, "Acier")),
+                        "attend",
+                                List.of(
+                                        new OrdreMachines.Regle<>(
+                                                "plaque"::equals, 1, false, "Plaque")));
+        String raison = posteAbsent.raison();
+        var resultat =
+                OrdreMachines.calculer(
+                        arbre,
+                        operations,
+                        r -> regles.getOrDefault(r, List.of()),
+                        List.of(source("fer", 1, OrdreMachines.Origine.POCHES)),
+                        r -> r.equals("poste") ? posteAbsent : OrdreMachines.Condition.prete(),
+                        true);
+        var lignes = resultat.lignes();
+        assert resultat.cycle() && lignes.get(6).cycle() : lignes;
+        assert lignes.get(2).conflit() : lignes;
+        assert lignes.get(5).dependances().equals(List.of("pret")) : lignes;
+        var lots =
+                List.of(
+                        new RangsRecette.Lot<>(7, "acier", 3, false),
+                        new RangsRecette.Lot<>(9, "autre-sortie", 2, true));
+        var etapes =
+                RangsRecette.numeroter(
+                        lignes, lots, r -> r.equals("attend-lot") || r.equals("poste") ? 7 : 0);
+        var attendues =
+                List.of(
+                        new RangsRecette.Etape<>(
+                                1,
+                                "pret",
+                                4,
+                                0,
+                                RangsRecette.Statut.PRETE,
+                                "Ingrédients alloués pour une fabrication",
+                                0),
+                        new RangsRecette.Etape<>(
+                                2, "acier", 3, 7, RangsRecette.Statut.EN_MACHINE, "En machine", 0),
+                        new RangsRecette.Etape<>(
+                                3,
+                                "autre-sortie",
+                                2,
+                                9,
+                                RangsRecette.Statut.A_RECUPERER,
+                                "Sorties à récupérer",
+                                0),
+                        new RangsRecette.Etape<>(
+                                4, "poste", 5, 0, RangsRecette.Statut.POSTE_MANQUANT, raison, 0),
+                        new RangsRecette.Etape<>(
+                                5,
+                                "conflit",
+                                3,
+                                0,
+                                RangsRecette.Statut.ATTEND,
+                                "Stock déjà alloué : Fer",
+                                0),
+                        new RangsRecette.Etape<>(
+                                6, "manque", 2, 0, RangsRecette.Statut.MANQUE, "Manque : Or", 0),
+                        new RangsRecette.Etape<>(
+                                7,
+                                "attend-lot",
+                                6,
+                                0,
+                                RangsRecette.Statut.ATTEND,
+                                "Manque : Acier",
+                                2),
+                        new RangsRecette.Etape<>(
+                                8,
+                                "attend",
+                                8,
+                                0,
+                                RangsRecette.Statut.ATTEND,
+                                "Attend : Plaque",
+                                1),
+                        new RangsRecette.Etape<>(
+                                9,
+                                "cycle",
+                                1,
+                                0,
+                                RangsRecette.Statut.BLOQUEE,
+                                "Dépendance cyclique",
+                                0));
+        assert etapes.equals(attendues) : etapes;
+        assert etapes.stream()
+                .map(e -> RangsRecette.texte(e, s -> s))
+                .toList()
+                .equals(
+                        List.of(
+                                "Prête",
+                                "En machine",
+                                "À récupérer",
+                                raison,
+                                "Stock pris par une autre étape",
+                                "Manque : Or",
+                                "Attend l’étape 2",
+                                "Attend l’étape 1",
+                                "Dépendance cyclique"));
+        assert RangsRecette.suivante(etapes).recette().equals("pret");
+        var enCours = new RangsRecette.Cle<>("autre-sortie", 9);
+        var stabilisees = RangsRecette.stabiliser(etapes, enCours);
+        assert RangsRecette.cle(RangsRecette.suivante(stabilisees)).equals(enCours);
+        assert stabilisees.get(6).attend() == 3 && stabilisees.get(7).attend() == 2 : stabilisees;
+    }
+
+    @SafeVarargs
+    private static PlanMachines.Noeud<String, String> noeudOrdre(
+            String recette, PlanMachines.Noeud<String, String>... enfants) {
+        return new PlanMachines.Noeud<>(
+                produit -> produit.equals(recette), 1, 1, false, recette, List.of(enfants));
     }
 
     /** Demande du joueur : dire explicitement si c'est dans le backpack ou dans un coffre. */

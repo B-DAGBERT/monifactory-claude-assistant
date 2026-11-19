@@ -105,8 +105,8 @@ public final class RangsRecette {
                 case INCONNU -> statut = Statut.INCONNUE;
                 default -> {
                     if (ligne.cycle()) statut = Statut.BLOQUEE;
-                    else if (raison.startsWith("Machine manquante")
-                            || raison.startsWith("Poste manquant")) statut = Statut.POSTE_MANQUANT;
+                    else if (ligne.motif() == OrdreMachines.Motif.POSTE_MANQUANT)
+                        statut = Statut.POSTE_MANQUANT;
                     else if (raison.startsWith("Attend") || ligne.conflit()) {
                         statut = Statut.ATTEND;
                         attend = premier(ligne.dependances(), rangs, rang);

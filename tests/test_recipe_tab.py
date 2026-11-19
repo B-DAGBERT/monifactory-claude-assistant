@@ -135,6 +135,12 @@ class RecipeEngineTests(unittest.TestCase):
     def test_real_ordering_feeds_plan_ranks(self):
         self.run_case("ordre")
 
+    def test_mixed_blockers_keep_order_ranks_texts_and_pending_lots(self):
+        self.run_case("ordre-mixte")
+
+    def test_missing_workstation_classification_survives_a_reworded_reason(self):
+        self.run_case("libelle-poste")
+
     def test_easy_machine_definition_is_conservative(self):
         self.run_case("facile")
 

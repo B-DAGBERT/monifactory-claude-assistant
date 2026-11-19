@@ -112,8 +112,65 @@ public final class RecipeFollowedPlanTest {
                 assert autre.produit().quantite().equals("2") : autre;
                 assert autre.ton() == VueRecette.Ton.PRET : autre;
             }
+            case "poste-manquant" -> verifierAbsence(
+                    arbre, courant, "Poste manquant", "Poste manquant : Atelier", false);
+            case "machine-manquante" -> {
+                PossessionsRecette.machineAbsente = new PossessionsRecette.PosteGT();
+                PossessionsRecette.atelierMachine =
+                        new PossessionsRecette.Atelier("Basic Bender", ItemStack.EMPTY);
+                verifierAbsence(
+                        arbre,
+                        courant,
+                        "Machine manquante",
+                        "Machine manquante : Basic Bender",
+                        false);
+            }
+            case "tension-insuffisante" -> {
+                PossessionsRecette.machineAbsente = new PossessionsRecette.PosteGT();
+                verifierAbsence(
+                        arbre,
+                        courant,
+                        "Tension insuffisante",
+                        "Tension insuffisante (au-dessus de tes machines)",
+                        true);
+            }
             default -> throw new AssertionError(args[0]);
         }
+    }
+
+    private static void verifierAbsence(
+            Object arbre,
+            InstantaneArbreEmi courant,
+            String court,
+            String raison,
+            boolean tension) {
+        PossessionsRecette.aPoser = plaque;
+        PossessionsRecette.absent = cible;
+        suivre(arbre, courant, List.of(operation(cible, 2), operation(plaque, 3)));
+        assert AnalyseRecette.evaluer();
+        var vue = verifierVueSuivie(6, A_POSER, 0, 2);
+        assert AnalyseRecette.recetteEnCours() == plaque;
+        var etape = vue.etapes().get(1);
+        assert etape.rang() == 2 && !etape.etoile() && etape.ton() == VueRecette.Ton.PROBLEME
+                : etape;
+        assert etape.produit().nom().equals("test:cible") && etape.produit().quantite().equals("2");
+        assert etape.etat().equals(court) : etape;
+        String poste = PossessionsRecette.atelierMachine == null ? "Atelier" : "Basic Bender";
+        assert etape.detail()
+                        .equals(
+                                String.join(
+                                        "\n",
+                                        "2. 2 × test:cible",
+                                        "Poste : "
+                                                + poste
+                                                + (tension
+                                                        ? " (tension insuffisante)"
+                                                        : " (manquant)"),
+                                        "État : " + court + " · " + raison,
+                                        tension
+                                                ? "Ordre : tes machines de ce type n’ont pas la tension de cette recette."
+                                                : "Ordre : aucune machine possédée ne sait faire cette recette."))
+                : etape.detail();
     }
 
     private static void suivre(

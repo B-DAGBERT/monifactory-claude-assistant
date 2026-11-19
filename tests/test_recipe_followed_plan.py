@@ -113,15 +113,21 @@ final class PossessionsRecette {
     record PosteGT() {}
     record Atelier(String nom, ItemStack icone) {}
     static EmiRecipe aPoser;
+    static EmiRecipe absent;
+    static PosteGT machineAbsente;
+    static Atelier atelierMachine;
     static long version;
     static long revision() { return version; }
     static boolean complet() { return true; }
-    static Object poste(EmiRecipe r) { return r; }
+    static Object poste(EmiRecipe r) {
+        return r == absent && machineAbsente != null ? machineAbsente : r;
+    }
     static boolean etabli(Object poste) { return false; }
-    static Atelier atelier(Object poste) { return null; }
+    static Atelier atelier(Object poste) { return poste == machineAbsente ? atelierMachine : null; }
     static Atelier atelierSousTier(PosteGT poste) { return null; }
     static boolean sousTier(PosteGT poste) { return false; }
     static Possession possession(Object poste) {
+        if (poste != null && (poste == absent || poste == machineAbsente)) return Possession.AUCUNE;
         return poste == aPoser ? Possession.RANGEE : Possession.POSEE;
     }
 }
@@ -187,7 +193,7 @@ def analyse_recette():
             "private static List<PlanRetrait.Stock<EmiStack>> stockEmi(",
             "private static List<OrdreMachines.StockSource<OrdonnancementEmi.Objet>> coffres(",
             "private static OrdreMachines.Condition condition(",
-            "private static String manque(",
+            "private static OrdreMachines.Condition conditionPosteAbsent(",
             "private static boolean tension(",
             "private static String lotsEnMarche(",
             "private static int lotAttendu(",
@@ -354,3 +360,8 @@ class RecipeFollowedPlanTests(unittest.TestCase):
 
     def test_quantity_change_keeps_the_current_step_and_updates_the_display(self):
         self.rejouer("quantite")
+
+    def test_missing_workstation_machine_and_insufficient_voltage_keep_visible_texts(self):
+        for cas in ("poste-manquant", "machine-manquante", "tension-insuffisante"):
+            with self.subTest(cas=cas):
+                self.rejouer(cas)

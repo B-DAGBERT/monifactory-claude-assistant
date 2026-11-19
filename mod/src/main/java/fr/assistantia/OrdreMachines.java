@@ -61,6 +61,21 @@ public final class OrdreMachines {
         BLOQUE
     }
 
+    public enum Motif {
+        AUTRE,
+        POSTE_MANQUANT
+    }
+
+    /** Adaptation des anciens constructeurs, qui recevaient uniquement le texte. */
+    private static Motif motifHistorique(Mode mode, String raison) {
+        return mode == Mode.BLOQUE
+                        && raison != null
+                        && (raison.startsWith("Poste manquant")
+                                || raison.startsWith("Machine manquante"))
+                ? Motif.POSTE_MANQUANT
+                : Motif.AUTRE;
+    }
+
     /** Les quantités conservent l'unité de la ressource (objets ou mB), sans conversion. */
     public record Regle<T>(
             Predicate<T> accepte, int quantite, boolean reutilisable, String nom, Object partage) {
@@ -86,10 +101,15 @@ public final class OrdreMachines {
     }
 
     /** Les préconditions natives restent l'autorité, même si les ingrédients sont présents. */
-    public record Condition(Mode mode, String raison) {
+    public record Condition(Mode mode, String raison, Motif motif) {
         public Condition {
             Objects.requireNonNull(mode);
+            Objects.requireNonNull(motif);
             raison = raison == null ? "" : raison;
+        }
+
+        public Condition(Mode mode, String raison) {
+            this(mode, raison, motifHistorique(mode, raison));
         }
 
         public static Condition prete() {
@@ -98,6 +118,10 @@ public final class OrdreMachines {
 
         public static Condition preparer(String raison) {
             return new Condition(Mode.PREPARER, raison);
+        }
+
+        public static Condition posteManquant(String raison) {
+            return new Condition(Mode.BLOQUE, raison, Motif.POSTE_MANQUANT);
         }
     }
 
@@ -109,9 +133,32 @@ public final class OrdreMachines {
             String raison,
             List<R> dependances,
             boolean conflit,
-            boolean cycle) {
+            boolean cycle,
+            Motif motif) {
         public Ligne {
             dependances = List.copyOf(dependances);
+            Objects.requireNonNull(motif);
+        }
+
+        public Ligne(
+                PlanMachines.Operation<R> operation,
+                Groupe groupe,
+                Mode mode,
+                int foisPretes,
+                String raison,
+                List<R> dependances,
+                boolean conflit,
+                boolean cycle) {
+            this(
+                    operation,
+                    groupe,
+                    mode,
+                    foisPretes,
+                    raison,
+                    dependances,
+                    conflit,
+                    cycle,
+                    motifHistorique(mode, raison));
         }
     }
 
@@ -222,7 +269,8 @@ public final class OrdreMachines {
                                 graphe,
                                 condition.mode(),
                                 condition.raison(),
-                                false));
+                                false,
+                                condition.motif()));
             } else {
                 var liste = List.copyOf(regles.apply(recette));
                 nombreRegles += liste.size();
@@ -312,6 +360,16 @@ public final class OrdreMachines {
             Mode mode,
             String raison,
             boolean conflit) {
+        return ligne(operation, graphe, mode, raison, conflit, Motif.AUTRE);
+    }
+
+    private static <R> Ligne<R> ligne(
+            PlanMachines.Operation<R> operation,
+            Graphe<R> graphe,
+            Mode mode,
+            String raison,
+            boolean conflit,
+            Motif motif) {
         Groupe groupe =
                 switch (mode) {
                     case PRET -> Groupe.PRET;
@@ -327,7 +385,8 @@ public final class OrdreMachines {
                 raison,
                 new ArrayList<>(graphe.dependances().get(operation.recette())),
                 conflit,
-                graphe.cycliques().contains(operation.recette()));
+                graphe.cycliques().contains(operation.recette()),
+                motif);
     }
 
     private static <R> Resultat<R> inconnu(
