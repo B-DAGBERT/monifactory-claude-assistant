@@ -116,6 +116,19 @@ public class SacsFabrication {public static final String CLE="local_backpack_cra
  public static boolean actif(){return actif;}public static void regler(boolean v){actif=v;}
  public static String description(){return "Compte le contenu des sacs portés dans les besoins de craft.";}}
 """,
+        "net.minecraftforge.fml.loading.FMLPaths": """
+public enum FMLPaths {CONFIGDIR;
+ public java.nio.file.Path get(){return java.nio.file.Path.of(System.getProperty("test.config"));}}
+""",
+        "fr.assistantia.Ecritures": """
+import java.nio.file.*;
+public class Ecritures {
+ public record Contenu(String texte){public Contenu persistant(){return this;}}
+ public static Contenu texte(String texte){return new Contenu(texte);}
+ public static String erreur(Path cible){return null;}
+ public static void publier(Path cible,Contenu contenu){
+  try{Files.writeString(cible,contenu.texte());}catch(java.io.IOException e){throw new AssertionError(e);}}}
+""",
         "fr.assistantia.CatalogueProduction": """
 public class CatalogueProduction {public static boolean apercuCourant(com.google.gson.JsonObject j){return true;}}
 """,
@@ -240,7 +253,7 @@ public class DashboardLayoutTest {
   etat.observer(new EtatReglages.Contexte("legacy",new Object(),new Object()),true,ecran,51603);
   assert !etat.enAttente()&&etat.information().contains("Connexion");
  }
- public static void main(String[] args){
+ public static void main(String[] args)throws java.io.IOException{
   etatReglages();
   var mc=Minecraft.getInstance();
   var ecran=new JsonObject();Pont.vue.add("ecran",ecran);Pont.vue.addProperty("moteur","Codex");
@@ -330,9 +343,24 @@ public class DashboardLayoutTest {
    assert !SacsFabrication.actif()&&sac!=null&&Pont.envois.size()==avantSac:cas+": backpack option applies locally";
    s.mouseClicked(sac[0]+2,sac[1]+2,0);render(s);
    assert SacsFabrication.actif()&&Pont.envois.size()==avantSac:cas+": backpack option can be reenabled";
+   Pont.actif=false;render(s);
+   int[] drawers=interrupteur("Drawers pleins","✘ Désactivé");
+   for(int k=0;k<4&&(drawers==null||drawers[1]+2>=ligneStatut-Theme.ECART);k++){
+    s.mouseScrolled(w/2,h/2,-1);render(s);drawers=interrupteur("Drawers pleins","✘ Désactivé");}
+   assert drawers!=null&&!ReglageDrawers.actif():cas+": visible drawer option defaults off with assistant stopped";
+   s.mouseClicked(drawers[0]+2,drawers[1]+2,0);render(s);
+   var preference=java.nio.file.Path.of(System.getProperty("test.config"),"assistantia-drawers-pleins.txt");
+   assert ReglageDrawers.actif()&&java.nio.file.Files.readString(preference).equals("true"):cas+": drawer option applies and persists locally";
+   drawers=interrupteur("Drawers pleins","✔ Activé");assert drawers!=null:cas+": drawer option displays the applied value";
+   s.mouseClicked(drawers[0]+2,drawers[1]+2,0);render(s);
+   assert !ReglageDrawers.actif()&&java.nio.file.Files.readString(preference).equals("false")
+       &&Pont.envois.size()==avantSac:cas+": drawer option turns off locally";
+   Pont.actif=true;
    s.mouseScrolled(w/2,h/2,-1);render(s);
-   assert GuiGraphics.textes.stream().anyMatch(t->t.startsWith("Les réponses")):cas+": description drawn";
    int[] voix=interrupteur("Lecture à voix","✘ Désactivé");
+   for(int k=0;k<4&&(voix==null||voix[1]+2>=ligneStatut-Theme.ECART);k++){
+    s.mouseScrolled(w/2,h/2,-1);render(s);voix=interrupteur("Lecture à voix","✘ Désactivé");}
+   assert GuiGraphics.textes.stream().anyMatch(t->t.startsWith("Les réponses")):cas+": description drawn";
    assert voix!=null:cas+": voice toggle visible";
    int avant=Pont.envois.size();s.mouseClicked(voix[0]+2,voix[1]+2,0);
    assert Pont.envois.size()==avant+1&&Pont.texte(Pont.envois.get(avant),"cle").equals("voix")&&Pont.vrai(Pont.envois.get(avant),"valeur"):cas+": toggle click sends the setting";
@@ -418,6 +446,7 @@ class DashboardLayoutTests(unittest.TestCase):
                 "OngletDiscussion",
                 "EtatDiscussion",
                 "EtatReglages",
+                "ReglageDrawers",
                 "AvisMiseAJour",
                 "GroupesMachines",
             ):

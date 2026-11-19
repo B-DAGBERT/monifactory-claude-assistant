@@ -122,13 +122,25 @@ ECRAN_STUBS["net.minecraft.client.Minecraft"] = stubs_theme.membres(
     ),
 )
 ECRAN_STUBS["fr.assistantia.Emi"] = (
-    "public class Emi {public static boolean arbreActif(){return true;}public static boolean present(){return true;}}"
+    "public class Emi {public static boolean disponible=true;public static boolean arbreActif(){return disponible;}"
+    "public static boolean present(){return disponible;}}"
 )
 ECRAN_STUBS["fr.assistantia.compat.emi.EnvoiMachine"] = """
 public class EnvoiMachine {
  public static String statut(){return "/private/message";}
  public record Diagnostic(String recette,String etat,String motif){}
  public static Diagnostic diagnostic(){return new Diagnostic("gtceu:bender/plate","interrompu","confirmation_absente");}
+}
+"""
+ECRAN_STUBS["fr.assistantia.compat.emi.MachinesEmi"] = """
+import java.util.List;
+import java.util.Map;
+public class MachinesEmi {
+ public static int lectures;
+ public static List<Map.Entry<String,String>> moules=List.of(
+     Map.entry("Moule recherché","gtceu:ingot_casting_mold"),
+     Map.entry("Moule retenu","machine · 1 · compatible"));
+ public static List<Map.Entry<String,String>> diagnosticMoules(){lectures++;return moules;}
 }
 """
 ECRAN_STUBS["net.minecraft.client.gui.components.EditBox"] = stubs_theme.membres(
@@ -142,6 +154,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.client.gui.GuiGraphics;
+import fr.assistantia.compat.emi.MachinesEmi;
 public class DiagnosticScreenTest {
  public static void main(String[] args){
   Pont.ecran.add("diagnostic",com.google.gson.JsonParser.parseString("{\"sauvegardes\":[{\"fichier\":\"a\",\"message\":\"récupérée\"},{\"fichier\":\"b\",\"message\":\"récupérée\"},{\"fichier\":\"c\",\"message\":\"récupérée\"}]}").getAsJsonObject());
@@ -151,15 +164,26 @@ public class DiagnosticScreenTest {
   // 320 x 240 : the three backups do not fit, the list scrolls (no more paging).
   GuiGraphics.TEXTES.clear();s.render(new GuiGraphics(),0,0,0);
   assert GuiGraphics.TEXTES.contains("Mod chargé")&&!GuiGraphics.TEXTES.contains("c · récupérée"):GuiGraphics.TEXTES;
+  assert GuiGraphics.TEXTES.contains("Moule recherché")&&GuiGraphics.TEXTES.contains("gtceu:ingot_casting_mold"):GuiGraphics.TEXTES;
+  assert GuiGraphics.TEXTES.contains("Moule retenu")&&GuiGraphics.TEXTES.contains("machine · 1 · compatible"):GuiGraphics.TEXTES;
   s.mouseScrolled(160,120,-100);GuiGraphics.TEXTES.clear();s.render(new GuiGraphics(),0,0,0);
   assert GuiGraphics.TEXTES.contains("c · récupérée")&&!GuiGraphics.TEXTES.contains("Mod chargé"):"scrolling reveals the last backup";
   var copier=(Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals("Copier le diagnostic")).findFirst().orElseThrow();
+  var lectures=MachinesEmi.lectures;
+  MachinesEmi.moules=java.util.List.of(java.util.Map.entry("Moule recherché","gtceu:plate_casting_mold"));
   copier.press();
-  assert mc.keyboardHandler.report.equals("Monifactory Assistant test-shared31\nRecette gtceu:bender/plate\nTransfert interrompu\nMotif confirmation absente"):mc.keyboardHandler.report;
+  assert mc.keyboardHandler.report.equals("Monifactory Assistant test-shared31\nRecette gtceu:bender/plate\nTransfert interrompu\nMotif confirmation absente\nMoule recherché · gtceu:ingot_casting_mold\nMoule retenu · machine · 1 · compatible"):mc.keyboardHandler.report;
+  assert MachinesEmi.lectures==lectures:"le rapport copie les lignes réellement affichées";
   assert !mc.keyboardHandler.report.contains("/private/message")&&!mc.keyboardHandler.report.contains("Sauvegarde");
   assert Pont.sends==0;
   s.keyPressed(256,0,0);assert mc.screen==parent;
-  s.init(mc,640,480);s.render(new GuiGraphics(),0,0,0);assert Pont.sends==0;
+  Emi.disponible=false;
+  s.init(mc,640,480);GuiGraphics.TEXTES.clear();s.render(new GuiGraphics(),0,0,0);
+  assert !GuiGraphics.TEXTES.contains("Moule recherché")&&MachinesEmi.lectures==lectures;
+  copier=(Button)s.widgets.stream().filter(w->w instanceof Button b&&b.title.getString().equals("Copier le diagnostic")).findFirst().orElseThrow();
+  copier.press();
+  assert mc.keyboardHandler.report.equals("Monifactory Assistant test-shared31\nEMI indisponible");
+  assert Pont.sends==0;
  }
 }
 """

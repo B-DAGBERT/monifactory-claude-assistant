@@ -1,6 +1,7 @@
 package fr.assistantia.mixin;
 
 import fr.assistantia.StockProduction;
+import fr.assistantia.compat.emi.ReglageCircuitMachine;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
@@ -26,13 +27,15 @@ public abstract class PaquetsStockMixin {
             remap = false,
             require = 1)
     private void assistantia$complet(ClientboundContainerSetContentPacket paquet, CallbackInfo ci) {
+        var connexion = assistantia$connexion();
         StockProduction.complet(
-                assistantia$connexion(),
+                connexion,
                 paquet.getContainerId(),
                 paquet.getStateId(),
                 paquet.getItems(),
                 paquet.getCarriedItem(),
                 false);
+        ReglageCircuitMachine.confirmer(connexion, paquet.getContainerId(), paquet.getItems());
     }
 
     @Inject(
@@ -41,7 +44,10 @@ public abstract class PaquetsStockMixin {
             remap = false,
             require = 1)
     private void assistantia$variation(ClientboundContainerSetSlotPacket paquet, CallbackInfo ci) {
-        StockProduction.variation(assistantia$connexion());
+        var connexion = assistantia$connexion();
+        StockProduction.variation(connexion);
+        ReglageCircuitMachine.confirmer(
+                connexion, paquet.getContainerId(), paquet.getSlot(), paquet.getItem());
     }
 
     @Inject(

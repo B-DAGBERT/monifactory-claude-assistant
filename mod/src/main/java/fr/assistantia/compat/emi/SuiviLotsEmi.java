@@ -12,6 +12,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -31,6 +32,7 @@ final class SuiviLotsEmi {
     private final java.util.Map<Integer, Object> arbresTermines = new java.util.HashMap<>();
     private List<PlanRetrait.Stock<EmiStack>> inventaireAssimile;
     private OrigineFabrication.Provenances derniereReception;
+    private final List<PlanRetrait.Stock<EmiStack>> collectesAttribuees = new ArrayList<>();
     private final ReceptionManuelle<EmiStack> receptionManuelle =
             new ReceptionManuelle<>(ComparaisonEmi::meme);
     private long revision;
@@ -64,7 +66,9 @@ final class SuiviLotsEmi {
     }
 
     boolean receptionEnAttente() {
-        return receptionManuelle.enAttente() || receptionFluides.enAttente();
+        return !collectesAttribuees.isEmpty()
+                || receptionManuelle.enAttente()
+                || receptionFluides.enAttente();
     }
 
     private void memoriserInventaire(List<PlanRetrait.Stock<EmiStack>> stock) {
@@ -154,6 +158,7 @@ final class SuiviLotsEmi {
         retiresDuSuivi.clear();
         inventaireAssimile = null;
         derniereReception = null;
+        collectesAttribuees.clear();
         oublierInterface();
         receptionManuelle.vider();
         modifie();
@@ -273,6 +278,43 @@ final class SuiviLotsEmi {
                 .toList();
     }
 
+    private record Collecte(ItemStack variante, LotMachine lot) {}
+
+    /** Le bouton apporte une acquisition, sans preuve de la machine qui l'a produite. */
+    BiConsumer<ItemStack, Integer> preparerCollecte(List<ItemStack> variantes) {
+        List<Collecte> suivies = new ArrayList<>();
+        for (var pile : variantes) {
+            var objet = EmiStack.of(pile);
+            var candidats = lots.stream().filter(lot -> attend(lot, objet)).limit(2).toList();
+            if (candidats.size() == 1 && !candidats.get(0).manuel())
+                suivies.add(new Collecte(pile.copy(), candidats.get(0)));
+        }
+        return (pile, quantite) -> {
+            if (quantite <= 0) return;
+            for (var collecte : suivies)
+                if (ItemStack.isSameItemSameTags(collecte.variante(), pile)) {
+                    recevoirCollecte(collecte.lot(), EmiStack.of(pile), quantite);
+                    return;
+                }
+        };
+    }
+
+    private static boolean attend(LotMachine lot, EmiStack objet) {
+        return lot.suivi().restants().stream().anyMatch(r -> ComparaisonEmi.meme(r.objet(), objet));
+    }
+
+    private void recevoirCollecte(LotMachine lot, EmiStack objet, int quantite) {
+        if (!lots.contains(lot) || lots.stream().anyMatch(l -> l != lot && attend(l, objet)))
+            return;
+        var gain = new PlanRetrait.Stock<>(objet, quantite, true);
+        int avant = lot.suivi().totalRecu();
+        lot.suivi().recevoir(List.of(gain), false);
+        int recu = lot.suivi().totalRecu() - avant;
+        if (recu <= 0) return;
+        collectesAttribuees.add(new PlanRetrait.Stock<>(objet, recu, true));
+        modifie();
+    }
+
     void recevoir(OrigineFabrication.Provenances provenances) {
         if (provenances == derniereReception) return;
         derniereReception = provenances;
@@ -291,17 +333,22 @@ final class SuiviLotsEmi {
         if (player == null) return;
         var directs = objets(crafts);
         List<PlanRetrait.Stock<EmiStack>> retraitsMachine = List.of();
-        if (machine != null && player.containerMenu == machine.menu()) {
+        if (machine != null
+                && (player.containerMenu == machine.menu()
+                        || player.containerMenu == player.inventoryMenu)) {
             retraitsMachine = objets(machine.objets());
             recevoirMachine(retraitsMachine, machine.position());
         }
         var attendusAutomatiques =
                 receptionManuelle.soustraire(
-                        objets(OrigineFabrication.retraitsAttendus(player.containerMenu)), directs);
+                        objets(OrigineFabrication.retraitsAttendus(player)), directs);
         var personnels = inventaire.get();
+        var dejaAttribues = new ArrayList<>(retraitsMachine);
+        dejaAttribues.addAll(collectesAttribuees);
+        collectesAttribuees.clear();
         var nouveaux =
                 receptionManuelle.actualiser(
-                        personnels, retraitsMachine, attendusAutomatiques, directs);
+                        personnels, dejaAttribues, attendusAutomatiques, directs);
         memoriserInventaire(personnels);
         if (nouveaux.isEmpty()) return;
         var distribution =

@@ -870,6 +870,35 @@ public final class CycleMachineTest {
                 : "aucun ingrédient n'est repris dans AE2 pour ce même lot";
     }
 
+    private void collecteConfirmee() {
+        var recette = new EmiRecipe(List.of(item(ETAIN, 1)), List.of());
+        recette.outputs = List.of(item(PLAQUE, 1));
+        suivi.ajouter(recette, 3, GregTechMachines.ui.position());
+        var premier = suivi.actifs().get(0).suivi();
+        var pile = new ItemStack(PLAQUE, 1);
+        var reception = suivi.preparerCollecte(List.of(pile));
+        assert premier.totalRecu() == 0 : "l'aperçu de collecte ne valide aucun résultat";
+        reception.accept(new ItemStack(ETAIN, 1), 1);
+        assert premier.totalRecu() == 0;
+        menu.slots.get(3).item = new ItemStack(PLAQUE, 2);
+        reception.accept(pile, 2);
+        synchroniser();
+        assert premier.totalRecu() == 2 && premier.annulable();
+        assert premier.receptionNonAttribuee() : "le coffre ne prouve pas la machine d'origine";
+        menu.slots.get(3).item.setCount(3);
+        reception.accept(pile, 1);
+        synchroniser();
+        assert premier.totalRecu() == 3 && premier.etat() == Etat.TERMINE;
+        assert suivi.avancement(ArbreEmi.tree).get(0).quantite() == 3;
+
+        suivi.ajouter(recette, 1, GregTechMachines.ui.position());
+        var devenueAmbigue = suivi.preparerCollecte(List.of(pile));
+        suivi.ajouter(recette, 1, GregTechMachines.ui.position());
+        devenueAmbigue.accept(pile, 1);
+        suivi.preparerCollecte(List.of(pile)).accept(pile, 1);
+        assert suivi.actifs().subList(1, 3).stream().noneMatch(l -> l.suivi().totalRecu() > 0);
+    }
+
     private void deuxLots() throws ReflectiveOperationException {
         var recette = new EmiRecipe(List.of(item(ETAIN, 1)), List.of());
         recette.outputs = List.of(item(PLAQUE, 1));
@@ -952,6 +981,148 @@ public final class CycleMachineTest {
         assert suivi.aConfirmer().equals(java.util.Map.of(second, 1));
     }
 
+    private void receptionApresFermeture() throws ReflectiveOperationException {
+        var recette = recettePlaques(1);
+        var arbre = new InstantaneArbreEmiTest.Arbre();
+        arbre.goal = new dev.emi.emi.bom.MaterialNode(item(PLAQUE, 1));
+        arbre.goal.recipe = recette;
+        arbre.goal.children.add(new dev.emi.emi.bom.MaterialNode(item(ETAIN, 1)));
+        ArbreEmi.tree = arbre;
+        MachinesEmi.suivi = suivi;
+        lotId = suivi.ajouter(recette, 1, GregTechMachines.ui.position());
+        sortie.item = new ItemStack(PLAQUE, 1);
+        synchroniser();
+        assert lot().suivi().etat() == Etat.A_RECUPERER;
+        OrigineFabrication.clicSortie(
+                menu.containerId,
+                sortie.index,
+                0,
+                net.minecraft.world.inventory.ClickType.QUICK_MOVE,
+                mc.player);
+        sortie.item = ItemStack.EMPTY;
+        mc.player.containerMenu = mc.player.inventoryMenu;
+        synchroniser();
+        assert lot().suivi().totalRecu() == 0 : "la baisse de sortie seule ne suffit pas";
+        menu.slots.get(8).item = new ItemStack(PLAQUE, 1);
+        synchroniser();
+        assert lot().suivi().etat() == Etat.TERMINE && lot().suivi().totalRecu() == 1;
+        var vue = InstantaneArbreEmi.lire(arbre);
+        var couverture = StockFabricationEmi.pourMachines(stock());
+        assert quantite(couverture.physiques(), item(PLAQUE, 1)) == 1;
+        assert couverture.attendus().isEmpty() : "le lot reçu n'a plus de réservation";
+        assert couverture.operations(vue.machines(), vue.lots()).isEmpty();
+        synchroniser();
+        assert OrigineFabrication.totaux().get(PLAQUE) == 1;
+    }
+
+    private void lotHorsBesoins() throws ReflectiveOperationException {
+        var recette = recettePlaques(1);
+        var arbre = new InstantaneArbreEmiTest.Arbre();
+        arbre.goal = new dev.emi.emi.bom.MaterialNode(item(PLAQUE, 1));
+        arbre.goal.recipe = recette;
+        ArbreEmi.tree = arbre;
+        MachinesEmi.suivi = suivi;
+        lotId = suivi.ajouter(recette, 1, GregTechMachines.ui.position());
+        synchroniser();
+        var vue = InstantaneArbreEmi.lire(arbre);
+        var couverture = StockFabricationEmi.pourMachines(stock());
+        assert couverture.operations(vue.machines(), vue.lots()).isEmpty()
+                : "la réservation évite un deuxième envoi";
+        assert couverture
+                .operationsSansSortiesAttendues(vue.machines(), vue.lots())
+                .equals(List.of(new fr.assistantia.PlanMachines.Operation<>(recette, 1)));
+
+        menu.slots.get(8).item = new ItemStack(PLAQUE, 1);
+        synchroniser();
+        couverture = StockFabricationEmi.pourMachines(stock());
+        assert couverture.operationsSansSortiesAttendues(vue.machines(), vue.lots()).isEmpty()
+                : "le résultat porté suffit à couvrir la branche, quel que soit son fournisseur";
+        assert lot().suivi().totalRecu() == 0 && couverture.attendus().size() == 1
+                : "le stock porté seul ne prouve aucune réception du lot machine";
+
+        menu.slots.get(8).item = ItemStack.EMPTY;
+        var autreRecette = new EmiRecipe(List.of(), List.of());
+        autreRecette.outputs = List.of(item(MOULE, 1));
+        arbre.goal = new dev.emi.emi.bom.MaterialNode(item(MOULE, 1));
+        arbre.goal.recipe = autreRecette;
+        synchroniser();
+        vue = InstantaneArbreEmi.lire(arbre);
+        couverture = StockFabricationEmi.pourMachines(stock());
+        assert couverture
+                        .operationsSansSortiesAttendues(vue.machines(), vue.lots())
+                        .equals(
+                                List.of(
+                                        new fr.assistantia.PlanMachines.Operation<>(
+                                                autreRecette, 1)))
+                : "le nouvel arbre ne demande plus la recette du lot";
+        assert lot().suivi().etat() == Etat.EN_MACHINE && couverture.attendus().size() == 1;
+    }
+
+    private static void diagnosticMoule() {
+        String ingot = "gtceu:ingot_casting_mold", plaque = "gtceu:plate_casting_mold";
+        var recetteMoule = new EmiRecipe(List.of(item(ETAIN, 1)), List.of());
+        var recetteMachine = new EmiRecipe(List.of(), List.of());
+        var moule =
+                new fr.assistantia.PlanMachines.Noeud<EmiStack, EmiRecipe>(
+                        pile -> ComparaisonEmi.meme(pile, item(ingot, 1)),
+                        1,
+                        1,
+                        true,
+                        recetteMoule,
+                        List.of());
+        var produit =
+                new fr.assistantia.PlanMachines.Noeud<EmiStack, EmiRecipe>(
+                        pile -> false, 1, 1, false, recetteMachine, List.of(moule));
+        var collecte =
+                new fr.assistantia.ArbreCollecte.Noeud(
+                        java.util.Set.of(PLAQUE),
+                        1,
+                        1,
+                        false,
+                        List.of(
+                                new fr.assistantia.ArbreCollecte.Noeud(
+                                        java.util.Set.of(ingot), 1, 1, true, List.of())));
+        var vue =
+                new InstantaneArbreEmi(
+                        collecte,
+                        produit,
+                        10,
+                        List.of(item(ingot, 1)),
+                        List.of(),
+                        List.of(),
+                        List.of());
+        var mauvais = new PlanRetrait.Stock<>(item(plaque, 1), 1, true);
+        var exact = new PlanRetrait.Stock<>(item(ingot, 1), 1, false);
+        var poches =
+                new StockFabricationEmi(
+                        List.of(mauvais), List.of(), List.of(), List.of(), List.of(), List.of());
+        var comparatif =
+                DiagnosticMoules.lire(
+                        vue,
+                        poches,
+                        List.of(exact),
+                        java.util.Map.of(ingot, 1L),
+                        true,
+                        List.of(),
+                        true);
+        assert comparatif.toString().contains("Moule recherché=" + ingot);
+        assert comparatif.toString().contains("Moules non compatibles=" + plaque + " ×1");
+        assert comparatif
+                .toString()
+                .contains("Suivi / Envoyer=Compté : 0 sur 1 · manque 1 · fabrication prévue ×1");
+        assert comparatif.toString().contains("Recette=Compté : 1 sur 1 · besoin couvert.");
+        var sac = new ItemStack(ingot, 1);
+        var porte =
+                new StockFabricationEmi(
+                        List.of(exact), List.of(), List.of(), List.of(), List.of(), List.of());
+        var avecSac =
+                DiagnosticMoules.lire(
+                        vue, porte, List.of(), java.util.Map.of(), true, List.of(sac), true);
+        assert avecSac.toString().contains("Poches / curseur : 0 · Backpack : 1");
+        assert avecSac.toString().contains("Suivi / Envoyer=Compté : 1 sur 1 · besoin couvert.");
+        assert !avecSac.toString().contains("fabrication prévue");
+    }
+
     public static void main(String[] args) throws Exception {
         var fixture = new CycleMachineTest();
         String scenario = args[0];
@@ -1009,6 +1180,10 @@ public final class CycleMachineTest {
             case "reprise-cycle-prouve" -> fixture.reprendreApresCycleProuve();
             case "deux-lots" -> fixture.deuxLots();
             case "reception-autre-stock" -> fixture.receptionDepuisAutreStock();
+            case "reception-apres-fermeture" -> fixture.receptionApresFermeture();
+            case "collecte-confirmee" -> fixture.collecteConfirmee();
+            case "lot-hors-besoins" -> fixture.lotHorsBesoins();
+            case "diagnostic-moule" -> diagnosticMoule();
             case "63" -> fixture.lotLimite(63, false);
             case "64" -> fixture.lotLimite(64, false);
             case "65" -> fixture.lotLimite(65, false);

@@ -125,6 +125,17 @@ public class OrigineFabricationTest {
         mc.player.containerMenu = new ChestMenu();
         OrigineFabrication.actualiser(List.of(s(2)));
         assert OrigineFabrication.receptions().isEmpty();
+        // Après fermeture, une sortie sans gain personnel expire aussi.
+        OrigineFabrication.vider();
+        output.item = new ItemStack("plate", 3);
+        OrigineFabrication.actualiser(List.of());
+        cliquer(mc, output);
+        output.item = new ItemStack("plate", 1);
+        mc.player.containerMenu = mc.player.inventoryMenu;
+        for (int i = 0; i < 22; i++) OrigineFabrication.actualiser(List.of());
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().isEmpty() : "geste expiré hors de la machine";
+        mc.player.containerMenu = new ChestMenu();
         // Un gain déjà validé par l'événement de craft ne redevient pas une sortie machine.
         OrigineFabrication.vider();
         output.item = new ItemStack("plate", 3);

@@ -19,6 +19,8 @@ public final class TraceReperes {
     /** L'étiquette est posée devant le bloc, du côté du joueur. */
     public static final double AVANCE = 0.62;
 
+    private static final TraitsReperes.Dessin CROIX = TraitsReperes.dessiner("×");
+
     private TraceReperes() {}
 
     /**
@@ -33,12 +35,34 @@ public final class TraceReperes {
             BlockPos pos,
             String symboles,
             int argb) {
-        var dessin = TraitsReperes.dessiner(symboles);
+        tracer(lignes, matrice, normales, camera, pos, TraitsReperes.dessiner(symboles), argb, 0);
+    }
+
+    /** Un repère en haut du tiroir pour laisser visible son contenu au centre. */
+    public static void tracerCroix(
+            VertexConsumer lignes,
+            Matrix4f matrice,
+            Matrix3f normales,
+            Camera camera,
+            BlockPos pos,
+            int argb) {
+        tracer(lignes, matrice, normales, camera, pos, CROIX, argb, 0.34F);
+    }
+
+    private static void tracer(
+            VertexConsumer lignes,
+            Matrix4f matrice,
+            Matrix3f normales,
+            Camera camera,
+            BlockPos pos,
+            TraitsReperes.Dessin dessin,
+            int argb,
+            float montee) {
         if (dessin.traits().isEmpty()) return;
         var oeil = camera.getPosition();
         Vector3f gauche = camera.getLeftVector(), haut = camera.getUpVector();
         double cx = pos.getX() + 0.5 - oeil.x,
-                cy = pos.getY() + 0.5 - oeil.y,
+                cy = pos.getY() + 0.5 + montee - oeil.y,
                 cz = pos.getZ() + 0.5 - oeil.z;
         double distance = Math.sqrt(cx * cx + cy * cy + cz * cz);
         if (distance > AVANCE + 0.05) {

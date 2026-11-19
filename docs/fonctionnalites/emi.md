@@ -25,7 +25,7 @@
 - Pour un moule proposé alors qu’il existe déjà, vérifier son identifiant exact et l’écran qui
   le demande. Le stock porté, le tampon relevé, le coffre ordinaire mémorisé et l’entrée d’une
   machine sont des sources différentes. Tester le moule absent, présent et remplacé par une
-  autre variante.
+  autre variante. **Réglages → Diagnostic…** détaille le comptage par plan. [DiagnosticMoules](../../mod/src/main/java/fr/assistantia/compat/emi/DiagnosticMoules.java)
 
 ## Tests à lancer
 

@@ -85,6 +85,12 @@ record StockFabricationEmi(
         return PlanMachines.calculer(arbre, lots, couverture());
     }
 
+    <R> List<PlanMachines.Operation<R>> operationsSansSortiesAttendues(
+            PlanMachines.Noeud<EmiStack, R> arbre, long lots) {
+        return PlanMachines.calculer(
+                arbre, lots, joindre(personnel, tampon, credits, outils, reseau));
+    }
+
     <R> List<PlanRetrait.Prise> retraitsReseau(PlanMachines.Noeud<EmiStack, R> arbre, long lots) {
         if (reseau.stream().noneMatch(s -> s.quantite() > 0)) return List.of();
         var couverture = couverture();

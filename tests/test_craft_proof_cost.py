@@ -32,7 +32,10 @@ STUBS = {
  public boolean mayPickup(net.minecraft.world.entity.player.Player p){return true;}
  public net.minecraft.world.item.ItemStack getItem(){return item;}
 }""",
-    "net.minecraft.world.entity.player.Player": "public class Player {public net.minecraft.world.inventory.AbstractContainerMenu containerMenu=new net.minecraft.world.inventory.ChestMenu();}",
+    "net.minecraft.world.entity.player.Player": """public class Player {
+ public final net.minecraft.world.inventory.AbstractContainerMenu inventoryMenu=new net.minecraft.world.inventory.AbstractContainerMenu();
+ public net.minecraft.world.inventory.AbstractContainerMenu containerMenu=new net.minecraft.world.inventory.ChestMenu();
+}""",
     "net.minecraft.client.Minecraft": "public class Minecraft {private static final Minecraft INSTANCE=new Minecraft();public net.minecraft.world.entity.player.Player player=new net.minecraft.world.entity.player.Player();public static Minecraft getInstance(){return INSTANCE;}}",
     "net.minecraftforge.event.entity.player.PlayerEvent": "public class PlayerEvent {public record ItemCraftedEvent(net.minecraft.world.entity.player.Player getEntity,net.minecraft.world.item.ItemStack getCrafting){}}",
     "net.minecraftforge.eventbus.api.SubscribeEvent": "public @interface SubscribeEvent {}",

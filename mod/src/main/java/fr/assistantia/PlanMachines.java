@@ -3,6 +3,7 @@ package fr.assistantia;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 /** Besoins de fabrication après réservation des produits déjà disponibles, de haut en bas. */
@@ -28,18 +29,29 @@ public final class PlanMachines {
 
     public record Operation<R>(R recette, int fois) {}
 
+    /** Résultat au moment où cette branche est visitée par l'allocation. */
+    public record EtatBesoin(int demande, int stock, int manque, int fabrications) {}
+
     private record Demande<T, R>(Noeud<T, R> node, int quantite) {}
 
     public static <T, R> List<Operation<R>> calculer(
             Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock) {
-        return calculer(root, batches, stock, null);
+        return calculer(root, batches, stock, null, null);
+    }
+
+    public static <T, R> void observer(
+            Noeud<T, R> root,
+            long batches,
+            List<PlanRetrait.Stock<T>> stock,
+            BiConsumer<Noeud<T, R>, EtatBesoin> observation) {
+        calculer(root, batches, stock, null, observation);
     }
 
     /** Parts allouées aux besoins de l'arbre depuis une source extérieure à l'inventaire. */
     public static <T, R> List<PlanRetrait.Prise> retraits(
             Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock) {
         int[] prises = new int[stock.size()];
-        calculer(root, batches, stock, prises);
+        calculer(root, batches, stock, prises, null);
         var resultat = new ArrayList<PlanRetrait.Prise>();
         for (int i = 0; i < prises.length; i++)
             if (prises[i] > 0) resultat.add(new PlanRetrait.Prise(i, prises[i]));
@@ -47,7 +59,11 @@ public final class PlanMachines {
     }
 
     private static <T, R> List<Operation<R>> calculer(
-            Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock, int[] prises) {
+            Noeud<T, R> root,
+            long batches,
+            List<PlanRetrait.Stock<T>> stock,
+            int[] prises,
+            BiConsumer<Noeud<T, R>, EtatBesoin> observation) {
         var reserve = new ArrayList<>(stock);
         int[] outilsPris = prises == null ? null : new int[stock.size()];
         var operations = new LinkedHashMap<R, Integer>();
@@ -95,6 +111,7 @@ public final class PlanMachines {
                                         d.quantite()
                                                 - allocation.fournis().get(i)
                                                 - outilsPresents.get(i));
+                int couvert = d.quantite() - manque;
                 if (outilsPris != null && d.node().reutilisable())
                     reserverOutil(d, reserve, outilsPris);
                 if (d.node().reutilisable() && d.node().recette() != null) {
@@ -103,9 +120,20 @@ public final class PlanMachines {
                 }
                 if (!d.node().reutilisable())
                     manque = surplus.deduire(d.node().lotIdentique(), manque);
-                if (manque <= 0) continue;
                 long production = Math.max(1, d.node().production());
-                int fois = (int) (manque / production + (manque % production == 0 ? 0 : 1));
+                int fois =
+                        manque <= 0
+                                ? 0
+                                : (int) (manque / production + (manque % production == 0 ? 0 : 1));
+                if (observation != null)
+                    observation.accept(
+                            d.node(),
+                            new EtatBesoin(
+                                    d.quantite(),
+                                    couvert,
+                                    manque,
+                                    d.node().recette() == null ? 0 : fois));
+                if (manque <= 0) continue;
                 if (!d.node().reutilisable())
                     surplus.retenir(d.node().lotIdentique(), manque, production);
                 if (d.node().reutilisable() && d.node().recette() != null)

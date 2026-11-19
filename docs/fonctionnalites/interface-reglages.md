@@ -5,6 +5,7 @@
 - [EcranAssistant](../../mod/src/main/java/fr/assistantia/EcranAssistant.java) assemble les onglets. [EtatReglages](../../mod/src/main/java/fr/assistantia/EtatReglages.java) suit les réglages en cours. [Theme](../../mod/src/main/java/fr/assistantia/Theme.java), [BarreDefilement](../../mod/src/main/java/fr/assistantia/BarreDefilement.java) et [PanneauAssistant](../../mod/src/main/java/fr/assistantia/PanneauAssistant.java) partagent les conventions d’affichage.
 - [EcranConfigurationIA](../../mod/src/main/java/fr/assistantia/EcranConfigurationIA.java) et [EcranChoixModele](../../mod/src/main/java/fr/assistantia/EcranChoixModele.java) utilisent le [catalogue de modèles](../../monifactory_assistant/providers/catalog.py) et les [préférences IA](../../monifactory_assistant/providers/settings.py).
 - [Contrôleur d’interface](../../monifactory_assistant/application/interface.py) et [vues du mod](../../monifactory_assistant/ui/views.py) relient les actions et les états Python aux écrans Forge.
+- [EcranDiagnostic](../../mod/src/main/java/fr/assistantia/EcranDiagnostic.java) affiche les relevés locaux. Pour les moules, le presse-papiers reprend le relevé affiché.
 
 ## Règles à préserver
 

@@ -322,7 +322,7 @@ public final class EnvoiMachine {
                                                         .isEqual(v));
     }
 
-    private static int circuitRequis(EmiRecipe recipe) throws ReflectiveOperationException {
+    static int circuitRequis(EmiRecipe recipe) throws ReflectiveOperationException {
         var tous = ingredients(recipe);
         for (int i = 0; i < tous.size(); i++) {
             var ingredient = tous.get(i);

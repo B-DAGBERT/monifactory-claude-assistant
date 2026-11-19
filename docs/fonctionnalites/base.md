@@ -11,6 +11,7 @@
 - Grouper par identifiant de type. Les tiers et les emplacements restent distincts. Une machine unique s’affiche directement. Appliquer recherche et filtre avant de construire les groupes.
 - Une observation fraîche du serveur et un relevé ancien ont des statuts différents. Si la liaison cesse, conserver les derniers relevés et indiquer leur âge. Leur présence ne confirme pas l’état actuel de la machine.
 - Les coffres mémorisés servent d’indice. L’ouverture d’un coffre actualise son relevé. Un coffre double représente un seul stock physique. Respecter les exclusions, la dimension et le monde actif.
+- **Y → Réglages → Drawers pleins** marque les tiroirs Functional Storage proches dont toutes les cases de stockage ont atteint leur capacité réelle. Le repère est rouge, ou orange si le Void Upgrade est actif. [Calcul de capacité](../../mod/src/main/java/fr/assistantia/compat/storage/CapaciteDrawers.java)
 - L’interface est en lecture seule. Le résumé provient des données du pont. Garder le dernier relevé valide si une lecture échoue et retrier la liste seulement si le relevé ou le filtre change.
 
 ## Tests à lancer

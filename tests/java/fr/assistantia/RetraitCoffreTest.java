@@ -222,6 +222,49 @@ public final class RetraitCoffreTest {
         assert mc.gameMode.clicks == 0 : "un nouvel apport de l'objet demandé reste surveillé";
     }
 
+    private static void receptionsConfirmees() throws Exception {
+        var recues = new java.util.ArrayList<Integer>();
+        java.util.function.BiConsumer<ItemStack, Integer> noter =
+                (pile, nombre) -> {
+                    assert pile.id.equals("tin") && pile.getCount() == nombre;
+                    recues.add(nombre);
+                };
+        setup(64, 2);
+        assert RetraitCoffre.lancer(screen, plan(5), noter);
+        tick();
+        assert owned() == 5 && recues.isEmpty() : "les clics prédits ne valent pas un reçu";
+        finish();
+        assert recues.equals(List.of(3));
+
+        recues.clear();
+        setup(64, 0);
+        assert RetraitCoffre.lancer(screen, plan(5), noter);
+        tick();
+        menu.slots.get(0).item = new ItemStack("tin", 64);
+        menu.slots.get(1).item = ItemStack.EMPTY;
+        finish();
+        assert owned() == 0 && recues.isEmpty() : "le serveur a corrigé le transfert";
+
+        setup(64, 63);
+        menu.slots.get(2).item = new ItemStack("stone", 64);
+        menu.slots.get(3).item = new ItemStack("stone", 64);
+        assert RetraitCoffre.lancer(screen, plan(70), noter);
+        finish();
+        assert owned() == 64 && recues.equals(List.of(1)) : "seule la part qui tient est reçue";
+
+        recues.clear();
+        setup(120, 0);
+        assert RetraitCoffre.lancer(screen, plan(100), noter);
+        for (int i = 0; i < 20 && recues.isEmpty(); i++) tick();
+        assert recues.equals(List.of(64)) && RetraitCoffre.occupe();
+        RetraitCoffre.arreter();
+        assert recues.equals(List.of(64)) : "arrêter conserve le premier reçu confirmé";
+        setup(64, 0);
+        assert RetraitCoffre.lancer(screen, plan(1));
+        finish();
+        assert recues.equals(List.of(64)) : "aucun callback du retrait précédent";
+    }
+
     public static void main(String[] args) throws Exception {
         setup(64, 2);
         var besoin = CollecteCoffreFixture.besoin("tin", 5);
@@ -237,6 +280,7 @@ public final class RetraitCoffreTest {
                 : "le quota du scan ne rend pas une variante NBT incompatible acceptable";
 
         synchronization();
+        receptionsConfirmees();
         treeSelection();
         componentBeforeMaterials();
         collecterLesContenantsEntiers();

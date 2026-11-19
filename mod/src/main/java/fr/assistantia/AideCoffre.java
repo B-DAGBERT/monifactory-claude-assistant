@@ -146,7 +146,8 @@ public final class AideCoffre {
         ItemStack selection = choisi.copy();
         actualiser();
         RetraitCoffre.Plan retrait = tous ? plan : plan.pour(selection);
-        if (retrait.total() > 0) RetraitCoffre.lancer(ecran, retrait);
+        if (retrait.total() > 0)
+            RetraitCoffre.lancer(ecran, retrait, Emi.receptionRetraitCoffre(ecran, retrait));
     }
 
     @SubscribeEvent

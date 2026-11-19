@@ -59,6 +59,7 @@ public final class Client {
         MinecraftForge.EVENT_BUS.register(Surbrillance.class);
         MinecraftForge.EVENT_BUS.register(Guidage.class);
         MinecraftForge.EVENT_BUS.register(Reperage.class);
+        MinecraftForge.EVENT_BUS.register(DrawersPleins.class);
         MinecraftForge.EVENT_BUS.register(RechercheEmi.class);
         MinecraftForge.EVENT_BUS.register(Filons.class);
         MinecraftForge.EVENT_BUS.register(Fullbright.class);

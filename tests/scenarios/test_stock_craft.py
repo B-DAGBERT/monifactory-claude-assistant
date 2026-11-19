@@ -68,8 +68,7 @@ class StockCraftTests(unittest.TestCase):
             "net/minecraft/world/item/ItemStack.java"
         ].replace(
             "public final String id;",
-            """public static final ItemStack EMPTY=new ItemStack("",0);
-            public Item getItem(){return new Item(id);}
+            """public Item getItem(){return new Item(id);}
             public boolean isDamageableItem(){return id.equals("wrench");}
             public net.minecraft.network.chat.Component getHoverName(){
                 return net.minecraft.network.chat.Component.literal(id);}

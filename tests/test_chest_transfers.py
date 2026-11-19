@@ -15,10 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 STUBS = {
     "net.minecraft.world.item.ItemStack": """
 public class ItemStack {
+    public static final ItemStack EMPTY=new ItemStack("",0);
     public final String id; public int count; public int tag;
     public ItemStack(String id, int count) {this.id=id;this.count=count;}
     public boolean isEmpty(){return count<=0;}
     public int getCount(){return Math.max(0,count);}
+    public void setCount(int value){count=value;}
     public int getMaxStackSize(){return 64;}
     public ItemStack copy(){var result=new ItemStack(id,count);result.tag=tag;return result;}
     public static boolean isSameItemSameTags(ItemStack a,ItemStack b){return !a.isEmpty()&&!b.isEmpty()&&a.id.equals(b.id)&&a.tag==b.tag;}

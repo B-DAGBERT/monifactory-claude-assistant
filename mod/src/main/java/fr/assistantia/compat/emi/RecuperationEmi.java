@@ -6,17 +6,24 @@ import dev.emi.emi.api.widget.Widget;
 import fr.assistantia.RetraitCoffre;
 import fr.assistantia.Theme;
 import java.util.List;
+import java.util.function.BiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 
 /** Entrée optionnelle appelée seulement quand EMI est chargé. */
 public final class RecuperationEmi {
     public static RetraitCoffre.Plan planArbre(AbstractContainerScreen<?> screen) {
         if (screen == null) return new RetraitCoffre.Plan(List.of(), 0);
         return CoffresArbreEmi.planTransfert(screen);
+    }
+
+    public static BiConsumer<ItemStack, Integer> reception(
+            AbstractContainerScreen<?> screen, RetraitCoffre.Plan plan) {
+        return MachinesEmi.receptionCollecte(screen, plan.objets());
     }
 
     /**
@@ -99,7 +106,9 @@ public final class RecuperationEmi {
             var screen = EmiApi.getHandledScreen();
             var plan = planArbre(screen);
             releve = 0;
-            if (screen != null && plan.total() > 0 && RetraitCoffre.lancer(screen, plan))
+            if (screen != null
+                    && plan.total() > 0
+                    && RetraitCoffre.lancer(screen, plan, reception(screen, plan)))
                 Minecraft.getInstance().setScreen(screen);
             return true;
         }

@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.IdentityHashMap;
+import java.util.function.BiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -50,6 +51,8 @@ public final class RetraitCoffre {
     private static List<Lot> attente = List.of();
     private static int index, reste, pris, delai, synchronisation, stable;
     private static boolean confirmation;
+    private static BiConsumer<ItemStack, Integer> reception;
+    private static ItemStack receptionAttendue = ItemStack.EMPTY;
     private static final int ATTENTE_SERVEUR = 60; // Trois secondes sans renvoyer de clic.
     private static long dernierClic;
     private static final Map<Slot, ItemStack> attendu = new IdentityHashMap<>();
@@ -176,6 +179,12 @@ public final class RetraitCoffre {
     }
 
     public static boolean lancer(AbstractContainerScreen<?> ecran, Plan plan) {
+        return lancer(ecran, plan, null);
+    }
+
+    /** La réception suit chaque déplacement confirmé vers une case personnelle. */
+    public static boolean lancer(
+            AbstractContainerScreen<?> ecran, Plan plan, BiConsumer<ItemStack, Integer> reception) {
         var mc = Minecraft.getInstance();
         if (occupe() || System.nanoTime() - dernierClic < 800_000_000L) return false;
         if (mc.player == null
@@ -196,6 +205,7 @@ public final class RetraitCoffre {
             return false;
         }
         RetraitCoffre.ecran = ecran;
+        RetraitCoffre.reception = reception;
         menu = ecran.getMenu();
         attente = plan.lots();
         index = 0;
@@ -244,6 +254,16 @@ public final class RetraitCoffre {
             if (++stable < 2) return;
             confirmation = false;
             synchronisation = stable = 0;
+            var recue = receptionAttendue;
+            receptionAttendue = ItemStack.EMPTY;
+            if (!recue.isEmpty()) {
+                try {
+                    reception.accept(recue, recue.getCount());
+                } catch (RuntimeException e) {
+                    System.getLogger(RetraitCoffre.class.getName())
+                            .log(System.Logger.Level.WARNING, "Suivi du retrait indisponible", e);
+                }
+            }
         } else {
             if (!menu.getCarried().isEmpty()) {
                 terminer("Retrait arrêté : objet sur le curseur.");
@@ -312,6 +332,7 @@ public final class RetraitCoffre {
 
     private static void deplacer(Slot src, Slot dest, int quantite)
             throws ReflectiveOperationException {
+        int avantSource = src.getItem().getCount();
         clic(src, 0);
         ItemStack curseur = menu.getCarried();
         if (curseur.isEmpty()
@@ -330,10 +351,18 @@ public final class RetraitCoffre {
         } else for (int i = 0; i < quantite; i++) clic(dest, 1);
         // Remettre le surplus dans son emplacement d'origine, jamais hors de l'écran.
         if (!menu.getCarried().isEmpty()) clic(src, 0);
-        int deplace = dest.getItem().getCount() - avant;
+        var placee = dest.getItem();
+        int deplace = placee.getCount() - avant;
         if (!menu.getCarried().isEmpty() || deplace <= 0) {
             terminer("Retrait interrompu : vérifie l’objet sur le curseur.");
             return;
+        }
+        if (reception != null
+                && deplace <= quantite
+                && avantSource - src.getItem().getCount() == deplace
+                && ItemStack.isSameItemSameTags(placee, attente.get(index).objet())) {
+            receptionAttendue = placee.copy();
+            receptionAttendue.setCount(deplace);
         }
         pris += deplace;
         reste -= deplace;
@@ -415,6 +444,8 @@ public final class RetraitCoffre {
         menu = null;
         ecran = null;
         clicStockage = null;
+        reception = null;
+        receptionAttendue = ItemStack.EMPTY;
         confirmation = false;
         synchronisation = stable = 0;
         attente = List.of();

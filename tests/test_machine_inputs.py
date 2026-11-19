@@ -62,6 +62,7 @@ STUBS["net.minecraft.world.entity.player.Player"] = STUBS[
 ].replace(
     "private final Object inventory=new Object();\n    public Object getInventory(){return inventory;}",
     """private final Inventory inventory=new Inventory();
+    public final net.minecraft.world.inventory.AbstractContainerMenu inventoryMenu=new net.minecraft.world.inventory.AbstractContainerMenu();
     public Inventory getInventory(){return inventory;}
     public static class Inventory {
         public int getSlotWithRemainingSpace(net.minecraft.world.item.ItemStack pile){return -1;}
@@ -328,6 +329,7 @@ class MachineInputTests(unittest.TestCase):
                 "compat/emi/ConfigurationCircuit",
                 "compat/emi/CatalyseursArbreEmi",
                 "compat/emi/InstantaneArbreEmi",
+                "compat/emi/DiagnosticMoules",
                 "compat/emi/SuiviLotsEmi",
                 "compat/emi/LotMachine",
                 "compat/emi/StockFabricationEmi",
@@ -386,10 +388,16 @@ class MachineInputTests(unittest.TestCase):
             "annulation-reception-partielle",
             "deux-lots",
             "reception-autre-stock",
+            "reception-apres-fermeture",
+            "collecte-confirmee",
+            "lot-hors-besoins",
         )
 
     def test_sac_retrait_me_machine_demarrage_immediat_un_seul_lot(self):
         self.rejouer_cycle("sac-me-machine")
+
+    def test_mold_diagnostic_uses_real_coverage_for_each_plan(self):
+        self.rejouer_cycle("diagnostic-moule")
 
     def test_machine_interruption_between_container_pickup_and_fluid_send(self):
         self.rejouer_cycle(

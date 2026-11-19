@@ -16,6 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 /**
  * Accès à EMI (le JEI du pack) par réflexion : le mod se compile sans EMI et continue de marcher
@@ -46,7 +47,7 @@ public final class Emi {
             getAmount,
             isLoaded;
     private static Object typeBouton, destinationAucune;
-    private static Method planCoffre;
+    private static Method planCoffre, receptionCoffre;
 
     private Emi() {}
 
@@ -277,6 +278,25 @@ public final class Emi {
                 LOGGER.warn("Assistant IA : calcul du retrait de l'arbre impossible", e);
             }
         return new RetraitCoffre.Plan(List.of(), 0);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static BiConsumer<ItemStack, Integer> receptionRetraitCoffre(
+            AbstractContainerScreen<?> ecran, RetraitCoffre.Plan plan) {
+        if (pret())
+            try {
+                if (receptionCoffre == null)
+                    receptionCoffre =
+                            Class.forName("fr.assistantia.compat.emi.RecuperationEmi")
+                                    .getMethod(
+                                            "reception",
+                                            AbstractContainerScreen.class,
+                                            RetraitCoffre.Plan.class);
+                return (BiConsumer<ItemStack, Integer>) receptionCoffre.invoke(null, ecran, plan);
+            } catch (ReflectiveOperationException | LinkageError e) {
+                LOGGER.warn("Assistant IA : suivi du retrait EMI indisponible", e);
+            }
+        return (pile, quantite) -> {};
     }
 
     /** Ouvre les recettes d'un objet dans EMI. */

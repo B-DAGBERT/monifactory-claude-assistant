@@ -61,6 +61,7 @@ final class PanneauMachineEmi {
             String statut,
             boolean occupe,
             boolean circuit,
+            boolean actionActive,
             boolean declarable,
             boolean synchronise,
             java.util.Map<EmiRecipe, OrdreMachines.Ligne<EmiRecipe>> priorites) {}
@@ -156,7 +157,7 @@ final class PanneauMachineEmi {
                 }
                 if (occupe)
                     tooltip.add(
-                            Component.literal("Recette accessible après l’envoi")
+                            Component.literal("Recette accessible après l’action en cours")
                                     .withStyle(s -> s.withColor(PanneauAssistant.BLEU)));
                 else {
                     tooltip.add(
@@ -179,7 +180,7 @@ final class PanneauMachineEmi {
                         d.prendre(),
                         circuit ? "Circuit" : "Envoyer",
                         Theme.Genre.PRINCIPAL,
-                        libre && synchronise && plan != null && plan.possible(),
+                        vue.actionActive(),
                         mx,
                         my);
         boolean surDeclaration =
@@ -238,10 +239,12 @@ final class PanneauMachineEmi {
                                 "Une recette prioritaire utilise le même stock ; choisir celle-ci reste possible."));
             if (!blocage.isEmpty() && synchronise) tooltip.add(Component.literal(blocage));
             if (plan != null) {
-                if (circuit)
+                if (circuit && !occupe)
                     tooltip.add(
                             Component.literal(
-                                    "Règle le numéro dans la configuration de la machine. Aucun envoi avant confirmation du bon réglage."));
+                                    vue.actionActive()
+                                            ? "Clique pour appliquer le circuit demandé par cette recette."
+                                            : "Règle le numéro dans la configuration de la machine."));
                 for (String s : plan.details()) tooltip.add(Component.literal(s));
             }
             if (!synchronise)

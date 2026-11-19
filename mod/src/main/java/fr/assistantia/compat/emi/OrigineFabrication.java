@@ -82,8 +82,10 @@ public final class OrigineFabrication {
         return provenances;
     }
 
-    static List<PlanRetrait.Stock<ItemStack>> retraitsAttendus(AbstractContainerMenu courant) {
-        return courant == menu && position != null ? receptionSortie.gestesEnCours() : List.of();
+    static List<PlanRetrait.Stock<ItemStack>> retraitsAttendus(Player joueur) {
+        return joueur.containerMenu == menu || joueur.containerMenu == joueur.inventoryMenu
+                ? receptionSortie.gestesEnCours()
+                : List.of();
     }
 
     private static void observer(AbstractContainerMenu ouvert) {
@@ -157,7 +159,10 @@ public final class OrigineFabrication {
             vider();
             return;
         }
-        observer(player.containerMenu);
+        // Échap peut précéder la synchronisation des poches. Le geste déjà effectué reste
+        // lié à sa vraie sortie et expire dans ReceptionSortie si aucun gain ne le confirme.
+        if (player.containerMenu != player.inventoryMenu || !receptionSortie.enAttente())
+            observer(player.containerMenu);
         var maintenant = sortieActuelle();
         List<PlanRetrait.Stock<ItemStack>> gains = new ArrayList<>();
         List<ItemStack> vus = new ArrayList<>();

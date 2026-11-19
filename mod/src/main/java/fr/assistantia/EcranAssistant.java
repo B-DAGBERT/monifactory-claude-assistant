@@ -259,6 +259,10 @@ public class EcranAssistant extends Screen {
             SacsFabrication.regler(!SacsFabrication.actif());
             return;
         }
+        if (ReglageDrawers.CLE.equals(cle)) {
+            ReglageDrawers.regler(!ReglageDrawers.actif());
+            return;
+        }
         JsonObject ecran = ecran();
         boolean actif = Pont.assistantActif();
         long maintenant = System.nanoTime() / 1_000_000;
@@ -516,6 +520,7 @@ public class EcranAssistant extends Screen {
     private boolean valeurReglage(String cle, JsonObject ligne) {
         if (Fullbright.CLE.equals(cle)) return Fullbright.actif();
         if (SacsFabrication.CLE.equals(cle)) return SacsFabrication.actif();
+        if (ReglageDrawers.CLE.equals(cle)) return ReglageDrawers.actif();
         return Pont.vrai(ligne, "valeur");
     }
 
@@ -542,6 +547,15 @@ public class EcranAssistant extends Screen {
                 texte, t -> this.font.split(Component.literal(t), largeur));
     }
 
+    private static void ajouterReglageLocal(
+            JsonArray reglages, String cle, String nom, String description) {
+        var ligne = new JsonObject();
+        ligne.addProperty("cle", cle);
+        ligne.addProperty("nom", nom);
+        ligne.addProperty("description", description);
+        reglages.add(ligne);
+    }
+
     private void reglages(
             GuiGraphics g,
             JsonObject ecran,
@@ -559,16 +573,18 @@ public class EcranAssistant extends Screen {
         hautReglages = y + Theme.BOUTON + Theme.ECART + 2;
         basReglages = Math.max(hautReglages + 1, bas);
         JsonArray reglages = new JsonArray();
-        JsonObject lumiere = new JsonObject();
-        lumiere.addProperty("cle", Fullbright.CLE);
-        lumiere.addProperty("nom", "Luminosité maximale (Fullbright)");
-        lumiere.addProperty("description", Fullbright.description());
-        reglages.add(lumiere);
-        JsonObject sac = new JsonObject();
-        sac.addProperty("cle", SacsFabrication.CLE);
-        sac.addProperty("nom", "Backpacks dans les crafts");
-        sac.addProperty("description", SacsFabrication.description());
-        reglages.add(sac);
+        ajouterReglageLocal(
+                reglages,
+                Fullbright.CLE,
+                "Luminosité maximale (Fullbright)",
+                Fullbright.description());
+        ajouterReglageLocal(
+                reglages,
+                SacsFabrication.CLE,
+                "Backpacks dans les crafts",
+                SacsFabrication.description());
+        ajouterReglageLocal(
+                reglages, ReglageDrawers.CLE, "Drawers pleins", ReglageDrawers.description());
         for (JsonElement reglage : Pont.liste(ecran, "reglages")) {
             if (!(reglage instanceof JsonObject ligne)) continue;
             String cle = Pont.texte(ligne, "cle");
@@ -633,6 +649,7 @@ public class EcranAssistant extends Screen {
                     bouton.active =
                             Fullbright.CLE.equals(cle)
                                     || SacsFabrication.CLE.equals(cle)
+                                    || ReglageDrawers.CLE.equals(cle)
                                     || assistantActif && !ETAT_REGLAGES.enAttente();
                     bouton.render(g, mx, my, partialTick);
                     interrupteursVisibles.add(new Interrupteur(bouton, cle));

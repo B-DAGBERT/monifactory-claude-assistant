@@ -22,6 +22,9 @@
   ne garantit aucun volume.
 - Préserver les acquisitions de la cible en cours et la déduction des composants transformés.
   Un changement de cible doit invalider une réponse ou un retrait devenu périmé.
+- **Prendre** et **Tout** transmettent chaque retrait confirmé au suivi. Un seul lot machine
+  compatible reçoit la quantité transférée. Si plusieurs lots correspondent, Suivi conserve
+  la confirmation manuelle. Production exige toujours une preuve de provenance de la machine.
 
 ## Tests à lancer
 

@@ -85,7 +85,7 @@ public final class TraitsReperes {
     static float largeur(char c) {
         if (c >= '0' && c <= '9') return CHIFFRE;
         return switch (c) {
-            case ETOILE -> 1;
+            case ETOILE, '×' -> 1;
             case PRET -> 0.8F;
             case EN_COURS -> 0.72F;
             default -> 0;
@@ -109,6 +109,9 @@ public final class TraitsReperes {
             }
             for (int i = 0; i < 10; i++)
                 traits.add(new Trait(px[i], py[i], px[(i + 1) % 10], py[(i + 1) % 10]));
+        } else if (c == '×') {
+            traits.add(new Trait(x, 0, x + 1, 1));
+            traits.add(new Trait(x, 1, x + 1, 0));
         } else if (c == PRET) {
             traits.add(new Trait(x, 0.45F, x + 0.28F, 0.1F));
             traits.add(new Trait(x + 0.28F, 0.1F, x + 0.8F, 0.95F));

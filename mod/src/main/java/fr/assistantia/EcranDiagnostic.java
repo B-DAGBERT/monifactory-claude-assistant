@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -17,6 +18,7 @@ public final class EcranDiagnostic extends Screen {
 
     private final Screen parent;
     private final List<Ligne> lignes = new ArrayList<>();
+    private List<Map.Entry<String, String>> moules = List.of();
     private final BarreDefilement barre = new BarreDefilement();
     private Theme.Fenetre fenetre = new Theme.Fenetre(0, 0, 0, 0);
     private int hautListe, basListe, colonne, hauteurContenu;
@@ -63,7 +65,7 @@ public final class EcranDiagnostic extends Screen {
                 .orElse("inconnue");
     }
 
-    private static String rapport() {
+    private String rapport() {
         String version = versionMod();
         if (!version.matches("[a-zA-Z0-9._+-]{1,80}")) version = "inconnue";
         String texte = "Monifactory Assistant " + version + "\n";
@@ -71,13 +73,16 @@ public final class EcranDiagnostic extends Screen {
         var diagnostic = fr.assistantia.compat.emi.EnvoiMachine.diagnostic();
         String id = diagnostic.recette();
         if (!id.matches("[a-z0-9_.-]+:[a-z0-9_./-]{1,180}")) id = "aucune";
-        return texte
-                + "Recette "
-                + id
-                + "\nTransfert "
-                + diagnostic.etat().replace('_', ' ')
-                + "\nMotif "
-                + diagnostic.motif().replace('_', ' ');
+        var rapport = new StringBuilder(texte);
+        rapport.append("Recette ")
+                .append(id)
+                .append("\nTransfert ")
+                .append(diagnostic.etat().replace('_', ' '))
+                .append("\nMotif ")
+                .append(diagnostic.motif().replace('_', ' '));
+        for (var ligne : moules)
+            rapport.append('\n').append(ligne.getKey()).append(" · ").append(ligne.getValue());
+        return rapport.toString();
     }
 
     /** Âge du dernier relevé d'inventaire, compté ici à partir de sa date (ms). */
@@ -139,8 +144,14 @@ public final class EcranDiagnostic extends Screen {
                 (Emi.arbreActif() ? "actif" : "absent")
                         + " · scan coffres : "
                         + (RechercheEmi.actif() ? "actif" : "arrêté"));
+        boolean emiPresent = Emi.present();
+        moules =
+                emiPresent
+                        ? List.copyOf(fr.assistantia.compat.emi.MachinesEmi.diagnosticMoules())
+                        : List.of();
+        for (var ligne : moules) ajouter(paires, ligne.getKey(), ligne.getValue());
         ajouter(paires, "Transfert coffre", RetraitCoffre.occupe() ? "en cours" : "repos");
-        if (Emi.present()) {
+        if (emiPresent) {
             String statut = fr.assistantia.compat.emi.EnvoiMachine.statut();
             ajouter(paires, "Envoi machine", statut.isEmpty() ? "repos" : statut);
         }

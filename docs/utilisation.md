@@ -350,6 +350,10 @@ progression** concerne les quêtes terminées, les nouveaux filons et les machin
 **Objectif suivant automatique** et **Surbrillance des besoins** ont disparu avec les objectifs.
 **Modèles IA…** ne règle plus que le profil **Discussion et fiches**.
 
+**Drawers pleins** affiche une croix rouge sur les tiroirs Functional Storage proches
+une fois toutes leurs cases pleines. La croix devient orange lorsque le **Void Upgrade**
+est actif. Le calcul de la capacité tient compte des upgrades installés.
+
 La liste défile à la molette ou avec sa barre de défilement. **Modèles IA…** et **Diagnostic…**
 s’ouvrent depuis cet onglet.
 
@@ -372,6 +376,11 @@ l’assistant, l’âge du relevé d’inventaire, la synchronisation du backpac
 l’arbre EMI, le scan des coffres, les transferts, la dernière demande et les erreurs relevées.
 Le panneau se rafraîchit automatiquement et défile à la molette ou avec sa barre. **Retour** ou
 Échap revient aux réglages. L’ouvrir ne lance aucune demande IA.
+
+Quand un moule est nécessaire dans l’arbre EMI, le diagnostic indique son identifiant, les
+quantités prises en compte, leur origine connue et la raison du résultat. Si un moule installé
+semble ignoré, ouvre d’abord la machine pour relever ses entrées, puis reviens au diagnostic.
+**Copier le diagnostic** récupère les lignes affichées pour les joindre à un signalement.
 
 Pour limiter les saccades, les relevés ne sont réécrits qu’à un changement, sur un fil d’écriture
 séparé : le jeu n’attend plus le disque. L’âge affiché du relevé d’inventaire peut donc atteindre
