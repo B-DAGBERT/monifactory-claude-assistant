@@ -153,12 +153,14 @@ public final class MachinesEmi {
         return arbre;
     }
 
-    static InstantaneArbreEmi instantaneSuivi() {
-        return instantane;
-    }
+    record PlanSuivi(
+            Object arbre,
+            InstantaneArbreEmi instantane,
+            List<PlanMachines.Operation<EmiRecipe>> utiles) {}
 
-    static List<PlanMachines.Operation<EmiRecipe>> operationsSuivies() {
-        return utiles;
+    /** Lecture sur le thread client. Conserve l'identité de la liste du calcul retenu. */
+    static PlanSuivi planSuivi() {
+        return new PlanSuivi(arbre, instantane, utiles);
     }
 
     /** Lit le calcul déjà retenu. L'explication détaillée est calculée à la demande et en cache. */

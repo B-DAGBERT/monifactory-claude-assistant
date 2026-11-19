@@ -10,6 +10,9 @@
 - L’ordre vient de [OrdonnancementEmi](../../mod/src/main/java/fr/assistantia/compat/emi/OrdonnancementEmi.java).
   Les variantes et catalyseurs passent par [ComparaisonEmi](../../mod/src/main/java/fr/assistantia/compat/emi/ComparaisonEmi.java)
   et [CatalyseursArbreEmi](../../mod/src/main/java/fr/assistantia/compat/emi/CatalyseursArbreEmi.java).
+- Pour l’onglet Recette, `MachinesEmi.planSuivi()` réunit l’arbre suivi, son instantané et
+  les opérations utiles après couverture par les coffres connus. `AnalyseRecette` compare les
+  identités de l’arbre et de l’instantané avant de reprendre ces opérations.
 
 ## Règles à préserver
 
@@ -33,6 +36,7 @@ Depuis la racine du dépôt, dans l’environnement de développement avec JDK 1
 
 ```sh
 python -m unittest tests.test_emi tests.test_emi_backpack_tree tests.test_recipe_tab
+python -m unittest tests.test_recipe_followed_plan
 ```
 
 Pour un changement de stock commun, rejouer le même cas dans EMI, Repérage, Réseau ME et

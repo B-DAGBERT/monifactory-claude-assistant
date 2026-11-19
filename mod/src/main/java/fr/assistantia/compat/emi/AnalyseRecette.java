@@ -774,12 +774,13 @@ public final class AnalyseRecette {
         // Arbre suivi : reprendre les opérations du suivi (ses lots et ses crédits), y compris
         // après « Recalculer », seulement quand il a lu ce même instantané ; sinon attendre son
         // relevé, en gardant les étapes affichées.
-        boolean suivi = MachinesEmi.arbreSuivi() == cle.arbre();
+        var planSuivi = MachinesEmi.planSuivi();
+        boolean suivi = planSuivi.arbre() == cle.arbre();
         List<PlanMachines.Operation<EmiRecipe>> operationsSuivies = null;
-        switch (RangsRecette.source(suivi, MachinesEmi.instantaneSuivi(), vue, attenteSuivi, 3)) {
+        switch (RangsRecette.source(suivi, planSuivi.instantane(), vue, attenteSuivi, 3)) {
             case SUIVI -> {
                 attenteSuivi = 0;
-                operationsSuivies = MachinesEmi.operationsSuivies();
+                operationsSuivies = planSuivi.utiles();
             }
             case ATTENDRE -> {
                 attenteSuivi++;
@@ -807,7 +808,7 @@ public final class AnalyseRecette {
                         + "|"
                         + CoffreTampon.revision()
                         + "|"
-                        + lotsEnMarche()
+                        + lotsEnMarche(planSuivi.arbre())
                         + "|"
                         + InventaireJoueur.fabricationDisponible();
         if (signature.equals(clePlan)) return false;
@@ -1008,8 +1009,8 @@ public final class AnalyseRecette {
     }
 
     /** Lots dont la machine travaille, pour refaire le plan quand l'une s'arrête. */
-    private static String lotsEnMarche() {
-        if (MachinesEmi.arbreSuivi() == null) return "";
+    private static String lotsEnMarche(Object arbreSuivi) {
+        if (arbreSuivi == null) return "";
         StringBuilder cle = new StringBuilder();
         for (var lot : MachinesEmi.lotsSuivis())
             if (lot.suivi().etat() == LotFabrication.Etat.A_RECUPERER && enMarche(lot))
