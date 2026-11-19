@@ -6,6 +6,8 @@ import tempfile
 import time
 import unittest
 from concurrent.futures import Future
+from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 from queue import Queue
 from types import SimpleNamespace
@@ -21,6 +23,7 @@ from monifactory_assistant.production.acquisition import (
 )
 from monifactory_assistant.production.catalog import _digest, catalogue_document
 from monifactory_assistant.production.knowledge import Freshness
+from monifactory_assistant.production.planner import ProductionLot, StockLedger, StockSource, plan
 from monifactory_assistant.production.recipes import (
     Amount,
     Catalog,
@@ -29,8 +32,14 @@ from monifactory_assistant.production.recipes import (
     Recipe,
     Resource,
 )
+from monifactory_assistant.production.report_lines import (
+    allocation_lines,
+    missing_and_waiting_lines,
+)
 from monifactory_assistant.production.service import ProductionService, _historical_lines
 from tests.benchmarks.question_context import fixture as conversation_fixture
+from tests.test_production_native_evidence import WATER, lot
+from tests.test_production_native_evidence import fixture as native_fixture
 
 IRON = Resource("item", "minecraft:iron_ingot", "item")
 PLATE = Resource("item", "gtceu:iron_plate", "item")
@@ -41,6 +50,23 @@ RECIPE = Recipe(
     (Output(Amount(PLATE, 1)),),
     ("gtceu:lv_bender",),
 )
+
+
+# Complete UI/Discussion projections captured before LOT 7, on 8e4a8bf.
+REPORT_SNAPSHOT_SHA256 = {
+    "coffre-curseur-poches": "3b11d22526a8d44947ff7b68bfad782cab594bca0f9149dd5a05fd025f6c80b0",
+    "contrat-refuse": "4ab012c8ec2f936c441261da3b86c21fd1012af6435c2dfe55862654eab3ff11",
+    "couvert": "0d4b8691f3dae991d4ecefcd7a105c3c72235c8376bb4bf20afdc1d3106fbf5a",
+    "generation-revoquee-avant-poll": "e6f1693a3950ec55fbd960505024f29cd8f56077360a5c419562a0f9c6a3b450",
+    "inconnu": "c197cbee7046cd0092b8131715dbfbcf8186f925aa055cb954d5dad088afa48f",
+    "manquant": "af1efed75794affcc5aaa57a876d4b1636f92b4698851d652b2592500c0651fc",
+    "mixte-diagnostic": "638708ef2f1808a356f08a8a50575732312c0e9859c60bd5e816132d6075ee9a",
+    "mixte-plan": "1dee495613f5378259949832f8ee9871e1f7660b4bb7ff78886a7102a21645e6",
+    "perime": "fb21e5c0b80134991c001488724e87c36ac21b575a3e42b774cc2647cb296099",
+    "preuve-insuffisante": "48ece1df7b883c653d9b85f32f3011e25ce2e0e08ee4dde842c6fcb256077c49",
+    "resultat-tardif-autre-monde-session": "562102804851240e20b332ce81c05b9eef9476c74aff20bda2871b597a9c563e",
+    "sans-allocation": "6912c03e36faa9068901e94bef725a4337e9ce0d891530023a9199d14abd6f24",
+}
 
 
 class DeferredExecutor:
@@ -56,6 +82,39 @@ class DeferredExecutor:
         future, fn, args = self.calls[-1]
         fn(*args)
         future.set_result(None)
+
+
+class ProductionReportLinesTests(unittest.TestCase):
+    def test_resource_lines_from_a_calculated_plan(self):
+        recipe = replace(RECIPE, inputs=(*RECIPE.inputs, Ingredient((Amount(WATER, 1000),))))
+        ledger = StockLedger(
+            sources=(
+                StockSource("native:0-inventaire", (Amount(IRON, 1),)),
+                StockSource("native:1-curseur", (Amount(IRON, 1),)),
+                StockSource("native:2-coffre", (Amount(IRON, 1),)),
+            ),
+            expected=(ProductionLot("lot", (Amount(IRON, 2), Amount(WATER, 4000))),),
+        )
+        result = plan(Catalog(1, (recipe,)), Amount(PLATE, 8), ledger)
+        before = result.to_dict()
+        self.assertEqual(
+            allocation_lines(result.allocations),
+            [
+                "Disponible attesté sur le joueur: 1 item minecraft:iron_ingot",
+                "Sur le curseur: 1 item minecraft:iron_ingot",
+                "À récupérer au coffre: 1 item minecraft:iron_ingot",
+            ],
+        )
+        self.assertEqual(
+            list(missing_and_waiting_lines(result.missing, result.waiting)),
+            [
+                "À obtenir selon les relevés : 4000 mB minecraft:water",
+                "À obtenir selon les relevés : 3 item minecraft:iron_ingot",
+                "À attendre : 4000 mB minecraft:water",
+                "À attendre : 2 item minecraft:iron_ingot",
+            ],
+        )
+        self.assertEqual(result.to_dict(), before)
 
 
 class ProductionServiceTests(unittest.TestCase):
@@ -165,6 +224,203 @@ class ProductionServiceTests(unittest.TestCase):
         self.executor.run()
         self.service.poll(self.app)
         return self.service.view()["resultat"]
+
+    def prepare_report_snapshots(self):
+        self.now = 1_790_000_000_000
+        self.identity()
+        self.service.poll(self.app)
+        self.metadata["t"] = self.now
+        self.write("catalogue_production_etat.json", self.metadata)
+        # Keep the proof times in the report while making the rendered timezone portable.
+        self.enterContext(
+            patch("monifactory_assistant.production.service.time.localtime", time.gmtime)
+        )
+
+    def write_report_catalogue(self, *recipes):
+        document = catalogue_document(self.metadata["source"], Catalog(1, recipes).to_dict())
+        self.metadata["sha256"] = document["sha256"]
+        self.write("catalogue_production.json", document)
+        self.write("catalogue_production_etat.json", self.metadata)
+
+    def assert_report_snapshot(self, name, receipt):
+        projection = self.service.context("explique la production")
+        snapshot = {
+            "recu": receipt,
+            "production_v2": self.service.view(),
+            "discussion": {"texte": projection[0], "preuve": projection[1]} if projection else None,
+        }
+        # Sort dictionary keys only. Report lines and every other array retain their order.
+        encoded = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        self.assertEqual(
+            sha256(encoded.encode("utf-8")).hexdigest(), REPORT_SNAPSHOT_SHA256[name], name
+        )
+
+    def test_report_snapshots_for_current_partial_and_unknown_stock(self):
+        self.prepare_report_snapshots()
+        for index, (name, quantity, changes, status) in enumerate(
+            (
+                ("couvert", 8, {}, "complete"),
+                ("manquant", 3, {}, "partial"),
+                ("inconnu", 99, {"synchronise": False}, "partial"),
+                ("perime", 99, {"t": self.now - 3000}, "partial"),
+            )
+        ):
+            with self.subTest(name=name):
+                if name == "couvert":
+                    self.write(
+                        "monde.json",
+                        {
+                            **self.scope.fields(),
+                            "dimension": self.scope.dimension,
+                            "t": self.now,
+                            "zone": [0, 0, 15, 15],
+                            "blocs": [
+                                {"p": [1, 64, 0], "b": "gtceu:lv_bender", "m": {"s": "WAITING"}}
+                            ],
+                        },
+                    )
+                if name == "perime":
+                    self.write(
+                        "monde.json",
+                        {
+                            **self.scope.fields(),
+                            "dimension": self.scope.dimension,
+                            "t": self.now - 100_000,
+                            "zone": [0, 0, 15, 15],
+                            "blocs": [
+                                {"p": [1, 64, 0], "b": "minecraft:barrel", "o": [[IRON.id, 99]]}
+                            ],
+                        },
+                    )
+                    received = (self.now - 16_000) / 1000
+                    os.utime(self.data / "monde.json", (received, received))
+                self.inventory(quantity, **changes)
+                receipt = self.service.submit(self.request(n=self.now + index))
+                result = self.finish()
+                self.assertEqual(result["rapport"]["status"], status)
+                if name in {"inconnu", "perime"}:
+                    self.assertFalse(
+                        any(
+                            row["source_kind"] == "physical"
+                            for row in result["rapport"]["allocations"]
+                        )
+                    )
+                if name == "perime":
+                    self.assertIn(
+                        "Historique de stockage présent · accès et disponibilité non vérifiés.",
+                        result["lignes"],
+                    )
+                self.assert_report_snapshot(name, receipt)
+
+    def test_report_snapshot_without_allocations_for_unsupported_recipe(self):
+        self.prepare_report_snapshots()
+        self.write_report_catalogue(replace(RECIPE, unsupported=("Condition EMI non exportée",)))
+        self.inventory(8)
+        receipt = self.service.submit(self.request())
+        self.assertEqual(self.finish()["rapport"]["allocations"], [])
+        self.assert_report_snapshot("sans-allocation", receipt)
+
+    def test_report_snapshot_for_attested_chest_cursor_and_pockets(self):
+        self.prepare_report_snapshots()
+        data, _ = native_fixture(menu=True)
+        self.inventory(99, stock=data["stock"])
+        receipt = self.service.submit(self.request(quantite=6))
+        result = self.finish()
+        self.assertEqual(
+            result["lignes"][3:6],
+            [
+                "Réservations et suivi des lots non exploitables dans cette capture.",
+                "Disponible attesté sur le joueur: 2 item minecraft:iron_ingot",
+                "Sur le curseur: 1 item minecraft:iron_ingot",
+            ],
+        )
+        self.assertIn("À récupérer au coffre: 3 item minecraft:iron_ingot", result["lignes"])
+        self.assert_report_snapshot("coffre-curseur-poches", receipt)
+
+    def test_report_snapshots_for_large_mixed_plan_and_diagnostic(self):
+        self.prepare_report_snapshots()
+        # The planner sorts resources: fluid, 39 stocks, expected items, then four later stocks.
+        physical = tuple(
+            Resource("item", f"test:{group}_stock_{i:03}", "item")
+            for group, count in (("a", 39), ("y", 4))
+            for i in range(count)
+        )
+        waiting = (WATER,) + tuple(Resource("item", f"test:lot_{i:03}", "item") for i in range(34))
+        missing = tuple(Resource("item", f"test:missing_{i:03}", "item") for i in range(132))
+        crafted = tuple(Resource("item", f"test:z_craft_{i:03}", "item") for i in range(64))
+        recipe = replace(
+            RECIPE,
+            inputs=tuple(
+                Ingredient((Amount(resource, 1000 if resource == WATER else 1),))
+                for resource in (*physical, *waiting, *missing, *crafted)
+            ),
+        )
+        recipes = (recipe,) + tuple(
+            replace(RECIPE, id=resource.id, outputs=(Output(Amount(resource, 1)),))
+            for resource in crafted
+        )
+        self.write_report_catalogue(*recipes)
+        data, _ = native_fixture(
+            lots=[
+                lot(index, total=1_000_000_000, received=0, resource=resource)
+                for index, resource in enumerate(waiting, 1)
+            ]
+        )
+        self.inventory(
+            0,
+            inventaire={**{resource.id: 1_000_000 for resource in physical}, IRON.id: 64_000_000},
+            suivi=data["suivi"],
+        )
+        for index, operation in enumerate(("plan", "diagnostic")):
+            with self.subTest(operation=operation):
+                receipt = self.service.submit(
+                    self.request(n=self.now + index, operation=operation, quantite=1_000_000)
+                )
+                result = self.finish()
+                lines = result["lignes"]
+                self.assertEqual(result["rapport"]["status"], "partial")
+                self.assertIn("partial_view", result["rapport"])
+                if operation == "plan":
+                    self.assertEqual(len(lines), 220)
+                    for prefix, count in (
+                        ("Disponible attesté sur le joueur: ", 39),
+                        ("À obtenir selon les relevés : ", 50),
+                        ("À attendre : ", 30),
+                    ):
+                        self.assertEqual(sum(line.startswith(prefix) for line in lines), count)
+                    self.assertIn("À attendre : 1000000000 mB minecraft:water", lines)
+                else:
+                    self.assertFalse(any(line.startswith("À attendre : ") for line in lines))
+                self.assert_report_snapshot(f"mixte-{operation}", receipt)
+
+    def test_report_snapshots_for_refused_or_revoked_proof(self):
+        self.prepare_report_snapshots()
+        self.inventory(8)
+        receipt = self.service.submit(self.request(preuves_natives=1))
+        self.assertEqual(receipt["etat"], "refusee")
+        self.assert_report_snapshot("contrat-refuse", receipt)
+
+        self.attestation.return_value = False
+        receipt = self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "erreur")
+        self.assert_report_snapshot("preuve-insuffisante", receipt)
+
+        self.attestation.return_value = True
+        receipt = self.service.submit(self.request(n=self.now + 1))
+        self.executor.run()
+        self.write("catalogue_production_etat.json", {**self.metadata, "generation": 2})
+        self.service.poll(self.app)
+        self.assertEqual(self.service.view()["resultat"]["titre"], "Consultation périmée")
+        self.assert_report_snapshot("generation-revoquee-avant-poll", receipt)
+
+        self.write("catalogue_production_etat.json", self.metadata)
+        receipt = self.service.submit(self.request(n=self.now + 2))
+        self.executor.run()
+        self.scope = WorldScope("m1_" + "d" * 64, "c" * 32, "minecraft:overworld")
+        self.identity()
+        self.service.poll(self.app)
+        self.assertIsNone(self.service.view()["resultat"])
+        self.assert_report_snapshot("resultat-tardif-autre-monde-session", receipt)
 
     def test_coherent_chest_counts_after_pockets_and_displays_retrieval(self):
         for carried, expected_chest in ((3, 5), (8, 0)):

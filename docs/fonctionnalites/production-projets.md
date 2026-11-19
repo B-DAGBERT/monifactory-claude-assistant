@@ -4,6 +4,7 @@
 
 - **Y → Base → Production…** lit le plan ou le diagnostic de l’arbre EMI choisi. Pour inclure un coffre, ouvrir son menu natif avant de demander le calcul.
 - [EcranProduction.java](../../mod/src/main/java/fr/assistantia/EcranProduction.java), [StockProduction.java](../../mod/src/main/java/fr/assistantia/StockProduction.java) et [CatalogueProduction.java](../../mod/src/main/java/fr/assistantia/CatalogueProduction.java) capturent et attestent les sources. [service.py](../../monifactory_assistant/production/service.py) vérifie la demande et orchestre le calcul local.
+- [report_lines.py](../../monifactory_assistant/production/report_lines.py) met en forme les allocations physiques, les manques et les attentes du plan calculé. Le résumé de Discussion reprend les libellés d’allocation.
 - Les anciens onglets **Objectif** et **Projet**, la touche F7 et les actions de pause ou reprise ont été retirés. [interface.py](../../monifactory_assistant/application/interface.py) refuse explicitement les demandes d’un ancien mod.
 
 ## Règles à préserver

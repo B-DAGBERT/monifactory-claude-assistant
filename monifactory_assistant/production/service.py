@@ -22,6 +22,11 @@ from monifactory_assistant.production.catalog import CatalogueReader
 from monifactory_assistant.production.knowledge import Freshness
 from monifactory_assistant.production.planner import StockLedger
 from monifactory_assistant.production.recipes import Amount, Resource
+from monifactory_assistant.production.report_lines import (
+    allocation_lines,
+    format_amount,
+    missing_and_waiting_lines,
+)
 
 # Une consultation appartient à un monde, une connexion et une dimension ; rien d'autre.
 _CONTEXT = ("monde_actif", "session_monde", "dimension_monde")
@@ -43,10 +48,6 @@ _PROOF_VERSION = 2
 
 def _safe(text, limit=300):
     return " ".join(str(text).split())[:limit]
-
-
-def _amount(amount):
-    return f"{amount.quantity} {amount.resource.unit} {amount.resource.id}"
 
 
 def _native_lines(native):
@@ -90,17 +91,6 @@ def _native_lines(native):
                 resource = value["resource"]
                 lines.append(f"{label} : {value['quantity']} {resource['unit']} {resource['id']}")
     return lines
-
-
-def _allocation_lines(plan):
-    labels = {"native:2-coffre": "À récupérer au coffre", "native:1-curseur": "Sur le curseur"}
-    return [
-        labels.get(entry.source_id, "Disponible attesté sur le joueur")
-        + ": "
-        + _amount(Amount(entry.resource, entry.quantity))
-        for entry in plan.allocations[:40]
-        if entry.source_kind == "physical"
-    ]
 
 
 def _historical_lines(snapshot, missing):
@@ -596,20 +586,16 @@ class ProductionService:
                 machine_key=request.get("machine_key"),
             )
             lines = [
-                "Produit : " + _amount(target),
+                "Produit : " + format_amount(target),
                 "Plan conditionnel : les machines ne sont pas déclarées prêtes par ce calcul.",
             ]
             source_lines = _native_lines(native)
             lines.extend(source_lines)
-            allocations = _allocation_lines(analysis.plan)
+            allocations = allocation_lines(analysis.plan.allocations)
             if request["operation"] == "plan":
                 lines.extend(allocations)
                 lines.extend(
-                    "À obtenir selon les relevés : " + _amount(amount)
-                    for amount in analysis.plan.missing[:50]
-                )
-                lines.extend(
-                    "À attendre : " + _amount(amount) for amount in analysis.plan.waiting[:30]
+                    missing_and_waiting_lines(analysis.plan.missing, analysis.plan.waiting)
                 )
                 lines.extend(_historical_lines(snapshot, analysis.plan.missing))
                 for index, step in enumerate(analysis.plan.steps[:64], 1):
@@ -685,7 +671,7 @@ class ProductionService:
             summary = f"Produit {target.resource.id}, quantité {target.quantity} {target.resource.unit}. Catalogue génération {catalogue.catalog.generation}; statut du calcul {analysis.plan.status}.\n"
             summary += "\n".join(source_lines[:16] + allocations[:12]) + "\n"
             summary += "\n".join(
-                "Besoin calculé : " + _amount(amount) for amount in analysis.plan.missing[:12]
+                "Besoin calculé : " + format_amount(amount) for amount in analysis.plan.missing[:12]
             )
             summary += "\n" + "\n".join(
                 "Recette choisie : " + step.recipe_id + ", fabrications " + str(step.batches)
