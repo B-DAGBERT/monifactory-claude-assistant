@@ -47,15 +47,59 @@ public final class RetraitCoffre {
 
     private static AbstractContainerMenu menu;
     private static AbstractContainerScreen<?> ecran;
+    private static Portee portee;
     private static Method clicStockage;
     private static List<Lot> attente = List.of();
     private static int index, reste, pris, delai, synchronisation, stable;
     private static boolean confirmation;
     private static BiConsumer<ItemStack, Integer> reception;
-    private static ItemStack receptionAttendue = ItemStack.EMPTY;
+    private static Deplacement receptionAttendue;
     private static final int ATTENTE_SERVEUR = 60; // Trois secondes sans renvoyer de clic.
     private static long dernierClic;
     private static final Map<Slot, ItemStack> attendu = new IdentityHashMap<>();
+
+    private record Portee(Object joueur, Object monde, Object connexion) {
+        static Portee courante(Minecraft mc) {
+            var lien = mc.getConnection();
+            return new Portee(mc.player, mc.level, lien == null ? null : lien.getConnection());
+        }
+
+        boolean meme(Portee autre) {
+            return joueur == autre.joueur && monde == autre.monde && connexion == autre.connexion;
+        }
+    }
+
+    /** Une confirmation en vol concerne seulement les deux cases du dernier déplacement. */
+    private static final class Deplacement {
+        final Slot source, destination;
+        final ItemStack pile, sourceAttendue, destinationAttendue;
+        ItemStack sourceCorrigee, destinationCorrigee;
+
+        Deplacement(Slot source, Slot destination, ItemStack objet, int quantite) {
+            this.source = source;
+            this.destination = destination;
+            pile = objet.copy();
+            pile.setCount(quantite);
+            sourceAttendue = source.getItem().copy();
+            destinationAttendue = destination.getItem().copy();
+        }
+
+        boolean concordeApresFermeture(AbstractContainerMenu inventaire) {
+            var restante = sourceCorrigee == null ? source.getItem() : sourceCorrigee;
+            if (!identique(restante, sourceAttendue)
+                    || destinationCorrigee != null
+                            && !identique(destinationCorrigee, destinationAttendue)) return false;
+            for (Slot slot : inventaire.slots)
+                if (personnel(slot) && slot.getContainerSlot() == destination.getContainerSlot())
+                    return identique(slot.getItem(), destinationAttendue);
+            return false;
+        }
+
+        void observer(int slot, ItemStack pile) {
+            if (slot == source.index) sourceCorrigee = pile.copy();
+            if (slot == destination.index) destinationCorrigee = pile.copy();
+        }
+    }
 
     public static boolean estCoffre(AbstractContainerMenu m) {
         return m instanceof ChestMenu
@@ -207,6 +251,7 @@ public final class RetraitCoffre {
         RetraitCoffre.ecran = ecran;
         RetraitCoffre.reception = reception;
         menu = ecran.getMenu();
+        portee = Portee.courante(mc);
         attente = plan.lots();
         index = 0;
         reste = attente.get(0).quantite();
@@ -222,19 +267,30 @@ public final class RetraitCoffre {
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || menu == null) return;
         var mc = Minecraft.getInstance();
-        if (mc.player == null
-                || mc.gameMode == null
-                || mc.player.containerMenu != menu
-                || !(mc.screen instanceof AbstractContainerScreen<?> s)
-                || s.getMenu() != menu) {
+        if (mc.player == null || mc.gameMode == null || !portee.meme(Portee.courante(mc))) {
+            terminer("");
+            return;
+        }
+        boolean ouvert =
+                mc.player.containerMenu == menu
+                        && mc.screen instanceof AbstractContainerScreen<?> s
+                        && s.getMenu() == menu;
+        boolean ferme =
+                !ouvert
+                        && confirmation
+                        && receptionAttendue != null
+                        && mc.player.containerMenu == mc.player.inventoryMenu;
+        if (!ouvert && !ferme) {
             terminer("");
             return;
         }
         if (delai-- > 0) return;
-        String ecart = ecart();
+        String ecart = ferme ? ecartApresFermeture(mc.player.inventoryMenu) : ecart();
         if (confirmation) {
             synchronisation++;
-            if (ecart != null || !menu.getCarried().isEmpty()) {
+            if (ecart != null
+                    || !menu.getCarried().isEmpty()
+                    || ferme && !mc.player.inventoryMenu.getCarried().isEmpty()) {
                 stable = 0;
                 if (synchronisation >= ATTENTE_SERVEUR) {
                     System.getLogger(RetraitCoffre.class.getName())
@@ -247,7 +303,9 @@ public final class RetraitCoffre {
                                             + ", déplacés côté client="
                                             + pris);
                     terminer(
-                            "Transfert arrêté : le contenu ne correspond pas au déplacement attendu.");
+                            ferme
+                                    ? ""
+                                    : "Transfert arrêté : le contenu ne correspond pas au déplacement attendu.");
                 }
                 return; // Une réponse intermédiaire n'est pas un refus. Aucun nouveau clic.
             }
@@ -255,14 +313,18 @@ public final class RetraitCoffre {
             confirmation = false;
             synchronisation = stable = 0;
             var recue = receptionAttendue;
-            receptionAttendue = ItemStack.EMPTY;
-            if (!recue.isEmpty()) {
+            receptionAttendue = null;
+            if (recue != null) {
                 try {
-                    reception.accept(recue, recue.getCount());
+                    reception.accept(recue.pile, recue.pile.getCount());
                 } catch (RuntimeException e) {
                     System.getLogger(RetraitCoffre.class.getName())
                             .log(System.Logger.Level.WARNING, "Suivi du retrait indisponible", e);
                 }
+            }
+            if (ferme) {
+                terminer("");
+                return;
             }
         } else {
             if (!menu.getCarried().isEmpty()) {
@@ -361,8 +423,7 @@ public final class RetraitCoffre {
                 && deplace <= quantite
                 && avantSource - src.getItem().getCount() == deplace
                 && ItemStack.isSameItemSameTags(placee, attente.get(index).objet())) {
-            receptionAttendue = placee.copy();
-            receptionAttendue.setCount(deplace);
+            receptionAttendue = new Deplacement(src, dest, placee, deplace);
         }
         pris += deplace;
         reste -= deplace;
@@ -400,6 +461,40 @@ public final class RetraitCoffre {
                                 || ItemStack.isSameItemSameTags(avant, maintenant));
         }
         return null;
+    }
+
+    private static String ecartApresFermeture(AbstractContainerMenu inventaire) {
+        return receptionAttendue.concordeApresFermeture(inventaire)
+                ? null
+                : "source ou gain personnel non confirmé après fermeture";
+    }
+
+    private static Deplacement retraitFerme(Object connexion, int conteneur) {
+        var mc = Minecraft.getInstance();
+        return receptionAttendue != null
+                        && menu != null
+                        && conteneur == menu.containerId
+                        && mc.player != null
+                        && mc.player.containerMenu == mc.player.inventoryMenu
+                        && connexion == portee.connexion()
+                        && portee.meme(Portee.courante(mc))
+                ? receptionAttendue
+                : null;
+    }
+
+    /** Le client ignore les corrections de la fenêtre refermée. Garder celles des deux cases. */
+    public static void observerCorrection(
+            Object connexion, int conteneur, int slot, ItemStack pile) {
+        var retrait = retraitFerme(connexion, conteneur);
+        if (retrait != null) retrait.observer(slot, pile);
+    }
+
+    public static void observerCorrection(Object connexion, int conteneur, List<ItemStack> piles) {
+        var retrait = retraitFerme(connexion, conteneur);
+        if (retrait == null) return;
+        int source = retrait.source.index, destination = retrait.destination.index;
+        if (source < piles.size()) retrait.observer(source, piles.get(source));
+        if (destination < piles.size()) retrait.observer(destination, piles.get(destination));
     }
 
     private static boolean identique(ItemStack a, ItemStack b) {
@@ -443,9 +538,10 @@ public final class RetraitCoffre {
     private static void terminer(String texte) {
         menu = null;
         ecran = null;
+        portee = null;
         clicStockage = null;
         reception = null;
-        receptionAttendue = ItemStack.EMPTY;
+        receptionAttendue = null;
         confirmation = false;
         synchronisation = stable = 0;
         attente = List.of();

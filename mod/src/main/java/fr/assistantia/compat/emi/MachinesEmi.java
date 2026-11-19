@@ -71,12 +71,14 @@ public final class MachinesEmi {
 
     private record InventaireEmi(List<ItemStack> piles, List<PlanRetrait.Stock<EmiStack>> stock) {}
 
-    private static InventaireEmi inventaireCalcul, inventaireReceptions;
+    private static InventaireEmi inventaireCalcul, inventaireReceptions, inventairePoches;
     private static final SuiviLotsEmi lots =
             new SuiviLotsEmi(
                     MachinesEmi::inventairePhysique,
                     MachinesEmi::lotsModifies,
-                    MachinesEmi::porteeProduction);
+                    MachinesEmi::porteeProduction,
+                    fr.assistantia.InventaireJoueur::disponible,
+                    MachinesEmi::inventairePorte);
 
     /** Besoins du panneau et du suivi, après prise en compte des tampons relevés. */
     private static List<PlanMachines.Operation<EmiRecipe>> toutes = List.of();
@@ -391,7 +393,8 @@ public final class MachinesEmi {
             if (mc.player == joueur
                     && mc.level == niveau
                     && mc.getConnection() == lien
-                    && joueur.containerMenu == screen.getMenu()
+                    && (joueur.containerMenu == screen.getMenu()
+                            || joueur.containerMenu == joueur.inventoryMenu)
                     && actif() == courant
                     && revision == InstantaneArbreEmi.revisionStructureProduction())
                 reception.accept(pile, quantite);
@@ -811,11 +814,17 @@ public final class MachinesEmi {
         return inventaireReceptions.stock();
     }
 
+    private static List<PlanRetrait.Stock<EmiStack>> inventairePorte() {
+        inventairePoches = convertirInventaire(fr.assistantia.InventaireJoueur.pilesPortees());
+        return inventairePoches.stock();
+    }
+
     private static InventaireEmi convertirInventaire(List<ItemStack> piles) {
         // InventaireJoueur garde la même vue immuable tant que les piles restent identiques.
         if (inventaireCalcul != null && inventaireCalcul.piles() == piles) return inventaireCalcul;
         if (inventaireReceptions != null && inventaireReceptions.piles() == piles)
             return inventaireReceptions;
+        if (inventairePoches != null && inventairePoches.piles() == piles) return inventairePoches;
         List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
         for (ItemStack pile : piles) {
             if (pile.isEmpty()) continue;

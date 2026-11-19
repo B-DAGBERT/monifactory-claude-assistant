@@ -4,7 +4,9 @@ import com.mojang.logging.LogUtils;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.AideCoffre;
+import fr.assistantia.InventaireJoueur;
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.ReceptionManuelle;
 import fr.assistantia.RechercheEmi;
 import fr.assistantia.RetraitCoffre;
 import fr.assistantia.SuiviFabrication;
@@ -22,6 +24,9 @@ public final class CycleArbreEmi {
     private static String signature = "", identite = "", dimension = "";
     private static SuiviFabrication<ItemStack> suivi;
     private static boolean erreurSignalee;
+    private static final ReceptionManuelle<ItemStack> VARIANTES =
+            new ReceptionManuelle<>(ItemStack::isSameItemSameTags);
+    private static List<PlanRetrait.Stock<ItemStack>> preuvesDifferees = List.of();
 
     private record Cibles(
             String signature, String identite, List<PlanRetrait.Besoin<ItemStack>> besoins) {}
@@ -45,6 +50,7 @@ public final class CycleArbreEmi {
         if (mc.player == null || mc.level == null) {
             if (precedent != null) nettoyer();
             OrigineFabrication.vider();
+            preuvesDifferees = List.of();
             precedent = connexion = null;
             suivi = null;
             signature = "";
@@ -60,6 +66,7 @@ public final class CycleArbreEmi {
                     tree != null && connexion == mc.getConnection() && dim.equals(dimension);
             dimension = dim;
             OrigineFabrication.vider();
+            preuvesDifferees = List.of();
             precedent = tree;
             connexion = mc.getConnection();
             if (!conserver) {
@@ -77,7 +84,8 @@ public final class CycleArbreEmi {
                 signature = cibles.signature();
                 if (suivi != null && identite.equals(cibles.identite()))
                     suivi.quantites(cibles.besoins());
-                else
+                else {
+                    preuvesDifferees = List.of();
                     suivi =
                             new SuiviFabrication<>(
                                     cibles.besoins(),
@@ -91,17 +99,29 @@ public final class CycleArbreEmi {
                                                                                     == c.accepte()
                                                                                             .test(
                                                                                                     b)));
+                }
                 identite = cibles.identite();
             }
             if (RetraitCoffre.occupe()
+                    || TerminalMe.occupe()
                     || EnvoiMachine.occupe()
-                    || !fr.assistantia.InventaireJoueur.synchronise())
+                    || !InventaireJoueur.pochesDisponibles())
                 return; // Attendre la fin des clics et leur confirmation.
-            List<PlanRetrait.Stock<ItemStack>> stock = new ArrayList<>();
-            for (ItemStack item : fr.assistantia.InventaireJoueur.piles()) ajouter(stock, item);
-            OrigineFabrication.actualiser(stock);
+            OrigineFabrication.actualiser(stock(InventaireJoueur.pilesPortees()));
             MachinesEmi.recevoir(OrigineFabrication.provenances());
-            boolean fini = suivi.actualiser(stock, OrigineFabrication.receptions());
+            var nouvelles = OrigineFabrication.receptions();
+            boolean complet = InventaireJoueur.disponible();
+            if (!complet && nouvelles.isEmpty()) return;
+            var preuves = new ArrayList<>(preuvesDifferees);
+            for (var preuve : nouvelles)
+                if (cibles.besoins().stream().anyMatch(c -> c.accepte().test(preuve.objet())))
+                    preuves.add(preuve);
+            if (!complet) {
+                preuvesDifferees = VARIANTES.soustraire(preuves, List.of());
+                return;
+            }
+            preuvesDifferees = List.of();
+            boolean fini = suivi.actualiser(stock(InventaireJoueur.piles()), preuves);
             if (fini && CoffresArbreEmi.arbreActif() == tree) {
                 MachinesEmi.termine();
                 nettoyer();
@@ -134,8 +154,11 @@ public final class CycleArbreEmi {
         }
     }
 
-    private static void ajouter(List<PlanRetrait.Stock<ItemStack>> stock, ItemStack item) {
-        if (!item.isEmpty()) stock.add(new PlanRetrait.Stock<>(item.copy(), item.getCount(), true));
+    private static List<PlanRetrait.Stock<ItemStack>> stock(List<ItemStack> piles) {
+        return piles.stream()
+                .filter(item -> !item.isEmpty())
+                .map(item -> new PlanRetrait.Stock<>(item.copy(), item.getCount(), true))
+                .toList();
     }
 
     private static Cibles cibles(Object tree) throws ReflectiveOperationException {

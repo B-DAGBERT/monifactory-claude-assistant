@@ -50,6 +50,15 @@ public final class InventaireJoueur {
         return piles;
     }
 
+    /** Poches et curseur proviennent du menu natif, même si le sac attend sa synchronisation. */
+    public static List<ItemStack> pilesPortees() {
+        return pochesDisponibles() ? base : List.of();
+    }
+
+    public static boolean pochesDisponibles() {
+        return connexionCourante();
+    }
+
     public static List<ItemStack> sacs() {
         return sacs;
     }

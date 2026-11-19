@@ -59,6 +59,7 @@ class MeTerminalPanelTests(unittest.TestCase):
         self.assertIn("selection == null", lancer)
         self.assertIn("ItemStack.isSameItemSameTags(", lancer)
         self.assertNotIn("clique à nouveau", lancer)
+        self.assertLess(lancer.index("actualiser(true)"), lancer.index("receptionCollecte("))
 
     def test_end_of_withdrawal_refreshes_without_hiding_the_panel(self):
         terminer = corps(self.terminal, "private static void terminer(String texte)")
@@ -110,12 +111,16 @@ class MeTerminalPanelTests(unittest.TestCase):
             for signature in (
                 "private static void avancer(",
                 "private static int volumeRetrait(",
+                "private static Slot destinationFermee(",
+                "public static void confirmer(Object lien, int conteneur, int",
+                "public static void confirmer(Object lien, int conteneur, List",
                 "private static void attendre(",
                 "private static void terminer(",
             )
         )
         fixture = fixture.replace("// EXTRACTION_CHAMPS", champs).replace(
-            "// EXTRACTION_TRAITEMENT", traitement
+            "// EXTRACTION_TRAITEMENT",
+            traitement.replace("TerminalMe.class", "RetraitTerminalMeTest.class"),
         )
         with tempfile.TemporaryDirectory() as dossier:
             chemin = Path(dossier) / "RetraitTerminalMeTest.java"
@@ -127,7 +132,15 @@ class MeTerminalPanelTests(unittest.TestCase):
                 timeout=30,
             )
             self.assertEqual(compilation.returncode, 0, compilation.stderr)
-            for scenario in ("quantites", "capacites", "contexte", "confirmation"):
+            for scenario in (
+                "quantites",
+                "capacites",
+                "contexte",
+                "confirmation",
+                "reception",
+                "fermeture",
+                "paquets-fermes",
+            ):
                 with self.subTest(scenario=scenario):
                     resultat = subprocess.run(
                         [

@@ -3,14 +3,17 @@ package fr.assistantia.compat.emi;
 import com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiStack;
+import dev.emi.emi.bom.MaterialNode;
 import fr.assistantia.ArbreEmi;
+import fr.assistantia.CoffreTampon;
 import fr.assistantia.LotFabrication.Etat;
-import fr.assistantia.PlanRetrait;
 import fr.assistantia.MemoireCollecte;
+import fr.assistantia.PlanRetrait;
 import fr.assistantia.ReceptionLots;
 import fr.assistantia.RechercheEmi;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.ChestMenu;
@@ -35,7 +38,9 @@ public final class CycleMachineTest {
     private final GregTechMachines.Cuve cuveEntree = new GregTechMachines.Cuve();
     private final GregTechMachines.Cuve cuveSortie = new GregTechMachines.Cuve();
     private final List<ItemStack> sac = new ArrayList<>();
-    private final SuiviLotsEmi suivi = new SuiviLotsEmi(this::stock, () -> {});
+    private boolean sacSynchronise = true;
+    private final SuiviLotsEmi suivi =
+            new SuiviLotsEmi(this::stock, () -> {}, () -> null, () -> sacSynchronise, this::stock);
     private int lotId;
 
     private CycleMachineTest() throws ReflectiveOperationException {
@@ -569,6 +574,23 @@ public final class CycleMachineTest {
         synchroniser();
     }
 
+    private void receptionnerDernieresPlaquesApresFermeture(int totalPorte) {
+        int avant = lot().suivi().totalRecu();
+        OrigineFabrication.clicSortie(
+                menu.containerId,
+                sortie.index,
+                0,
+                net.minecraft.world.inventory.ClickType.QUICK_MOVE,
+                mc.player);
+        sortie.item = ItemStack.EMPTY;
+        mc.player.containerMenu = mc.player.inventoryMenu;
+        mc.screen = null;
+        synchroniser();
+        assert lot().suivi().totalRecu() == avant : "la baisse de sortie seule ne suffit pas";
+        menu.slots.get(8).item = new ItemStack(PLAQUE, totalPorte);
+        synchroniser();
+    }
+
     private void cycleMixte(boolean sortieDabord, boolean annulerReste) {
         fournirIngredients();
         var recette = recetteMixte();
@@ -870,6 +892,99 @@ public final class CycleMachineTest {
                 : "aucun ingrédient n'est repris dans AE2 pour ce même lot";
     }
 
+    private void stockRepartiMouleFluideReceptions() throws ReflectiveOperationException {
+        var recette = recetteMixte();
+        var arbre = new InstantaneArbreEmiTest.Arbre();
+        arbre.goal = new MaterialNode(item(PLAQUE, 6));
+        arbre.goal.divisor = 2;
+        arbre.goal.recipe = recette;
+        var outil = new MaterialNode(item(MOULE, 1));
+        outil.catalyst = true;
+        arbre.goal.children.addAll(
+                List.of(
+                        new MaterialNode(item(ETAIN, 2)),
+                        new MaterialNode(fluide(EAU, 144)),
+                        outil));
+        ArbreEmi.tree = arbre;
+        MachinesEmi.suivi = suivi;
+
+        var poche = menu.slots.get(3);
+        poche.item = new ItemStack(ETAIN, 2);
+        var cellule = contenant("test:water_cell", 1, EAU, 1000);
+        menu.slots.get(4).item = cellule;
+        sac.add(new ItemStack(ETAIN, 1));
+        var tampon = new ItemStack(ETAIN, 1);
+        CoffreTampon.piles = List.of(tampon);
+        var mouleInstalle = new ItemStack(MOULE, 1);
+        moule.item = mouleInstalle;
+        synchroniser();
+
+        var vue = InstantaneArbreEmi.lire(arbre);
+        var stockMe = List.of(new PlanRetrait.Stock<>(new ItemStack(ETAIN), 12, false));
+        var couverture = StockFabricationEmi.courant(stock(), stockMe);
+        assert quantite(couverture.personnel(), item(ETAIN, 1)) == 3;
+        assert quantite(couverture.tampon(), item(ETAIN, 1)) == 1;
+        assert quantite(couverture.reseau(), item(ETAIN, 1)) == 11
+                : "le tampon exposé à ME est déduit du stock réseau";
+        assert couverture
+                .retraitsReseau(vue.machines(), vue.lots())
+                .equals(List.of(new PlanRetrait.Prise(0, 2)));
+        var reperage = new MemoireCollecte(vue.collecte(), vue.lots());
+        var eau = vue.fluide(cellule);
+        assert eau != null && eau.parObjet() == 1000;
+        reperage.outilsMachines(Map.of(MOULE, 1));
+        reperage.actualiser(Map.of(ETAIN, 4, eau.id(), eau.parObjet()));
+        assert reperage.dansCoffres(List.of(new PlanRetrait.Stock<>(ETAIN, 20, false)))
+                .equals(List.of(new PlanRetrait.Prise(0, 2)));
+        var apercu = EnvoiMachine.preparer(ecran, recette, 3);
+        assert apercu.possible() && apercu.fois() == 1 && mc.gameMode.clicks == 0
+                : "Envoyer n'utilise que les poches et les entrées natives";
+
+        var poches = menu.slots.stream().filter(EnvoiMachine::personnel).toList();
+        assert RetraitMeCycle.retirer(poches, new ItemStack(ETAIN), 12, 2, this::stock) == 10;
+        assert quantite(stock(), item(ETAIN, 1)) == 5 && sac.size() == 1;
+        poche.item.setCount(poche.item.getCount() + tampon.getCount() + sac.remove(0).getCount());
+        CoffreTampon.piles = List.of();
+        synchroniser();
+        assert quantite(stock(), item(ETAIN, 1)) == 6;
+        reperage.actualiser(Map.of(ETAIN, 6, eau.id(), eau.parObjet()));
+        assert reperage.dansCoffres(List.of(new PlanRetrait.Stock<>(ETAIN, 20, false))).isEmpty();
+        var plan = EnvoiMachine.preparer(ecran, recette, 3);
+        assert plan.possible() && plan.fois() == 3 : plan.probleme();
+        envoyer(plan);
+        assert suivi.actifs().isEmpty() : "le clic ne confirme pas le lot";
+        attendreFinEnvoi();
+        var lot = lot().suivi();
+        assert entree.item.getCount() == 6 && moule.item == mouleInstalle;
+        assert cuveEntree.tank.getFluidAmount() == 1000 && cuveEntree.calls == 1;
+        assert quantite(stock(), item("empty_cell", 1)) == 1;
+        assert lot.totalRecu() == 0 && quantite(lot.restants(), item(PLAQUE, 1)) == 6;
+        assert StockFabricationEmi.pourMachines(stock())
+                        .operations(vue.machines(), vue.lots())
+                        .isEmpty()
+                : "aucun second lot pour les sorties encore attendues";
+        assert RetraitMeCycle.retirer(poches, new ItemStack(ETAIN), 9, 0, this::stock) == 9;
+
+        entree.item = ItemStack.EMPTY;
+        cuveEntree.tank.setFluid(new FluidStack(EAU, 568));
+        sortie.item = new ItemStack(PLAQUE, 6);
+        cuveSortie.tank.setFluid(new FluidStack(ACIDE, 432));
+        synchroniser();
+        receptionnerPlaques(4, 2, false);
+        receptionnerAcide(288, 144, true);
+        assert quantite(lot.obtenus(), item(PLAQUE, 1)) == 2;
+        assert quantite(lot.obtenus(), fluide(ACIDE, 1)) == 144;
+        receptionnerAcide(0, 432, false);
+        receptionnerDernieresPlaquesApresFermeture(6);
+        synchroniser();
+        assert lot.etat() == Etat.TERMINE && lot.restants().isEmpty();
+        assert quantite(lot.obtenus(), item(PLAQUE, 1)) == 6;
+        assert quantite(lot.obtenus(), fluide(ACIDE, 1)) == 432;
+        assert OrigineFabrication.totaux().get(PLAQUE) == 6;
+        assert StockFabricationEmi.pourMachines(stock()).attendus().isEmpty();
+        assert moule.item == mouleInstalle && moule.item.getCount() == 1;
+    }
+
     private void collecteConfirmee() {
         var recette = new EmiRecipe(List.of(item(ETAIN, 1)), List.of());
         recette.outputs = List.of(item(PLAQUE, 1));
@@ -897,6 +1012,56 @@ public final class CycleMachineTest {
         devenueAmbigue.accept(pile, 1);
         suivi.preparerCollecte(List.of(pile)).accept(pile, 1);
         assert suivi.actifs().subList(1, 3).stream().noneMatch(l -> l.suivi().totalRecu() > 0);
+    }
+
+    private void receptionPendantSyncSac() {
+        var recette = new EmiRecipe(List.of(), List.of());
+        recette.outputs = List.of(item(PLAQUE, 1));
+        suivi.ajouter(recette, 2, GregTechMachines.ui.position());
+        suivi.ajouter(recette, 1, null);
+        var automatique = suivi.actifs().get(0).suivi();
+        var manuel = suivi.actifs().get(1).suivi();
+        sortie.item = new ItemStack(PLAQUE, 2);
+        synchroniser();
+        sacSynchronise = false;
+        OrigineFabrication.clicSortie(
+                menu.containerId,
+                sortie.index,
+                0,
+                net.minecraft.world.inventory.ClickType.QUICK_MOVE,
+                mc.player);
+        sortie.item = ItemStack.EMPTY;
+        menu.slots.get(3).item = new ItemStack(PLAQUE, 2);
+        synchroniser();
+        assert automatique.totalRecu() == 2 && automatique.etat() == Etat.TERMINE;
+        assert manuel.totalRecu() == 0;
+        sacSynchronise = true;
+        synchroniser();
+        synchroniser();
+        assert manuel.totalRecu() == 0 : "la resynchronisation ne recrédite pas le gain";
+        menu.slots.get(4).item = new ItemStack(PLAQUE, 1);
+        synchroniser();
+        assert manuel.totalRecu() == 1 : "seul le gain suivant est compté";
+    }
+
+    private void fluidePremierClic() {
+        var recette = new EmiRecipe(List.of(), List.of());
+        recette.outputs = List.of(fluide(ACIDE, 144));
+        suivi.ajouter(recette, 2, GregTechMachines.ui.position());
+        var lot = suivi.actifs().get(0).suivi();
+        sacSynchronise = false;
+        cuveSortie.tank.setFluid(new FluidStack(ACIDE, 288));
+        // Aucun tick de l'observateur depuis l'ouverture de la machine.
+        suivi.clicSortieFluide(cuveSortie.widget());
+        cuveSortie.tank.setFluid(new FluidStack(ACIDE, 144));
+        mc.player.containerMenu = mc.player.inventoryMenu;
+        suivi.actualiser();
+        assert lot.totalRecu() == 0;
+        menu.slots.get(3).item = contenant("test:acid_cell", 1, ACIDE, 144);
+        suivi.actualiser();
+        assert lot.totalRecu() == 144 && lot.annulable();
+        suivi.actualiser();
+        assert lot.totalRecu() == 144;
     }
 
     private void deuxLots() throws ReflectiveOperationException {
@@ -993,18 +1158,7 @@ public final class CycleMachineTest {
         sortie.item = new ItemStack(PLAQUE, 1);
         synchroniser();
         assert lot().suivi().etat() == Etat.A_RECUPERER;
-        OrigineFabrication.clicSortie(
-                menu.containerId,
-                sortie.index,
-                0,
-                net.minecraft.world.inventory.ClickType.QUICK_MOVE,
-                mc.player);
-        sortie.item = ItemStack.EMPTY;
-        mc.player.containerMenu = mc.player.inventoryMenu;
-        synchroniser();
-        assert lot().suivi().totalRecu() == 0 : "la baisse de sortie seule ne suffit pas";
-        menu.slots.get(8).item = new ItemStack(PLAQUE, 1);
-        synchroniser();
+        receptionnerDernieresPlaquesApresFermeture(1);
         assert lot().suivi().etat() == Etat.TERMINE && lot().suivi().totalRecu() == 1;
         var vue = InstantaneArbreEmi.lire(arbre);
         var couverture = StockFabricationEmi.pourMachines(stock());
@@ -1139,6 +1293,8 @@ public final class CycleMachineTest {
             case "circuit-entre-objets" -> fixture.changerCircuitEntreObjets();
             case "preconditions" -> fixture.preconditions();
             case "sac-me-machine" -> fixture.sacVersMeVersMachine();
+            case "stock-reparti-moule-fluide-receptions" -> fixture
+                    .stockRepartiMouleFluideReceptions();
             case "destination-corrigee",
                     "cuve-corrigee",
                     "consommation-immediate",
@@ -1182,6 +1338,8 @@ public final class CycleMachineTest {
             case "reception-autre-stock" -> fixture.receptionDepuisAutreStock();
             case "reception-apres-fermeture" -> fixture.receptionApresFermeture();
             case "collecte-confirmee" -> fixture.collecteConfirmee();
+            case "reception-pendant-sync-sac" -> fixture.receptionPendantSyncSac();
+            case "fluide-premier-clic" -> fixture.fluidePremierClic();
             case "lot-hors-besoins" -> fixture.lotHorsBesoins();
             case "diagnostic-moule" -> diagnosticMoule();
             case "63" -> fixture.lotLimite(63, false);

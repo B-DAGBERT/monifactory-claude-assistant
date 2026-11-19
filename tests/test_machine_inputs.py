@@ -46,15 +46,10 @@ STUBS["net.minecraft.client.Minecraft"] = (
         "int total=slot.item.getCount()+n;slot.item=cursor.copy();slot.item.count=total;cursor.count-=n;",
     )
     .replace(
-        "public Object screen;",
-        """public Object screen;
-        public Object level=new Object();
-        public final Connection connection=new Connection();
-        public Connection getConnection(){return connection;}
-        public static class Connection {
+        "public static class ClientConnection {",
+        """public static class ClientConnection {
             public java.util.function.Consumer<Object> sender;
-            public void send(Object packet){sender.accept(packet);}
-        }""",
+            public void send(Object packet){sender.accept(packet);}""",
     )
 )
 STUBS["net.minecraft.world.entity.player.Player"] = STUBS[
@@ -62,7 +57,6 @@ STUBS["net.minecraft.world.entity.player.Player"] = STUBS[
 ].replace(
     "private final Object inventory=new Object();\n    public Object getInventory(){return inventory;}",
     """private final Inventory inventory=new Inventory();
-    public final net.minecraft.world.inventory.AbstractContainerMenu inventoryMenu=new net.minecraft.world.inventory.AbstractContainerMenu();
     public Inventory getInventory(){return inventory;}
     public static class Inventory {
         public int getSlotWithRemainingSpace(net.minecraft.world.item.ItemStack pile){return -1;}
@@ -184,7 +178,8 @@ public class CompoundTag extends Tag {
     public String toString(){return String.valueOf(n);}
 }""",
         "fr.assistantia.CoffreTampon": """public class CoffreTampon {
-    public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return java.util.List.of();}
+    public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
+    public static java.util.List<net.minecraft.world.item.ItemStack> piles(){return piles;}
 }""",
         "fr.assistantia.compat.emi.CycleArbreEmi": """public class CycleArbreEmi {
     public static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> credits(){return java.util.List.of();}
@@ -195,6 +190,10 @@ import fr.assistantia.PlanRetrait.Stock;
 import dev.emi.emi.api.stack.EmiStack;
 public class MachinesEmi {
     static SuiviLotsEmi suivi;
+    static java.util.function.BiConsumer<net.minecraft.world.item.ItemStack,Integer> receptionCollecte(
+        net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> ecran,
+        List<net.minecraft.world.item.ItemStack> variantes
+    ) { return suivi==null ? (pile,n) -> {} : suivi.preparerCollecte(variantes); }
     static List<Stock<EmiStack>> reservationsArbre() {
         return suivi==null ? List.of() : suivi.actifs().stream()
                 .flatMap(lot -> lot.suivi().restants().stream()).toList();
@@ -281,7 +280,9 @@ def compiler_retrait_me(dossier):
     )
     fichier = Path(dossier) / "RetraitMeCycle.java"
     fichier.write_text(
-        fixture.replace("// CHAMPS_TERMINAL_ME", champs).replace("// ACTIONS_TERMINAL_ME", actions),
+        fixture.replace("// CHAMPS_TERMINAL_ME", champs).replace(
+            "// ACTIONS_TERMINAL_ME", actions.replace("TerminalMe.class", "RetraitMeCycle.class")
+        ),
         encoding="utf-8",
     )
     return str(fichier)
@@ -395,6 +396,12 @@ class MachineInputTests(unittest.TestCase):
 
     def test_sac_retrait_me_machine_demarrage_immediat_un_seul_lot(self):
         self.rejouer_cycle("sac-me-machine")
+
+    def test_integrated_stock_mold_fluid_and_split_receipts(self):
+        self.rejouer_cycle("stock-reparti-moule-fluide-receptions")
+
+    def test_machine_receipts_continue_while_the_backpack_is_synchronizing(self):
+        self.rejouer_cycle("reception-pendant-sync-sac", "fluide-premier-clic")
 
     def test_mold_diagnostic_uses_real_coverage_for_each_plan(self):
         self.rejouer_cycle("diagnostic-moule")

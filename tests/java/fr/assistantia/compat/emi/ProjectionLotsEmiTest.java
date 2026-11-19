@@ -138,6 +138,39 @@ public final class ProjectionLotsEmiTest {
         return total;
     }
 
+    private static void collecteDifferee(SuiviLotsEmi owner) {
+        owner.vider();
+        inventory = List.of();
+        String id = "gtceu:programmed_circuit";
+        var retire = new ItemStack(id, 1);
+        retire.tag = 8;
+        var autre = new ItemStack(id, 1);
+        autre.tag = 9;
+        var recette = recipe(EmiStack.of(retire));
+        owner.ajouter(recette, 1, new BlockPos(0, 64, 0));
+        var reception = owner.preparerCollecte(List.of(retire));
+        reception.accept(retire, 1);
+        assert owner.actifs().get(0).suivi().totalRecu() == 1;
+        owner.recevoir(List.of()); // Le menu refermé a fourni le paquet, les poches sont en retard.
+        owner.ajouter(recette, 2, null);
+        var manuel = owner.actifs().get(1).suivi();
+        assert owner.receptionEnAttente() && manuel.totalRecu() == 0;
+
+        inventory = List.of(stock(EmiStack.of(autre), 1));
+        owner.recevoir(List.of());
+        assert manuel.totalRecu() == 1 && owner.receptionEnAttente()
+                : "la règle du circuit accepte sa variante pour le lot, pas pour le retrait";
+
+        inventory = List.of(stock(EmiStack.of(autre), 1), stock(EmiStack.of(retire), 1));
+        owner.recevoir(List.of());
+        assert manuel.totalRecu() == 1 && !owner.receptionEnAttente()
+                : "le gain correspondant au retrait déjà suivi est déduit une fois";
+
+        inventory = List.of(stock(EmiStack.of(autre), 1), stock(EmiStack.of(retire), 2));
+        owner.recevoir(List.of());
+        assert manuel.totalRecu() == 2 : "l'arrivée suivante n'est plus attribuée à ce retrait";
+    }
+
     public static void main(String[] args) {
         String scenario = args[0];
         inventory = List.of(stock(item("test:unrelated", 1), 1));
@@ -163,6 +196,8 @@ public final class ProjectionLotsEmiTest {
             assert lot.getAsJsonArray("recus").isEmpty() && lot.getAsJsonArray("annules").isEmpty();
             assert view.get("empreinte").getAsString().matches("[0-9a-f]{64}");
             assert !view.has("reserved") && !lot.has("stock");
+        } else if (scenario.equals("collecte_differee")) {
+            collecteDifferee(owner);
         } else if (scenario.equals("partial_cancel")) {
             receiveExplicitModel(owner, 3);
             var partial = only(project(owner));

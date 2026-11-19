@@ -154,6 +154,51 @@ cuivres et deux étains. Isoler le coffre de collecte nominal du coffre de sorti
 
 ## Enchaînements qui attrapent les bugs rares
 
+### Fabrication répartie et Échap
+
+Utiliser une copie du monde. Choisir dans EMI une recette GregTech déterministe dont les
+entrées incluent un moule réutilisable et un fluide. Relever la quantité par lot et préparer
+au moins deux lots pour vérifier une réception partielle. Faire les relevés dans le même
+contexte d’arbre et de connexion.
+
+1. Placer le moule dans la machine et répartir les autres composants entre les poches, un
+   backpack fermé, un tampon relevé et le réseau ME. Relever la quantité retenue chez chaque
+   source. Vérifier la couverture dans EMI, puis le reste dans **Repérage** et **Réseau ME**.
+2. Récupérer le complément avec **Prendre** ou **Tout**, sortir ce qui reste dans le sac et
+   prendre le contenant de fluide. Vérifier les soldes physiques et le curseur avant l’envoi.
+3. Ouvrir la machine. Vérifier le moule présent, le fluide attendu et le nombre de lots.
+   Cliquer **Envoyer** et contrôler les entrées réelles et la sortie encore vide. Alimenter
+   la machine pour lancer la fabrication.
+4. Récupérer une partie du résultat, fermer aussitôt avec Échap et vérifier le crédit partiel
+   dans **Suivi**. Récupérer le solde et vérifier le nombre total, le moule et le retour du
+   contenant selon la recette.
+5. Pour un retrait ME ou coffre suivi d’Échap avant la confirmation, comparer le lot, le
+   stock du conteneur et les poches avant et après réouverture. Le même retrait doit laisser
+   un seul crédit même si l’affichage de l’inventaire se met à jour après **Suivi**.
+
+Le scénario correspondant joue les réponses serveur simulées avec le code Java, vérifie
+les 2 unités proposées dans ME et Repérage et contrôle les réceptions fractionnées.
+
+```sh
+python -m monifactory_assistant.commands.scenarios fabrication
+```
+
+**Cas en jeu.** Sélectionner un coffre de l’Ender dans EMI et choisir
+`gtceu:fluid_solidifier/obsidian` pour l’obsidienne. Préparer un œil de l’Ender, deux
+obsidiennes dans un sac porté, deux dans un tampon, une dans un coffre ordinaire et trois
+dans ME. Placer un seau de lave avec l’obsidienne du coffre, un seau de lave dans les poches
+et un moule à bloc dans le Solidifier. Une fois les deux obsidiennes du Solidifier reçues,
+le terminal doit fournir une obsidienne et en garder deux. Réunir les huit obsidiennes et
+cliquer sur **Remplir** à l’établi.
+
+Le JAR `1.0.0-shared.72-local.1`
+(`adb6b8d3da2d79e43911d3aed597259b054bbd95c2becbf45444a1a751efd7fc`) a réussi ce parcours
+dans la copie macOS avec serveur intégré. Le Solidifier a reçu 2 000 mB, rendu les deux seaux
+et gardé le moule. Le retrait suivi d’Échap a crédité les deux obsidiennes une fois. L’établi
+a produit un coffre de l’Ender et fermé l’arbre terminé.
+
+### Variantes à rejouer
+
 Rejouer les gestes dans des ordres différents et contrôler chaque étape. Pour chaque source
 (coffre, ME, poches, sac), varier capacité normale et pleine, puis les interruptions avant/après
 le premier clic et avant/après sa confirmation. Ajouter explicitement ces combinaisons.

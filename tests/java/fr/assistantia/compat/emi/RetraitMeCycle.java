@@ -6,6 +6,7 @@ import fr.assistantia.PlanRetrait;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;

@@ -12,6 +12,7 @@ from test_machine_inputs import STUBS as MACHINE_STUBS
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = (
     "initial",
+    "collecte_differee",
     "partial_cancel",
     "manual_completion",
     "complete_move",

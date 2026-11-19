@@ -14,12 +14,14 @@ public final class ReceptionSortie<T> {
     private boolean initialise;
 
     private static final class Mouvement<T> {
+        final Object source;
         final T objet;
         final int tick;
         int quantite;
         int premierRapprochement = -1;
 
-        Mouvement(T objet, int quantite, int tick) {
+        Mouvement(Object source, T objet, int quantite, int tick) {
+            this.source = source;
             this.objet = objet;
             this.quantite = quantite;
             this.tick = tick;
@@ -37,8 +39,39 @@ public final class ReceptionSortie<T> {
 
     /** Le rapprochement n'utilise que les variations qui suivent ce geste sur une sortie réelle. */
     public void autoriser(T objet, int quantite) {
+        autoriser(null, objet, quantite);
+    }
+
+    /** Autorise un retrait sur cette source précise, identifiée par sa référence native. */
+    public void autoriser(Object source, T objet, int quantite) {
         if (gesteRequis && initialise && quantite > 0)
-            gestes.add(new Mouvement<>(objet, quantite, tick + 1));
+            gestes.add(new Mouvement<>(source, objet, quantite, tick + 1));
+    }
+
+    /** Variation de la source relevée avant la prochaine lecture du stock personnel. */
+    public void variationSortie(Object source, T objet, int retrait) {
+        enregistrerSortie(source, objet, retrait, tick + 1);
+    }
+
+    private void enregistrerSortie(Object source, T objet, int retrait, int instant) {
+        if (retrait > 0) retraits.add(new Mouvement<>(source, objet, retrait, instant));
+        else if (retrait < 0) {
+            // Une correction peut rétablir la sortie avant le gain personnel. Consommer
+            // cette baisse non confirmée pour qu'un gain ultérieur ne la réutilise pas.
+            int retour = -retrait;
+            for (var mouvement : retraits)
+                if (retour > 0 && mouvement.source == source && meme.test(mouvement.objet, objet)) {
+                    int n = Math.min(retour, mouvement.quantite);
+                    mouvement.quantite -= n;
+                    retour -= n;
+                    if (n > 0 && gesteRequis)
+                        gestes.removeIf(
+                                g ->
+                                        g.source == source
+                                                && g.tick <= mouvement.tick
+                                                && meme.test(g.objet, objet));
+                }
+        }
     }
 
     /** La première action peut précéder le relevé périodique du menu. */
@@ -101,7 +134,7 @@ public final class ReceptionSortie<T> {
                 for (var s : liste)
                     if (objets.stream().noneMatch(o -> meme.test(o, s.objet())))
                         objets.add(s.objet());
-            for (var mouvements : List.of(gains, retraits))
+            for (var mouvements : List.of(gains, retraits, gestes))
                 for (var mouvement : mouvements)
                     if (objets.stream().noneMatch(o -> meme.test(o, mouvement.objet)))
                         objets.add(mouvement.objet);
@@ -110,7 +143,7 @@ public final class ReceptionSortie<T> {
                 int retire = compte(sorties, objet) - compte(disponibles, objet);
                 if (gain > 0) {
                     int libre = Math.max(0, gain - compte(dejaAttribues, objet));
-                    if (libre > 0) gains.add(new Mouvement<>(objet, libre, tick));
+                    if (libre > 0) gains.add(new Mouvement<>(null, objet, libre, tick));
                 } else if (gain < 0)
                     for (var g : gains)
                         if (meme.test(g.objet, objet)) {
@@ -118,13 +151,14 @@ public final class ReceptionSortie<T> {
                             g.quantite -= n;
                             gain += n;
                         }
-                if (retire > 0) retraits.add(new Mouvement<>(objet, retire, tick));
+                enregistrerSortie(null, objet, retire, tick);
             }
             for (var r : retraits)
                 for (var g : gains)
                     if (r.quantite > 0 && g.quantite > 0 && meme.test(r.objet, g.objet)) {
                         int n = Math.min(r.quantite, g.quantite);
-                        if (gesteRequis) n = autorises(g.objet, Math.min(r.tick, g.tick), n);
+                        if (gesteRequis)
+                            n = autorises(r.source, g.objet, Math.min(r.tick, g.tick), n);
                         if (n <= 0) continue;
                         r.quantite -= n;
                         g.quantite -= n;
@@ -137,10 +171,13 @@ public final class ReceptionSortie<T> {
         return List.copyOf(preuves);
     }
 
-    private int autorises(T objet, int avantVariations, int maximum) {
+    private int autorises(Object source, T objet, int avantVariations, int maximum) {
         int restant = maximum;
         for (var geste : gestes)
-            if (restant > 0 && geste.tick <= avantVariations && meme.test(geste.objet, objet)) {
+            if (restant > 0
+                    && geste.source == source
+                    && geste.tick <= avantVariations
+                    && meme.test(geste.objet, objet)) {
                 int n = Math.min(geste.quantite, restant);
                 geste.quantite -= n;
                 if (geste.premierRapprochement < 0) geste.premierRapprochement = tick;

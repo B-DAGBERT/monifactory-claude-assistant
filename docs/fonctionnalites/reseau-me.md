@@ -21,6 +21,10 @@
   la place le permettent, puis les demi-piles et le solde. Chaque transfert attend sa confirmation.
 - Fermer le terminal invalide son relevé. Un curseur occupé empêche le départ. Après un arrêt,
   vérifier le curseur et le stock restant avant de reprendre.
+- **Prendre** et **Tout** signalent à Suivi les quantités déposées dans les poches. Le passage
+  par le curseur reste une étape intermédiaire. Après Échap, seul le dernier dépôt déjà envoyé
+  peut encore être confirmé, y compris par la mise à jour serveur de la case dans le menu fermé.
+  Un retrait ME ne prouve pas la machine d’origine.
 
 ## Tests à lancer
 

@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -41,7 +42,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * passe par le même panneau que la Collecte des coffres (voir DispositionCoffre) : posé hors du
  * terminal, réservé auprès d'EMI, et dont l'appui comme le relâchement ne vont jamais au terminal.
  */
-final class TerminalMe {
+public final class TerminalMe {
     private record Entree(long serial, Object cle, ItemStack pile, int quantite) {}
 
     private record Lot(long serial, ItemStack pile, int quantite) {}
@@ -99,10 +100,12 @@ final class TerminalMe {
     private static AbstractContainerMenu menu;
     private static AbstractContainerScreen<?> ecran;
     private static InstantaneArbreEmi arbre;
-    private static Object connexion;
+    private static Object connexion, joueur, niveau;
     private static List<Lot> retraits = List.of();
+    private static BiConsumer<ItemStack, Integer> reception;
     private static int index, reste, attendus, avant, recus, depotAvant;
     private static Slot destination;
+    private static ItemStack depotServeur;
     private static boolean direct;
     private static long echeance;
     private static boolean erreur;
@@ -587,14 +590,19 @@ final class TerminalMe {
                 message("Rien à prendre dans le réseau ME pour l’arbre EMI.");
                 return;
             }
+            reception =
+                    MachinesEmi.receptionCollecte(screen, lots.stream().map(Lot::pile).toList());
             ecran = screen;
             menu = screen.getMenu();
             arbre = vue.arbre();
             connexion = mc.getConnection();
+            joueur = mc.player;
+            niveau = mc.level;
             retraits = lots;
             objets = lots;
             index = recus = avant = attendus = 0;
             destination = null;
+            depotServeur = null;
             direct = false;
             reste = retraits.get(0).quantite();
         } catch (ReflectiveOperationException | RuntimeException ex) {
@@ -618,22 +626,38 @@ final class TerminalMe {
 
     private static void avancer() throws ReflectiveOperationException {
         var mc = Minecraft.getInstance();
+        var joueurActuel = mc.player;
         Object tree = arbreCourant();
-        if (mc.screen != ecran
-                || courant() != menu
+        if (joueurActuel == null
+                || joueurActuel != joueur
+                || mc.level != niveau
                 || mc.getConnection() != connexion
                 || tree == null
                 || InstantaneArbreEmi.lire(tree) != arbre) {
             terminer("Retrait ME interrompu : terminal ou arbre modifié.");
             return;
         }
-        var curseur = menu.getCarried();
+        var inventaire = joueurActuel.getInventory();
+        boolean ouvert = mc.screen == ecran && courant() == menu;
+        // Échap arrête la séquence, mais le dernier dépôt déjà demandé peut encore arriver.
+        boolean ferme =
+                !ouvert
+                        && destination != null
+                        && joueurActuel.containerMenu == joueurActuel.inventoryMenu
+                        && destination.container == inventaire
+                        && System.nanoTime() < echeance;
+        if (!ouvert && !ferme) {
+            terminer("Retrait ME interrompu : terminal ou arbre modifié.");
+            return;
+        }
+        var curseur = (ferme ? joueurActuel.inventoryMenu : menu).getCarried();
         if (destination != null) {
-            int gain = destination.getItem().getCount() - depotAvant;
+            var pile = ferme && depotServeur != null ? depotServeur : destination.getItem();
+            int gain = pile.getCount() - depotAvant;
             if (curseur.isEmpty()
-                    && ItemStack.isSameItemSameTags(
-                            destination.getItem(), retraits.get(index).pile())
-                    && (direct ? gain > 0 && gain <= attendus : gain == avant)) {
+                    && ItemStack.isSameItemSameTags(pile, retraits.get(index).pile())
+                    && gain > 0
+                    && (direct ? gain <= attendus : gain == avant)) {
                 if (direct) {
                     reste -= gain;
                     attendus = 0;
@@ -642,6 +666,21 @@ final class TerminalMe {
                 recus += gain;
                 avant = 0;
                 destination = null;
+                if (reception != null) {
+                    try {
+                        reception.accept(pile.copy(), gain);
+                    } catch (RuntimeException ex) {
+                        System.getLogger(TerminalMe.class.getName())
+                                .log(
+                                        System.Logger.Level.WARNING,
+                                        "Suivi du retrait ME indisponible",
+                                        ex);
+                    }
+                }
+                if (ferme) {
+                    terminer(recus + " objets récupérés dans le réseau ME.");
+                    return;
+                }
             } else {
                 attendre();
                 return;
@@ -677,7 +716,6 @@ final class TerminalMe {
             terminer("Retrait ME interrompu : le curseur a changé.");
             return;
         }
-        var inventaire = mc.player.getInventory();
         int taillePile = lot.pile().getMaxStackSize();
         int emplacementNatif = -1;
         if (avant == 0 && reste >= taillePile && ACCES.pileDirecte() != null) {
@@ -754,6 +792,38 @@ final class TerminalMe {
         return limite >= demi ? demi : 1;
     }
 
+    private static Slot destinationFermee(Object lien, int conteneur) {
+        if (menu == null
+                || destination == null
+                || menu.containerId != conteneur
+                || System.nanoTime() >= echeance) return null;
+        var mc = Minecraft.getInstance();
+        var joueurActuel = mc.player;
+        var ecoute = mc.getConnection();
+        return joueurActuel != null
+                        && joueurActuel == joueur
+                        && mc.level == niveau
+                        && ecoute != null
+                        && ecoute == connexion
+                        && ecoute.getConnection() == lien
+                        && joueurActuel.containerMenu == joueurActuel.inventoryMenu
+                        && destination.container == joueurActuel.getInventory()
+                ? destination
+                : null;
+    }
+
+    /** Vanilla peut ignorer la confirmation d'une case si le menu vient d'être fermé. */
+    public static void confirmer(Object lien, int conteneur, int index, ItemStack pile) {
+        var slot = destinationFermee(lien, conteneur);
+        if (slot != null && slot.index == index) depotServeur = pile.copy();
+    }
+
+    public static void confirmer(Object lien, int conteneur, List<ItemStack> piles) {
+        var slot = destinationFermee(lien, conteneur);
+        if (slot != null && slot.index >= 0 && slot.index < piles.size())
+            depotServeur = piles.get(slot.index).copy();
+    }
+
     private static void attendre() {
         if (System.nanoTime() >= echeance)
             terminer("Retrait ME interrompu : réponse du terminal absente. Vérifie le curseur.");
@@ -762,9 +832,11 @@ final class TerminalMe {
     private static void terminer(String texte) {
         menu = null;
         ecran = null;
-        connexion = null;
+        connexion = joueur = niveau = null;
         arbre = null;
         destination = null;
+        depotServeur = null;
+        reception = null;
         retraits = List.of();
         vue = null;
         ticks = 0;

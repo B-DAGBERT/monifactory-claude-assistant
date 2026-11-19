@@ -265,6 +265,80 @@ public final class RetraitCoffreTest {
         assert recues.equals(List.of(64)) : "aucun callback du retrait précédent";
     }
 
+    private static void fermerLeCoffre() {
+        var inventaire = mc.player.inventoryMenu;
+        inventaire.slots.clear();
+        inventaire.slots.addAll(menu.slots.subList(1, 4));
+        mc.player.containerMenu = inventaire;
+        mc.screen = null;
+    }
+
+    private static void receptionApresFermeture() throws Exception {
+        var recues = new java.util.ArrayList<Integer>();
+        setup(120, 0);
+        assert RetraitCoffre.lancer(screen, plan(100), (pile, nombre) -> recues.add(nombre));
+        tick();
+        int clics = mc.gameMode.clicks;
+        assert recues.isEmpty() && owned() == 64;
+        fermerLeCoffre();
+        // Une correction issue d'un autre canal ou d'une case étrangère ne s'applique pas.
+        RetraitCoffre.observerCorrection(
+                new Object(), menu.containerId, 0, new ItemStack("tin", 120));
+        RetraitCoffre.observerCorrection(
+                mc.getConnection().getConnection(), menu.containerId, 3, new ItemStack("tin", 15));
+        finish();
+        assert recues.equals(List.of(64)) : "le dernier déplacement confirmé survit à Échap";
+        assert owned() == 64 && mc.gameMode.clicks == clics : "aucun nouveau clic hors du coffre";
+
+        recues.clear();
+        setup(120, 0);
+        assert RetraitCoffre.lancer(screen, plan(100), (pile, nombre) -> recues.add(nombre));
+        for (int i = 0; i < 20 && owned() < 100; i++) tick();
+        assert owned() == 100 && recues.equals(List.of(64));
+        fermerLeCoffre();
+        clics = mc.gameMode.clicks;
+        finish();
+        assert recues.equals(List.of(64, 36)) && mc.gameMode.clicks == clics;
+    }
+
+    private static void fermetureSansPreuve() throws Exception {
+        var recues = new java.util.ArrayList<Integer>();
+        var connexion = mc.getConnection().getConnection();
+        setup(64, 0);
+        assert RetraitCoffre.lancer(screen, plan(5), (pile, nombre) -> recues.add(nombre));
+        tick();
+        fermerLeCoffre();
+        RetraitCoffre.observerCorrection(connexion, menu.containerId, 0, new ItemStack("tin", 64));
+        finish();
+        assert recues.isEmpty()
+                : "le coffre a refusé le retrait même avec un gain prévu côté client";
+
+        setup(64, 0);
+        assert RetraitCoffre.lancer(screen, plan(5), (pile, nombre) -> recues.add(nombre));
+        tick();
+        fermerLeCoffre();
+        RetraitCoffre.observerCorrection(
+                connexion, menu.containerId, List.of(new ItemStack("tin", 59), ItemStack.EMPTY));
+        finish();
+        assert recues.isEmpty() : "le paquet tardif ne confirme pas la case personnelle";
+
+        setup(64, 0);
+        assert RetraitCoffre.lancer(screen, plan(5), (pile, nombre) -> recues.add(nombre));
+        tick();
+        fermerLeCoffre();
+        mc.player.inventoryMenu.slots.get(0).item = new ItemStack("tin", 4);
+        finish();
+        assert recues.isEmpty() : "la quantité réellement portée doit correspondre au déplacement";
+
+        setup(64, 0);
+        assert RetraitCoffre.lancer(screen, plan(5), (pile, nombre) -> recues.add(nombre));
+        tick();
+        fermerLeCoffre();
+        mc.connection = new Minecraft.ClientConnection();
+        finish();
+        assert recues.isEmpty() : "une nouvelle connexion invalide la preuve en vol";
+    }
+
     public static void main(String[] args) throws Exception {
         setup(64, 2);
         var besoin = CollecteCoffreFixture.besoin("tin", 5);
@@ -281,6 +355,8 @@ public final class RetraitCoffreTest {
 
         synchronization();
         receptionsConfirmees();
+        receptionApresFermeture();
+        fermetureSansPreuve();
         treeSelection();
         componentBeforeMaterials();
         collecterLesContenantsEntiers();

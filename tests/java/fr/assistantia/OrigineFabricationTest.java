@@ -12,6 +12,12 @@ public class OrigineFabricationTest {
         return new PlanRetrait.Stock<>(new ItemStack("plate", n), n, true);
     }
 
+    private static PlanRetrait.Stock<ItemStack> variante(int n, int tag) {
+        var stock = s(n);
+        stock.objet().tag = tag;
+        return stock;
+    }
+
     private static void cliquer(Minecraft mc, Slot output) {
         cliquer(mc, output, ClickType.QUICK_MOVE, 0);
     }
@@ -49,6 +55,96 @@ public class OrigineFabricationTest {
         OrigineFabrication.actualiser(List.of(s(65)));
         assert OrigineFabrication.receptions().isEmpty() : "aucun crédit hors du clic observé";
         mc.player.containerMenu.carried = ItemStack.EMPTY;
+    }
+
+    private static void receptionParCase(Minecraft mc, Slot output) {
+        var autre = new Slot(new Object(), 1);
+        OrigineFabrication.vider();
+        GregTechMachines.outputSlots = List.of();
+        output.item = s(2).objet();
+        autre.item = s(2).objet();
+        OrigineFabrication.actualiser(List.of());
+        GregTechMachines.outputSlots = List.of(output, autre);
+        cliquer(mc, output);
+        output.item = ItemStack.EMPTY;
+        autre.item = s(4).objet();
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.provenances().machine().objets().get(0).quantite() == 2
+                : "une autre sortie peut se remplir du même objet sans masquer le retrait";
+
+        OrigineFabrication.vider();
+        output.item = s(2).objet();
+        autre.item = s(2).objet();
+        OrigineFabrication.actualiser(List.of());
+        cliquer(mc, output);
+        autre.item = ItemStack.EMPTY;
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().isEmpty()
+                : "le retrait d'une autre case ne valide pas le clic";
+
+        OrigineFabrication.vider();
+        output.item = s(2).objet();
+        autre.item = s(2).objet();
+        OrigineFabrication.actualiser(List.of());
+        cliquer(mc, output);
+        cliquer(mc, autre);
+        output.item = autre.item = ItemStack.EMPTY;
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.totaux().get("plate") == 2
+                : "deux sources exactes partagent le même gain";
+        OrigineFabrication.actualiser(List.of(s(4)));
+        assert OrigineFabrication.totaux().get("plate") == 4;
+        GregTechMachines.outputSlots = List.of(output);
+    }
+
+    private static void receptionApresInventaire(Minecraft mc, Slot output) {
+        OrigineFabrication.vider();
+        output.item = s(3).objet();
+        OrigineFabrication.actualiser(List.of());
+        cliquer(mc, output);
+        output.item = s(1).objet();
+        mc.player.containerMenu = mc.player.inventoryMenu;
+        OrigineFabrication.clicSortie(
+                mc.player.containerMenu.containerId, 4, 0, ClickType.PICKUP, mc.player);
+        OrigineFabrication.actualiser(List.of());
+        assert OrigineFabrication.receptions().isEmpty();
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.provenances().machine().objets().get(0).quantite() == 2
+                : "un clic d'inventaire ne supprime pas la sortie précédente";
+        mc.player.containerMenu = new ChestMenu();
+    }
+
+    private static void receptionCorrigeeEtVariantes(Minecraft mc, Slot output) {
+        OrigineFabrication.vider();
+        output.item = s(2).objet();
+        OrigineFabrication.actualiser(List.of());
+        cliquer(mc, output);
+        output.item = ItemStack.EMPTY;
+        OrigineFabrication.actualiser(List.of());
+        output.item = s(2).objet();
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().isEmpty()
+                : "une correction annule la baisse non confirmée";
+        output.item = ItemStack.EMPTY;
+        OrigineFabrication.actualiser(List.of(s(2)));
+        assert OrigineFabrication.receptions().isEmpty()
+                : "le premier geste ne peut pas reprendre le crédit après correction";
+
+        OrigineFabrication.vider();
+        output.item = variante(2, 42).objet();
+        OrigineFabrication.actualiser(List.of());
+        cliquer(mc, output);
+        output.item = ItemStack.EMPTY;
+        OrigineFabrication.craft(
+                new PlayerEvent.ItemCraftedEvent(mc.player, variante(1, 21).objet()));
+        OrigineFabrication.actualiser(List.of(variante(1, 21), variante(2, 42)));
+        var preuve = OrigineFabrication.provenances();
+        assert preuve.crafts().size() == 1 && preuve.crafts().get(0).objet().tag == 21;
+        assert preuve.machine().objets().size() == 1
+                        && preuve.machine().objets().get(0).objet().tag == 42
+                        && preuve.machine().objets().get(0).quantite() == 2
+                : "un craft d'une autre variante ne prend pas le crédit de la machine";
+        assert OrigineFabrication.totaux().get("plate") == 3;
     }
 
     public static void main(String[] args) {
@@ -172,6 +268,9 @@ public class OrigineFabricationTest {
         OrigineFabrication.actualiser(List.of(s(2)));
         assert OrigineFabrication.receptions().isEmpty();
         retraitsDepuisLaSortie(mc, output);
+        receptionParCase(mc, output);
+        receptionApresInventaire(mc, output);
+        receptionCorrigeeEtVariantes(mc, output);
         OrigineFabrication.vider();
         GregTechMachines.outputSlots = List.of();
         GregTechMachines.ui = null;

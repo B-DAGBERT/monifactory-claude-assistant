@@ -65,10 +65,11 @@ public final class SuiviFabrication<T> {
             List<PlanRetrait.Stock<T>> inventaire, List<PlanRetrait.Stock<T>> preuves) {
         if (cibles.isEmpty()) return false;
         tick++;
-        for (var s : inventaire)
-            if (cibles.stream().anyMatch(c -> c.accepte().test(s.objet()))
-                    && releves.stream().noneMatch(r -> meme.test(r.objet, s.objet())))
-                releves.add(new Releve<>(s.objet()));
+        for (var source : initialise ? List.of(inventaire) : List.of(inventaire, preuves))
+            for (var s : source)
+                if (cibles.stream().anyMatch(c -> c.accepte().test(s.objet()))
+                        && releves.stream().noneMatch(r -> meme.test(r.objet, s.objet())))
+                    releves.add(new Releve<>(s.objet()));
         for (var r : releves) {
             r.gainsRecents.removeIf(g -> tick - g.tick > 20 || g.quantite == 0);
             int actuel =
@@ -76,15 +77,16 @@ public final class SuiviFabrication<T> {
                             .filter(s -> meme.test(r.objet, s.objet()))
                             .mapToInt(PlanRetrait.Stock::quantite)
                             .sum();
+            int confirme =
+                    preuves.stream()
+                            .filter(p -> meme.test(r.objet, p.objet()))
+                            .mapToInt(PlanRetrait.Stock::quantite)
+                            .sum();
             if (!initialise) {
-                r.acquis = depuisDepart ? 0 : actuel;
+                // Une réception native peut précéder le premier relevé complet du sac.
+                r.acquis = depuisDepart ? confirme : Math.max(actuel, confirme);
             } else {
                 int delta = actuel - r.precedent;
-                int confirme =
-                        preuves.stream()
-                                .filter(p -> meme.test(r.objet, p.objet()))
-                                .mapToInt(PlanRetrait.Stock::quantite)
-                                .sum();
                 if (delta < 0) {
                     r.sortis = addition(r.sortis, -delta);
                     r.gainsRecents.clear();

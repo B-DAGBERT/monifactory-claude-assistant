@@ -32,6 +32,7 @@ public record Component(String text){public static Component literal(String s){r
     "net.minecraft.world.entity.player.Player": """
 public class Player {
     public net.minecraft.world.inventory.AbstractContainerMenu containerMenu;
+    public net.minecraft.world.inventory.AbstractContainerMenu inventoryMenu=new net.minecraft.world.inventory.AbstractContainerMenu();
     public String lastMessage=""; private final Object inventory=new Object();
     public Object getInventory(){return inventory;}
     public void displayClientMessage(net.minecraft.network.chat.Component c,boolean action){lastMessage=c.text();}
@@ -89,6 +90,11 @@ import net.minecraft.world.inventory.*;
 public class Minecraft {
     private static final Minecraft INSTANCE=new Minecraft();
     public net.minecraft.world.entity.player.Player player=new net.minecraft.world.entity.player.Player();
+    public Object level=new Object();public ClientConnection connection=new ClientConnection();
+    public ClientConnection getConnection(){return connection;}
+    public static class ClientConnection {
+        private final Object connection=new Object();public Object getConnection(){return connection;}
+    }
     public Object screen; public GameMode gameMode=new GameMode();
     public static Minecraft getInstance(){return INSTANCE;}
     public static class GameMode {

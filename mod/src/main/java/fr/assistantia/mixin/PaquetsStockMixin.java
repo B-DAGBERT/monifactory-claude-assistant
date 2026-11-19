@@ -1,7 +1,10 @@
 package fr.assistantia.mixin;
 
+import fr.assistantia.Emi;
+import fr.assistantia.RetraitCoffre;
 import fr.assistantia.StockProduction;
 import fr.assistantia.compat.emi.ReglageCircuitMachine;
+import fr.assistantia.compat.emi.TerminalMe;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
@@ -36,6 +39,9 @@ public abstract class PaquetsStockMixin {
                 paquet.getCarriedItem(),
                 false);
         ReglageCircuitMachine.confirmer(connexion, paquet.getContainerId(), paquet.getItems());
+        RetraitCoffre.observerCorrection(connexion, paquet.getContainerId(), paquet.getItems());
+        if (Emi.present())
+            TerminalMe.confirmer(connexion, paquet.getContainerId(), paquet.getItems());
     }
 
     @Inject(
@@ -48,6 +54,11 @@ public abstract class PaquetsStockMixin {
         StockProduction.variation(connexion);
         ReglageCircuitMachine.confirmer(
                 connexion, paquet.getContainerId(), paquet.getSlot(), paquet.getItem());
+        RetraitCoffre.observerCorrection(
+                connexion, paquet.getContainerId(), paquet.getSlot(), paquet.getItem());
+        if (Emi.present())
+            TerminalMe.confirmer(
+                    connexion, paquet.getContainerId(), paquet.getSlot(), paquet.getItem());
     }
 
     @Inject(

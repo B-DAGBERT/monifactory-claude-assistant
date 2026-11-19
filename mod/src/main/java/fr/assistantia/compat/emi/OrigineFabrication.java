@@ -29,7 +29,7 @@ public final class OrigineFabrication {
             new ReceptionSortie<>(ItemStack::isSameItemSameTags, true);
     private static AbstractContainerMenu menu;
     private static BlockPos position;
-    private static List<Slot> slotsSortie = List.of();
+    private static final Map<Slot, ItemStack> sortiesEnCours = new IdentityHashMap<>();
     private static int age;
     private static final Map<String, Integer> totalFabrique = new HashMap<>();
 
@@ -49,7 +49,7 @@ public final class OrigineFabrication {
     public static void craft(PlayerEvent.ItemCraftedEvent event) {
         if (event.getEntity() != Minecraft.getInstance().player
                 || CoffresArbreEmi.arbreActif() == null) return;
-        ItemStack item = new ItemStack(event.getCrafting().getItem());
+        ItemStack item = event.getCrafting().copy();
         if (item.isEmpty()) return;
         crafts.add(item);
         age = 0;
@@ -61,7 +61,7 @@ public final class OrigineFabrication {
         precedent = receptions = List.of();
         provenances = new Provenances(List.of(), null);
         receptionSortie = new ReceptionSortie<>(ItemStack::isSameItemSameTags, true);
-        slotsSortie = List.of();
+        sortiesEnCours.clear();
         menu = null;
         position = null;
         age = 0;
@@ -93,16 +93,24 @@ public final class OrigineFabrication {
         menu = ouvert;
         position = null;
         receptionSortie = new ReceptionSortie<>(ItemStack::isSameItemSameTags, true);
-        slotsSortie = List.of();
+        sortiesEnCours.clear();
+    }
+
+    private static Slot sortieNative(AbstractContainerMenu ouvert, int index, Player joueur) {
         try {
-            var machine = GregTechMachines.ouvrir(ouvert);
-            if (machine != null && machine.position() != null) {
-                position = machine.position().immutable();
-                slotsSortie = GregTechMachines.sorties(ouvert);
-            }
+            for (var slot : GregTechMachines.sorties(ouvert))
+                if (slot.index == index && slot.isActive() && slot.mayPickup(joueur)) {
+                    if (position == null) {
+                        var machine = GregTechMachines.ouvrir(ouvert);
+                        if (machine == null || machine.position() == null) return null;
+                        position = machine.position().immutable();
+                    }
+                    return slot;
+                }
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // Aucun retrait ne peut être attribué sans sortie native lisible.
         }
+        return null;
     }
 
     /**
@@ -114,43 +122,52 @@ public final class OrigineFabrication {
         if (joueur == null
                 || joueur != Minecraft.getInstance().player
                 || CoffresArbreEmi.arbreActif() == null
+                || joueur.containerMenu == joueur.inventoryMenu
                 || joueur.containerMenu.containerId != conteneur) return;
         if (type != ClickType.QUICK_MOVE
                 && !(type == ClickType.PICKUP && bouton >= 0 && bouton <= 1)
                 && !(type == ClickType.SWAP && (bouton >= 0 && bouton <= 8 || bouton == 40)))
             return;
         observer(joueur.containerMenu);
-        for (var slot : slotsSortie) {
-            if (slot.index != index || !slot.isActive() || !slot.mayPickup(joueur)) continue;
-            var pile = slot.getItem();
-            if (pile.isEmpty()) return;
-            int n = pile.getCount();
-            if (type == ClickType.PICKUP) {
-                var curseur = joueur.containerMenu.getCarried();
-                if (!curseur.isEmpty()) {
-                    if (!ItemStack.isSameItemSameTags(pile, curseur)) return;
-                    n = Math.min(n, curseur.getMaxStackSize() - curseur.getCount());
-                } else if (bouton == 1) {
-                    n = (n + 1) / 2;
-                }
+        var slot = sortieNative(joueur.containerMenu, index, joueur);
+        if (slot == null) return;
+        var pile = slot.getItem();
+        if (pile.isEmpty()) return;
+        int n = pile.getCount();
+        if (type == ClickType.PICKUP) {
+            var curseur = joueur.containerMenu.getCarried();
+            if (!curseur.isEmpty()) {
+                if (!ItemStack.isSameItemSameTags(pile, curseur)) return;
+                n = Math.min(n, curseur.getMaxStackSize() - curseur.getCount());
+            } else if (bouton == 1) {
+                n = (n + 1) / 2;
             }
-            if (n > 0) {
-                if (!receptionSortie.enAttente())
-                    receptionSortie.preparerGeste(precedent, sortieActuelle());
-                receptionSortie.autoriser(pile.copy(), n);
+        }
+        if (n > 0) {
+            if (!receptionSortie.enAttente()) {
+                receptionSortie.preparerGeste(precedent, List.of());
+                sortiesEnCours.clear();
             }
-            return;
+            sortiesEnCours.putIfAbsent(slot, pile.copy());
+            receptionSortie.autoriser(slot, pile.copy(), n);
         }
     }
 
-    private static List<PlanRetrait.Stock<ItemStack>> sortieActuelle() {
-        List<PlanRetrait.Stock<ItemStack>> resultat = new ArrayList<>();
-        for (Slot slot : slotsSortie)
-            if (slot.isActive() && !slot.getItem().isEmpty())
-                resultat.add(
-                        new PlanRetrait.Stock<>(
-                                slot.getItem().copy(), slot.getItem().getCount(), true));
-        return resultat;
+    private static void releverSorties() {
+        for (var entree : sortiesEnCours.entrySet()) {
+            var slot = entree.getKey();
+            if (!slot.isActive()) continue;
+            var avant = entree.getValue();
+            var ici = slot.getItem();
+            if (ItemStack.isSameItemSameTags(avant, ici)) {
+                receptionSortie.variationSortie(slot, avant, avant.getCount() - ici.getCount());
+            } else {
+                if (!avant.isEmpty())
+                    receptionSortie.variationSortie(slot, avant, avant.getCount());
+                if (!ici.isEmpty()) receptionSortie.variationSortie(slot, ici, -ici.getCount());
+            }
+            entree.setValue(ici.copy());
+        }
     }
 
     public static void actualiser(List<PlanRetrait.Stock<ItemStack>> inventaire) {
@@ -163,7 +180,7 @@ public final class OrigineFabrication {
         // lié à sa vraie sortie et expire dans ReceptionSortie si aucun gain ne le confirme.
         if (player.containerMenu != player.inventoryMenu || !receptionSortie.enAttente())
             observer(player.containerMenu);
-        var maintenant = sortieActuelle();
+        releverSorties();
         List<PlanRetrait.Stock<ItemStack>> gains = new ArrayList<>();
         List<ItemStack> vus = new ArrayList<>();
         if (!crafts.isEmpty()) {
@@ -171,7 +188,7 @@ public final class OrigineFabrication {
                 ItemStack item = pile.objet();
                 // Sans événement sur cet item, son gain ne constitue aucune preuve de craft.
                 // Filtrer avant les comptages évite de comparer tout un backpack à chaque tick.
-                if (crafts.stream().noneMatch(s -> s.getItem() == item.getItem())) continue;
+                if (crafts.stream().noneMatch(s -> ItemStack.isSameItemSameTags(s, item))) continue;
                 if (vus.stream().anyMatch(s -> ItemStack.isSameItemSameTags(s, item))) continue;
                 vus.add(item);
                 int gain = Math.max(0, compte(inventaire, item) - compte(precedent, item));
@@ -182,9 +199,10 @@ public final class OrigineFabrication {
         // Les gains de craft sont exclus du rapprochement pour rester crédités une seule fois.
         var fabriques = List.copyOf(gains);
         var retires =
-                slotsSortie.isEmpty()
-                        ? List.<PlanRetrait.Stock<ItemStack>>of()
-                        : receptionSortie.actualiser(inventaire, maintenant, fabriques);
+                receptionSortie.enAttente()
+                        ? receptionSortie.actualiser(inventaire, List.of(), fabriques)
+                        : List.<PlanRetrait.Stock<ItemStack>>of();
+        if (!receptionSortie.enAttente()) sortiesEnCours.clear();
         provenances =
                 new Provenances(
                         fabriques,
@@ -202,7 +220,9 @@ public final class OrigineFabrication {
                         (a, b) -> (int) Math.min(1_000_000_000L, (long) a + b));
         }
         crafts.removeIf(
-                item -> fabriques.stream().anyMatch(s -> s.objet().getItem() == item.getItem()));
+                item ->
+                        fabriques.stream()
+                                .anyMatch(s -> ItemStack.isSameItemSameTags(s.objet(), item)));
         if (++age > 20) crafts.clear();
         precedent = List.copyOf(inventaire);
     }

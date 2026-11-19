@@ -25,6 +25,8 @@
 - **Prendre** et **Tout** transmettent chaque retrait confirmé au suivi. Un seul lot machine
   compatible reçoit la quantité transférée. Si plusieurs lots correspondent, Suivi conserve
   la confirmation manuelle. Production exige toujours une preuve de provenance de la machine.
+- Après Échap, confirmer uniquement le dernier déplacement déjà envoyé en vérifiant la case
+  source et la destination dans les poches. Le reste du transfert s’arrête.
 
 ## Tests à lancer
 
