@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from machine_panel_contract import compiler_panneau, doublures_panneau
 from test_chest_transfers import STUBS as CHEST_STUBS
 from test_me_terminal_panel import corps
 
@@ -305,7 +306,9 @@ class MachineInputTests(unittest.TestCase):
         cls.addClassCleanup(dossier.cleanup)
         cls.classes = dossier.name
         sources = []
-        for name, body in STUBS.items():
+        stubs = doublures_panneau(STUBS)
+        machine = stubs.pop("fr.assistantia.compat.emi.MachinesEmi")
+        for name, body in stubs.items():
             path = Path(cls.classes) / (name.replace(".", "/") + ".java")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"package {name.rsplit('.', 1)[0]};\n{body}", encoding="utf-8")
@@ -324,6 +327,8 @@ class MachineInputTests(unittest.TestCase):
                 "PlanMachines",
                 "SequenceEnvoi",
                 "ReceptionSortie",
+                "DispositionCoffre",
+                "OrdreMachines",
                 "compat/emi/EnvoiMachine",
                 "compat/emi/OrigineFabrication",
                 "compat/emi/ComparaisonEmi",
@@ -337,6 +342,7 @@ class MachineInputTests(unittest.TestCase):
             )
         ]
         sources.append(compiler_retrait_me(cls.classes))
+        sources.append(compiler_panneau(cls.classes, machine))
         sources += [
             str(ROOT / "tests/java/fr/assistantia" / f"{name}.java")
             for name in (
@@ -344,6 +350,7 @@ class MachineInputTests(unittest.TestCase):
                 "OrigineFabricationTest",
                 "InstantaneArbreEmiTest",
                 "compat/emi/CycleMachineTest",
+                "compat/emi/PanneauMachineClicTest",
             )
         ]
         result = subprocess.run(
@@ -366,6 +373,10 @@ class MachineInputTests(unittest.TestCase):
             result.returncode, 0, f"{' '.join((classe, *args))}\n{result.stdout}{result.stderr}"
         )
         return result.stdout
+
+    def test_machine_panel_uses_the_rendered_recipe_and_revalidates_the_click(self):
+        sortie = self.rejouer("fr.assistantia.compat.emi.PanneauMachineClicTest")
+        self.assertIn("PanneauMachineClic OK", sortie)
 
     def test_machine_inputs_and_fluids_use_confirmed_native_interactions(self):
         for scenario in (

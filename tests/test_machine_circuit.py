@@ -1,7 +1,6 @@
 """Circuit GregTech via les vraies préconditions et confirmations Java du mod."""
 
 from tests.test_change_only_exports import JAVA, ROOT, JavaContract
-from tests.test_machine_panel_click import corps
 from tests.test_native_stock import STUBS as STOCK_STUBS
 
 STUBS = {
@@ -150,16 +149,3 @@ class MachineCircuitTests(JavaContract):
             "fr.assistantia.compat.emi.ReglageCircuitMachineTest",
         )
         self.assertIn("ReglageCircuitMachine OK", output)
-
-    def test_rendered_circuit_click_does_not_reach_send(self):
-        machines = (JAVA / "compat/emi/MachinesEmi.java").read_text(encoding="utf-8")
-        clic = corps(machines, "public static void clic(ScreenEvent.MouseButtonPressed.Pre")
-        action = corps(clic, "if (d.prendre().contient(x, y))")
-        self.assertLess(action.index("selectionnerAffichee("), action.index("if (circuitAffiche)"))
-        circuit = corps(action, "if (circuitAffiche)")
-        self.assertIn("reglerCircuit(", circuit)
-        self.assertIn("return;", circuit)
-        self.assertLess(action.index(circuit), action.index("EnvoiMachine.lancer("))
-        self.assertNotIn(
-            "EnvoiMachine.lancer(", corps(machines, "private static void reglerCircuit(")
-        )

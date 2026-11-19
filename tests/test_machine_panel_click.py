@@ -1,4 +1,4 @@
-"""Panneau machine : le clic sur un produit change la recette sans ouvrir EMI."""
+"""Libellés et branchements du panneau machine, complétés par le contrat Java des clics."""
 
 import unittest
 from pathlib import Path
@@ -17,18 +17,6 @@ def corps(texte, signature):
 
 
 class MachinePanelClickTests(unittest.TestCase):
-    def test_left_click_selects_and_only_right_click_opens_emi(self):
-        # Player report: with several crafts to do, choosing one opened EMI each time.
-        machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
-        clic = corps(machines, "public static void clic(ScreenEvent.MouseButtonPressed.Pre")
-        self.assertEqual(clic.count("EmiApi.displayRecipe("), 1)
-        droit = corps(clic, "if (bouton == 1)")
-        self.assertIn("EmiApi.displayRecipe(produit)", droit)
-        self.assertIn("return;", droit)
-        gauche = clic[clic.index("else if (produit != null && selectionnerAffichee(produit))") :]
-        self.assertNotIn("displayRecipe", gauche)
-        self.assertIn("RelachementSouris.consommer(event)", clic)
-
     def test_tooltip_explains_both_clicks(self):
         panneau = (EMI / "PanneauMachineEmi.java").read_text(encoding="utf-8")
         self.assertIn("Clic : choisir pour Envoyer", panneau)
@@ -53,7 +41,6 @@ class MachinePanelClickTests(unittest.TestCase):
         )
         self.assertNotIn("ScreenEvent.Render.Pre", machines)
         self.assertNotIn("actualiserInterface()", rendu)
-        self.assertIn("contexteAffiche = contextePlan", rendu)
         clic = corps(machines, "private static boolean selectionnerAffichee(")
         self.assertLess(clic.index("actualiserInterface();"), clic.index("EnvoiMachine.preparer("))
 

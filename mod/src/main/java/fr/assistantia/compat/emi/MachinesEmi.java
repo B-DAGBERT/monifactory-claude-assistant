@@ -50,20 +50,26 @@ public final class MachinesEmi {
     private static Disposition disposition;
     private static int choix, page;
     private static boolean choixExplicite;
-    private static List<PlanMachines.Operation<EmiRecipe>> affichees = List.of();
-    private static Disposition dispositionAffichee;
-    private static EmiRecipe recetteAffichee;
 
     private record ContextePanneau(Object arbre, long revision, long lots, String navigation) {}
 
-    private static ContextePanneau contextePlan, contexteAffiche;
-    private static int pageAffichee;
+    /** Données de la dernière image utilisées par les clics sur le thread client. */
+    private record PanneauAffiche(
+            ContextePanneau contexte,
+            Disposition disposition,
+            List<PlanMachines.Operation<EmiRecipe>> operations,
+            int page,
+            EmiRecipe recette,
+            boolean circuit,
+            boolean actionActive) {}
+
+    private static ContextePanneau contextePlan;
+    private static PanneauAffiche panneauAffiche;
     private static java.util.Map<EmiRecipe, OrdreMachines.Ligne<EmiRecipe>> prioritesLocales =
             java.util.Map.of();
     private static String problemeOrdre = "";
     private static EnvoiMachine.Plan plan;
     private static ReglageCircuitMachine.Commande commandeCircuit;
-    private static boolean circuitAffiche, actionAffichee;
     private static String statutCircuit = "";
     private static final long INTERVALLE_PANNEAU = 500_000_000L;
     private static long actualise, revisionStockPanneau;
@@ -858,10 +864,8 @@ public final class MachinesEmi {
             lignesDiagnostic = null;
             problemeOrdre = "";
             choixExplicite = false;
-            affichees = List.of();
-            dispositionAffichee = null;
-            recetteAffichee = null;
-            contextePlan = contexteAffiche = null;
+            panneauAffiche = null;
+            contextePlan = null;
             actualise = 0;
             prioritesLocales = java.util.Map.of();
             compatibilites.clear();
@@ -1027,10 +1031,9 @@ public final class MachinesEmi {
         // comme lors d'un redimensionnement, au lieu de revenir au premier produit.
         boolean retour = ecran == s;
         if (!retour) {
-            locales = affichees = List.of();
+            locales = List.of();
             choixExplicite = false;
-            dispositionAffichee = null;
-            recetteAffichee = null;
+            panneauAffiche = null;
             choix = page = 0;
             EnvoiMachine.effacerStatut();
             statutCircuit = "";
@@ -1161,42 +1164,45 @@ public final class MachinesEmi {
     public static void rendu(ScreenEvent.Render.Post event) {
         var selected = selection();
         if (!planAffichable(event.getScreen()) || selected == null) {
-            affichees = List.of();
-            dispositionAffichee = null;
-            recetteAffichee = null;
+            panneauAffiche = null;
             return;
         }
-        affichees = locales;
-        pageAffichee = page;
-        dispositionAffichee = disposition;
-        recetteAffichee = selected.recette();
-        contexteAffiche = contextePlan;
         boolean reglage = ReglageCircuitMachine.enCours();
         boolean occupe = reglage || EnvoiMachine.occupe();
-        circuitAffiche = reglage || circuitARegler(selected.recette());
+        boolean circuit = reglage || circuitARegler(selected.recette());
         boolean synchronise = InventaireJoueur.synchronise();
-        actionAffichee =
+        boolean actionActive =
                 !occupe
-                        && (circuitAffiche
+                        && (circuit
                                 ? commandeCircuit != null
                                 : synchronise && plan != null && plan.possible());
+        var panneau =
+                new PanneauAffiche(
+                        contextePlan,
+                        disposition,
+                        locales,
+                        page,
+                        selected.recette(),
+                        circuit,
+                        actionActive);
+        panneauAffiche = panneau;
         String statut = EnvoiMachine.statut();
         if (reglage) statut = "Réglage du circuit…";
         else if (statut.isEmpty()) statut = statutCircuit.isEmpty() ? problemeOrdre : statutCircuit;
         PanneauMachineEmi.afficher(
                 event,
                 new PanneauMachineEmi.Vue(
-                        disposition,
-                        locales,
+                        panneau.disposition(),
+                        panneau.operations(),
                         choix,
-                        page,
+                        panneau.page(),
                         plan,
                         etatSelection(),
                         selected.fois() == 0 ? quantiteSelection() : "",
                         statut,
                         occupe,
-                        circuitAffiche,
-                        actionAffichee,
+                        panneau.circuit(),
+                        panneau.actionActive(),
                         declarables(selected.recette()) > 0,
                         synchronise,
                         prioritesLocales));
@@ -1240,34 +1246,35 @@ public final class MachinesEmi {
                 .orElse("Terminé");
     }
 
-    private static boolean surPanneau(Screen screen, double x, double y) {
+    private static boolean surPanneau(Screen screen, PanneauAffiche panneau, double x, double y) {
         return affiche(screen)
                 && disposition != null
-                && dispositionAffichee != null
-                && dispositionAffichee.cadre().contient(x, y);
+                && panneau != null
+                && panneau.disposition().cadre().contient(x, y);
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void clic(ScreenEvent.MouseButtonPressed.Pre event) {
-        if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
+        var panneau = panneauAffiche;
+        if (!surPanneau(event.getScreen(), panneau, event.getMouseX(), event.getMouseY())) return;
         // Ni la machine ni EMI ne prennent ce clic, ni son relâchement, même hors du panneau.
         fr.assistantia.RelachementSouris.consommer(event);
         int bouton = event.getButton();
         if (bouton != 0 && bouton != 1 || EnvoiMachine.occupe() || ReglageCircuitMachine.enCours())
             return;
-        var d = dispositionAffichee;
+        var d = panneau.disposition();
         double x = event.getMouseX(), y = event.getMouseY();
         EmiRecipe produit = null;
         for (int rang = 0; rang < d.parPage(); rang++) {
-            int i = pageAffichee * d.parPage() + rang;
-            if (i < affichees.size() && d.icone(rang).contient(x, y)) {
-                produit = affichees.get(i).recette();
+            int i = panneau.page() * d.parPage() + rang;
+            if (i < panneau.operations().size() && d.icone(rang).contient(x, y)) {
+                produit = panneau.operations().get(i).recette();
                 break;
             }
         }
         if (bouton == 1) {
             // Clic droit sur un produit : sa recette dans EMI ; Échap revient avec ce choix.
-            if (produit != null && selectionnerAffichee(produit)) {
+            if (produit != null && selectionnerAffichee(panneau.contexte(), produit)) {
                 actualise = 0;
                 PanneauAssistant.son();
                 dev.emi.emi.api.EmiApi.displayRecipe(produit);
@@ -1275,11 +1282,11 @@ public final class MachinesEmi {
             return;
         }
         if (d.prendre().contient(x, y)) {
-            if (!actionAffichee) return;
-            if (!circuitAffiche && !InventaireJoueur.synchronise()) return;
-            if (!selectionnerAffichee(recetteAffichee)) return;
+            if (!panneau.actionActive()) return;
+            if (!panneau.circuit() && !InventaireJoueur.synchronise()) return;
+            if (!selectionnerAffichee(panneau.contexte(), panneau.recette())) return;
             var op = selection();
-            if (circuitAffiche) {
+            if (panneau.circuit()) {
                 if (op != null && circuitARegler(op.recette())) reglerCircuit(op.recette());
                 return;
             }
@@ -1306,16 +1313,17 @@ public final class MachinesEmi {
                 }
             }
         } else if (d.tout().contient(x, y)) {
-            if (!selectionnerAffichee(recetteAffichee)) return;
+            if (!selectionnerAffichee(panneau.contexte(), panneau.recette())) return;
             var op = selection();
             if (op != null && op.fois() > 0 && declarables(op.recette()) > 0) {
                 PanneauAssistant.son();
                 DeclarerFabricationEcran.ouvrir(ecran, op.recette());
             }
-        } else if (d.pages() && d.precedent().contient(x, y)) page = Math.max(0, pageAffichee - 1);
+        } else if (d.pages() && d.precedent().contient(x, y))
+            page = Math.max(0, panneau.page() - 1);
         else if (d.pages() && d.suivant().contient(x, y))
-            page = Math.min((affichees.size() - 1) / d.parPage(), pageAffichee + 1);
-        else if (produit != null && selectionnerAffichee(produit)) {
+            page = Math.min((panneau.operations().size() - 1) / d.parPage(), panneau.page() + 1);
+        else if (produit != null && selectionnerAffichee(panneau.contexte(), produit)) {
             // Clic gauche : la recette d'Envoyer et d'En cours change, sans quitter la machine.
             actualise = 0;
             PanneauAssistant.son();
@@ -1338,14 +1346,13 @@ public final class MachinesEmi {
     }
 
     /** Le clic désigne la recette rendue, même si les priorités ont changé entre deux ticks. */
-    private static boolean selectionnerAffichee(EmiRecipe recette) {
+    private static boolean selectionnerAffichee(ContextePanneau contexte, EmiRecipe recette) {
         var mc = Minecraft.getInstance();
         if (recette == null
-                || contexteAffiche == null
-                || contexteAffiche.arbre() != actif()
-                || contexteAffiche.revision() != InstantaneArbreEmi.revisionStructureProduction()
-                || !quantiteAfficheeValide()
-                || !contexteAffiche.navigation().equals(contexteSelection())
+                || contexte.arbre() != actif()
+                || contexte.revision() != InstantaneArbreEmi.revisionStructureProduction()
+                || !quantiteAfficheeValide(contexte)
+                || !contexte.navigation().equals(contexteSelection())
                 || mc.player == null
                 || ecran == null
                 || mc.player.containerMenu != ecran.getMenu()) {
@@ -1369,11 +1376,10 @@ public final class MachinesEmi {
         return false;
     }
 
-    private static boolean quantiteAfficheeValide() {
+    private static boolean quantiteAfficheeValide(ContextePanneau contexte) {
         try {
-            var affiche = contexteAffiche.arbre();
-            return affiche.getClass().getField("batches").getLong(affiche)
-                    == contexteAffiche.lots();
+            var affiche = contexte.arbre();
+            return affiche.getClass().getField("batches").getLong(affiche) == contexte.lots();
         } catch (ReflectiveOperationException | RuntimeException error) {
             return false;
         }
@@ -1384,7 +1390,8 @@ public final class MachinesEmi {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void molette(ScreenEvent.MouseScrolled.Pre event) {
-        if (!surPanneau(event.getScreen(), event.getMouseX(), event.getMouseY())) return;
+        if (!surPanneau(event.getScreen(), panneauAffiche, event.getMouseX(), event.getMouseY()))
+            return;
         event.setCanceled(true);
         if (!EnvoiMachine.occupe() && !ReglageCircuitMachine.enCours())
             page =

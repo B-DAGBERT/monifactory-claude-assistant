@@ -12,6 +12,10 @@
   [OrigineFabrication](../../mod/src/main/java/fr/assistantia/compat/emi/OrigineFabrication.java)
   rapproche les retraits directs. [SuiviLotsEmi](../../mod/src/main/java/fr/assistantia/compat/emi/SuiviLotsEmi.java)
   tient les réservations et les réceptions par lot.
+- [MachinesEmi](../../mod/src/main/java/fr/assistantia/compat/emi/MachinesEmi.java) conserve dans
+  `PanneauAffiche` le contexte, la disposition, la page, les opérations, la recette choisie et
+  l’état du bouton de la dernière image. Un clic interprète cette image, vérifie le contexte et
+  retrouve la même recette dans les opérations recalculées avant la revalidation native.
 
 ## Règles à préserver
 
@@ -43,6 +47,10 @@ python -m unittest discover -s tests -p "test_machine_inputs.py"
 python -m unittest discover -s tests -p "test_native_production_lots.py"
 python -m unittest tests.test_craft_proof_cost
 ```
+
+`PanneauMachineClicTest`, exécuté par `test_machine_inputs.py`, rejoue le passage d’une image
+de la recette A à un panneau préparé pour B. Il vérifie le refus si A a disparu et l’envoi d’A
+à la quantité recalculée si elle est encore nécessaire. Les menus du contrat sont simulés.
 
 Dans une copie du pack, comparer un retrait direct et un retrait par hopper. Refaire chaque
 retrait avec Échap dans le même tick et vérifier le nombre reçu une fois dans Suivi. Voir
