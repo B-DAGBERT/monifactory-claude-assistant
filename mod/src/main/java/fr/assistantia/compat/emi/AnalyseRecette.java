@@ -31,7 +31,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluid;
-import net.minecraftforge.fluids.FluidUtil;
 
 /**
  * Analyse de l'arbre choisi dans EMI Recipe Tree pour l'onglet Recette, le HUD et les rangs des
@@ -930,21 +929,7 @@ public final class AnalyseRecette {
 
     /** Stock de calcul des besoins quand l'arbre n'est pas suivi : poches, sac et contenants. */
     private static List<PlanRetrait.Stock<EmiStack>> stockEmi() {
-        List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
-        for (ItemStack s : InventaireJoueur.pilesFabrication()) {
-            if (s.isEmpty()) continue;
-            stock.add(new PlanRetrait.Stock<>(EmiStack.of(s), s.getCount(), true));
-            ItemStack un = s.copy();
-            un.setCount(1);
-            var fluide = FluidUtil.getFluidContained(un).orElse(null);
-            if (fluide != null && !fluide.isEmpty())
-                stock.add(
-                        new PlanRetrait.Stock<>(
-                                EmiStack.of(fluide.getFluid(), fluide.getTag(), fluide.getAmount()),
-                                PlanMachines.produit(fluide.getAmount(), s.getCount()),
-                                true));
-        }
-        return stock;
+        return StockPersonnelEmi.convertir(InventaireJoueur.pilesFabrication());
     }
 
     /**

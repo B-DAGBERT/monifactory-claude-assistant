@@ -27,7 +27,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.chunk.ChunkStatus;
 import net.minecraft.world.phys.AABB;
-import net.minecraftforge.fluids.FluidUtil;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
@@ -408,19 +407,6 @@ public final class MachinesEmi {
     private static void lotsModifies() {
         InventaireArbreEmi.invalider();
         actualise = 0;
-    }
-
-    private static void ajouterFluide(List<PlanRetrait.Stock<EmiStack>> stock, ItemStack item) {
-        if (item.isEmpty()) return;
-        ItemStack un = item.copy();
-        un.setCount(1);
-        var f = FluidUtil.getFluidContained(un).orElse(null);
-        if (f != null && !f.isEmpty())
-            stock.add(
-                    new PlanRetrait.Stock<>(
-                            EmiStack.of(f.getFluid(), f.getTag(), f.getAmount()),
-                            PlanMachines.produit(f.getAmount(), item.getCount()),
-                            true));
     }
 
     public static void annulerLot(int id) {
@@ -825,13 +811,7 @@ public final class MachinesEmi {
         if (inventaireReceptions != null && inventaireReceptions.piles() == piles)
             return inventaireReceptions;
         if (inventairePoches != null && inventairePoches.piles() == piles) return inventairePoches;
-        List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
-        for (ItemStack pile : piles) {
-            if (pile.isEmpty()) continue;
-            stock.add(new PlanRetrait.Stock<>(EmiStack.of(pile), pile.getCount(), true));
-            ajouterFluide(stock, pile);
-        }
-        return new InventaireEmi(piles, List.copyOf(stock));
+        return new InventaireEmi(piles, List.copyOf(StockPersonnelEmi.convertir(piles)));
     }
 
     private static int compte(List<PlanRetrait.Stock<EmiStack>> stock, EmiStack objet) {
