@@ -4,10 +4,10 @@ import fnmatch
 import math
 import re
 import sys
-import time
 from collections import defaultdict
 
 import monifactory_assistant.providers as ai_provider
+from monifactory_assistant.game.emi_search import recipe_chest_view
 from monifactory_assistant.game.world import block_name, machine_color, machine_status
 from monifactory_assistant.paths import ROOT as HERE
 from monifactory_assistant.settings import SETTINGS
@@ -62,14 +62,13 @@ def find_search(search, storage, have, state):
     }
 
 
-def build_mod_view(app):
+def build_mod_view(app, *, have, now, emi_search=None):
     """Tout ce que le mod Minecraft affiche, sous forme de données (le mod s'occupe de la mise en forme) :
     - hud : réglage du panneau en haut à gauche, statut et direction du guidage ;
     - bulle : la dernière réponse de l'assistant ou du coach, qui s'efface toute seule ;
     - guidage, recherche : faisceaux dans le monde et objets cherchés dans les interfaces ;
     - ecran : le tableau de bord de la touche Y."""
     state, storage = app.game, app.storage
-    have, now = app.have(), time.time()
     dimension = (state or {}).get("dimension")
     hud = {
         "visible": app.visible,
@@ -194,8 +193,6 @@ def build_mod_view(app):
         "ecran": screen,
         "retrait_coffres": on["coffres"],
         "recherche": search,
-        "recherche_emi": app.emi_search.view(app.bridge, storage, state, now)
-        if hasattr(app, "emi_search")
-        else None,
+        "recherche_emi": recipe_chest_view(emi_search),
         "info": info,
     }  # une copie : sinon la fiche complétée semble inchangée

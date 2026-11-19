@@ -153,8 +153,11 @@ def _ordered(chests, origin):
     return sorted(chests, key=lambda c: math.dist((c["x"], c["y"], c["z"]), origin))
 
 
-def _view(request, validated, chests):
-    number, end, world, dimension, wanted = validated
+def recipe_chest_view(result):
+    """Project an acquired search result into the Minecraft view."""
+    if result is None:
+        return None
+    request, (number, end, world, dimension, wanted), chests = result
     count = len(chests)
     return {
         **{
@@ -182,10 +185,12 @@ def chest_search(request, containers, state, now):
     if validated is None:
         return None
     *_, dimension, wanted = validated
-    return _view(
-        request,
-        validated,
-        _ordered(_matching_chests(containers, dimension, wanted), _origin(state)),
+    return recipe_chest_view(
+        (
+            request,
+            validated,
+            _ordered(_matching_chests(containers, dimension, wanted), _origin(state)),
+        )
     )
 
 
@@ -200,7 +205,8 @@ class RecipeChestSearch:
         self.origin = None
         self.ordered = []
 
-    def view(self, bridge, storage, state, now):
+    def acquire(self, bridge, storage, state, now):
+        """Refresh the active request and return its validated metadata and ordered matches."""
         path = bridge.dir / "recherche_emi.json"
         try:
             stamp = file_stamp(path)
@@ -232,4 +238,4 @@ class RecipeChestSearch:
         if origin != self.origin:
             self.ordered = _ordered(self.matches, origin)
             self.origin = origin
-        return _view(self.request, validated, self.ordered)
+        return self.request, validated, self.ordered

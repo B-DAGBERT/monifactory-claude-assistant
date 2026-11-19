@@ -9,7 +9,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import monifactory_assistant.persistence as persistence
-from monifactory_assistant.game.emi_search import RecipeChestSearch, _matching_chests
+from monifactory_assistant.game.emi_search import (
+    RecipeChestSearch,
+    _matching_chests,
+    recipe_chest_view,
+)
 from monifactory_assistant.game.storage import StorageMonitor
 from monifactory_assistant.game.world import World
 
@@ -89,7 +93,7 @@ def run_world():
                     t0 = time.perf_counter()
                     assert world.update(data)
                     storage = monitor.refresh(bridge, world)
-                    assert search.view(bridge, storage, state, i * 3)
+                    assert recipe_chest_view(search.acquire(bridge, storage, state, i * 3))
                     key = storage.export_key()
                     if key != export_before:
                         export_changes += 1

@@ -280,6 +280,7 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
 
     def test_render_duration_alone_does_not_rewrite_the_mod_view(self):
         app = InterfaceController()
+        app.have = dict
         app.bridge = SimpleNamespace(publish=Mock(return_value=True))
         app.last_mod_view = None
         timings = iter([1.2, 3.4, 5.0, 5.1])
@@ -291,7 +292,7 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
         with (
             patch(
                 "monifactory_assistant.application.interface.build_mod_view",
-                side_effect=lambda _app: {"vie": 7, "ecran": {"machines": []}},
+                side_effect=lambda _app, **_kwargs: {"vie": 7, "ecran": {"machines": []}},
             ),
             patch("monifactory_assistant.application.interface.diagnostic_view", diagnostic),
         ):
@@ -306,6 +307,7 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
         # etat.json is rewritten every 1-2 s with a new date: only the 5 s "vie" heartbeat (or a
         # real change) rewrites the view, which then carries the latest date for the mod's age.
         app = InterfaceController()
+        app.have = dict
         app.bridge = SimpleNamespace(publish=Mock(return_value=True))
         app.last_mod_view = None
         dates = iter([1_000, 2_000, 3_000, 4_000, 6_000, 7_000])
@@ -317,7 +319,10 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
         with (
             patch(
                 "monifactory_assistant.application.interface.build_mod_view",
-                side_effect=lambda _app: {"vie": next(heartbeats), "ecran": {"machines": []}},
+                side_effect=lambda _app, **_kwargs: {
+                    "vie": next(heartbeats),
+                    "ecran": {"machines": []},
+                },
             ),
             patch("monifactory_assistant.application.interface.diagnostic_view", diagnostic),
         ):

@@ -5,9 +5,15 @@
 - Avec un **Recipe Tree** actif, activer **Repérage**. Ouvrir un coffre utile et utiliser
   **Prendre** pour l’icône choisie ou **Tout** pour les quantités retenues dans ce coffre.
 - [RechercheEmi](../../mod/src/main/java/fr/assistantia/RechercheEmi.java) transmet les
-  besoins et rapproche les lieux proposés par [chest_search](../../monifactory_assistant/game/emi_search.py).
+  besoins dans `recherche_emi.json` et rapproche les lieux proposés dans `vue_mod.json`.
   [AideCoffre](../../mod/src/main/java/fr/assistantia/AideCoffre.java) présente les choix et
   [RetraitCoffre](../../mod/src/main/java/fr/assistantia/RetraitCoffre.java) confirme les clics natifs.
+- À chaque rafraîchissement effectif, `InterfaceController.refresh_views` appelle
+  `RecipeChestSearch.acquire` puis transmet le résultat à `build_mod_view`. L’acquisition
+  relit une révision modifiée et retente une lecture instable au rafraîchissement suivant.
+  La projection utilise ces données en mémoire. La publication suit les changements
+  de la vue et le battement de 5 s.
+  [Contrôleur](../../monifactory_assistant/application/interface.py) · [Acquisition](../../monifactory_assistant/game/emi_search.py) · [Vue](../../monifactory_assistant/ui/views.py)
 
 ## Règles à préserver
 
@@ -34,6 +40,7 @@ Depuis la racine du dépôt, dans l’environnement de développement avec JDK 1
 
 ```sh
 python -m unittest tests.test_chest_transfers tests.scenarios.test_basique
+python -m unittest tests.test_emi_search tests.test_emi_view_refresh tests.test_storage_snapshots
 python -m monifactory_assistant.commands.scenarios parcours-stock
 ```
 

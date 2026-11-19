@@ -115,7 +115,13 @@ class InterfaceController:
 
     def refresh_views(self):
         try:
-            mod_view = build_mod_view(self)
+            have, now = self.have(), time.time()
+            emi_search = (
+                self.emi_search.acquire(self.bridge, self.storage, self.game, now)
+                if hasattr(self, "emi_search")
+                else None
+            )
+            mod_view = build_mod_view(self, have=have, now=now, emi_search=emi_search)
             mod_view["ecran"]["diagnostic"] = diagnostic_view(self)
             if comparable_view(mod_view) != comparable_view(
                 self.last_mod_view

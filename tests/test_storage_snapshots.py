@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from monifactory_assistant.game.emi_search import RecipeChestSearch
+from monifactory_assistant.game.emi_search import RecipeChestSearch, recipe_chest_view
 from monifactory_assistant.game.storage import Storage, StorageMonitor
 from monifactory_assistant.game.world import World
 
@@ -122,12 +122,21 @@ class StorageSnapshotTests(unittest.TestCase):
             with patch(
                 "monifactory_assistant.game.emi_search._matching_chests", wraps=_matching_chests
             ) as scan:
-                self.assertEqual(service.view(bridge, storage, a, 0)["coffres"][0]["x"], 1)
-                self.assertEqual(service.view(bridge, storage, b, 1)["coffres"][0]["x"], 10)
+                self.assertEqual(
+                    recipe_chest_view(service.acquire(bridge, storage, a, 0))["coffres"][0]["x"], 1
+                )
+                self.assertEqual(
+                    recipe_chest_view(service.acquire(bridge, storage, b, 1))["coffres"][0]["x"], 10
+                )
                 self.assertEqual(scan.call_count, 1)
-                self.assertEqual(service.view(bridge, Storage([b]), a, 2)["coffres"][0]["x"], 10)
+                self.assertEqual(
+                    recipe_chest_view(service.acquire(bridge, Storage([b]), a, 2))["coffres"][0][
+                        "x"
+                    ],
+                    10,
+                )
                 self.assertEqual(scan.call_count, 2)
-                self.assertIsNone(service.view(bridge, storage, b, 601))
+                self.assertIsNone(recipe_chest_view(service.acquire(bridge, storage, b, 601)))
 
     def test_search_ignores_heartbeat_only_after_choosing_the_newest_stock(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -170,7 +179,7 @@ class StorageSnapshotTests(unittest.TestCase):
                 world = World()
                 for stamp, count in ((1000, 2), (3000, 7), (4000, 7)):
                     self.assertTrue(world.update({**wire, "t": stamp}))
-                    view = search.view(bridge, world.merged(client), state, 0)
+                    view = recipe_chest_view(search.acquire(bridge, world.merged(client), state, 0))
                     self.assertEqual(view["coffres"][0]["n"], count)
                 self.assertEqual(matching.call_count, 2)
 
@@ -180,7 +189,7 @@ class StorageSnapshotTests(unittest.TestCase):
                     {"p": [2, 64, 0], "b": "minecraft:barrel", "o": [["test:plate", 7]]},
                 ]
                 self.assertTrue(world.update({**wire, "t": 5000, "blocs": moved}))
-                view = search.view(bridge, world.merged(client), state, 0)
+                view = recipe_chest_view(search.acquire(bridge, world.merged(client), state, 0))
                 self.assertEqual([row["x"] for row in view["coffres"]], [2])
                 self.assertEqual(matching.call_count, 3)
 
@@ -188,7 +197,7 @@ class StorageSnapshotTests(unittest.TestCase):
                 duplicate = {**chest, "t": 1900, "objets": [{"item": "test:plate", "n": 13}]}
                 for t, count in ((1900, 2), (2100, 13)):
                     raw = [{**duplicate, "t": t}, chest]
-                    view = search.view(bridge, Storage(raw), state, 0)
+                    view = recipe_chest_view(search.acquire(bridge, Storage(raw), state, 0))
                     self.assertEqual(view["coffres"][0]["n"], count)
                 self.assertEqual(matching.call_count, 5)
 
@@ -209,13 +218,24 @@ class StorageSnapshotTests(unittest.TestCase):
             stack = {"item": "test:plate", "n": 1}
             chest = {**state, "bloc": "minecraft:barrel", "objets": [stack]}
             search = RecipeChestSearch()
-            self.assertEqual(search.view(bridge, Storage([chest]), state, 0)["coffres"][0]["n"], 1)
+            self.assertEqual(
+                recipe_chest_view(search.acquire(bridge, Storage([chest]), state, 0))["coffres"][0][
+                    "n"
+                ],
+                1,
+            )
             invalid = {**chest, "objets": [{**stack, "n": True}]}
-            self.assertEqual(search.view(bridge, Storage([invalid]), state, 0)["coffres"], [])
-            search.view(bridge, Storage([chest]), state, 0)
+            self.assertEqual(
+                recipe_chest_view(search.acquire(bridge, Storage([invalid]), state, 0))["coffres"],
+                [],
+            )
+            recipe_chest_view(search.acquire(bridge, Storage([chest]), state, 0))
             stack["n"] = 9
             self.assertEqual(
-                search.view(bridge, Storage([chest.copy()]), state, 0)["coffres"][0]["n"], 9
+                recipe_chest_view(search.acquire(bridge, Storage([chest.copy()]), state, 0))[
+                    "coffres"
+                ][0]["n"],
+                9,
             )
 
     def test_world_keeps_unchanged_dates_durable_and_recovers_atomic_write(self):

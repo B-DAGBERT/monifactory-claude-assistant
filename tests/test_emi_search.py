@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from monifactory_assistant.game.emi_search import RecipeChestSearch, chest_search
+from monifactory_assistant.game.emi_search import RecipeChestSearch, chest_search, recipe_chest_view
 from monifactory_assistant.game.storage import distinct_containers
 from tests.app_source import application_tree
 
@@ -108,7 +108,9 @@ class EmiSearchTests(unittest.TestCase):
             path.write_text(json.dumps(self.request))
             bridge = SimpleNamespace(dir=Path(directory), read=lambda _: self.request)
             storage = SimpleNamespace(containers=self.chests[:1], raw=self.chests)
-            result = RecipeChestSearch().view(bridge, storage, self.state, 1000)
+            result = recipe_chest_view(
+                RecipeChestSearch().acquire(bridge, storage, self.state, 1000)
+            )
             self.assertEqual(result["total_coffres"], 2)
 
     def test_invalid_coordinates_and_counts_do_not_break_other_results(self):
@@ -171,13 +173,18 @@ class EmiSearchTests(unittest.TestCase):
             bridge = SimpleNamespace(dir=Path(directory), read=read)
             storage = SimpleNamespace(containers=self.chests)
             service = RecipeChestSearch()
-            self.assertIsNone(service.view(bridge, storage, self.state, 1000))
+            self.assertIsNone(recipe_chest_view(service.acquire(bridge, storage, self.state, 1000)))
             path.write_text(json.dumps(self.request))
-            self.assertEqual(service.view(bridge, storage, self.state, 1000)["total_coffres"], 2)
+            self.assertEqual(
+                recipe_chest_view(service.acquire(bridge, storage, self.state, 1000))[
+                    "total_coffres"
+                ],
+                2,
+            )
             path.write_text('{"n":')
-            self.assertIsNone(service.view(bridge, storage, self.state, 1001))
+            self.assertIsNone(recipe_chest_view(service.acquire(bridge, storage, self.state, 1001)))
             path.write_text(json.dumps({**self.request, "n": 124, "objets": ["minecraft:diamond"]}))
-            result = service.view(bridge, storage, self.state, 1001)
+            result = recipe_chest_view(service.acquire(bridge, storage, self.state, 1001))
             self.assertEqual(result["n"], 124)
             self.assertEqual(result["coffres"][0]["n"], 3)
             self.assertEqual(question.read_bytes(), original)
@@ -231,10 +238,14 @@ class EmiSearchTests(unittest.TestCase):
             bridge = SimpleNamespace(dir=path.parent, read=lambda _: json.loads(path.read_text()))
             service = RecipeChestSearch()
             storage = SimpleNamespace(containers=self.chests)
-            self.assertEqual(service.view(bridge, storage, self.state, 1000)["n"], 123)
+            self.assertEqual(
+                recipe_chest_view(service.acquire(bridge, storage, self.state, 1000))["n"], 123
+            )
             stat = path.stat()
             replacement = path.with_suffix(".new")
             replacement.write_text(json.dumps({**self.request, "n": 124}))
             os.utime(replacement, ns=(stat.st_atime_ns, stat.st_mtime_ns))
             replacement.replace(path)
-            self.assertEqual(service.view(bridge, storage, self.state, 1000)["n"], 124)
+            self.assertEqual(
+                recipe_chest_view(service.acquire(bridge, storage, self.state, 1000))["n"], 124
+            )

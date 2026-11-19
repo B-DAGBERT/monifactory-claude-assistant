@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 from monifactory_assistant.application.game import GameController
 from monifactory_assistant.application.interface import InterfaceController
 from monifactory_assistant.game.bridge import Bridge
-from monifactory_assistant.game.emi_search import RecipeChestSearch
+from monifactory_assistant.game.emi_search import RecipeChestSearch, recipe_chest_view
 from monifactory_assistant.game.storage import StorageMonitor
 from monifactory_assistant.game.world import World
 from monifactory_assistant.game.world_scope import installation_id
@@ -215,7 +215,9 @@ class WorldRoutingTests(unittest.TestCase):
         dump(self.bridge.dir / "mondes" / WORLD_A / "stockage.json", stored(7))
         search = RecipeChestSearch()
         storage = StorageMonitor().refresh(self.bridge, World(enabled=False))
-        view = search.view(self.bridge, storage, self.bridge.state(), time.time())
+        view = recipe_chest_view(
+            search.acquire(self.bridge, storage, self.bridge.state(), time.time())
+        )
         self.assertEqual(view["coffres"][0]["n"], 7)
         self.assertEqual(view["session_monde"], SESSION_A)
         self.bridge.write("vue_mod.json", {"ecran": {}})
@@ -224,7 +226,11 @@ class WorldRoutingTests(unittest.TestCase):
 
         self.assertTrue(enter(self.bridge, WORLD_A, SESSION_A, NETHER))
         self.assertFalse(self.bridge.accepts(old_view))
-        self.assertIsNone(search.view(self.bridge, storage, self.bridge.state(), time.time()))
+        self.assertIsNone(
+            recipe_chest_view(
+                search.acquire(self.bridge, storage, self.bridge.state(), time.time())
+            )
+        )
         interface = InterfaceController()
         interface.bridge = self.bridge
         interface.handle_mod_request = Mock()
