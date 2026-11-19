@@ -24,6 +24,9 @@
 | Échanges Forge/KubeJS/Python, demandes, session et reconnexion              | [Pont et mondes](docs/fonctionnalites/pont-mondes.md)                       |
 | Compilation, installation, auto-update et retour arrière                    | [Installation et versions](docs/fonctionnalites/installation.md)            |
 
+Le [catalogue des skills Codex](docs/skills-projet.md) complète les fiches pour les
+diagnostics, les revues d’architecture et les qualifications.
+
 ## Règles communes
 
 - `main` est la source commune de vérité pour Claude et Codex. À la demande de Damien, valider les changements terminés, créer un commit et l’intégrer à `main` avant de pousser. Respecter les consignes de la session sur la publication et l’installation.
