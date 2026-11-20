@@ -9,10 +9,13 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+from monifactory_assistant import providers
 from monifactory_assistant.game.context import describe_state, describe_storage, question_context
 from monifactory_assistant.game.recipes import RecipeIndex
 from monifactory_assistant.game.world import observation_date
 from monifactory_assistant.prompts import ACTIONS_HELP, INFO_REQUEST, SYSTEM_PROMPT
+from monifactory_assistant.providers import claude, codex
+from monifactory_assistant.providers.session import Conversation
 from tests.benchmarks.question_context import (
     COPPER,
     INGOT,
@@ -43,14 +46,20 @@ MATERIALS = [
 ]
 
 
-def published(folder, lines):
-    """Un catalogue publié en version 3, groupe a, d'une seule partie."""
-    (folder / "recettes_a_0.json").write_text(
-        json.dumps({"generation": "g", "recettes": lines}), encoding="utf-8"
+def published(folder, lines, *, group="a", generation="g"):
+    """Un catalogue publié en version 3, d'une seule partie."""
+    (folder / f"recettes_{group}_0.json").write_text(
+        json.dumps({"generation": generation, "recettes": lines}), encoding="utf-8"
     )
     (folder / "recettes_info.json").write_text(
         json.dumps(
-            {"version": 3, "groupe": "a", "generation": "g", "parties": 1, "nombre": len(lines)}
+            {
+                "version": 3,
+                "groupe": group,
+                "generation": generation,
+                "parties": 1,
+                "nombre": len(lines),
+            }
         ),
         encoding="utf-8",
     )
@@ -199,58 +208,181 @@ class QuestionContextTests(TestCase):
         self.assertEqual(before, after)
 
     def test_context_hint_and_prompts_name_only_the_active_recipe_group(self):
-        recipes, focused = self.app.recipe_index, "Où sont mes Bronze Plate dans les coffres ?"
+        focused = "Où sont mes Bronze Plate dans les coffres ?"
         unknown = self.app.context(None, with_storage=True, question=focused)
-        self.assertIn("(stockage.txt, les parties du groupe actif de recettes_info.json,", unknown)
-        self.assertNotIn("Recettes du pack", unknown)
-        recipes.pattern = "recettes_b_*.json"
+        self.assertNotIn("Catalogue de recettes validé", unknown)
+        self.assertNotIn("recettes_info.json", unknown)
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        recipes = self.app.recipe_index = published(folder, [RECIPE], group="b")
+        path = str(recipes.catalog_path)
         for question in (focused, "Pourquoi mon LV Bender est arrêté ?"):
             context = self.app.context(None, with_storage=True, question=question)
-            self.assertIn(
-                "Recettes du pack : cherche-les seulement dans recettes_b_*.json", context
-            )
-            self.assertNotIn("recettes_*.json", context)
+            self.assertIn("groupe b, génération g, 1 partie(s)", context)
+            self.assertEqual(context.count(path), 1)
+            self.assertNotIn("recettes_b_0.json", context)
         self.assertIn(
-            "(stockage.txt, recettes_b_*.json, machines_recettes.txt",
+            "(stockage.txt, inventaire_joueur.json)",
             self.app.context(None, with_storage=True, question=focused),
         )
         settings = self.app.context(
             None, with_storage=True, question="Comment désactiver la voix ?"
         )
-        self.assertNotIn("Recettes du pack", settings)
-        self.assertIn(
-            "déjà cherché dans recettes_b_*.json", recipes.hint("Comment faire Bronze Plate ?")
-        )
-        info = INFO_REQUEST.format(nom="Bronze Plate", item=PLATE, recettes=recipes.catalog_files)
-        self.assertEqual(info.count("recettes_b_*.json"), 2)
-        for prompt in (SYSTEM_PROMPT, info):
-            self.assertNotIn("recettes_*.json", prompt)
+        self.assertNotIn(path, settings)
+        self.assertIn(RECIPE, recipes.hint("Comment faire Bronze Plate ?"))
+        info = INFO_REQUEST.format(nom="Bronze Plate", item=PLATE, recettes=recipes.catalog_context)
+        self.assertEqual(info.count(path), 1)
+        for prompt in (SYSTEM_PROMPT, info, context):
+            self.assertNotRegex(prompt, r"recettes_[ab]?_?\*\.json")
 
-    def test_both_provider_names_receive_one_question_with_unchanged_actions_and_recipes(self):
-        for label in ("Codex", "Claude"):
-            app = fixture()
-            app.events, app.speaker, app.speak = Queue(), Mock(), False
-            app.conversation = SimpleNamespace(ask=Mock(return_value="Voici la recette."))
+    def test_both_provider_adapters_receive_the_validated_path_for_questions_and_cards(self):
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        app = self.app
+        app.bridge = SimpleNamespace(dir=folder)
+        recipes = app.recipe_index = published(folder, [RECIPE])
+        app.events, app.speaker, app.speak = Queue(), Mock(), False
+        card = '{"sert": "Fabrication."}'
+        answer = "Voici la recette."
+        for backend in (codex, claude):
+            name = backend.__name__.rsplit(".", 1)[1]
             with (
-                patch(
-                    "monifactory_assistant.application.conversation.ai_provider.label",
-                    return_value=label,
-                ),
+                self.subTest(provider=name),
+                patch.object(providers, "CONFIG", {"provider": name}),
+                patch.object(backend, "HERE", folder),
                 patch("monifactory_assistant.application.conversation.log"),
+                patch.object(claude, "find_claude", return_value="fake-claude"),
+                patch.object(claude, "start") as start,
+                patch.object(
+                    codex.CLIENT, "run", side_effect=[(answer, None), (card, None)]
+                ) as run,
             ):
-                app.work_question("Comment faire Bronze Plate ?", None, None)
-            app.conversation.ask.assert_called_once()
-            prompt = app.conversation.ask.call_args.args[0]
-            self.assertIn(ACTIONS_HELP, prompt)
+                processes = [Mock(), Mock()]
+                for process in processes:
+                    process.poll.return_value = 0
+                responses = [Queue(), Queue()]
+                for queue, result in zip(responses, (answer, card), strict=True):
+                    queue.put(json.dumps({"type": "result", "result": result}))
+                start.side_effect = [
+                    (process, queue, [])
+                    for process, queue in zip(processes, responses, strict=True)
+                ]
+                app.conversation = Conversation(folder)
+                try:
+                    app.work_question("Comment faire Bronze Plate ?", None, None)
+                    app.work_info(PLATE, "Bronze Plate")
+                finally:
+                    if backend is claude:
+                        app.conversation.stop()
+                if backend is codex:
+                    self.assertEqual(run.call_count, 2)
+                    prompt, info = [call.args[0] for call in run.call_args_list]
+                    instructions = [call.kwargs["instructions"] for call in run.call_args_list]
+                else:
+                    self.assertEqual(start.call_count, 2)
+                    for process in processes:
+                        process.stdin.write.assert_called_once()
+                    message = json.loads(processes[0].stdin.write.call_args.args[0])
+                    prompt = message["message"]["content"]
+                    info = processes[1].stdin.write.call_args.args[0]
+                    arguments = [call.args[0] for call in start.call_args_list]
+                    instructions = [
+                        args[args.index("--append-system-prompt") + 1] for args in arguments
+                    ]
+                self.assertIn(ACTIONS_HELP, prompt)
+                self.assertIn(RECIPE, prompt)
+                self.assertIn(RECIPE, info)
+                self.assertIn("Camille en 14 68 15", prompt)
+                self.assertIn("Ma question : Comment faire Bronze Plate ?", prompt)
+                for request in (prompt, info):
+                    self.assertEqual(request.count(str(recipes.catalog_path)), 1)
+                    self.assertNotIn("recettes_a_0.json", request)
+                for rules in instructions:
+                    self.assertIn("uniquement dans le fichier du catalogue validé", rules)
+                    self.assertNotIn("recettes_info.json", rules)
+                events = [app.events.get_nowait() for _ in range(app.events.qsize())]
+                self.assertIn(("answer", "Comment faire Bronze Plate ?", answer), events)
+                self.assertTrue(any(event[0] == "info_ready" and event[2] for event in events))
+
+    def test_question_uses_same_catalog_after_switch_and_reuse_of_its_group(self):
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        app = self.app
+        first = published(folder, [RECIPE], generation="first")
+        app.recipe_index = first
+        app.events, app.speaker, app.speak = Queue(), Mock(), False
+        hint = first.hint
+
+        def switch_during_hint(question):
+            app.recipe_index = published(folder, MATERIALS, group="b", generation="second")
+            return hint(question)
+
+        def ask(prompt, *_args, **_kwargs):
+            second = app.recipe_index
             self.assertIn(RECIPE, prompt)
-            self.assertIn("Camille en 14 68 15", prompt)
-            self.assertIn("Ma question : Comment faire Bronze Plate ?", prompt)
-            self.assertTrue(any(event[0] == "answer" for event in list(app.events.queue)))
+            self.assertIn("first", prompt)
+            self.assertNotIn("second", prompt)
+            self.assertNotIn("recettes_a_*.json", prompt)
+            self.assertNotIn("recettes_b_*.json", prompt)
+            app.recipe_index = published(folder, MATERIALS, generation="third")
+            self.assertIn(str(first.catalog_path), prompt)
+            self.assertNotIn(str(second.catalog_path), prompt)
+            self.assertNotIn(str(app.recipe_index.catalog_path), prompt)
+            self.assertEqual(first.catalog_path.read_text(encoding="utf-8"), RECIPE + "\n")
+            return "Voici la recette."
+
+        app.conversation = SimpleNamespace(ask=Mock(side_effect=ask))
+        with (
+            patch.object(first, "hint", side_effect=switch_during_hint),
+            patch("monifactory_assistant.application.conversation.log"),
+        ):
+            app.work_question("Comment faire Bronze Plate ?", None, None)
+        app.conversation.ask.assert_called_once()
+        events = list(app.events.queue)
+        self.assertFalse([event for event in events if event[0] == "error"])
+        self.assertIn(("answer", "Comment faire Bronze Plate ?", "Voici la recette."), events)
 
 
 class MaterialHintTests(TestCase):
     def setUp(self):
         self.recipes = published(Path(self.enterContext(tempfile.TemporaryDirectory())), MATERIALS)
+
+    def test_explicit_ids_keep_the_same_search_with_sentence_punctuation(self):
+        for question in (
+            "gtceu:chromium",
+            "gtceu:chromium.",
+            "gtceu:chromium ?",
+            "Quel est le craft de gtceu:chromium ?",
+            "Que donne (gtceu:chromium.) ?",
+            "Le craft du glass et de gtceu:chromium.",
+        ):
+            with (
+                self.subTest(question),
+                patch.object(self.recipes, "about", wraps=self.recipes.about) as about,
+            ):
+                hint = self.recipes.hint(question)
+                self.assertIn("extract_chromium_rod", hint)
+                self.assertEqual(about.call_args_list[0].args, ("gtceu:chromium",))
+                self.assertNotIn("blast_chromium", hint)
+        self.assertEqual(self.recipes.items_in("gtceu:missing."), [])
+        self.assertEqual(self.recipes.items_in("missing:chromium."), [])
+        self.assertEqual(self.recipes.items_in("gtceu:glass"), ["gtceu:glass"])
+
+    def test_dots_inside_ids_and_known_trailing_dot_are_preserved(self):
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        lines = [
+            f"test:craft | minecraft:iron_ingot => {item} | test:make_{i}"
+            for i, item in enumerate(
+                ("test.mod:part/a.b", "test.mod:part/a.b.", "test.mod:other.c")
+            )
+        ]
+        index = published(folder, lines)
+        for question, item in (
+            ("(test.mod:part/a.b)", "test.mod:part/a.b"),
+            ("test.mod:part/a.b.", "test.mod:part/a.b."),
+            ("test.mod:part/a.b...", "test.mod:part/a.b."),
+            ("test.mod:other.c.", "test.mod:other.c"),
+        ):
+            with self.subTest(question):
+                self.assertEqual(index.items_in(question), [item])
+                self.assertEqual(question_context(f"Craft de {question}", index).profile, "recette")
 
     def test_material_name_joins_its_ingot_and_dust_rather_than_its_fluid(self):
         ingot, dust = "gtceu:chromium_ingot", "gtceu:chromium_dust"
@@ -267,7 +399,7 @@ class MaterialHintTests(TestCase):
             with self.subTest(question):
                 self.assertEqual(self.recipes.items_in(question), expected)
         hint = self.recipes.hint("comment je fais du chromium")
-        self.assertIn("déjà cherché dans recettes_a_*.json et machines_recettes.txt", hint)
+        self.assertIn("l'index des recettes du tour", hint)
         self.assertNotIn("extract_chromium_rod", hint)
         self.assertIn("macerate_chromium_ingot", hint)
         # Le recyclage d'une pièce passe après le four électrique.

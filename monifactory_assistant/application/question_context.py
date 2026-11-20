@@ -64,15 +64,13 @@ def build_question_context(
         world = describe_world(sources.read_world(), machine_ids=selection.machines)
         if world:
             parts.append(world)
-        if recipes.pattern and selection.profile != "reglage":
-            parts.append(
-                f"Recettes du pack : cherche-les seulement dans {recipes.pattern}, le groupe actif."
-            )
+        if recipes.catalog is not None and selection.profile != "reglage":
+            parts.append(recipes.catalog_context)
         if selection.focused:
             parts.append(
                 "Contexte ciblé pour cette question ; les autres stocks et événements ne sont pas détaillés. "
                 "Si une information manque, consulte les fichiers locaux en lecture seule "
-                f"(stockage.txt, {recipes.catalog_files}, machines_recettes.txt, inventaire_joueur.json). "
+                "(stockage.txt, inventaire_joueur.json). "
                 "Ne conclus pas qu'un objet absent de cet extrait n'existe pas. "
                 "Ajoute « contexte complet » dans une question pour joindre le contexte étendu à ce tour."
             )

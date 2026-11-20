@@ -129,7 +129,7 @@ class ConversationController:
         try:
             recipes = self.recipe_index
             known = recipes.about(item)  # sa fabrication et, pour une machine, ce qu'elle fait
-            prompt = INFO_REQUEST.format(nom=name, item=item, recettes=recipes.catalog_files) + (
+            prompt = INFO_REQUEST.format(nom=name, item=item, recettes=recipes.catalog_context) + (
                 f"\n\nDéjà trouvé dans le pack :\n{known}" if known else ""
             )
             answer = ask_claude(
@@ -202,7 +202,7 @@ class ConversationController:
             return
         self.start_question(None, audio, self.shot)
 
-    def context(self, shot, with_storage=False, *, question=None):
+    def context(self, shot, with_storage=False, *, question=None, recipes=None):
         def world_hint():
             bridge = getattr(self, "bridge", None)
             if getattr(bridge, "isolated", False) is True:
@@ -210,7 +210,7 @@ class ConversationController:
             return None
 
         sources = QuestionContextSources(
-            read_recipe_index=lambda: self.recipe_index,
+            read_recipe_index=lambda: self.recipe_index if recipes is None else recipes,
             read_world_hint=world_hint,
             read_game=lambda: self.game,
             read_storage=lambda: self.storage,
@@ -320,9 +320,10 @@ class ConversationController:
                 production.context(text, require_current=True) if production is not None else None
             )
             proof = evidence[1] if evidence is not None else None
+            recipes = self.recipe_index
             if evidence is None:
-                recipes = self.recipe_index.hint(text)
-                guidance = ACTIONS_HELP + "\n\n" + (recipes + "\n\n" if recipes else "")
+                recipe_hint = recipes.hint(text)
+                guidance = ACTIONS_HELP + "\n\n" + (recipe_hint + "\n\n" if recipe_hint else "")
             else:
                 guidance = (
                     "Résultat de production V2 en lecture seule, calculé localement. "
@@ -333,7 +334,7 @@ class ConversationController:
                     + "\n\n"
                 )
             prompt = (
-                f"{self.context(shot, with_storage=True, question=text)}\n\n"
+                f"{self.context(shot, with_storage=True, question=text, recipes=recipes)}\n\n"
                 + guidance
                 + f"Ma question : {text}"
             )

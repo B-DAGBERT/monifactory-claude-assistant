@@ -108,14 +108,16 @@ class RecipeLoadingTests(unittest.TestCase):
         self.game.check_recipes()
         self.publish()
         self.assertEqual(self.game.recipe_index.about("gtceu:lv_bender"), "")
-        (self.path / "machines_recettes.txt").write_text(
-            "gtceu:bender | Bender | 1 recette | gtceu:lv_bender\n", encoding="utf-8"
-        )
+        old = self.game.recipe_index
+        mapping = "gtceu:bender | Bender | 1 recette | gtceu:lv_bender\n"
+        (self.path / "machines_recettes.txt").write_text(mapping, encoding="utf-8")
         self.game.check_recipes()
         self.publish()
         self.assertIn(
             "« Bender » (gtceu:bender, 1 recettes)", self.game.recipe_index.about("gtceu:lv_bender")
         )
+        self.assertNotIn(mapping, old.catalog_path.read_text(encoding="utf-8"))
+        self.assertIn(mapping, self.game.recipe_index.catalog_path.read_text(encoding="utf-8"))
 
     def test_recipe_file_is_read_once_per_reload(self):
         read_text = Path.read_text
@@ -129,6 +131,78 @@ class RecipeLoadingTests(unittest.TestCase):
         with patch.object(Path, "read_text", track_read):
             self.publish()
         self.assertEqual(reads.count(self.catalog), 1)
+
+    def publish_parts(self, group, generation, outputs):
+        for i, output in enumerate(outputs):
+            (self.path / f"recettes_{group}_{i}.json").write_text(
+                json.dumps(
+                    {"generation": generation, "recettes": [f"test:craft | x => test:{output}"]}
+                ),
+                encoding="utf-8",
+            )
+        self.marker.write_text(
+            json.dumps(
+                dict(
+                    version=3,
+                    groupe=group,
+                    generation=generation,
+                    parties=len(outputs),
+                    nombre=len(outputs),
+                )
+            ),
+            encoding="utf-8",
+        )
+
+    def test_provider_catalog_has_only_validated_parts_across_group_reuse(self):
+        self.publish_parts("a", "first", ["first_a", "old_extra"])
+        self.game.check_recipes()
+        self.publish()
+        first = self.game.recipe_index
+        self.publish_parts("b", "second", ["second_b"])
+        self.game.check_recipes()
+        self.publish()
+        second = self.game.recipe_index
+        self.publish_parts("a", "third", ["third_a"])
+        self.game.check_recipes()
+        self.publish()
+        third = self.game.recipe_index
+
+        self.assertTrue((self.path / "recettes_a_1.json").exists())
+        self.assertNotIn("*", third.catalog_context)
+        for index, group, generation, parts, outputs in (
+            (
+                first,
+                "a",
+                "first",
+                ("recettes_a_0.json", "recettes_a_1.json"),
+                ["first_a", "old_extra"],
+            ),
+            (second, "b", "second", ("recettes_b_0.json",), ["second_b"]),
+            (third, "a", "third", ("recettes_a_0.json",), ["third_a"]),
+        ):
+            self.assertEqual(index.catalog.group, group)
+            self.assertEqual(index.catalog.generation, generation)
+            self.assertEqual(index.catalog.manifest, self.marker)
+            self.assertEqual(index.catalog.parts, parts)
+            self.assertEqual(
+                index.catalog_path.read_text(encoding="utf-8").splitlines(),
+                [f"test:craft | x => test:{output}" for output in outputs],
+            )
+        self.assertEqual(len({first.catalog_path, second.catalog_path, third.catalog_path}), 3)
+
+    def test_direct_load_refuses_manifest_replaced_while_reading_parts(self):
+        self.publish_parts("a", "first", ["first_a", "other_a"])
+        read_text = Path.read_text
+
+        def switch_after_read(path, *args, **kwargs):
+            result = read_text(path, *args, **kwargs)
+            if path.name == "recettes_a_1.json":
+                self.publish_parts("b", "second", ["second_b"])
+            return result
+
+        with patch.object(Path, "read_text", switch_after_read):
+            with self.assertRaises(ValueError):
+                RecipeIndex(self.path)
 
     def test_secondary_and_probabilistic_outputs_use_only_the_published_group(self):
         line = "gtceu:centrifuge | gtceu:ore => 2x gtceu:chance_dust (50%) + gtceu:secondary + gtceu:secondary + 100x gtceu:water | gtceu:separate"
@@ -213,23 +287,33 @@ class RecipeLoadingTests(unittest.TestCase):
         self.game.check_recipes()
         self.workers.pop(0)()
         _event, *args = self.game.events.get_nowait()
+        rejected_path = args[1].catalog_path
         stat = self.marker.stat()
         os.utime(self.marker, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
         self.game.on_recipes_loaded(*args)
+        del args  # l'événement consommé libère le catalogue non publié
+        self.assertFalse(rejected_path.exists())
         self.assertTrue(all((self.path / name).exists() for name in legacy))
 
         self.game.check_recipes()
         with patch("monifactory_assistant.application.game.log") as log:
             self.publish()
         self.assertEqual(set(self.game.recipe_index.by_output), {"gtceu:published"})
-        self.assertEqual(self.game.recipe_index.pattern, "recettes_a_*.json")
+        index = self.game.recipe_index
+        self.assertEqual(index.catalog.parts, ("recettes_a_0.json",))
         log.assert_called_once_with(
             "Ancien catalogue de recettes supprimé : "
             "recettes_0.json, recettes_1.json, recettes_12.json"
         )
         self.assertEqual(
             {path.name for path in self.path.iterdir()},
-            {*others, "recettes_a_0.json", "recettes_info.json", "recettes_7.json"},
+            {
+                *others,
+                "recettes_a_0.json",
+                "recettes_info.json",
+                "recettes_7.json",
+                index.catalog_path.parent.name,
+            },
         )
 
     def test_legacy_manifest_keeps_its_unprefixed_parts(self):
@@ -249,7 +333,7 @@ class RecipeLoadingTests(unittest.TestCase):
                 log.assert_not_called()
                 index = self.game.recipe_index
                 self.assertEqual(set(index.by_output), {"gtceu:plate"})
-                self.assertEqual(index.pattern, "recettes_*.json")
+                self.assertEqual(index.catalog.parts, ("recettes_0.json",))
                 self.assertEqual(index.remove_legacy_parts(self.path), [])
                 self.assertTrue(self.catalog.exists())
                 self.assertTrue(group.exists())

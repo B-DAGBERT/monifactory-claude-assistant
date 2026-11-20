@@ -2,7 +2,22 @@
 
 import json
 import re
+import weakref
 from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from monifactory_assistant.game.snapshots import file_stamp
+
+
+@dataclass(frozen=True)
+class RecipeCatalog:
+    manifest: Path
+    version: int
+    group: str | None
+    generation: str | None
+    parts: tuple[str, ...]
 
 
 class RecipeIndex:
@@ -66,11 +81,13 @@ class RecipeIndex:
         self.machine_of = defaultdict(list)  # machine -> [(catégorie, nom, nombre de recettes)]
         self.machines = defaultdict(list)  # catégorie -> machines qui la font
         self.joined = {}  # « tungstensteel » -> « tungsten_steel » : un matériau écrit en un mot
-        self.group = None  # groupe lu (a ou b) d'un manifeste version 3
-        self.pattern = None  # « recettes_a_*.json » : les parties lues, à chercher avec Grep
+        self.catalog = self.catalog_path = None
         if recipes_dir is None:
             return
-        for line in self.catalog_lines(recipes_dir):
+        manifest = recipes_dir / "recettes_info.json"
+        stamp = file_stamp(manifest)
+        lines = tuple(self.catalog_lines(manifest))
+        for line in lines:
             self.by_category[line.partition(" | ")[0]].append(line)
             outputs = line.partition(" => ")[2].split(" | ")[0]
             matches = (self.OUTPUT.fullmatch(output.strip()) for output in outputs.split(" + "))
@@ -80,45 +97,46 @@ class RecipeIndex:
         machines = (
             recipes_dir / "machines_recettes.txt"
         )  # écrit par le mod : quelle machine fait quelles recettes
-        if machines.exists():
-            for line in machines.read_text(encoding="utf-8").splitlines():
-                parts = line.split(" | ")
-                if line.startswith("#") or len(parts) < 4:
-                    continue
-                category, name, count = parts[0], parts[1], parts[2].split(" ")[0]
-                for machine in filter(None, (m.strip() for m in parts[3].split(","))):
-                    self.machine_of[machine].append((category, name, count))
-                    self.machines[category].append(machine)
-                    self.by_name[machine.split(":")[-1]].add(machine)
+        machine_lines = (
+            machines.read_text(encoding="utf-8").splitlines() if machines.exists() else []
+        )
+        for line in machine_lines:
+            parts = line.split(" | ")
+            if line.startswith("#") or len(parts) < 4:
+                continue
+            category, name, count = parts[0], parts[1], parts[2].split(" ")[0]
+            for machine in filter(None, (m.strip() for m in parts[3].split(","))):
+                self.machine_of[machine].append((category, name, count))
+                self.machines[category].append(machine)
+                self.by_name[machine.split(":")[-1]].add(machine)
         for name in self.by_name:
             material, _, form = name.rpartition("_")
             if "_" in material and form in self.FORMS:
                 self.joined.setdefault(material.replace("_", ""), material)
+        if file_stamp(manifest) != stamp:
+            raise ValueError("Le manifeste des recettes a changé pendant la lecture")
+        self.publish_provider_catalog(recipes_dir, lines, machine_lines)
 
-    def catalog_lines(self, folder):
-        """Les recettes des parties que publie le manifeste. Retient leur groupe et le motif de leurs fichiers."""
-        manifest = json.loads((folder / "recettes_info.json").read_text(encoding="utf-8"))
+    def catalog_lines(self, manifest_path):
+        """Les recettes des seules parties annoncées par le manifeste."""
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict):
             raise ValueError("Manifeste du catalogue recettes invalide")
         parts, total = manifest.get("parties"), manifest.get("nombre")
         if type(parts) is not int or not 1 <= parts <= 4096 or type(total) is not int or total <= 0:
             raise ValueError("Nombre de recettes ou de parties invalide")
         group, generation = manifest.get("groupe"), manifest.get("generation")
-        if manifest.get("version", 1) in (1, 2):
+        version = manifest.get("version", 1)
+        if version in (1, 2):
             prefix, group = "recettes_", None
-        elif (
-            manifest.get("version") == 3
-            and group in ("a", "b")
-            and isinstance(generation, str)
-            and generation
-        ):
+        elif version == 3 and group in ("a", "b") and isinstance(generation, str) and generation:
             prefix = f"recettes_{group}_"
         else:
             raise ValueError("Génération du catalogue recettes invalide")
-        self.group, self.pattern = group, f"{prefix}*.json"
+        names = tuple(f"{prefix}{part}.json" for part in range(parts))
         count = 0
-        for part in range(parts):
-            data = json.loads((folder / f"{prefix}{part}.json").read_text(encoding="utf-8"))
+        for name in names:
+            data = json.loads(manifest_path.with_name(name).read_text(encoding="utf-8"))
             if not isinstance(data, dict) or (
                 generation is not None and data.get("generation") != generation
             ):
@@ -130,18 +148,46 @@ class RecipeIndex:
             yield from lines
         if count != total:
             raise ValueError("Catalogue recettes incomplet")
+        self.catalog = RecipeCatalog(manifest_path, version, group, generation, names)
+
+    def publish_provider_catalog(self, folder, lines, machine_lines):
+        """Un chemin propre à l'index, lisible tant qu'un tour conserve cet index."""
+        directory = TemporaryDirectory(prefix=".recettes-", dir=folder.resolve())
+        path = Path(directory.name) / "catalogue.txt"
+        try:
+            with path.open("w", encoding="utf-8", newline="\n") as stream:
+                stream.writelines(line + "\n" for line in lines)
+                if machine_lines:
+                    stream.write("\n# Catégories des machines\n")
+                    stream.writelines(line + "\n" for line in machine_lines)
+        except BaseException:
+            directory.cleanup()
+            raise
+        weakref.finalize(self, directory.cleanup)
+        self.catalog_path = path
 
     @property
-    def catalog_files(self):
-        """Où chercher les recettes : les parties lues, sinon le groupe actif que donne le manifeste."""
-        return self.pattern or "les parties du groupe actif de recettes_info.json"
+    def catalog_context(self):
+        if self.catalog is None:
+            return "Catalogue de recettes indisponible pour ce tour."
+        catalog = self.catalog
+        revision = (
+            f"groupe {catalog.group}, génération {catalog.generation}"
+            if catalog.group is not None
+            else f"version {catalog.version} sans groupe"
+        )
+        return (
+            f"Catalogue de recettes validé pour ce tour ({revision}, "
+            f"{len(catalog.parts)} partie(s) de {catalog.manifest.name}). "
+            f"Pour chercher les recettes et catégories des machines, lis uniquement « {self.catalog_path} »."
+        )
 
     def remove_legacy_parts(self, folder):
         """Supprime l'ancien catalogue sans groupe (recettes_0.json…) une fois un groupe a ou b lu : Grep le
         parcourait avec le groupe actif et pouvait en citer des recettes périmées. Les parties des groupes a et b
         restent, car l'export écrit le groupe inactif pendant que l'autre reste lu. Avec un manifeste version 1
         ou 2, ces fichiers sont le catalogue actif : rien n'est supprimé. Rend les noms supprimés."""
-        if self.group not in ("a", "b"):
+        if self.catalog is None or self.catalog.group is None:
             return []
         removed = []
         try:
@@ -171,14 +217,14 @@ class RecipeIndex:
             for form in self.FORMS
         )
 
-    def named(self, key, cited=()):
+    def named(self, key):
         """Les objets que désigne un nom : l'objet de ce nom, sinon le matériau de ce nom (« chromium »,
         « tungstensteel ») par son lingot et sa poudre, sinon sa poudre, sinon sa gemme. Le fluide homonyme du
         matériau ne compte que s'il est cité par son id."""
         exact = [
             item
             for item in self.preferred(self.by_name.get(key, ()))
-            if item in cited or not self.material_fluid(item)
+            if not self.material_fluid(item)
         ]
         if exact:
             return exact[:1]
@@ -188,28 +234,48 @@ class RecipeIndex:
         )
         return ingot + dust if ingot else dust or gem
 
+    def knows_item(self, item):
+        return item in self.by_name.get(item.partition(":")[2], ())
+
+    def explicit_id(self, token):
+        """Préfère l'identifiant entier, puis le plus long identifiant connu sans point de phrase."""
+        candidate = token
+        while candidate.endswith("."):
+            if self.knows_item(candidate):
+                return candidate
+            candidate = candidate[:-1]
+        return candidate if self.knows_item(candidate) else token
+
+    def explicit_ids(self, text):
+        return [self.explicit_id(token) for token in self.ITEM_ID.findall(text.lower())]
+
     def items_in(self, text, limit=3):
         """Les objets du pack cités dans un texte (« Bronze Plate », « bronze plate », « chromium »), les noms
         longs d'abord. La poudre jointe au lingot d'un matériau ne prend que la place laissée par les autres."""
         text = text.lower()
-        cited = set(self.ITEM_ID.findall(text))
-        words = re.findall(r"[a-z0-9]+", text)
+        explicit = self.explicit_ids(text)
+        # Garder une séparation entre les fragments de texte de part et d'autre d'un ID.
+        words = re.findall(r"[a-z0-9]+|\x00", self.ITEM_ID.sub("\x00", text))
         found, dusts, used = [], [], set()
         for size in (4, 3, 2, 1):
             for i in range(len(words) - size + 1):
                 if used & set(range(i, i + size)):
                     continue
-                key = "_".join(words[i : i + size])
+                phrase = words[i : i + size]
+                if "\x00" in phrase:
+                    continue
+                key = "_".join(phrase)
                 if size == 1 and (len(key) < 4 or key in self.IGNORED):
                     continue
-                items = self.named(key, cited)
+                items = self.named(key)
                 if not items and key.endswith("s"):  # « bronze gears » -> bronze_gear
-                    items = self.named(key[:-1], cited)
+                    items = self.named(key[:-1])
                 if items:
                     found.append(items[0])
                     dusts += items[1:]
                     used |= set(range(i, i + size))
-        return list(dict.fromkeys(found + dusts))[:limit]
+        exact = [item for item in explicit if self.knows_item(item)]
+        return list(dict.fromkeys(exact + found + dusts))[:limit]
 
     def about(self, item):
         """Ce que le pack dit d'un objet : comment le fabriquer et, si c'est une machine, ce qu'elle fait.
@@ -251,7 +317,6 @@ class RecipeIndex:
         if not parts:
             return ""
         return (
-            f"Ce que le pack dit des objets de ma question (déjà cherché dans {self.catalog_files} et "
-            "machines_recettes.txt : inutile de le rechercher, sauf pour un autre objet) :\n"
+            "Ce que l'index des recettes du tour indique pour les objets de ma question :\n"
             + "\n".join(parts)
         )

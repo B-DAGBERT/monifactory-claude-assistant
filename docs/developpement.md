@@ -720,8 +720,10 @@ n’écrit plus `plan.json` et `fabrication_emi.json` a disparu. Avec `VERSION_S
 le catalogue de Discussion garde deux groupes de fichiers. KubeJS écrit dans le groupe inactif,
 puis publie `recettes_info.json` avec le nombre de parties et la génération. Python vérifie
 chaque partie et conserve l’index précédent si un groupe est incomplet. Une fois un groupe publié,
-Python supprime l’ancien catalogue sans groupe (`recettes_<n>.json`). Les invites nomment le seul
-groupe actif : Grep ne parcourt plus deux catalogues.
+Python supprime l’ancien catalogue sans groupe (`recettes_<n>.json`). Les invites désignent un
+fichier temporaire qui contient uniquement les lignes validées pour l’index du tour et son relevé
+des catégories de machines. Le fichier reste disponible pendant le tour, y compris si KubeJS
+réutilise le groupe d’origine.
 
 `RelachementSouris` empêche qu’un clic sur la barre EMI ou un panneau de l’assistant (bouton grisé
 compris), ou un retour vers le coffre ou la machine, laisse le relâchement atteindre le conteneur :

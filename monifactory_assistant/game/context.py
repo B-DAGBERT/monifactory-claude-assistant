@@ -120,8 +120,8 @@ def question_context(question, recipes):
     ):
         return full
     targets = recipes.items_in(question, limit=8)
-    explicit = set(_ITEM_ID.findall(question.lower()))
-    # items_in privilégie parfois un namespace : ne pas réduire dans ce cas ambigu.
+    explicit = set(recipes.explicit_ids(question))
+    # Un ID absent de l'index ou hors de la limite rend la sélection incertaine.
     if explicit - set(targets):
         return full
     for item in targets:

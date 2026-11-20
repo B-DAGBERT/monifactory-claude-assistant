@@ -391,7 +391,7 @@ class DynamicRoutingTests(unittest.TestCase):
         logic = app_logic()
         app = logic["App"]()
         app.recipe_index = SimpleNamespace(
-            about=lambda _: "known", catalog_files="recettes_a_*.json"
+            about=lambda _: "known", catalog_context="catalogue validé pour ce tour"
         )
         app.bridge = SimpleNamespace(dir=Path("/fake/game"), read=lambda _: {})
         app.context = lambda *args, **kwargs: "context"
@@ -408,7 +408,9 @@ class DynamicRoutingTests(unittest.TestCase):
             app.work_info("item", "Name")
             self.assertEqual(logic["ask_claude"].call_args.args[2], "old")
             self.assertTrue(
-                logic["ask_claude"].call_args.args[0].startswith("Info Name item recettes_a_*.json")
+                logic["ask_claude"]
+                .call_args.args[0]
+                .startswith("Info Name item catalogue validé pour ce tour")
             )
             config["providers"]["codex"].update(
                 model_question="new",
