@@ -72,8 +72,8 @@ public final class GregTechMachines {
 
     /**
      * Membres retrouvés par classe, absence comprise. {@code getMethod} et {@code getField} copient
-     * le membre à chaque appel et lèvent une exception quand il manque : le repérage interroge ainsi
-     * chaque câble ou tuyau GregTech toutes les deux secondes, et le panneau chaque recette.
+     * le membre à chaque appel et lèvent une exception quand il manque : le repérage interroge
+     * ainsi chaque câble ou tuyau GregTech toutes les deux secondes, et le panneau chaque recette.
      */
     private static final ClassValue<Map<String, Optional<Method>>> METHODES =
             new ClassValue<>() {
