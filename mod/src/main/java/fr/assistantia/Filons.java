@@ -895,6 +895,14 @@ public final class Filons {
 
     // ---------- Accès au monde sans objet par position ----------
 
+    /**
+     * Déconnexion : l'accès au monde lâche le niveau, le chunk et la mémoire quittés. La mémoire
+     * des filons elle-même reste intacte : le tick suivant la sauvegarde avant d'en changer.
+     */
+    static void oublierMonde() {
+        MONDE.oublier();
+    }
+
     /** Chunk et section courants mémorisés ; le type d'un bloc passe par une table d'identité. */
     private static final class MondeClient implements ScanFilon.Monde {
         private ClientLevel niveau;
@@ -918,6 +926,16 @@ public final class Filons {
                 typesConnus = memoire.typesConnus();
                 typesBlocs.clear();
             }
+        }
+
+        /** Comme au premier usage : le prochain {@link #preparer} relit niveau et types. */
+        void oublier() {
+            niveau = null;
+            chunk = null;
+            types = null;
+            typesConnus = -1;
+            typesBlocs.clear();
+            filonPalette = null;
         }
 
         int type(Block b) {

@@ -339,6 +339,23 @@ public class CoffreTamponTest {
         tick();
         assert !CoffreTampon.exclu("test:world", 7, 90, -4);
         verifierPermanence(pos, item);
+        verifierDeconnexion(pos);
+    }
+
+    // Logout: the last right click no longer holds the connection and level it was made in.
+    static void verifierDeconnexion(BlockPos pos) throws ReflectiveOperationException {
+        var interaction = CoffreTampon.class.getDeclaredField("interaction");
+        interaction.setAccessible(true);
+        CoffreTampon.clic(new PlayerInteractEvent.RightClickBlock(MC.level, MC.player, pos));
+        assert interaction.get(null) != null;
+        CoffreTampon.oublierMonde();
+        assert interaction.get(null) == null : "logout forgets the last right click";
+        var menu = open(new ChestMenu());
+        assert CoffreTampon.positionOuverte() == null : "a forgotten click attests no chest";
+        close(menu);
+        menu = openChest(pos);
+        assert pos.equals(CoffreTampon.positionOuverte()) : "the next click works as on first use";
+        close(menu);
     }
 
     static void verifierPermanence(BlockPos pos, Item item) {

@@ -10,6 +10,7 @@
 
 - Le stock personnel couvre les poches, l’équipement et le curseur. Un backpack porté, y compris via Curios, ne compte qu’une fois même quand il est ouvert ou contient d’autres sacs. Un sac posé au sol entre dans les stockages du monde.
 - Un tampon compte uniquement pour la connexion et la dimension actives. Son relevé reste utilisable à la fermeture du menu tant que le bloc est identifié et son chunk chargé. Une nouvelle ouverture actualise le relevé.
+- À la déconnexion, [Deconnexion](../../mod/src/main/java/fr/assistantia/Deconnexion.java) oublie le dernier clic droit qui identifie le coffre ouvert. Les tampons, exclusions et menus de la connexion quittée tombent au tick suivant.
 - Le calcul déduit les tampons avant les coffres ordinaires. **Prendre / Tout** reste disponible dans un tampon ouvert. Un coffre exclu sort des repères, de la couverture des coffres à portée et des retraits.
 - Un coffre double forme un seul stock physique. Un bus ME qui expose un tampon ne rend pas ses objets disponibles deux fois.
 - **Envoyer** utilise les vraies entrées de la machine et les ingrédients accessibles dans les poches. Pour un sac fermé, l’étape indique de sortir l’ingrédient avant l’envoi.

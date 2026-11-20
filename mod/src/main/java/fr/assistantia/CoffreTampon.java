@@ -230,6 +230,14 @@ public final class CoffreTampon {
                 : null;
     }
 
+    /**
+     * Déconnexion : le dernier clic droit retient la connexion et le niveau quittés jusqu'à la
+     * prochaine ouverture. Le tick suivant libère déjà les tampons, exclusions et menus.
+     */
+    static void oublierMonde() {
+        interaction = null;
+    }
+
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void clic(PlayerInteractEvent.RightClickBlock event) {
         var mc = Minecraft.getInstance();

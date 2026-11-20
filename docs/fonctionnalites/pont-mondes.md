@@ -5,6 +5,7 @@
 - [Pont](../../mod/src/main/java/fr/assistantia/Pont.java), [Ecritures](../../mod/src/main/java/fr/assistantia/Ecritures.java) et [IdentiteMonde](../../mod/src/main/java/fr/assistantia/IdentiteMonde.java) portent les échanges Forge et leur contexte.
 - [Script client](../../jeu/assistant_ia.js) et [EchangesKubeJS](../../mod/src/main/java/fr/assistantia/EchangesKubeJS.java) exportent les observations. Le [script serveur](../../serveur/assistant_ia_serveur.js) est une source facultative.
 - [Bridge](../../monifactory_assistant/game/bridge.py), [CommandQueue](../../monifactory_assistant/game/requests.py) et [WorldRouting](../../monifactory_assistant/game/world_scope.py) lisent, publient et valident les demandes.
+- [Deconnexion](../../mod/src/main/java/fr/assistantia/Deconnexion.java) oublie à la déconnexion les références à la partie quittée que certains parcours ne remplaçaient qu’à leur prochain usage.
 
 ## Règles à préserver
 

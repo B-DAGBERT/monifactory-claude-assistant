@@ -20,11 +20,14 @@ Le contrôleur enregistre la portée à l’admission. Le worker attend la trans
 
 Les lectures successives peuvent provenir de relevés distincts. Le pont et le service Production gardent leurs validations de portée et de preuve avant l’envoi et à la livraison. Une action de Discussion suit la validation du contrôleur avec l’état disponible au moment de son exécution.
 
+`inventaire_details.txt`, lu seulement par l’IA, n’est relevé que pendant que l’assistant tourne (`Pont.assistantActif()`). Sans lui, rien n’est calculé. À son retour, le fichier est réécrit même inchangé. Seules les piles nouvelles ou modifiées (objet, quantité, usure, NBT) recalculent leur ligne, et le texte reste identique octet pour octet. Le fil d’écriture le remplace, puis écrit en mode isolé son marqueur `inventaire_details_contexte.json` une fois le texte écrit. [Stats](../../mod/src/main/java/fr/assistantia/Stats.java) · [Pont](../../mod/src/main/java/fr/assistantia/Pont.java)
+
 ## Tests à lancer
 
 ```sh
 python -m unittest tests.test_discussion_menu tests.test_discussion_viewer tests.test_transport -v
 python -m unittest tests.test_question_context tests.test_question_lifecycle tests.test_production_conversation tests.test_production_service -v
+python -m unittest tests.test_stats_publication tests.test_bridge_world_scope -v
 ```
 
 En jeu, essayer une question texte, un doublon de clic et le retour depuis une fenêtre ouverte par Discussion. Un parcours automatisé avec CLI simulé n’atteste pas un échange réel. [Usage en jeu](../utilisation.md#discussion-dans-minecraft)

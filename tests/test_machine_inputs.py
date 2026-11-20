@@ -474,6 +474,12 @@ class MachineInputTests(unittest.TestCase):
             "reprise-cycle-prouve",
         )
 
+    def test_logout_forgets_send_recoveries_and_the_machine_screen(self):
+        # Reprises, their scope and the machine panel's screen do not outlive the session.
+        self.rejouer_cycle("reprise-oubliee-deconnexion")
+        sortie = self.rejouer("fr.assistantia.compat.emi.PanneauMachineClicTest", "deconnexion")
+        self.assertIn("PASS deconnexion", sortie)
+
     def test_machine_confirms_only_an_exact_isolated_cycle_without_a_recipe_frame(self):
         self.rejouer_cycle(
             "sans-id-cycle-court",
