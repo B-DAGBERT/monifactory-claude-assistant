@@ -8,6 +8,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import net.minecraft.core.BlockPos;
@@ -68,11 +70,66 @@ public final class GregTechMachines {
             List<Cuve> cuves,
             Object circuit) {}
 
+    /**
+     * Membres retrouvés par classe, absence comprise. {@code getMethod} et {@code getField} copient
+     * le membre à chaque appel et lèvent une exception quand il manque : le repérage interroge ainsi
+     * chaque câble ou tuyau GregTech toutes les deux secondes, et le panneau chaque recette.
+     */
+    private static final ClassValue<Map<String, Optional<Method>>> METHODES =
+            new ClassValue<>() {
+                @Override
+                protected Map<String, Optional<Method>> computeValue(Class<?> type) {
+                    return new ConcurrentHashMap<>();
+                }
+            };
+
+    private static final ClassValue<Map<String, Optional<Field>>> CHAMPS =
+            new ClassValue<>() {
+                @Override
+                protected Map<String, Optional<Field>> computeValue(Class<?> type) {
+                    return new ConcurrentHashMap<>();
+                }
+            };
+
+    private static final ClassValue<Map<String, Optional<Field>>> CHAMPS_PUBLICS =
+            new ClassValue<>() {
+                @Override
+                protected Map<String, Optional<Field>> computeValue(Class<?> type) {
+                    return new ConcurrentHashMap<>();
+                }
+            };
+
+    /** Méthode publique sans argument de cette classe, ou null si elle n'existe pas. */
+    static Method methode(Class<?> type, String nom) {
+        return METHODES.get(type)
+                .computeIfAbsent(
+                        nom,
+                        n -> {
+                            try {
+                                return Optional.of(type.getMethod(n));
+                            } catch (NoSuchMethodException absente) {
+                                return Optional.empty();
+                            }
+                        })
+                .orElse(null);
+    }
+
     public static Object appeler(Object cible, String methode) throws ReflectiveOperationException {
-        return cible.getClass().getMethod(methode).invoke(cible);
+        Method m = methode(cible.getClass(), methode);
+        if (m == null) throw new NoSuchMethodException(cible.getClass().getName() + "." + methode);
+        return m.invoke(cible);
     }
 
     public static Field champ(Class<?> type, String nom) throws NoSuchFieldException {
+        Field f =
+                CHAMPS.get(type)
+                        .computeIfAbsent(nom, n -> Optional.ofNullable(champDeclare(type, n)))
+                        .orElse(null);
+        if (f == null) throw new NoSuchFieldException(nom);
+        return f;
+    }
+
+    private static Field champDeclare(Class<?> type, String nom) {
         for (Class<?> c = type; c != null; c = c.getSuperclass()) {
             try {
                 Field f = c.getDeclaredField(nom);
@@ -81,7 +138,26 @@ public final class GregTechMachines {
             } catch (NoSuchFieldException ignored) {
             }
         }
-        throw new NoSuchFieldException(nom);
+        return null;
+    }
+
+    /** Champ public, comme {@link Class#getField}, retrouvé une seule fois par classe. */
+    static Field champPublic(Class<?> type, String nom) throws NoSuchFieldException {
+        Field f =
+                CHAMPS_PUBLICS
+                        .get(type)
+                        .computeIfAbsent(
+                                nom,
+                                n -> {
+                                    try {
+                                        return Optional.of(type.getField(n));
+                                    } catch (NoSuchFieldException absent) {
+                                        return Optional.empty();
+                                    }
+                                })
+                        .orElse(null);
+        if (f == null) throw new NoSuchFieldException(type.getName() + "." + nom);
+        return f;
     }
 
     public static boolean estMachine(AbstractContainerMenu menu) {
@@ -94,8 +170,11 @@ public final class GregTechMachines {
 
     public static Object machine(BlockEntity be) {
         if (be == null || !be.getClass().getName().startsWith("com.gregtechceu.")) return null;
+        // Câbles et tuyaux n'ont pas de machine : réponse en cache, sans exception par bloc.
+        Method m = methode(be.getClass(), "getMetaMachine");
+        if (m == null) return null;
         try {
-            return appeler(be, "getMetaMachine");
+            return m.invoke(be);
         } catch (ReflectiveOperationException e) {
             return null;
         }
@@ -106,7 +185,7 @@ public final class GregTechMachines {
                 .getName()
                 .equals("com.lowdragmc.lowdraglib.gui.modular.ModularUIContainer")) return null;
         Object ui = appeler(menu, "getModularUI");
-        Object holder = ui.getClass().getField("holder").get(ui);
+        Object holder = champPublic(ui.getClass(), "holder").get(ui);
         Object machine;
         try {
             machine = appeler(holder, "getMetaMachine");
@@ -217,7 +296,7 @@ public final class GregTechMachines {
             if (recette == null) return false;
             // Comparer le type effectivement sélectionné, pas seulement le nom du bloc.
             if (appeler(machine, "getRecipeType")
-                    != recette.getClass().getField("recipeType").get(recette)) return false;
+                    != champPublic(recette.getClass(), "recipeType").get(recette)) return false;
             Object energy = appeler(recette, "getInputEUt");
             long tension = ((Number) appeler(energy, "voltage")).longValue();
             Object definition = appeler(machine, "getDefinition");
@@ -253,7 +332,7 @@ public final class GregTechMachines {
     record Execution(boolean active, boolean recetteAttendue, boolean autreRecette) {}
 
     private static Object identifiantRecette(Object recette) throws ReflectiveOperationException {
-        return recette == null ? null : recette.getClass().getField("id").get(recette);
+        return recette == null ? null : champPublic(recette.getClass(), "id").get(recette);
     }
 
     /** La dernière recette reste parfois renseignée même lorsque la machine est au repos. */

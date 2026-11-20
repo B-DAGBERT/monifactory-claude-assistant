@@ -135,5 +135,50 @@ public class ReceptionManuelleTest {
         second.annuler();
         assert second.restants().isEmpty();
         assert second.recevoir(List.of(s("plate", 1))).equals(List.of(s("plate", 1)));
+        inventaireInchange();
+    }
+
+    /** La même liste immuable, relue à chaque tick, ne refait aucune comparaison. */
+    static void inventaireInchange() {
+        int[] comparaisons = {0};
+        var reception =
+                new ReceptionManuelle<String>(
+                        (a, b) -> {
+                            comparaisons[0]++;
+                            return a.equals(b);
+                        });
+        var stable = List.copyOf(List.of(s("plate", 2), s("gear", 1)));
+        reception.initialiser(stable);
+        comparaisons[0] = 0;
+        for (int i = 0; i < 50; i++) assert reception.actualiser(stable, List.of()).isEmpty();
+        assert comparaisons[0] == 0 : "inventaire immuable inchangé : aucune comparaison";
+
+        // Une liste modifiable gardée par l'appelant n'emprunte jamais le raccourci.
+        var modifiable = new ArrayList<>(List.of(s("plate", 2)));
+        reception.initialiser(modifiable);
+        modifiable.set(0, s("plate", 5));
+        assert reception.actualiser(modifiable, List.of()).equals(List.of(s("plate", 3)))
+                : "un gain dans la même liste modifiable reste détecté";
+
+        // Le raccourci fait avancer le temps : un retour apparent expire après 20 relevés.
+        var retour = new ReceptionManuelle<String>(String::equals);
+        var une = List.copyOf(List.of(s("plate", 1)));
+        retour.initialiser(une);
+        retour.actualiser(List.of(), List.of());
+        retour.actualiser(une, List.of());
+        assert retour.enAttente() : "le retour attend encore sa preuve";
+        for (int i = 0; i < 21; i++) retour.actualiser(une, List.of());
+        assert !retour.enAttente() : "le retour apparent expire aussi pendant le raccourci";
+        assert retour.actualiser(une, List.of(), List.of(), List.of(s("plate", 1))).isEmpty()
+                : "une confirmation tardive ne requalifie pas un retour expiré";
+
+        // Un gain après des ticks inchangés est crédité une seule fois.
+        var suite = new ReceptionManuelle<String>(String::equals);
+        var avant = List.copyOf(List.of(s("plate", 1)));
+        suite.initialiser(avant);
+        for (int i = 0; i < 5; i++) assert suite.actualiser(avant, List.of()).isEmpty();
+        var apres = List.copyOf(List.of(s("plate", 3)));
+        assert suite.actualiser(apres, List.of()).equals(List.of(s("plate", 2)));
+        assert suite.actualiser(apres, List.of()).isEmpty() : "aucun double crédit";
     }
 }

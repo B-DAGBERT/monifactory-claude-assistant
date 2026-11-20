@@ -37,6 +37,12 @@
   seul lot machine attend cette variante. Pour les autres retraits indirects ou si plusieurs lots
   correspondent, **Réception à confirmer** indique le stock porté. **Terminer** valide le lot
   complet quand toute la sortie est reçue. Production garde ses exigences de provenance.
+- Le rapprochement des réceptions tourne à chaque tick pour voir les réceptions manuelles.
+  Une liste immuable identique à celle du relevé précédent ne peut pas avoir changé :
+  `ReceptionManuelle` et `SuiviLotsEmi` la reconnaissent sans comparer les piles, en gardant
+  le tick et l’expiration des gains récents. `CycleArbreEmi` ne recopie l’inventaire que
+  lorsqu’`InventaireJoueur` remplace sa liste. Une liste modifiable passe toujours par la
+  comparaison complète.
 
 ## Tests à lancer
 

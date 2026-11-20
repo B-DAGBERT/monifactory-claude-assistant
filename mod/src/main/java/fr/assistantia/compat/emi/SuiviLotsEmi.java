@@ -34,6 +34,7 @@ final class SuiviLotsEmi {
     private final java.util.Map<Integer, Object> origines = new java.util.HashMap<>();
     private final java.util.Map<Integer, Object> arbresTermines = new java.util.HashMap<>();
     private List<PlanRetrait.Stock<EmiStack>> inventaireAssimile;
+    private List<PlanRetrait.Stock<EmiStack>> sourceAssimilee;
     private OrigineFabrication.Provenances derniereReception;
     private final List<PlanRetrait.Stock<EmiStack>> gainsExclus = new ArrayList<>();
     private final List<CollecteDifferee> collectesDifferees = new ArrayList<>();
@@ -91,6 +92,11 @@ final class SuiviLotsEmi {
     }
 
     private void memoriserInventaire(List<PlanRetrait.Stock<EmiStack>> stock) {
+        // Une liste immuable déjà assimilée ne peut pas avoir changé : List.copyOf la rend telle
+        // quelle, alors qu'une liste modifiable est copiée et passe par la comparaison complète.
+        var source = List.copyOf(stock);
+        if (source == sourceAssimilee) return;
+        sourceAssimilee = source;
         if (inventaireAssimile != null && stock.size() == inventaireAssimile.size()) {
             boolean identique = true;
             for (int i = 0; i < stock.size() && identique; i++) {
@@ -175,7 +181,7 @@ final class SuiviLotsEmi {
         origines.clear();
         arbresTermines.clear();
         retiresDuSuivi.clear();
-        inventaireAssimile = null;
+        inventaireAssimile = sourceAssimilee = null;
         derniereReception = null;
         gainsExclus.clear();
         collectesDifferees.clear();

@@ -31,10 +31,14 @@ final class OrdonnancementEmi {
             Object connexion,
             Object niveau,
             Object machine,
-            List<String> stock,
+            java.util.Map<CleStock, Long> stock,
             List<OrdreMachines.Condition> conditions,
             boolean synchronise,
             OrdreMachines.Resultat<EmiRecipe> resultat) {}
+
+    /** Même objet, même NBT et même provenance : comparés sans texte ni lecture du registre. */
+    private record CleStock(
+            OrdreMachines.Origine origine, boolean machine, Object objet, Object nbt) {}
 
     private static Cache dernier;
 
@@ -136,24 +140,19 @@ final class OrdonnancementEmi {
         return java.util.Map.copyOf(quantites);
     }
 
-    private static List<String> signatureStock(List<OrdreMachines.StockSource<Objet>> stocks) {
-        var comptes = new java.util.TreeMap<String, Long>();
+    private static java.util.Map<CleStock, Long> signatureStock(
+            List<OrdreMachines.StockSource<Objet>> stocks) {
+        // La clé EMI désigne déjà l'objet ou le fluide : ni copie de pile, ni identifiant textuel.
+        var comptes = new HashMap<CleStock, Long>();
         for (var source : stocks) {
             var objet = source.stock().objet();
             var pile = objet.pile();
-            String cle =
-                    source.origine()
-                            + "|"
-                            + objet.machine()
-                            + "|"
-                            + (pile.getItemStack().isEmpty() ? "fluide" : "item")
-                            + "|"
-                            + pile.getId()
-                            + "|"
-                            + pile.getNbt();
-            comptes.merge(cle, (long) source.stock().quantite(), Long::sum);
+            comptes.merge(
+                    new CleStock(source.origine(), objet.machine(), pile.getKey(), pile.getNbt()),
+                    (long) source.stock().quantite(),
+                    Long::sum);
         }
-        return comptes.entrySet().stream().map(e -> e.getKey() + "|" + e.getValue()).toList();
+        return comptes;
     }
 
     private static boolean gregTech(EmiRecipe recette) {
@@ -363,9 +362,8 @@ final class OrdonnancementEmi {
                 new OrdreMachines.StockSource<>(
                         new PlanRetrait.Stock<>(new Objet(pile, machine), item.getCount(), true),
                         origine));
-        var contenant = item.copy();
-        contenant.setCount(1);
-        var fluide = FluidUtil.getFluidContained(contenant).orElse(null);
+        // FluidUtil sonde déjà une copie unitaire : une copie de plus recréait ses capacités.
+        var fluide = FluidUtil.getFluidContained(item).orElse(null);
         if (fluide == null || fluide.isEmpty()) return;
         // Un contenant requis comme objet ne fournit pas aussi son fluide à une autre recette.
         boolean objetRequis =

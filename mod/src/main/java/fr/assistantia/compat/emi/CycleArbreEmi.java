@@ -107,7 +107,7 @@ public final class CycleArbreEmi {
                     || EnvoiMachine.occupe()
                     || !InventaireJoueur.pochesDisponibles())
                 return; // Attendre la fin des clics et leur confirmation.
-            OrigineFabrication.actualiser(stock(InventaireJoueur.pilesPortees()));
+            OrigineFabrication.actualiser(POCHES.stock(InventaireJoueur.pilesPortees()));
             MachinesEmi.recevoir(OrigineFabrication.provenances());
             var nouvelles = OrigineFabrication.receptions();
             boolean complet = InventaireJoueur.disponible();
@@ -121,7 +121,7 @@ public final class CycleArbreEmi {
                 return;
             }
             preuvesDifferees = List.of();
-            boolean fini = suivi.actualiser(stock(InventaireJoueur.piles()), preuves);
+            boolean fini = suivi.actualiser(TOUT.stock(InventaireJoueur.piles()), preuves);
             if (fini && CoffresArbreEmi.arbreActif() == tree) {
                 MachinesEmi.termine();
                 nettoyer();
@@ -154,12 +154,28 @@ public final class CycleArbreEmi {
         }
     }
 
-    private static List<PlanRetrait.Stock<ItemStack>> stock(List<ItemStack> piles) {
-        return piles.stream()
-                .filter(item -> !item.isEmpty())
-                .map(item -> new PlanRetrait.Stock<>(item.copy(), item.getCount(), true))
-                .toList();
+    /**
+     * Copie des piles relue seulement quand la liste source change. InventaireJoueur garde la même
+     * liste immuable, faite de ses propres copies, tant que le contenu reste identique.
+     */
+    private static final class Conversion {
+        private List<ItemStack> source;
+        private List<PlanRetrait.Stock<ItemStack>> stock = List.of();
+
+        List<PlanRetrait.Stock<ItemStack>> stock(List<ItemStack> piles) {
+            if (piles != source) {
+                List<PlanRetrait.Stock<ItemStack>> copie = new ArrayList<>(piles.size());
+                for (ItemStack item : piles)
+                    if (!item.isEmpty())
+                        copie.add(new PlanRetrait.Stock<>(item.copy(), item.getCount(), true));
+                stock = List.copyOf(copie);
+                source = piles;
+            }
+            return stock;
+        }
     }
+
+    private static final Conversion POCHES = new Conversion(), TOUT = new Conversion();
 
     private static Cibles cibles(Object tree) throws ReflectiveOperationException {
         Object root = tree.getClass().getField("goal").get(tree);

@@ -73,6 +73,9 @@ public final class ReceptionManuelle<T> {
             initialiser(stock);
             return List.of();
         }
+        // List.copyOf a rendu cette même liste au relevé précédent : elle est immuable, donc aucun
+        // écart n'est possible. Le tick et l'expiration des gains récents avancent comme avant.
+        if (stock == precedent && preuves.isEmpty()) return List.of();
         List<PlanRetrait.Stock<T>> gains = new ArrayList<>(), departs = new ArrayList<>();
         List<T> vus = new ArrayList<>();
         for (var piles : List.of(stock, precedent))
