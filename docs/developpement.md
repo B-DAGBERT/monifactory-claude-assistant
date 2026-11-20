@@ -693,7 +693,8 @@ jamais et n’attend pas le disque. Pour un même fichier, seul le dernier conte
 plus ancien ne passe jamais après lui. Quand Windows refuse le remplacement parce que l’assistant lit
 encore le fichier, le fil réessaie tant que la demande reste valable (45 s). Les demandes du menu
 tentent une écriture immédiate puis passent par ce fil. `inventaire_joueur.json`, l’identité du monde
-et les raccourcis Mac (signal toutes les 500 ms) l’utilisent aussi.
+et les raccourcis Mac (signal toutes les 500 ms) l’utilisent aussi, comme `inventaire_details.txt`,
+retenté jusqu’à réussite et suivi en mode isolé de son marqueur une fois le texte écrit.
 
 `EchangesKubeJS` est le point d’entrée du script client : `etat.json` et `quetes.json` passent par le
 fil d’écriture, le relevé du serveur (`monde.json`) y est assemblé et vérifié, et la progression des

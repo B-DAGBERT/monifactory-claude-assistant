@@ -377,6 +377,17 @@ public final class CycleMachineTest {
         assert mc.gameMode.clicks == 4 : "exactement deux clics par dépôt, sans rejeu";
     }
 
+    /** Déconnexion : reprises et portée (connexion, niveau, joueur) sont oubliées. */
+    private static void oublierReprises() throws ReflectiveOperationException {
+        var reprises = EnvoiMachine.class.getDeclaredField("REPRISES");
+        var portee = EnvoiMachine.class.getDeclaredField("porteeReprises");
+        reprises.setAccessible(true);
+        portee.setAccessible(true);
+        assert !((Map<?, ?>) reprises.get(null)).isEmpty() && portee.get(null) != null;
+        EnvoiMachine.oublierMonde();
+        assert ((Map<?, ?>) reprises.get(null)).isEmpty() && portee.get(null) == null;
+    }
+
     private void fournirIngredients() {
         menu.slots.get(3).item = new ItemStack(ETAIN, 12);
         menu.slots.get(4).item = contenant("test:water_cell", 2, EAU, 1000);
@@ -403,6 +414,7 @@ public final class CycleMachineTest {
         boolean corrige = scenario.equals("reprise-serveur-corrige");
         boolean incertain = scenario.equals("reprise-incertaine");
         boolean contexte = scenario.equals("reprise-nouveau-contexte");
+        boolean deconnexion = scenario.equals("reprise-oubliee-deconnexion");
         boolean consomme = scenario.equals("reprise-consommation-incertaine");
         boolean ajout = scenario.equals("reprise-entree-modifiee");
         boolean clicPerime = scenario.equals("reprise-clic-perime");
@@ -427,14 +439,15 @@ public final class CycleMachineTest {
         var menuRouvre = new AbstractContainerScreen<>(menu);
         mc.screen = menuRouvre;
         if (contexte) mc.level = new Object();
+        if (deconnexion) oublierReprises();
         if (consomme) entree.item = ItemStack.EMPTY;
         if (ajout) entree.item.setCount(3);
         if (trie) sortie.item = ItemStack.EMPTY;
         if (nouvelleSortie) sortie.item.setCount(2);
         var reprise = EnvoiMachine.preparer(menuRouvre, recette, 1);
         assert reprise.details().stream().anyMatch(s -> s.contains("Déposé") && s.contains(ETAIN))
-                        != contexte
-                : "le relevé ne change pas de dimension";
+                        != (contexte || deconnexion)
+                : "le relevé ne change pas de dimension et ne survit pas à la déconnexion";
         if (incertain || consomme || nouvelleSortie) {
             assert !reprise.possible() && reprise.probleme().contains("à vérifier");
             assert reprise.details().contains("Dernier dépôt non confirmé")
@@ -1332,7 +1345,8 @@ public final class CycleMachineTest {
                     "reprise-consommation-incertaine",
                     "reprise-entree-modifiee",
                     "reprise-clic-perime",
-                    "reprise-nouveau-contexte" -> fixture.reprendreApresInterruption(scenario);
+                    "reprise-nouveau-contexte",
+                    "reprise-oubliee-deconnexion" -> fixture.reprendreApresInterruption(scenario);
             case "reprise-cycle-prouve" -> fixture.reprendreApresCycleProuve();
             case "deux-lots" -> fixture.deuxLots();
             case "reception-autre-stock" -> fixture.receptionDepuisAutreStock();

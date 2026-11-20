@@ -329,9 +329,6 @@ public final class Pont {
      * écrit.
      */
     static boolean ecrireTexte(String nom, List<String> lignes) {
-        if ("inventaire_details.txt".equals(nom) && IdentiteMonde.isolation()) {
-            return ecrireInventaireDetaille(lignes);
-        }
         try {
             Files.createDirectories(DOSSIER);
             Path temporaire = DOSSIER.resolve(nom + ".tmp");
@@ -348,38 +345,69 @@ public final class Pont {
         }
     }
 
-    private static boolean ecrireInventaireDetaille(List<String> lignes) {
+    /**
+     * L'inventaire détaillé, remis au fil d'écriture : le thread client ne touche jamais au disque.
+     * En mode isolé, il va dans le dossier de la partie, puis son marqueur (contexte et empreinte
+     * SHA-256) une fois le texte écrit. Faux si la partie n'est pas identifiée : rien n'est remis
+     * et l'appelant réessaie plus tard. Un échec d'écriture est retenté par le fil d'écriture tant
+     * qu'un inventaire plus récent ne le remplace pas.
+     */
+    static boolean publierInventaireDetaille(List<String> lignes) {
+        if (!IdentiteMonde.isolation()) {
+            Ecritures.publier(
+                    DOSSIER.resolve("inventaire_details.txt"),
+                    new InventaireDetaille(lignes, null, null));
+            return true;
+        }
         JsonObject contexte = new JsonObject();
         if (!annoterContexte(contexte)) return false;
-        try {
-            Path dossier = DOSSIER.resolve("mondes").resolve(chaine(contexte, "monde_actif"));
-            Files.createDirectories(dossier);
+        Path dossier = DOSSIER.resolve("mondes").resolve(chaine(contexte, "monde_actif"));
+        Ecritures.publier(
+                dossier.resolve("inventaire_details.txt"),
+                new InventaireDetaille(
+                        lignes, contexte, dossier.resolve("inventaire_details_contexte.json")));
+        return true;
+    }
+
+    /** Lignes jointes et empreinte calculées sur le fil d'écriture ; marqueur publié ensuite. */
+    private static final class InventaireDetaille extends Ecritures.Contenu {
+        private final List<String> lignes;
+        private final JsonObject contexte;
+        private final Path marqueur;
+        private String empreinte;
+
+        InventaireDetaille(List<String> lignes, JsonObject contexte, Path marqueur) {
+            this.lignes = List.copyOf(lignes);
+            this.contexte = contexte;
+            this.marqueur = marqueur;
+            persistant();
+        }
+
+        @Override
+        protected byte[] produire() throws IOException {
             String texte = String.join(System.lineSeparator(), lignes) + System.lineSeparator();
             byte[] octets = texte.getBytes(StandardCharsets.UTF_8);
-            contexte.addProperty(
-                    "sha256",
-                    java.util.HexFormat.of()
-                            .formatHex(
-                                    java.security.MessageDigest.getInstance("SHA-256")
-                                            .digest(octets)));
-            Path temporaire = dossier.resolve("inventaire_details.txt.tmp");
-            Files.write(temporaire, octets);
-            Files.move(
-                    temporaire,
-                    dossier.resolve("inventaire_details.txt"),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
-            temporaire = dossier.resolve("inventaire_details_contexte.json.tmp");
-            Files.writeString(temporaire, contexte.toString(), StandardCharsets.UTF_8);
-            Files.move(
-                    temporaire,
-                    dossier.resolve("inventaire_details_contexte.json"),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
-            return true;
-        } catch (IOException | java.security.NoSuchAlgorithmException e) {
-            LOGGER.warn("Assistant IA : inventaire détaillé non écrit", e);
-            return false;
+            if (marqueur != null) {
+                try {
+                    empreinte =
+                            java.util.HexFormat.of()
+                                    .formatHex(
+                                            java.security.MessageDigest.getInstance("SHA-256")
+                                                    .digest(octets));
+                } catch (java.security.NoSuchAlgorithmException e) {
+                    throw new IOException(e);
+                }
+            }
+            return octets;
+        }
+
+        /** Le marqueur ne décrit jamais un texte qui n'a pas été écrit. */
+        @Override
+        protected void ecrit() {
+            if (marqueur == null) return;
+            JsonObject marque = contexte.deepCopy();
+            marque.addProperty("sha256", empreinte);
+            Ecritures.publier(marqueur, Ecritures.texte(marque.toString()).persistant());
         }
     }
 

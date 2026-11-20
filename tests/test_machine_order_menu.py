@@ -230,6 +230,15 @@ public class SuiviOrderMenuTest {
     var e=new net.minecraftforge.client.event.ScreenEvent.KeyPressed.Pre(mc.screen,256);
     SuiviEmiEcran.echappeRecette(e);assert e.canceled&&mc.screen==s;s.keyPressed(256,0,0);assert mc.screen==parent;
    }
+   case "logout-recipe-return" -> {
+    button(s,"Recette").press();var recette=mc.screen;assert recette!=s;
+    var champs=List.of("retourRecette","recetteAffichee");
+    for(String nom:champs){var f=SuiviEmiEcran.class.getDeclaredField(nom);f.setAccessible(true);assert f.get(null)!=null:nom;}
+    SuiviEmiEcran.oublierMonde();
+    for(String nom:champs){var f=SuiviEmiEcran.class.getDeclaredField(nom);f.setAccessible(true);assert f.get(null)==null:nom;}
+    var e=new net.minecraftforge.client.event.ScreenEvent.KeyPressed.Pre(recette,256);
+    SuiviEmiEcran.echappeRecette(e);assert !e.canceled&&mc.screen==recette:"Escape no longer returns to a follow-up of the old world";
+   }
    case "empty-problem" -> {MachinesEmi.rows=List.of();MachinesEmi.problem="Arbre cyclique : recette A";refresh(s);assert render(s).texts.stream().anyMatch(x->x.contains("Arbre cyclique"));}
    case "scissor" -> {
     EmiRecipe broken=()->List.of(new EmiRecipe.Output("THROW"));MachinesEmi.rows=List.of(row(-1,broken,0));refresh(s);
@@ -303,6 +312,7 @@ class MachineOrderMenuTests(unittest.TestCase):
                 "same-tree-quantity",
                 "large-render",
                 "recipe-return",
+                "logout-recipe-return",
                 "empty-problem",
                 "scissor",
                 "scroll-resize",

@@ -38,6 +38,8 @@ Les lectures successives peuvent provenir de relevés distincts. Le pont et le s
 
 Pour une explication Production, le thread Tk n’atteste jamais la preuve auprès du client natif. Les aperçus, dans le worker comme dans Tk, vérifient seulement la liaison du résultat avec `context_bound`. Le worker atteste la preuve avant l’envoi, puis à la livraison avec `delivery_verdict`, qui attend jusqu’à 2 s la boîte et la réponse du mod. Il transmet ce verdict avec la réponse. Tk le combine avec la liaison courante, car la portée ou le monde peut changer entre-temps. Sans verdict, parce qu’un autre consommateur tient la boîte, le calcul n’est pas révoqué et la réponse n’est pas livrée comme courante.
 
+`inventaire_details.txt`, lu seulement par l’IA, n’est relevé que pendant que l’assistant tourne (`Pont.assistantActif()`). Sans lui, rien n’est calculé. À son retour, le fichier est réécrit même inchangé. Seules les piles nouvelles ou modifiées (objet, quantité, usure, NBT) recalculent leur ligne, et le texte reste identique octet pour octet. Le fil d’écriture le remplace, puis écrit en mode isolé son marqueur `inventaire_details_contexte.json` une fois le texte écrit. [Stats](../../mod/src/main/java/fr/assistantia/Stats.java) · [Pont](../../mod/src/main/java/fr/assistantia/Pont.java)
+
 ## Recettes jointes à une question
 
 L’index joint les recettes de trois objets cités au plus, les noms longs d’abord. Un nom d’objet exact reste prioritaire : « chromium plate », ou « glass » pour `minecraft:glass`. Un nom de matériau seul (« chromium », « stainless steel », « tungstensteel ») désigne son lingot, sinon sa poudre, sinon sa gemme. La poudre accompagne le lingot quand il reste une place. Le fluide homonyme du matériau (`gtceu:chromium`) est écarté, sauf s’il est cité par son id : ses recettes ne font que recycler des pièces. Les recettes de recyclage passent après les autres.
@@ -51,6 +53,7 @@ python -m unittest tests.test_discussion_menu tests.test_discussion_viewer tests
 python -m unittest tests.test_question_context tests.test_question_lifecycle tests.test_production_conversation tests.test_production_service -v
 python -m unittest tests.test_recipe_loading tests.test_upstream_parity -v
 python -m unittest tests.test_providers tests.test_integration tests.test_ai_settings -v
+python -m unittest tests.test_stats_publication tests.test_bridge_world_scope -v
 ```
 
 En jeu, essayer une question texte, un doublon de clic et le retour depuis une fenêtre ouverte par Discussion. Un parcours automatisé avec CLI simulé n’atteste pas un échange réel. [Usage en jeu](../utilisation.md#discussion-dans-minecraft)
