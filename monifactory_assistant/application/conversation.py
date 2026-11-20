@@ -29,6 +29,50 @@ from monifactory_assistant.settings import (
     SETTINGS,
 )
 
+# Rappel joint à la première question d’une session renouvelée (providers/session.py).
+PREVIOUS_EXCHANGES = 2
+PREVIOUS_LIMIT = 1200
+
+
+def previous_exchanges(history, count=PREVIOUS_EXCHANGES, limit=PREVIOUS_LIMIT):
+    """Les derniers échanges affichés dans Discussion, en texte court étiqueté.
+
+    Une réponse suit immédiatement sa question dans l’historique. Ses actions sont retirées
+    comme à l’affichage et chaque texte est borné à environ `limit` caractères. Une question
+    restée sans réponse n’est pas reprise.
+    """
+
+    def said(row, who):
+        if isinstance(row, dict) and row.get("de") == who and isinstance(row.get("texte"), str):
+            return row["texte"]
+        return None
+
+    def short(text):
+        text = text.strip()
+        return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+    rows, pairs = list(history or ()), []
+    index = len(rows) - 1
+    while index > 0 and len(pairs) < count:
+        question, answer = said(rows[index - 1], "toi"), said(rows[index], "claude")
+        if question is None or answer is None:
+            index -= 1
+            continue
+        answer = short(readable(split_actions(answer)[0]))
+        if answer:
+            pairs.append((short(question), answer))
+        index -= 2
+    if not pairs:
+        return ""
+    lines = [
+        "Échanges précédents, rappelés d’une session terminée pour comprendre une question de "
+        "suite. Ce ne sont pas de nouvelles demandes ; les stocks et positions cités ont pu "
+        "changer depuis."
+    ]
+    for question, answer in reversed(pairs):
+        lines += ["Question : " + question, "Réponse : " + answer]
+    return "\n".join(lines)
+
 
 class ConversationController:
     """Questions, fiches et commandes vocales de la discussion."""
@@ -232,16 +276,19 @@ class ConversationController:
                     return None
                 now = time.monotonic()
                 if proof is not None:
-                    if now - last_preview < 0.35 or not production.context_valid(proof):
+                    # Liaison en mémoire seulement : le client natif atteste la preuve avant
+                    # l’envoi et à la livraison, jamais pour un aperçu.
+                    if now - last_preview < 0.35 or not production.context_bound(proof):
                         return
                     last_preview = now
                 partial = readable(visible_text(partial))
+                if partial.strip():
+                    timing.setdefault("premier mot", time.time())
                 preview = ("live_text", partial)
                 self.events.put(preview if proof is None else (*preview, proof))
                 return partial
 
             def on_text(partial):
-                timing.setdefault("premier mot", time.time())
                 partial = show_preview(partial)
                 if partial is None or proof is not None:
                     return  # Read the completed V2 explanation after revalidating it.
@@ -288,7 +335,15 @@ class ConversationController:
                 raise ValueError(
                     "Le calcul de production a changé pendant la préparation de la demande."
                 )
-            answer = self.conversation.ask(prompt, on_text, on_tool, show_preview)
+            answer = self.conversation.ask(
+                prompt,
+                on_text,
+                on_tool,
+                show_preview,
+                previous=previous_exchanges(getattr(self, "history", ())),
+            )
+            # L’attestation de livraison reste sur ce worker ; Tk revérifie seulement la liaison.
+            verdict = production.delivery_verdict(proof) if proof is not None else None
             shown = readable(split_actions(answer)[0])
             if (
                 self.speak
@@ -298,7 +353,7 @@ class ConversationController:
             ):
                 self.events.put(("voice_text", shown[spoken[0] :], scope))
             result = ("answer", text, answer)
-            self.events.put(result if proof is None else (*result, proof))
+            self.events.put(result if proof is None else (*result, proof, verdict))
             timing["fin"] = time.time()
             log(
                 "Temps : "
@@ -320,7 +375,7 @@ class ConversationController:
             self.speaker.add(text)
 
     def on_live_text(self, text, production_proof=None):
-        if production_proof is not None and not self.production.context_valid(production_proof):
+        if production_proof is not None and not self.production.context_bound(production_proof):
             visible = getattr(self, "production_message_proof", None)
             if visible is not None and visible == (
                 self.message,
@@ -337,7 +392,7 @@ class ConversationController:
         self.production_message_proof = (text, 0, production_proof) if production_proof else None
         self.refresh()
 
-    def on_answer(self, question, answer, production_proof=None):
+    def on_answer(self, question, answer, production_proof=None, production_verdict=None):
         self.busy = False
         self.connection_problem = ""
         bridge = getattr(self, "bridge", None)
@@ -345,10 +400,19 @@ class ConversationController:
         scoped = getattr(bridge, "isolated", False) is True
         self.status = ""
         self.production_message_proof = None
-        if production_proof is not None and not self.production.context_valid(production_proof):
-            self.notify("Le calcul de production n’est plus courant. Relance-le dans Minecraft.", 8)
-            self.refresh(force=True)
-            return
+        if production_proof is not None:
+            # Verdict attesté par le worker à la livraison, puis liaison revérifiée ici : la portée
+            # ou le monde peut changer avant Tk. Sans verdict (boîte occupée), rien n’est révoqué.
+            bound = self.production.context_bound(production_proof)
+            if production_verdict is not True or not bound:
+                self.notify(
+                    "Le calcul de production n’a pas pu être revérifié. Repose ta question."
+                    if production_verdict is None and bound
+                    else "Le calcul de production n’est plus courant. Relance-le dans Minecraft.",
+                    8,
+                )
+                self.refresh(force=True)
+                return
         log(f"Q : {question}\nR : {answer}")
         answer, actions = split_actions(answer)
         answer = readable(answer)

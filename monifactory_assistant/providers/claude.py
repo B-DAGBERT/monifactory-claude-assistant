@@ -2,6 +2,7 @@
 
 The CLI wire format follows the original assistant and Claude Code's documented print
 interface. A submitted question is never replayed after a timeout or process failure.
+The session façade decides when the saved session is renewed.
 """
 
 import json
@@ -14,9 +15,9 @@ import uuid
 from collections import deque
 from pathlib import Path
 
-from monifactory_assistant.config import HERE, write_json
-from monifactory_assistant.persistence import load_json
+from monifactory_assistant.config import HERE
 from monifactory_assistant.providers import find_claude
+from monifactory_assistant.providers.saved_session import SavedSession
 
 TOOLS = "Read,Grep,Glob,WebSearch,WebFetch"
 
@@ -176,7 +177,7 @@ def ask(
         close(proc)
 
 
-class Conversation:
+class Conversation(SavedSession):
     def __init__(self, data_dir, system_prompt, model, effort="low", timeout=420):
         self.data_dir, self.system_prompt = Path(data_dir), system_prompt
         self.model, self.effort, self.timeout = model, effort, timeout
@@ -184,29 +185,19 @@ class Conversation:
         self.running_settings = None
         self.errors = deque(maxlen=20)
         self.lock = threading.RLock()
-        self.path = HERE / "session_claude.json"
-        self.session_id = None
-        try:
-            saved = load_json(self.path, {})
-            if saved.get("data_dir") == str(self.data_dir.resolve()):
-                self.session_id = saved.get("session_id")
-        except (ValueError, OSError, AttributeError):
-            pass
+        self.load_session(HERE / "session_claude.json", self.data_dir)
 
     def configure(self, model, effort):
         with self.lock:
             self.model, self.effort = model, effort
 
     def _save_session(self, ident):
-        if ident != self.session_id:
-            write_json(self.path, {"data_dir": str(self.data_dir.resolve()), "session_id": ident})
-            self.session_id = ident
+        self.adopt_session(ident)
 
     def restart(self):
         with self.lock:
             self.stop()
-            write_json(self.path, {"data_dir": str(self.data_dir.resolve()), "session_id": None})
-            self.session_id = None
+            self.forget_session()
 
     def stop(self):
         with self.lock:
