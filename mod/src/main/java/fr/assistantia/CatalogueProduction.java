@@ -2,6 +2,7 @@ package fr.assistantia;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -28,6 +29,8 @@ public final class CatalogueProduction {
             DIRECTORY.resolve("production_v2_preuve_demande.json");
     private static final Path PROOF_REPLY = DIRECTORY.resolve("production_v2_preuve_reponse.json");
     private static final Path INVENTORY = DIRECTORY.resolve("production_v2_inventaire.json");
+    // La livraison Python expire au plus trois minutes après le calcul, avant ce reçu.
+    private static final long DUREE_PREUVE = TimeUnit.MINUTES.toNanos(3);
     private static final List<String> PROOF_CONTEXT =
             List.of(
                     "monde_actif",
@@ -54,6 +57,9 @@ public final class CatalogueProduction {
     private static String lastProof = "";
     private static BasicFileAttributes lastProofFile;
     private static PreuvePreparee preuvePreparee;
+    private static JsonObject preuvePubliee;
+    private static long publicationPreuve;
+    private static boolean retraitPreuve;
 
     private record PreuvePreparee(JsonObject preuve, long token, Path temporaire) {}
 
@@ -95,6 +101,7 @@ public final class CatalogueProduction {
             throw new IllegalStateException("Demande catalogue hors thread client");
         synchronized (LOCK) {
             if (capture != null && contexteCourant().equals(context) && valide()) return true;
+            revoquerPreuve();
             request = EPOCH.incrementAndGet();
             capture = null;
             writing = false;
@@ -130,7 +137,7 @@ public final class CatalogueProduction {
                 echec("L'arbre EMI ou le monde a changé. Relance le calcul.");
             boolean pret = capture != null && "pret".equals(chaine(state, "etat"));
             if (pret) repondrePreuve();
-            publierPreuvePreparee(pret);
+            if (!publierPreuvePreparee(pret)) surveillerPreuve(pret);
             if (capture == null || pret || writing) return;
             try {
                 if (!(boolean) call("avancer")) {
@@ -149,6 +156,7 @@ public final class CatalogueProduction {
                 ready.addProperty("generation", generation);
                 ready.addProperty("source", "emi/" + context + "/" + request);
                 ready.addProperty("etat", "pret");
+                ready.addProperty("preuve_revocable", true);
                 ready.addProperty("message", "Recettes de l'arbre EMI prêtes.");
                 writing = true;
                 long capturedRequest = request;
@@ -238,9 +246,9 @@ public final class CatalogueProduction {
     }
 
     /** Sous LOCK, après mise à jour de l'inventaire et validation du catalogue au tick client. */
-    private static void publierPreuvePreparee(boolean pret) {
+    private static boolean publierPreuvePreparee(boolean pret) {
         var preparee = preuvePreparee;
-        if (preparee == null) return;
+        if (preparee == null) return false;
         preuvePreparee = null;
         boolean published = false;
         try {
@@ -248,16 +256,49 @@ public final class CatalogueProduction {
             if (!pret
                     || preparee.token() != EPOCH.get()
                     || !lastProof.equals(chaine(proof, "nonce"))
-                    || !InventaireProduction.valideCapture(
-                            chaine(proof, "capture"), chaine(proof, "capture_sha256"))) return;
+                    || !captureValide(proof)) return false;
             // Seul le renommage reste sur le thread client. Les données natives et l'arbre ne
             // peuvent pas changer entre cette dernière vérification et la publication.
             PublicationCatalogue.publier(preparee.temporaire(), PROOF_REPLY);
+            preuvePubliee = proof;
+            publicationPreuve = System.nanoTime();
+            retraitPreuve = false;
             published = true;
         } catch (Exception ignored) {
             // Un problème de validation ou de remplacement ne produit pas d'acquittement.
         } finally {
             if (!published) WRITER.execute(() -> nettoyer(preparee.temporaire()));
+        }
+        return published;
+    }
+
+    private static boolean captureValide(JsonObject preuve) {
+        try {
+            return InventaireProduction.valideCapture(
+                    chaine(preuve, "capture"), chaine(preuve, "capture_sha256"));
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
+    private static void surveillerPreuve(boolean pret) {
+        if (retraitPreuve
+                || (preuvePubliee != null
+                        && (!pret
+                                || System.nanoTime() - publicationPreuve >= DUREE_PREUVE
+                                || !captureValide(preuvePubliee)))) revoquerPreuve();
+    }
+
+    private static void revoquerPreuve() {
+        if (preuvePubliee == null && !retraitPreuve) return;
+        preuvePubliee = null;
+        retraitPreuve = true;
+        try {
+            if (Files.isSymbolicLink(DIRECTORY)) return;
+            Files.deleteIfExists(PROOF_REPLY);
+            retraitPreuve = false;
+        } catch (IOException | SecurityException ignored) {
+            // Un fichier temporairement verrouillé sera repris au prochain tick.
         }
     }
 
@@ -341,7 +382,7 @@ public final class CatalogueProduction {
         writing = false;
         request = EPOCH.incrementAndGet();
         state = empty(message);
-        // No positive receipt remains after an invalidation, including legacy mode.
+        revoquerPreuve();
         state.addProperty("t", System.currentTimeMillis());
         state.addProperty("n", Long.toString(request));
         publierEtat(state.deepCopy(), request);

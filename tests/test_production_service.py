@@ -14,8 +14,11 @@ from queue import Queue
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from monifactory_assistant.app import App
+from monifactory_assistant.application.conversation import RecallExchange
 from monifactory_assistant.game.requests import CommandQueue
 from monifactory_assistant.game.world_scope import WorldScope
+from monifactory_assistant.persistence import atomic_json
 from monifactory_assistant.production.acquisition import (
     CATALOGUE_PROOF_REPLY,
     active_scope,
@@ -38,6 +41,8 @@ from monifactory_assistant.production.report_lines import (
     missing_and_waiting_lines,
 )
 from monifactory_assistant.production.service import ProductionService, _historical_lines
+from monifactory_assistant.settings import SETTINGS
+from monifactory_assistant.ui.views import build_mod_view
 from tests.benchmarks.question_context import fixture as conversation_fixture
 from tests.test_production_native_evidence import WATER, lot
 from tests.test_production_native_evidence import fixture as native_fixture
@@ -708,15 +713,104 @@ class ProductionServiceTests(unittest.TestCase):
         app.conversation = SimpleNamespace(ask=Mock(side_effect=ask))
         return app
 
+    def simulate_revocable_receipts(self):
+        self.metadata["preuve_revocable"] = True
+        self.write("catalogue_production_etat.json", self.metadata)
+        reply = self.data / CATALOGUE_PROOF_REPLY
+
+        def respond(path, proof, **options):
+            atomic_json(path, proof, **options)
+            atomic_json(reply, proof, backup=False)
+
+        self.enterContext(
+            patch("monifactory_assistant.production.acquisition.atomic_json", side_effect=respond)
+        )
+        return reply
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_tk_rejects_capture_revoked_after_positive_worker_attestation(self, _log):
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        reply = self.data / CATALOGUE_PROOF_REPLY
+        self.metadata["preuve_revocable"] = True
+        self.write("catalogue_production_etat.json", self.metadata)
+        marker = (self.data / "catalogue_production_etat.json").read_bytes()
+        generation = self.service._generation
+        revision_fabrication = captured_revision = 15
+
+        def respond(path, proof, **options):
+            atomic_json(path, proof, **options)
+            if revision_fabrication == captured_revision:
+                atomic_json(reply, proof, backup=False)
+
+        self.attestation.side_effect = attest_catalogue
+        answer = 'Huit plaques.<actions>[{"type":"voix","active":true}]</actions>'
+
+        def ask(_prompt, on_text, _on_tool, _on_preview, **_options):
+            on_text("Aperçu périmé des huit plaques.")
+            return answer
+
+        app = self.discussion(ask)
+        app.speak = True
+        app.root, app.set_status, app.poll = Mock(), Mock(), Mock()
+        app.bridge = SimpleNamespace(
+            isolated=True,
+            scope=self.scope,
+            scope_valid=lambda scope: scope == self.scope,
+            context_hint=lambda: "",
+        )
+        app.question_scope = self.scope
+        app.question_generation = app.conversation.generation = object()
+        previous = RecallExchange(self.scope, app.question_generation, "Avant", "Ancienne réponse")
+        app.recall_exchanges = (previous,)
+        app.history = [{"de": "claude", "texte": "Ancienne réponse conservée"}]
+        question = "Explique le plan de production"
+        with patch("monifactory_assistant.production.acquisition.atomic_json", side_effect=respond):
+            app.work_question(question, None, None)
+        event = list(app.events.queue)[-1]
+        self.assertEqual(event[:3], ("answer", question, answer))
+        self.assertIs(event[-1], True)
+        self.assertTrue(any(row[0] == "live_text" for row in app.events.queue))
+        self.assertTrue(reply.exists())
+
+        # Simulate a client tick observing only a fabrication revision change. Keep the
+        # same catalogue, scope and capture export; the acknowledgement is withdrawn.
+        revision_fabrication += 1
+        reply.unlink()
+        self.assertEqual(self.service._generation, generation)
+        self.assertEqual((self.data / "catalogue_production_etat.json").read_bytes(), marker)
+        self.assertTrue(self.service.context_bound(event[3]))
+        attested = self.attestation.call_count
+        App.poll(app)
+
+        with self.subTest(effect="historique"):
+            self.assertEqual(
+                [row["texte"] for row in app.history],
+                ["Ancienne réponse conservée", question],
+            )
+        with self.subTest(effect="voix"):
+            app.speaker.add.assert_not_called()
+        with self.subTest(effect="HUD"):
+            self.assertIsNone(app.production_message_proof)
+            self.assertFalse(getattr(app, "message", ""))
+        self.assertEqual(app.recall_exchanges, (previous,))
+        app.notify.assert_called_once_with(
+            "La preuve du calcul de production n’est plus vérifiable. Relance-le dans Minecraft.",
+            8,
+        )
+        app.run_actions.assert_not_called()
+        self.assertEqual(self.attestation.call_count, attested)
+
     @patch("monifactory_assistant.application.conversation.log")
     def test_previews_never_attest_and_the_worker_attests_delivery(self, _log):
         self.service.submit(self.request())
         self.assertEqual(self.finish()["etat"], "pret")
+        self.simulate_revocable_receipts()
         calls, sent = [], []
 
-        def attest(*_args, **options):
+        def attest(*args, **options):
             calls.append((threading.current_thread(), options))
-            return True
+            return attest_catalogue(*args, **options)
 
         def ask(_prompt, on_text, _on_tool, on_preview, **_options):
             sent.append(len(calls))
@@ -748,6 +842,141 @@ class ProductionServiceTests(unittest.TestCase):
         self.assertEqual(len(calls), attested)  # Tk never asks the native client.
         self.assertEqual(app.history[-1]["texte"], "Le plan prévoit huit plaques.")
         app.notify.assert_not_called()
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_current_receipts_keep_preview_history_voice_and_hud(self, _log):
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        self.simulate_revocable_receipts()
+        self.attestation.side_effect = attest_catalogue
+
+        def ask(_prompt, on_text, _on_tool, _on_preview, **_options):
+            on_text("Le plan prévoit")
+            return "Le plan prévoit huit plaques."
+
+        app = self.discussion(ask)
+        app.settings = {key: default for key, (_, _, default) in SETTINGS.items()}
+        app.visible, app.search, app.info = True, None, None
+        app.bridge = SimpleNamespace(script_outdated=lambda _state: False)
+        app.root, app.set_status, app.poll = Mock(), Mock(), Mock()
+        question = "Explique le plan de production"
+        for speak in (False, True):
+            with self.subTest(speak=speak):
+                app.speaker.add.reset_mock()
+                app.speak = speak
+                app.work_question(question, None, None)
+                self.assertIs(list(app.events.queue)[-1][-1], True)
+                attested = self.attestation.call_count
+                App.poll(app)
+                self.assertEqual(self.attestation.call_count, attested)
+                self.assertEqual(app.history[-1]["texte"], "Le plan prévoit huit plaques.")
+                self.assertEqual(app.speaker.add.call_count, int(speak))
+                view = build_mod_view(app, have={}, now=self.now / 1000)
+                self.assertEqual(view["bulle"]["texte"], app.history[-1]["texte"])
+                self.assertEqual(
+                    view["bulle"]["catalogue_production"],
+                    self.service.view()["resultat"]["catalogue"],
+                )
+        self.assertEqual(len(app.history), 4)
+        app.run_actions.assert_not_called()
+        app.notify.assert_not_called()
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_positive_verdict_is_unusable_without_a_readable_current_receipt(self, _log):
+        self.service.submit(self.request())
+        self.finish()
+        reply = self.simulate_revocable_receipts()
+        self.attestation.side_effect = attest_catalogue
+        app = self.discussion(lambda *_args, **_options: "Huit plaques.")
+        app.speak = True
+        app.root, app.set_status, app.poll = Mock(), Mock(), Mock()
+        for condition in ("ancien JAR", "autre capture", "illisible"):
+            with self.subTest(condition=condition):
+                self.metadata["preuve_revocable"] = True
+                self.write("catalogue_production_etat.json", self.metadata)
+                app.work_question("Explique le plan de production", None, None)
+                event = list(app.events.queue)[-1]
+                self.assertIs(event[-1], True)
+                if condition == "ancien JAR":
+                    self.metadata.pop("preuve_revocable")
+                    self.write("catalogue_production_etat.json", self.metadata)
+                elif condition == "autre capture":
+                    self.write(reply.name, {**read_capture(reply)[0], "capture": "capture-2"})
+                else:
+                    reply.write_text("{", encoding="utf-8")
+                App.poll(app)
+                self.assertTrue(all(row["de"] == "toi" for row in app.history))
+                self.assertIsNone(self.service.delivery_current(event[3]))
+                self.assertEqual(self.service.view()["resultat"]["etat"], "pret")
+        app.speaker.add.assert_not_called()
+        app.run_actions.assert_not_called()
+        self.assertEqual(app.notify.call_count, 3)
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_positive_verdict_still_requires_the_original_service_binding(self, _log):
+        self.service.submit(self.request())
+        self.finish()
+        self.simulate_revocable_receipts()
+        self.attestation.side_effect = attest_catalogue
+        app = self.discussion(lambda *_args, **_options: "Huit plaques.")
+        app.speak = True
+        app.work_question("Explique le plan de production", None, None)
+        event = list(app.events.queue)[-1]
+        self.assertIs(event[-1], True)
+        self.assertIs(self.service.delivery_current(event[3]), True)
+        original_scope = self.scope
+        for world, session, dimension in (
+            ("m1_" + "d" * 64, original_scope.session, original_scope.dimension),
+            (original_scope.world, "c" * 32, original_scope.dimension),
+            (original_scope.world, original_scope.session, "minecraft:the_nether"),
+        ):
+            self.scope = WorldScope(world, session, dimension)
+            self.identity()
+            self.assertIs(self.service.delivery_current(event[3]), False)
+        self.scope = original_scope
+        self.identity()
+        self.inventory(7, capture="capture-2")
+        self.service.submit(self.request(n=self.now + 1, capture="capture-2"))
+        replaced = self.finish()
+        self.assertEqual(replaced["catalogue"]["capture"], "capture-2")
+        self.assertIs(self.service.delivery_current(event[3]), False)
+        app.on_answer(*event[1:])
+        self.assertFalse(app.history)
+        app.speaker.add.assert_not_called()
+        app.run_actions.assert_not_called()
+
+        _, proof = self.service.context("explique la production")
+        self.assertIs(self.service.delivery_current(proof), True)
+        self.reconnect()
+        self.service.poll(self.app)
+        self.scope = original_scope
+        self.identity()
+        self.service.poll(self.app)
+        self.assertIsNone(self.service.view()["resultat"])
+        self.assertIs(self.service.delivery_current(proof), False)
+        self.service.submit(self.request(n=self.now + 2, capture="capture-2"))
+        self.assertEqual(self.finish()["etat"], "pret")
+        self.assertIs(self.service.delivery_current(proof), False)
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_native_refusal_after_provider_response_revokes_the_result(self, _log):
+        self.service.submit(self.request())
+        self.finish()
+
+        def ask(*_args, **_options):
+            self.attestation.return_value = False
+            return "Huit plaques."
+
+        app = self.discussion(ask)
+        app.speak = True
+        app.work_question("Explique le plan de production", None, None)
+        event = list(app.events.queue)[-1]
+        self.assertIs(event[-1], False)
+        self.assertEqual(self.service.view()["resultat"]["etat"], "erreur")
+        app.on_answer(*event[1:])
+        self.assertFalse(app.history)
+        app.speaker.add.assert_not_called()
+        app.run_actions.assert_not_called()
 
     def test_binding_check_never_attests_and_delivery_waits_longer(self):
         self.service.submit(self.request())

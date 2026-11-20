@@ -30,20 +30,28 @@ CATALOGUE_PROOF_REQUEST = "production_v2_preuve_demande.json"
 CATALOGUE_PROOF_REPLY = "production_v2_preuve_reponse.json"
 
 
-def attest_catalogue(folder, scope, catalogue, *, timeout=0.45):
-    """Require a new acknowledgement from the native client for this exact catalogue."""
+def _catalogue_challenge(scope, catalogue):
     proof = {
         "v": 2 if "capture" in catalogue else 1,
-        "nonce": uuid.uuid4().hex,
         **scope.fields(),
         **{key: catalogue[key] for key in ("source", "generation", "sha256")},
     }
     if "capture" in catalogue:
         proof["capture"] = catalogue["capture"]
         proof["capture_sha256"] = catalogue["capture_sha256"]
+    return proof
+
+
+def _local_catalogue_folder(folder):
+    info = folder.lstat()
+    return stat.S_ISDIR(info.st_mode) and not getattr(info, "st_file_attributes", 0) & 0x400
+
+
+def attest_catalogue(folder, scope, catalogue, *, timeout=0.45):
+    """Require a new acknowledgement from the native client for this exact catalogue."""
+    proof = {**_catalogue_challenge(scope, catalogue), "nonce": uuid.uuid4().hex}
     try:
-        info = folder.lstat()
-        if not stat.S_ISDIR(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+        if not _local_catalogue_folder(folder):
             return False
         request = scope_file(folder, CATALOGUE_PROOF_REQUEST)
         atomic_json(request, proof, backup=False, compact=True)
@@ -59,6 +67,25 @@ def attest_catalogue(folder, scope, catalogue, *, timeout=0.45):
             pass
         time.sleep(0.015)
     return False
+
+
+def live_catalogue_receipt(folder, scope, catalogue):
+    """Read the revocable acknowledgement once, after a successful worker challenge."""
+    try:
+        if not _local_catalogue_folder(folder):
+            return False
+        reply, _ = read_capture(folder / CATALOGUE_PROOF_REPLY, 4096)
+    except (OSError, ValueError, TypeError, RecursionError):
+        return False
+    nonce = reply.pop("nonce", None)
+    return (
+        isinstance(nonce, str)
+        and len(nonce) == 32
+        and all(char in "0123456789abcdef" for char in nonce)
+        and type(reply.get("v")) is int
+        and type(reply.get("generation")) is int
+        and reply == _catalogue_challenge(scope, catalogue)
+    )
 
 
 def capture_stamp(path):

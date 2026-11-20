@@ -289,8 +289,8 @@ class ConversationController:
                     return None
                 now = time.monotonic()
                 if proof is not None:
-                    # Liaison en mémoire seulement : le client natif atteste la preuve avant
-                    # l’envoi et à la livraison, jamais pour un aperçu.
+                    # Le worker filtre les aperçus par liaison. Tk contrôle aussi le reçu
+                    # de la preuve obtenue avant l’envoi.
                     if now - last_preview < 0.35 or not production.context_bound(proof):
                         return
                     last_preview = now
@@ -358,7 +358,7 @@ class ConversationController:
                 previous=previous_exchanges(self.recall_exchanges, scope, generation),
                 generation=generation,
             )
-            # L’attestation de livraison reste sur ce worker ; Tk revérifie seulement la liaison.
+            # Tk vérifiera la liaison et le reçu sans lancer d’attestation.
             verdict = production.delivery_verdict(proof) if proof is not None else None
             shown = readable(split_actions(answer)[0])
             if (
@@ -398,7 +398,10 @@ class ConversationController:
     def on_live_text(self, text, production_proof=None):
         if not self.question_generation_valid(self.question_generation):
             return
-        if production_proof is not None and not self.production.context_bound(production_proof):
+        if (
+            production_proof is not None
+            and self.production.delivery_current(production_proof) is not True
+        ):
             visible = getattr(self, "production_message_proof", None)
             if visible is not None and visible == (
                 self.message,
@@ -424,16 +427,15 @@ class ConversationController:
         self.status = ""
         self.production_message_proof = None
         if production_proof is not None:
-            # Verdict attesté par le worker à la livraison, puis liaison revérifiée ici : la portée
-            # ou le monde peut changer avant Tk. Sans verdict (boîte occupée), rien n’est révoqué.
-            bound = self.production.context_bound(production_proof)
-            if production_verdict is not True or not bound:
-                self.notify(
-                    "Le calcul de production n’a pas pu être revérifié. Repose ta question."
-                    if production_verdict is None and bound
-                    else "Le calcul de production n’est plus courant. Relance-le dans Minecraft.",
-                    8,
-                )
+            refused = "Le calcul de production n’est plus courant. Relance-le dans Minecraft."
+            if production_verdict is True:
+                production_verdict = self.production.delivery_current(production_proof)
+                if production_verdict is None:
+                    refused = "La preuve du calcul de production n’est plus vérifiable. Relance-le dans Minecraft."
+            elif production_verdict is None and self.production.context_bound(production_proof):
+                refused = "Le calcul de production n’a pas pu être revérifié. Repose ta question."
+            if production_verdict is not True:
+                self.notify(refused, 8)
                 self.refresh(force=True)
                 return
         log(f"Q : {question}\nR : {answer}")

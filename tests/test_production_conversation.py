@@ -19,6 +19,7 @@ class Fixture(ConversationController):
             ),
             context_valid=Mock(return_value=True),
             context_bound=Mock(return_value=True),
+            delivery_current=Mock(return_value=True),
             delivery_verdict=Mock(return_value=True),
         )
         self.conversation = SimpleNamespace(ask=Mock())
@@ -82,6 +83,7 @@ class ProductionConversationTests(unittest.TestCase):
         def ask(_prompt, on_text, _on_tool, on_preview, **_options):
             # The world changed after sending: neither the binding nor the delivery proof holds.
             app.production.context_bound.return_value = False
+            app.production.delivery_current.return_value = False
             app.production.delivery_verdict.return_value = False
             on_text("Ancien monde.")
             on_preview("Ancien aperçu.")
@@ -136,6 +138,7 @@ class ProductionConversationTests(unittest.TestCase):
             with self.subTest(verdict=verdict, bound=bound):
                 app = Fixture()
                 app.production.context_bound.return_value = bound
+                app.production.delivery_current.return_value = bound
                 app.on_answer(
                     "Explique le plan de production.", "Huit plaques.", app.proof, verdict
                 )
@@ -145,7 +148,14 @@ class ProductionConversationTests(unittest.TestCase):
                 else:
                     app.notify.assert_called_once_with(message, 8)
                     self.assertFalse(app.history)
-                app.production.context_bound.assert_called_once_with(app.proof)
+                if verdict is True:
+                    app.production.delivery_current.assert_called_once_with(app.proof)
+                else:
+                    app.production.delivery_current.assert_not_called()
+                if verdict is None:
+                    app.production.context_bound.assert_called_once_with(app.proof)
+                else:
+                    app.production.context_bound.assert_not_called()
                 app.production.context_valid.assert_not_called()
                 app.production.delivery_verdict.assert_not_called()
                 app.run_actions.assert_not_called()

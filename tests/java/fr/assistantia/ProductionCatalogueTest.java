@@ -269,6 +269,21 @@ public final class ProductionCatalogueTest {
         check(rejected, "aggregate proof budget refuses many legal-sized alternative lists");
     }
 
+    private static String capturer(JsonObject catalogue, String id) throws Exception {
+        var demande = new JsonObject();
+        demande.addProperty("capture", id);
+        for (String key : List.of("source", "generation", "sha256"))
+            demande.add("catalogue_" + key, catalogue.get(key));
+        var contexte =
+                new EtatProduction.Contexte(
+                        IdentiteMonde.monde(), IdentiteMonde.session(), "minecraft:overworld");
+        String digest =
+                InventaireProduction.exporter(demande, contexte, catalogue, false)
+                        .get(2, TimeUnit.SECONDS);
+        check(InventaireProduction.confirmerCapture(id, digest), "native capture confirmed");
+        return digest;
+    }
+
     private static void service() throws Exception {
         Path folder = Files.createTempDirectory("catalogue-native-service");
         System.setProperty("catalogue.test.dir", folder.toString());
@@ -296,6 +311,7 @@ public final class ProductionCatalogueTest {
         Path marker = folder.resolve("kubejs/assistant/catalogue_production_etat.json");
         JsonObject published = JsonParser.parseString(Files.readString(output)).getAsJsonObject();
         JsonObject status = JsonParser.parseString(Files.readString(marker)).getAsJsonObject();
+        check(status.get("preuve_revocable").getAsBoolean(), "revocable receipts advertised");
         check(status.get("sha256").equals(published.get("sha256")), "marker and generation agree");
         check(status.get("source").equals(published.get("source")), "publication source agree");
         check(CatalogueProduction.demander(), "reuse valid cache");
@@ -325,15 +341,14 @@ public final class ProductionCatalogueTest {
         var legacy = new JsonObject();
         legacy.add("catalogue_production", proof.deepCopy());
         check(!CatalogueProduction.apercuCourant(legacy), "preview must carry the capture binding");
-        var frame = new JsonObject();
-        frame.addProperty("v", 2);
-        frame.addProperty("capture", "capture-qa");
-        String frameDigest = CatalogueProduction.publierInventaire(frame).get(2, TimeUnit.SECONDS);
+        var production = new JsonObject();
+        production.add("contexte", ready);
+        Pont.ecran.add("production_v2", production);
+        String frameDigest = capturer(ready, "capture-qa");
         Path frameFile = marker.resolveSibling("production_v2_inventaire.json");
         check(
                 frameDigest.equals(PublicationCatalogue.empreinte(Files.readString(frameFile))),
                 "snapshot digest covers the published bytes");
-        InventaireProduction.expected = frameDigest;
         proof.addProperty("v", 2);
         proof.addProperty("capture", "capture-qa");
         proof.addProperty("capture_sha256", "f".repeat(64));
@@ -372,18 +387,24 @@ public final class ProductionCatalogueTest {
         try {
             Files.writeString(proofRequest, staleCapture.toString());
             CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
-            InventaireProduction.expected = "";
+            InventaireJoueur.revision++;
             check(!CatalogueProduction.apercuCourant(preview), "stock changed after queueing");
+            CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+            check(!Files.exists(proofReply), "stock invalidation withdraws the published proof");
+            check(
+                    JsonParser.parseString(Files.readString(marker)).equals(ready),
+                    "only the fabrication revision changed");
         } finally {
             unblockPreparation.countDown();
         }
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
         CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
         check(
-                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
+                !Files.exists(proofReply),
                 "capture invalidated while the writer was blocked cannot attest");
-        InventaireProduction.expected = frameDigest;
 
+        proof.addProperty("capture", "capture-qa-2");
+        proof.addProperty("capture_sha256", capturer(ready, "capture-qa-2"));
         proof.addProperty("nonce", "f".repeat(32));
         Files.writeString(proofRequest, proof.toString());
         CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
@@ -393,16 +414,25 @@ public final class ProductionCatalogueTest {
                 JsonParser.parseString(Files.readString(proofReply)).equals(proof),
                 "a fresh nonce still works after rejection");
 
+        staleCapture = proof.deepCopy();
         staleCapture.addProperty("nonce", "a".repeat(32));
         Files.writeString(proofRequest, staleCapture.toString());
         CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
-        InventaireProduction.expected = "";
+        InventaireJoueur.revision++;
         CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
-        check(
-                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
-                "capture invalidated after preparation cannot attest");
-        InventaireProduction.expected = frameDigest;
+        check(!Files.exists(proofReply), "capture invalidated after preparation cannot attest");
+
+        proof.addProperty("capture", "capture-qa-3");
+        proof.addProperty("capture_sha256", capturer(ready, "capture-qa-3"));
+        proof.addProperty("nonce", "1".repeat(32));
+        Files.writeString(proofRequest, proof.toString());
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        CatalogueProduction.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent());
+        check(Files.exists(proofReply), "fresh capture has a positive receipt before a reload");
+        preview.add("catalogue_production", proof.deepCopy());
+        check(CatalogueProduction.apercuCourant(preview), "fresh capture visible before reload");
 
         var staleEpoch = proof.deepCopy();
         staleEpoch.addProperty("nonce", "b".repeat(32));
@@ -433,8 +463,8 @@ public final class ProductionCatalogueTest {
         }
         writer.submit(() -> {}).get(2, TimeUnit.SECONDS);
         check(
-                JsonParser.parseString(Files.readString(proofReply)).equals(proof),
-                "prepared proof cannot be published after a catalogue reload");
+                !Files.exists(proofReply),
+                "catalogue reload withdraws published and prepared proofs");
         status = JsonParser.parseString(Files.readString(marker)).getAsJsonObject();
         check(
                 status.get("etat").getAsString().equals("indisponible"),

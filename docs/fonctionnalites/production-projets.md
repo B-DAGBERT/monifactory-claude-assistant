@@ -12,7 +12,7 @@
 - Production reste en lecture seule. Un clic explicite lance un calcul local déterministe dans le contexte courant, avec la preuve de capture et du catalogue EMI. Les transferts et fabrications relèvent des commandes de jeu dédiées.
 - Une preuve doit appartenir au bon monde, à la bonne connexion, à la bonne dimension et à l’arbre EMI actif. Un changement invalide les résultats. Une ancienne réponse encore lisible sur disque ne suffit pas.
 - Un coffre pris en compte dans un calcul doit être attesté au même instant que les poches. Un clic ou une modification des cases révoque la preuve. Un relevé historique ou une capture incomplète laisse la quantité inconnue.
-- Discussion fait attester la preuve par le client natif dans le worker de la question, avant l’envoi et à la livraison, avec une attente de 2 s. Les aperçus et le thread Tk vérifient seulement la liaison du résultat avec `context_bound`, sans attestation. Un verdict absent, faute d’accès à la boîte d’attestation, ne révoque pas le calcul. [Discussion et moteurs IA](discussion-ia.md#lecture-du-contexte-dune-question)
+- Discussion fait attester la preuve dans le worker de la question. Le client retire l’acquittement publié dès qu’un tick constate que la capture est périmée, même si le catalogue est toujours prêt. Tk vérifie la liaison du résultat et relit l’acquittement avant de livrer le texte. Un verdict absent, faute d’accès à la boîte d’attestation, ne révoque pas le calcul. [Discussion et moteurs IA](discussion-ia.md#lecture-du-contexte-dune-question)
 - Les quantités observées, réservations, lots attendus et réceptions ont chacun leur provenance. Une réception manuelle ou non attribuée ne devient pas une preuve native de Production.
 - Conserver les sauvegardes historiques des projets et objectifs. Les anciens champs de projet peuvent survivre dans le protocole de compatibilité, sans réactiver ces actions.
 
@@ -23,6 +23,7 @@ Lancer ces tests depuis la racine du dépôt avec Python et le JDK 17.
 ```sh
 python -m unittest tests.test_production_menu tests.test_production_service tests.test_production_conversation
 python -m unittest tests.test_production_stock_matrix
+python -m unittest tests.test_native_production_catalog
 python -m unittest discover -s tests -p 'test_native_production_lots.py'
 ```
 

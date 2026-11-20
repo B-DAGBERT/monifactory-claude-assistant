@@ -15,6 +15,7 @@ from monifactory_assistant.production.acquisition import (
     active_scope,
     attest_catalogue,
     capture_stamp,
+    live_catalogue_receipt,
     read_capture,
 )
 from monifactory_assistant.production.analysis import analyse_observed
@@ -302,12 +303,24 @@ class ProductionService:
     def context_bound(self, proof):
         """Liaison de la preuve au résultat courant, sans attestation du client natif.
 
-        Les aperçus et le thread Tk s’en contentent : rien n’est écrit et rien n’attend le
-        client. Comme poll, la vérification relit l’identité du monde et le marqueur du
-        catalogue, dont la lecture reste en cache tant qu’il ne change pas.
+        Comme poll, la vérification relit l’identité du monde et le marqueur du catalogue,
+        dont la lecture reste en cache tant qu’il ne change pas.
         """
         with self._lock:
             return self._bound_context(proof)
+
+    def delivery_current(self, proof):
+        """Après un acquittement du worker, vérifier sa présence sans attendre le client."""
+        with self._lock:
+            if not self._bound_context(proof):
+                return False
+            _, marker = self._marker_cache
+            if marker.get("preuve_revocable") is True and live_catalogue_receipt(
+                self.bridge.dir, self._scope, proof["catalogue"]
+            ):
+                return True
+            # Retiré, remplacé, illisible ou ancien JAR : pas de preuve courante.
+            return None
 
     def context_valid(self, proof):
         """Attestation immédiate avant l’envoi ; une boîte occupée ne valide rien."""

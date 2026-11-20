@@ -15,12 +15,30 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = {
-    "fr.assistantia.InventaireProduction": """public class InventaireProduction {
- public static String expected="";
- public static boolean captureCourante(String id,String sha){return id.equals("capture-qa")&&sha.equals(expected);}
- public static boolean valideCapture(String id,String sha){
+    "fr.assistantia.InventaireJoueur": """public class InventaireJoueur {
+ public static long revision;
+ public static long revisionFabrication(){
   if(!net.minecraft.client.Minecraft.getInstance().isSameThread())throw new AssertionError("Native attestation outside client thread");
-  return captureCourante(id,sha);
+  return revision;
+ }
+ public static boolean fabricationDisponible(){return true;}
+ public static java.util.List<net.minecraft.world.item.ItemStack> pilesFabrication(){return java.util.List.of();}
+}""",
+    "fr.assistantia.StockProduction": """public class StockProduction {
+ public static com.google.gson.JsonObject capturer(long now){return null;}
+ public static boolean valide(com.google.gson.JsonObject stock){return false;}
+}""",
+    "fr.assistantia.SacsFabrication": "public class SacsFabrication {public static boolean actif(){return false;}}",
+    "fr.assistantia.Pont": """public class Pont {
+ public static final com.google.gson.JsonObject ecran=new com.google.gson.JsonObject();
+ public static com.google.gson.JsonObject partie(String key){return ecran;}
+ public static String texte(com.google.gson.JsonObject o,String key){return o.has(key)?o.get(key).getAsString():"";}
+ public static boolean vrai(com.google.gson.JsonObject o,String key){return o.has(key)&&o.get(key).getAsBoolean();}
+}""",
+    "net.minecraftforge.registries.ForgeRegistries": """public class ForgeRegistries {
+ public static final Items ITEMS=new Items();
+ public static class Items {
+  public String getKey(net.minecraft.world.item.Item item){return item.id;}
  }
 }""",
     "net.minecraft.client.Minecraft": """public class Minecraft {private static final Minecraft INSTANCE=new Minecraft();public Object player=new Object();public Level level=new Level();public Connection connection=new Connection();public static Minecraft getInstance(){return INSTANCE;}public boolean isSameThread(){return !Thread.currentThread().getName().equals("assistant-catalogue-production");}public Connection getConnection(){return connection;}public static class Connection{private final Object handle=new Object();public Object getConnection(){return handle;}}public static class Level{public Dimension dimension(){return new Dimension();}}public static class Dimension{public net.minecraft.resources.ResourceLocation location(){return new net.minecraft.resources.ResourceLocation("minecraft:overworld");}}}""",
@@ -104,6 +122,8 @@ class NativeProductionCatalogTests(unittest.TestCase):
             for name in (
                 "PublicationCatalogue.java",
                 "CatalogueProduction.java",
+                "InventaireProduction.java",
+                "EtatProduction.java",
                 "compat/emi/RecetteProduction.java",
                 "compat/emi/CatalogueEmi.java",
             )
