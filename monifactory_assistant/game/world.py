@@ -10,8 +10,11 @@ from monifactory_assistant.paths import WORLD_FILE
 from monifactory_assistant.persistence import atomic_json, load_json
 
 OBSERVATION_MAX_AGE_MS = 15_000
-# Contenu inchangé : les nouvelles dates sont enregistrées et publiées au plus toutes les 60 s.
+# Contenu inchangé : dates et niveaux de machine enregistrés et publiés au plus toutes les 60 s.
 DATES_SAVE_INTERVAL_MS = 60_000
+# État de machine que voit le joueur : statut, multibloc formé, chaudière à sec. Les niveaux
+# envoyés par etatMachine (pr, du, r, eau, t, vap) bougent à chaque trame, comme les dates.
+VISIBLE_STATE = ("s", "f", "se")
 MAX_INTEGER = 2**53 - 1
 
 
@@ -85,21 +88,32 @@ def _block_observation(block, dimension, zone, date):
     }
 
 
+def _visible_state(state):
+    """Statut, alertes et « en marche » de machine_status, sans les niveaux ; None sans machine."""
+    if not isinstance(state, dict):
+        return state
+    return (
+        *(state.get(key) for key in VISIBLE_STATE),
+        state.get("s") == "WORKING" and bool(state.get("du")),
+    )
+
+
 def _same_content(old, new):
-    """Même bloc, même contenu : seule la date d'observation diffère."""
+    """Même bloc, même contenu : seuls la date et les niveaux de la machine peuvent différer."""
     return (
         isinstance(old, dict)
         and old.keys() == new.keys()
-        and all(old[key] == new[key] for key in new if key != "t")
+        and all(old[key] == new[key] for key in new if key not in ("t", "etat"))
+        and _visible_state(old["etat"]) == _visible_state(new["etat"])
     )
 
 
 class World:
     """Relevés serveur récents et mémoire persistante des blocs précédemment observés.
 
-    `blocks` porte les dates de la dernière trame. `saved_blocks` est la mémoire enregistrée et
-    publiée : un changement de contenu y entre aussitôt, des dates seules au plus toutes les
-    DATES_SAVE_INTERVAL_MS, à la sortie du direct et à l'arrêt de l'assistant.
+    `blocks` porte les dates et niveaux de machine de la dernière trame. `saved_blocks` est la
+    mémoire enregistrée : un changement de contenu y entre aussitôt, des dates et niveaux seuls
+    au plus toutes les DATES_SAVE_INTERVAL_MS, à la sortie du direct et à l'arrêt de l'assistant.
     """
 
     # Monde créé sans __init__ : rien n'est encore enregistré.
@@ -222,7 +236,7 @@ class World:
             else set()
         )
         updated = dict(self.blocks)
-        content = dates = False
+        content = volatile = False  # volatile : dates ou niveaux de machine seulement
         if complete:
             for key, b in self.blocks.items():
                 if (
@@ -238,12 +252,12 @@ class World:
             previous = self.blocks.get(key)
             if previous is None or not _same_content(previous, observation):
                 content = True
-            elif previous["t"] != observation["t"]:
-                dates = True
+            elif previous != observation:
+                volatile = True
         updated.update(seen)
-        memory = updated if content or dates else self.blocks
-        # Un contenu changé est enregistré et publié aussitôt, avec copie de récupération.
-        # Des dates seules attendent l'enregistrement suivant, sans recopier la sauvegarde.
+        memory = updated if content or volatile else self.blocks
+        # Un contenu changé est enregistré aussitôt, avec copie de récupération. Dates et
+        # niveaux seuls attendent l'enregistrement suivant, sans recopier la sauvegarde.
         if content or (
             memory is not self.saved_blocks and date - self.saved_t >= DATES_SAVE_INTERVAL_MS
         ):

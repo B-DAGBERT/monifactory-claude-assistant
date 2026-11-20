@@ -197,8 +197,31 @@ class WorldFreshnessTests(unittest.TestCase):
                 self.assertNotIn("état en direct", prompt)
 
 
-class WorldDateSaveTests(unittest.TestCase):
-    """Contenu enregistré et publié aussitôt ; dates seules au plus toutes les 60 s."""
+def state(block, **changes):
+    return {**block, "m": {**block["m"], **changes}}
+
+
+BOILER = {
+    "p": [5, 64, 0],
+    "b": "gtceu:hp_steam_solar_boiler",
+    "m": {
+        "s": "WORKING",
+        "pr": 0,
+        "du": 0,
+        "eau": [16000, 16000],
+        "t": [1000, 1000],
+        "se": False,
+        "vap": [13980, 16000],
+    },
+}
+BOILER_KEY = f"{OVERWORLD}|5|64|0"
+
+
+class WorldSaveCadenceTests(unittest.TestCase):
+    """Contenu enregistré aussitôt ; dates et niveaux de machine au plus toutes les 60 s.
+
+    coffres_connus.json n'est republié que si son contenu hors dates change.
+    """
 
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -225,6 +248,9 @@ class WorldDateSaveTests(unittest.TestCase):
         self.assertTrue(self.world.update(snapshot))
         self.game.publish_known_chests(self.world)
 
+    def counts(self):
+        return self.saves.call_count, self.publish.call_count
+
     def saved_dates(self, path=None):
         return {b["t"] for b in World(path or self.path).blocks.values()}
 
@@ -233,8 +259,7 @@ class WorldDateSaveTests(unittest.TestCase):
         written = self.path.read_bytes()
         moved = {**PLAYER, "x": 20}
         self.receive(MACHINE, CHEST, t=START + 3_000, players=[moved])
-        self.assertEqual(self.saves.call_count, 1)
-        self.assertEqual(self.publish.call_count, 1)
+        self.assertEqual(self.counts(), (1, 1))
         self.assertEqual(self.path.read_bytes(), written)
         # La mémoire vive, le direct et les joueurs suivent chaque trame.
         self.assertEqual({b["t"] for b in self.world.blocks.values()}, {START + 3_000})
@@ -242,14 +267,59 @@ class WorldDateSaveTests(unittest.TestCase):
         self.assertTrue(self.world.observation_live(self.world.machines()[0]))
         self.assertIn("état en direct", describe_world(self.world))
 
-    def test_content_change_is_written_with_backup_and_published_at_once(self):
+    def test_machine_levels_alone_are_neither_written_nor_republished(self):
+        waiting = {
+            "p": [6, 64, 0],
+            "b": "gtceu:lv_assembler",
+            "m": {"s": "WAITING", "pr": 10, "du": 100, "r": "Pas assez d'énergie"},
+        }
+        self.receive(MACHINE, BOILER, waiting, CHEST, t=START)
+        written = self.path.read_bytes()
+        levels = (
+            state(MACHINE, pr=1, du=5),
+            state(BOILER, vap=[9000, 16000], eau=[15000, 16000], t=[990, 1000]),
+            state(waiting, pr=11, r="Sortie pleine"),
+        )
+        self.receive(*levels, CHEST, t=START + 3_000)
+        self.assertEqual(self.counts(), (1, 1))
+        self.assertEqual(self.path.read_bytes(), written)
+        # La mémoire vive garde les niveaux de la dernière trame.
+        self.assertEqual(self.world.blocks[BOILER_KEY]["etat"]["vap"], [9000, 16000])
+        text = describe_world(self.world)
+        for shown in ("en marche 20 %", "steam 9000/16000 mB", "en attente (Sortie pleine)"):
+            self.assertIn(shown, text)
+
+    def test_visible_machine_state_is_written_at_once_without_republishing(self):
+        furnace = {
+            "p": [7, 64, 0],
+            "b": "gtceu:electric_blast_furnace",
+            "m": {"s": "IDLE", "pr": 0, "du": 0, "f": True},
+        }
+        self.receive(MACHINE, BOILER, furnace, CHEST, t=START)
+        idle, unformed, dry = (
+            state(MACHINE, s="IDLE"),
+            state(furnace, f=False),
+            state(BOILER, se=True),
+        )
+        steps = (
+            ("s", (idle, BOILER, furnace)),
+            ("f", (idle, BOILER, unformed)),
+            ("se", (idle, dry, unformed)),
+            ("en marche", (idle, state(dry, pr=1, du=20), unformed)),
+        )
+        for count, (label, machines) in enumerate(steps, start=2):
+            with self.subTest(label):
+                self.receive(*machines, CHEST, t=START + 3_000 * (count - 1))
+                self.assertEqual(self.counts(), (count, 1))  # l'état n'est pas publié
+                self.assertTrue(self.saves.call_args.kwargs["backup"])
+                self.assertEqual(World(self.path).blocks, self.world.blocks)
+
+    def test_contents_change_is_written_and_republished_at_the_next_frame(self):
         self.receive(MACHINE, CHEST, t=START)
         tin = {**CHEST, "o": [["gtceu:tin_ingot", 8]]}
-        idle = {**MACHINE, "m": {"s": "IDLE"}}
-        mv = {**idle, "b": "gtceu:mv_bender"}
+        mv = {**MACHINE, "b": "gtceu:mv_bender"}
         steps = (
             ("objets", (MACHINE, tin), False),
-            ("etat", (idle, tin), False),
             ("bloc", (mv, tin), False),
             ("absence", (mv,), True),
             ("retour", (mv, tin), True),
@@ -257,27 +327,36 @@ class WorldDateSaveTests(unittest.TestCase):
         for count, (label, blocks, covered) in enumerate(steps, start=2):
             with self.subTest(label):
                 self.receive(*blocks, t=START + 3_000 * (count - 1), covered=covered)
-                self.assertEqual(self.saves.call_count, count)
+                self.assertEqual(self.counts(), (count, count))
                 self.assertTrue(self.saves.call_args.kwargs["backup"])
-                self.assertEqual(self.publish.call_count, count)
                 self.assertEqual(World(self.path).blocks, self.world.blocks)
+        self.assertIn('"n":8', self.publish.call_args.args[1])
 
-    def test_dates_alone_are_saved_once_per_minute_without_replacing_the_backup(self):
+    def test_dates_and_levels_are_saved_and_republished_once_per_minute(self):
         tin = {**CHEST, "o": [["gtceu:tin_ingot", 8]]}
-        self.receive(MACHINE, CHEST, t=START)
-        self.receive(MACHINE, tin, t=START + 3_000)
+
+        def boiler(k):
+            return state(BOILER, vap=[16000 - 100 * k, 16000])
+
+        self.receive(BOILER, CHEST, t=START)
+        self.receive(BOILER, tin, t=START + 3_000)
         backup = self.path.with_name(self.path.name + ".bak")
         kept = backup.read_bytes()
-        for k in range(2, 21):  # dates seules jusqu'à 60 s après le dernier enregistrement
-            self.receive(MACHINE, tin, t=START + 3_000 * k)
-        self.assertEqual((self.saves.call_count, self.publish.call_count), (2, 2))
-        self.receive(MACHINE, tin, t=START + 63_000)
-        self.assertEqual((self.saves.call_count, self.publish.call_count), (3, 3))
+        for k in range(2, 21):  # niveaux et dates seuls jusqu'à 60 s après l'enregistrement
+            self.receive(boiler(k), tin, t=START + 3_000 * k)
+        self.assertEqual(self.counts(), (2, 2))
+        self.receive(boiler(21), tin, t=START + 63_000)
+        self.assertEqual(self.counts(), (3, 3))
         self.assertFalse(self.saves.call_args.kwargs["backup"])
-        self.assertEqual(self.saved_dates(), {START + 63_000})
+        saved = World(self.path).blocks
+        self.assertEqual({b["t"] for b in saved.values()}, {START + 63_000})
+        self.assertEqual(saved[BOILER_KEY]["etat"]["vap"], [13900, 16000])
         self.assertIn(f'"t":{START + 63_000}', self.publish.call_args.args[1])
         self.assertEqual(backup.read_bytes(), kept)
         self.assertEqual(len(json.loads(kept)["blocs"]), 2)
+        for k in range(22, 41):
+            self.receive(boiler(k), tin, t=START + 3_000 * k)
+        self.assertEqual(self.counts(), (3, 3))
 
     def test_absent_block_keeps_its_first_absence_date(self):
         key = f"{OVERWORLD}|4|64|0"
@@ -297,9 +376,9 @@ class WorldDateSaveTests(unittest.TestCase):
         )
         self.assertEqual(self.world.blocks[f"{OVERWORLD}|3|64|0"]["t"], START + 66_000)
 
-    def test_leaving_the_live_view_saves_pending_dates_and_a_failure_keeps_them(self):
-        self.receive(MACHINE, CHEST, t=START)
-        self.receive(MACHINE, CHEST, t=START + 3_000)
+    def test_leaving_the_live_view_saves_pending_levels_and_a_failure_keeps_them(self):
+        self.receive(BOILER, CHEST, t=START)
+        self.receive(state(BOILER, vap=[9000, 16000]), CHEST, t=START + 3_000)
         with patch(
             "monifactory_assistant.persistence._replace_bytes",
             side_effect=PermissionError("fichier verrouillé"),
@@ -309,14 +388,16 @@ class WorldDateSaveTests(unittest.TestCase):
         self.assertEqual(self.saved_dates(), {START})
         self.world.invalidate_live()
         self.assertEqual(self.saved_dates(), {START + 3_000})
+        self.assertEqual(World(self.path).blocks[BOILER_KEY]["etat"]["vap"], [9000, 16000])
         self.assertFalse(self.saves.call_args.kwargs["backup"])
         calls = self.saves.call_count
         self.world.flush()
         self.assertEqual(self.saves.call_count, calls)
+        # Des dates plus récentes seules attendent la minute suivante pour être republiées.
         self.game.publish_known_chests(self.world)
-        self.assertIn(f'"t":{START + 3_000}', self.publish.call_args.args[1])
+        self.assertEqual(self.publish.call_count, 1)
 
-    def test_world_session_or_dimension_switch_saves_pending_dates(self):
+    def test_world_session_or_dimension_switch_saves_pending_levels(self):
         first = WorldScope("m1_" + "a" * 64, "1" * 32, OVERWORLD)
         switches = (
             ("connexion", WorldScope(first.world, "2" * 32, OVERWORLD)),
@@ -330,24 +411,27 @@ class WorldDateSaveTests(unittest.TestCase):
             ):
                 path = self.root / f"{label}.json"
                 world = World(path)
-                self.assertTrue(world.update(frame(MACHINE, CHEST, t=START)))
-                self.assertTrue(world.update(frame(MACHINE, CHEST, t=START + 3_000)))
+                self.assertTrue(world.update(frame(BOILER, CHEST, t=START)))
+                low = state(BOILER, vap=[9000, 16000])
+                self.assertTrue(world.update(frame(low, CHEST, t=START + 3_000)))
                 self.assertEqual(self.saved_dates(path), {START})
                 self.game.world, self.game.speaker = world, Mock()
                 self.game.active_world_scope = first
                 self.game.apply_world_scope(scope)
                 self.assertEqual(self.saved_dates(path), {START + 3_000})
+                self.assertEqual(World(path).blocks[BOILER_KEY]["etat"]["vap"], [9000, 16000])
                 self.assertEqual(self.game.world is world, label != "monde")
 
-    def test_assistant_exit_saves_pending_dates_and_closes_publications(self):
+    def test_assistant_exit_saves_pending_levels_and_closes_publications(self):
         from monifactory_assistant.app import App
 
-        self.receive(MACHINE, CHEST, t=START)
-        self.receive(MACHINE, CHEST, t=START + 3_000)
+        self.receive(BOILER, CHEST, t=START)
+        self.receive(state(BOILER, vap=[9000, 16000]), CHEST, t=START + 3_000)
         app = App.__new__(App)
         app.root, app.bridge, app.world = Mock(), Mock(), self.world
         app.root.mainloop.side_effect = KeyboardInterrupt  # Ctrl+C dans la console
         with self.assertRaises(KeyboardInterrupt):
             app.run()
         self.assertEqual(self.saved_dates(), {START + 3_000})
+        self.assertEqual(World(self.path).blocks[BOILER_KEY]["etat"]["vap"], [9000, 16000])
         app.bridge.close_publications.assert_called_once_with()

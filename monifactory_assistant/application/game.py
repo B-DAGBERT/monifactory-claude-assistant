@@ -13,7 +13,12 @@ from monifactory_assistant.game.recipes import RecipeIndex
 from monifactory_assistant.game.snapshots import file_stamp, frame_value
 from monifactory_assistant.game.storage import Storage, StorageMonitor, known_chests
 from monifactory_assistant.game.veins import find_veins, vein_files_stamp
-from monifactory_assistant.game.world import World, machine_status, observation_date
+from monifactory_assistant.game.world import (
+    DATES_SAVE_INTERVAL_MS,
+    World,
+    machine_status,
+    observation_date,
+)
 from monifactory_assistant.game.world_scope import scope_file, scope_folder
 from monifactory_assistant.paths import ROOT
 from monifactory_assistant.persistence import atomic_json, load_json
@@ -188,8 +193,9 @@ class GameController:
     def publish_known_chests(self, world):
         """Relevés du serveur pour l'onglet Recette du mod (coffres_connus.json), écrits s'ils changent.
 
-        Seule la mémoire enregistrée est publiée. Elle est remplacée à chaque changement de contenu,
-        et au plus toutes les 60 s pour des dates seules : même objet, rien à faire.
+        Seule la mémoire enregistrée est relue, à chaque enregistrement. Un contenu publié différent
+        (objets, blocs, positions) part aussitôt ; des dates plus récentes seules, au plus toutes
+        les 60 s, avec l'enregistrement dû. L'état des machines n'est pas publié.
         """
         blocks = getattr(world, "saved_blocks", None)
         if not isinstance(blocks, dict):
@@ -199,12 +205,25 @@ class GameController:
             return
         if self.bridge.data_path("coffres_connus.json") is None:
             return
-        text = json.dumps(known_chests(blocks.values()), ensure_ascii=False, separators=(",", ":"))
+        chests = known_chests(blocks.values())
+        undated = [
+            [{key: value for key, value in entry.items() if key != "t"} for entry in chests[part]]
+            for part in ("conteneurs", "machines")
+        ]
+        date = getattr(world, "saved_t", 0)
+        if (
+            published is not None
+            and published[2] == undated
+            and date - published[3] < DATES_SAVE_INTERVAL_MS
+        ):
+            self.known_chests_published = (blocks, *published[1:])
+            return
+        text = json.dumps(chests, ensure_ascii=False, separators=(",", ":"))
         if (published is None or published[1] != text) and not self.bridge.publish_text(
             "coffres_connus.json", text
         ):
             return
-        self.known_chests_published = (blocks, text)
+        self.known_chests_published = (blocks, text, undated, date)
 
     def journal(self, kind, text):
         path = getattr(self, "journal_file", JOURNAL_FILE)
