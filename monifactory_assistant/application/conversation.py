@@ -78,10 +78,9 @@ class ConversationController:
 
     def work_info(self, item, name):
         try:
-            known = self.recipe_index.about(
-                item
-            )  # sa fabrication et, pour une machine, ce qu'elle fait
-            prompt = INFO_REQUEST.format(nom=name, item=item) + (
+            recipes = self.recipe_index
+            known = recipes.about(item)  # sa fabrication et, pour une machine, ce qu'elle fait
+            prompt = INFO_REQUEST.format(nom=name, item=item, recettes=recipes.catalog_files) + (
                 f"\n\nDéjà trouvé dans le pack :\n{known}" if known else ""
             )
             answer = ask_claude(

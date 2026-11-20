@@ -5,6 +5,7 @@
 - [OngletDiscussion](../../mod/src/main/java/fr/assistantia/OngletDiscussion.java) et [EtatDiscussion](../../mod/src/main/java/fr/assistantia/EtatDiscussion.java) gèrent les messages, le brouillon et le défilement en jeu.
 - [Contrôleur de conversation](../../monifactory_assistant/application/conversation.py) reçoit les questions, les fiches d’objets et les événements vocaux. [Audio](../../monifactory_assistant/audio.py) gère la capture, la transcription et la lecture.
 - [Construction du contexte](../../monifactory_assistant/application/question_context.py) assemble le texte des observations à partir de lecteurs explicites fournis par le contrôleur.
+- [Index des recettes](../../monifactory_assistant/game/recipes.py) relie les noms cités aux objets du pack et joint leurs recettes à la question. Le [contrôleur de jeu](../../monifactory_assistant/application/game.py) le recharge après chaque export.
 - [Session](../../monifactory_assistant/providers/session.py) délègue à [Codex](../../monifactory_assistant/providers/codex.py) ou [Claude](../../monifactory_assistant/providers/claude.py). [Discussion en lecture seule](../../monifactory_assistant/ui/discussion.py) sert le suivi local.
 
 ## Règles à préserver
@@ -20,11 +21,18 @@ Le contrôleur enregistre la portée à l’admission. Le worker attend la trans
 
 Les lectures successives peuvent provenir de relevés distincts. Le pont et le service Production gardent leurs validations de portée et de preuve avant l’envoi et à la livraison. Une action de Discussion suit la validation du contrôleur avec l’état disponible au moment de son exécution.
 
+## Recettes jointes à une question
+
+L’index joint les recettes de trois objets cités au plus, les noms longs d’abord. Un nom d’objet exact reste prioritaire : « chromium plate », ou « glass » pour `minecraft:glass`. Un nom de matériau seul (« chromium », « stainless steel », « tungstensteel ») désigne son lingot, sinon sa poudre, sinon sa gemme. La poudre accompagne le lingot quand il reste une place. Le fluide homonyme du matériau (`gtceu:chromium`) est écarté, sauf s’il est cité par son id : ses recettes ne font que recycler des pièces. Les recettes de recyclage passent après les autres.
+
+Le contexte de chaque question nomme le groupe actif du catalogue, `recettes_a_*.json` ou `recettes_b_*.json`. Les instructions des deux moteurs y renvoient, ou à `recettes_info.json` tant qu’aucun index n’est chargé. Une fois un groupe a ou b publié, l’ancien catalogue sans groupe (`recettes_<n>.json`) est supprimé du dossier de données. Avec un manifeste version 1 ou 2, ces fichiers restent le catalogue actif.
+
 ## Tests à lancer
 
 ```sh
 python -m unittest tests.test_discussion_menu tests.test_discussion_viewer tests.test_transport -v
 python -m unittest tests.test_question_context tests.test_question_lifecycle tests.test_production_conversation tests.test_production_service -v
+python -m unittest tests.test_recipe_loading tests.test_ai_settings tests.test_upstream_parity -v
 ```
 
 En jeu, essayer une question texte, un doublon de clic et le retour depuis une fenêtre ouverte par Discussion. Un parcours automatisé avec CLI simulé n’atteste pas un échange réel. [Usage en jeu](../utilisation.md#discussion-dans-minecraft)

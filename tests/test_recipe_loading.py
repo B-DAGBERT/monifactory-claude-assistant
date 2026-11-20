@@ -174,14 +174,87 @@ class RecipeLoadingTests(unittest.TestCase):
             with patch("monifactory_assistant.application.game.log"):
                 self.publish()
             self.assertIs(self.game.recipe_index, previous)
+            self.assertTrue(self.catalog.exists())  # toujours le catalogue lu
         other.write_text(
             '{"generation":"new","recettes":["x | x => gtceu:new_secondary"]}', encoding="utf-8"
         )
         self.game.check_recipes()
-        self.publish()
+        with patch("monifactory_assistant.application.game.log") as log:
+            self.publish()
         self.assertEqual(
             set(self.game.recipe_index.by_output), {"gtceu:new_item", "gtceu:new_secondary"}
         )
+        log.assert_called_once_with("Ancien catalogue de recettes supprimé : recettes_0.json")
+        self.assertFalse(self.catalog.exists())
+        self.assertTrue(part.exists() and other.exists())
+
+    def test_published_group_removes_only_legacy_unprefixed_parts(self):
+        legacy = ["recettes_0.json", "recettes_1.json", "recettes_12.json"]
+        others = [
+            "recettes_a_1.json",
+            "recettes_b_0.json",
+            "recettes_0.json.bak",
+            "recettes_1a.json",
+            "recettes_x_0.json",
+            "machines_recettes.txt",
+        ]
+        for name in legacy[1:] + others:
+            (self.path / name).write_text("{}", encoding="utf-8")
+        # Un dossier de ce nom : sa suppression échoue sans interrompre les autres.
+        (self.path / "recettes_7.json").mkdir()
+        (self.path / "recettes_a_0.json").write_text(
+            json.dumps({"generation": "g", "recettes": ["x | x => gtceu:published"]}),
+            encoding="utf-8",
+        )
+        self.marker.write_text(
+            '{"version":3,"groupe":"a","generation":"g","parties":1,"nombre":1}', encoding="utf-8"
+        )
+        # Un index refusé (manifeste remplacé pendant la lecture) ne supprime rien.
+        self.game.check_recipes()
+        self.workers.pop(0)()
+        _event, *args = self.game.events.get_nowait()
+        stat = self.marker.stat()
+        os.utime(self.marker, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))
+        self.game.on_recipes_loaded(*args)
+        self.assertTrue(all((self.path / name).exists() for name in legacy))
+
+        self.game.check_recipes()
+        with patch("monifactory_assistant.application.game.log") as log:
+            self.publish()
+        self.assertEqual(set(self.game.recipe_index.by_output), {"gtceu:published"})
+        self.assertEqual(self.game.recipe_index.pattern, "recettes_a_*.json")
+        log.assert_called_once_with(
+            "Ancien catalogue de recettes supprimé : "
+            "recettes_0.json, recettes_1.json, recettes_12.json"
+        )
+        self.assertEqual(
+            {path.name for path in self.path.iterdir()},
+            {*others, "recettes_a_0.json", "recettes_info.json", "recettes_7.json"},
+        )
+
+    def test_legacy_manifest_keeps_its_unprefixed_parts(self):
+        group = self.path / "recettes_a_0.json"
+        group.write_text(
+            json.dumps({"generation": "g", "recettes": ["x | x => gtceu:other"]}), encoding="utf-8"
+        )
+        for manifest in (
+            '{"parties":1,"nombre":1}',
+            '{"version":2,"groupe":"a","parties":1,"nombre":1}',  # seule la version 3 a un groupe
+        ):
+            with self.subTest(manifest=manifest):
+                self.marker.write_text(manifest, encoding="utf-8")
+                self.game.check_recipes()
+                with patch("monifactory_assistant.application.game.log") as log:
+                    self.publish()
+                log.assert_not_called()
+                index = self.game.recipe_index
+                self.assertEqual(set(index.by_output), {"gtceu:plate"})
+                self.assertEqual(index.pattern, "recettes_*.json")
+                self.assertEqual(index.remove_legacy_parts(self.path), [])
+                self.assertTrue(self.catalog.exists())
+                self.assertTrue(group.exists())
+        self.assertEqual(RecipeIndex().remove_legacy_parts(self.path), [])
+        self.assertTrue(self.catalog.exists())
 
     def test_kubejs_writes_inactive_group_before_publishing_manifest(self):
         node = shutil.which("node")

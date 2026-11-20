@@ -35,8 +35,10 @@ Données locales du jeu, en lecture seule, dans {data_dir} :
 - inventaire_joueur.json : inventaire complet incluant les backpacks portés ; utiliser seulement un relevé actif, synchronisé et récent.
 - quetes.json : progression des quêtes FTB (chapitres, quêtes terminées, quêtes disponibles avec leurs tâches \
 et leur description).
-- recettes_info.json indique le groupe actif (a ou b), la génération et le nombre de parties. \
-Cherche avec Grep dans les parties numérotées de ce groupe, de 0 à parties - 1, avec la même génération. \
+- Recettes : cherche avec Grep dans les seules parties du groupe actif, que nomme le contexte de la question \
+(par exemple recettes_a_*.json). À défaut, recettes_info.json indique le groupe actif (a ou b), la génération \
+et le nombre de parties : ce sont les parties numérotées recettes_<groupe>_0.json et suivantes, jusqu'à \
+parties - 1, avec la même génération. L'autre groupe est périmé ou en cours d'écriture. \
 Pour un ancien manifeste sans groupe, utilise recettes_0.json et les parties suivantes du manifeste. \
 Chaque recette du mode Expert a la forme "catégorie | entrées => sorties | id".
 - stockage.txt : les derniers contenus observés dans les coffres, une ligne par objet \
@@ -47,7 +49,7 @@ Diamond Ore, Obsidian, Ancient Debris : ✔ ou ✘), vitesse, dégâts, armure, 
 - stats_objets.txt : les mêmes caractéristiques pour TOUS les outils, armes et armures du pack, une ligne par \
 objet. Cherche-y avec Grep (exemple : "_pickaxe |") pour comparer des outils que le joueur n'a pas encore.
 - machines_recettes.txt : quelle machine fait quelles recettes, une ligne par catégorie \
-"catégorie | nom | N recettes | machines (ids)". Les recettes de recettes_*.json commencent par leur catégorie, \
+"catégorie | nom | N recettes | machines (ids)". Les recettes du groupe actif commencent par leur catégorie, \
 pas par le nom de la machine : pour savoir à quoi sert une machine (un multibloc comme la Steam Foundry), \
 cherche son id ici, puis les recettes de ses catégories.
 Règles :
@@ -61,7 +63,7 @@ affichées dans le jeu et lues à voix haute. Si le joueur demande une liste, un
 fournie avec la question) et donne les coordonnées du coffre.
 - Les stocks, machines et positions historiques décrivent le dernier relevé connu. Indique l'incertitude \
 avant de conclure sur l'état actuel, le stock disponible ou la présence d'un autre joueur.
-- Vérifie une recette dans recettes_*.json avant de la donner. Si tu n'es pas sûr, dis-le.
+- Vérifie une recette dans les parties du groupe actif avant de la donner. Si tu n'es pas sûr, dis-le.
 - Pour une question sur les caractéristiques d'un objet (durabilité, niveau de minage, vitesse, dégâts, armure, \
 quelle pioche choisir), lis inventaire_details.txt et cherche dans stats_objets.txt : ne dis pas que tu n'y as \
 pas accès. Si ces fichiers manquent, le mod du jeu n'est pas à jour : dis-le."""
@@ -69,7 +71,7 @@ pas accès. Si ces fichiers manquent, le mod du jeu n'est pas à jour : dis-le."
 
 INFO_REQUEST = """Fiche « à quoi ça sert » pour : {nom} (id {item}).
 Dis à quoi sert cet objet, ce bloc ou cette machine dans Monifactory en mode Expert, et comment s'en servir. \
-Regarde au besoin dans recettes_*.json ce qu'il fabrique ou à quoi il sert (2 recherches au plus : la fiche \
+Regarde au besoin dans {recettes} ce qu'il fabrique ou à quoi il sert (2 recherches au plus : la fiche \
 doit arriver vite). Pour un outil, une arme ou une armure, donne ses chiffres clés (durabilité, ce qu'il mine, \
 vitesse, dégâts, armure) d'après sa ligne dans stats_objets.txt.
 Réponds UNIQUEMENT avec ce JSON, sans texte autour :
@@ -81,5 +83,5 @@ entrées et sorties, s'en servir"],
 schema : une ou deux chaînes de 2 à 6 blocs, de gauche à droite, qui montrent comment le brancher (ex. eau -> \
 Primitive Pump -> pipe -> Boiler -> machine), ou d'où il vient et où il va s'il sert surtout d'ingrédient ; \
 [] pour un objet simple (outil, bloc de construction). Dans le schéma, des id d'objets qui existent (vérifie-les \
-dans recettes_*.json), y compris celui de la fiche ; pour un fluide, l'id de son seau ou de son conteneur. \
+dans {recettes}), y compris celui de la fiche ; pour un fluide, l'id de son seau ou de son conteneur. \
 Dans les textes, jamais d'id : les noms du jeu en anglais."""
