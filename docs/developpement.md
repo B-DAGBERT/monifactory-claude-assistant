@@ -552,8 +552,9 @@ et la qualité des modèles en partie réelle ne sont pas mesurés ici.
 
 ## Écritures de la mémoire serveur et recherche EMI
 
-La mémoire serveur est écrite en JSON compact avec le même schéma. Chaque observation et sa date
-restent enregistrées immédiatement avec remplacement atomique et copie de récupération. La fusion
+La mémoire serveur est écrite en JSON compact avec le même schéma, par remplacement atomique, au
+plus toutes les 30 s, puis à la sortie du direct ou à l’arrêt. La copie de récupération suit
+chaque enregistrement qui porte un contenu nouveau ([Base](fonctionnalites/base.md)). La fusion
 choisit toujours la source la plus récente avant de préparer la recherche. Le cache EMI compare
 ensuite les positions et les inventaires sous une forme immuable. Les positions en conflit et les
 stocks invalides repassent par le calcul normal.

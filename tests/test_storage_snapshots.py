@@ -238,7 +238,7 @@ class StorageSnapshotTests(unittest.TestCase):
                 9,
             )
 
-    def test_world_keeps_unchanged_dates_durable_and_recovers_atomic_write(self):
+    def test_world_saves_unchanged_dates_periodically_and_recovers_atomic_write(self):
         from monifactory_assistant import persistence
 
         with tempfile.TemporaryDirectory() as directory:
@@ -251,16 +251,27 @@ class StorageSnapshotTests(unittest.TestCase):
                     {"p": [1, 64, 0], "b": "gtceu:lv_bender", "m": {"s": "IDLE"}},
                 ],
             }
+            replace = persistence._replace_bytes
+            writes = []
+
+            def counted(target, raw, mode):
+                writes.append(target.name)
+                return replace(target, raw, mode)
+
             with patch("monifactory_assistant.game.world.WORLD_FILE", path):
                 world = World()
-                for i in range(200):
-                    self.assertTrue(world.update({**frame, "t": 1000 + 3000 * i}))
+                with patch.object(persistence, "_replace_bytes", side_effect=counted):
+                    for i in range(200):
+                        self.assertTrue(world.update({**frame, "t": 1000 + 3000 * i}))
                 previous = world.blocks.copy()
-                self.assertEqual(World().blocks, previous)
                 self.assertTrue(all(b["t"] == 598_000 for b in previous.values()))
+                # Contenu à la première trame, puis des dates seules toutes les 30 s, sans copie.
+                self.assertEqual(writes, ["world.json"] * 20)
+                self.assertTrue(all(b["t"] == 571_000 for b in World().blocks.values()))
+                world.invalidate_live()  # sortie du direct : les dates en attente sont enregistrées
+                self.assertEqual(World().blocks, previous)
                 self.assertNotIn(b"\n", path.read_bytes())
 
-                replace = persistence._replace_bytes
                 changed = {
                     "p": [1, 64, 0],
                     "b": "gtceu:lv_bender",
@@ -272,10 +283,10 @@ class StorageSnapshotTests(unittest.TestCase):
                         raise PermissionError("fichier ouvert par un autre programme")
                     return replace(target, raw, mode)
 
+                # Enregistrement dû refusé : la mémoire vive suit, le fichier reste intact.
                 with patch.object(persistence, "_replace_bytes", side_effect=fail_primary):
-                    with self.assertRaises(PermissionError):
-                        world.update({**frame, "t": 601_000, "blocs": [changed]})
-                self.assertEqual(world.blocks, previous)
+                    self.assertTrue(world.update({**frame, "t": 631_000, "blocs": [changed]}))
+                self.assertEqual(world.machines()[0]["etat"]["s"], "WORKING")
                 self.assertEqual(World().blocks, previous)
 
                 # Un fichier temporaire interrompu reste ignoré. Une copie principale
@@ -286,7 +297,8 @@ class StorageSnapshotTests(unittest.TestCase):
                 self.assertEqual(World().blocks, previous)
                 path.write_text('{"blocs":', encoding="utf-8")
                 self.assertEqual(World().blocks, previous)
-                self.assertTrue(world.update({**frame, "t": 601_000, "blocs": [changed]}))
+                # La trame suivante réessaie l'enregistrement en attente.
+                self.assertTrue(world.update({**frame, "t": 634_000, "blocs": [changed]}))
                 self.assertEqual(World().machines()[0]["etat"]["s"], "WORKING")
                 self.assertEqual(World().containers()[0]["t"], 598_000)
 
