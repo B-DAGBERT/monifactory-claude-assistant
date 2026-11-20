@@ -80,7 +80,7 @@ class App(GameController, ConversationController, InterfaceController):
         self.storage = Storage([])
         self.storage_text = None
         self.storage_export_key = None
-        self.known_chests_published = None  # (mémoire du serveur, texte de coffres_connus.json)
+        self.known_chests_published = None  # (mémoire enregistrée, texte de coffres_connus.json)
         self.logged_errors = set()
         self.status = ""
         self.connection_problem = ""
@@ -180,7 +180,10 @@ class App(GameController, ConversationController, InterfaceController):
         try:
             self.root.mainloop()
         finally:
-            self.bridge.close_publications()
+            try:
+                self.world.flush()  # dates de la mémoire du monde encore en attente
+            finally:
+                self.bridge.close_publications()
 
     def poll(self):
         try:

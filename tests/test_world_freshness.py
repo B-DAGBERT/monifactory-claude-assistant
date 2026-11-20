@@ -14,6 +14,8 @@ from monifactory_assistant.application.game import GameController
 from monifactory_assistant.game.recipes import RecipeIndex
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.world import World, describe_world
+from monifactory_assistant.game.world_scope import WorldScope
+from monifactory_assistant.persistence import atomic_json
 
 OVERWORLD = "minecraft:overworld"
 NETHER = "minecraft:the_nether"
@@ -193,3 +195,159 @@ class WorldFreshnessTests(unittest.TestCase):
                 self.assertIn("quantités observées", prompt)
                 self.assertNotIn("objectif", prompt.casefold())
                 self.assertNotIn("état en direct", prompt)
+
+
+class WorldDateSaveTests(unittest.TestCase):
+    """Contenu enregistré et publié aussitôt ; dates seules au plus toutes les 60 s."""
+
+    def setUp(self):
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.path = self.root / "monde_memoire.json"
+        self.clock = self.enterContext(
+            patch("monifactory_assistant.game.world.time.time", return_value=START / 1000)
+        )
+        self.saves = self.enterContext(
+            patch("monifactory_assistant.game.world.atomic_json", wraps=atomic_json)
+        )
+        self.world = World(self.path)
+        self.publish = Mock(return_value=True)
+        self.game = GameController()
+        self.game.bridge = SimpleNamespace(
+            data_path=lambda name: self.root / name, publish_text=self.publish
+        )
+
+    def receive(self, *blocks, t, covered=False, players=()):
+        """Une trame du serveur, puis la publication de coffres_connus.json comme check_game."""
+        self.clock.return_value = t / 1000
+        snapshot = frame(*blocks, t=t, players=players)
+        if covered:
+            snapshot["chunks_complets"] = [[0, 0]]
+        self.assertTrue(self.world.update(snapshot))
+        self.game.publish_known_chests(self.world)
+
+    def saved_dates(self, path=None):
+        return {b["t"] for b in World(path or self.path).blocks.values()}
+
+    def test_same_content_with_new_dates_is_neither_written_nor_republished(self):
+        self.receive(MACHINE, CHEST, t=START, players=[PLAYER])
+        written = self.path.read_bytes()
+        moved = {**PLAYER, "x": 20}
+        self.receive(MACHINE, CHEST, t=START + 3_000, players=[moved])
+        self.assertEqual(self.saves.call_count, 1)
+        self.assertEqual(self.publish.call_count, 1)
+        self.assertEqual(self.path.read_bytes(), written)
+        # La mémoire vive, le direct et les joueurs suivent chaque trame.
+        self.assertEqual({b["t"] for b in self.world.blocks.values()}, {START + 3_000})
+        self.assertEqual((self.world.last_t, self.world.players), (START + 3_000, [moved]))
+        self.assertTrue(self.world.observation_live(self.world.machines()[0]))
+        self.assertIn("état en direct", describe_world(self.world))
+
+    def test_content_change_is_written_with_backup_and_published_at_once(self):
+        self.receive(MACHINE, CHEST, t=START)
+        tin = {**CHEST, "o": [["gtceu:tin_ingot", 8]]}
+        idle = {**MACHINE, "m": {"s": "IDLE"}}
+        mv = {**idle, "b": "gtceu:mv_bender"}
+        steps = (
+            ("objets", (MACHINE, tin), False),
+            ("etat", (idle, tin), False),
+            ("bloc", (mv, tin), False),
+            ("absence", (mv,), True),
+            ("retour", (mv, tin), True),
+        )
+        for count, (label, blocks, covered) in enumerate(steps, start=2):
+            with self.subTest(label):
+                self.receive(*blocks, t=START + 3_000 * (count - 1), covered=covered)
+                self.assertEqual(self.saves.call_count, count)
+                self.assertTrue(self.saves.call_args.kwargs["backup"])
+                self.assertEqual(self.publish.call_count, count)
+                self.assertEqual(World(self.path).blocks, self.world.blocks)
+
+    def test_dates_alone_are_saved_once_per_minute_without_replacing_the_backup(self):
+        tin = {**CHEST, "o": [["gtceu:tin_ingot", 8]]}
+        self.receive(MACHINE, CHEST, t=START)
+        self.receive(MACHINE, tin, t=START + 3_000)
+        backup = self.path.with_name(self.path.name + ".bak")
+        kept = backup.read_bytes()
+        for k in range(2, 21):  # dates seules jusqu'à 60 s après le dernier enregistrement
+            self.receive(MACHINE, tin, t=START + 3_000 * k)
+        self.assertEqual((self.saves.call_count, self.publish.call_count), (2, 2))
+        self.receive(MACHINE, tin, t=START + 63_000)
+        self.assertEqual((self.saves.call_count, self.publish.call_count), (3, 3))
+        self.assertFalse(self.saves.call_args.kwargs["backup"])
+        self.assertEqual(self.saved_dates(), {START + 63_000})
+        self.assertIn(f'"t":{START + 63_000}', self.publish.call_args.args[1])
+        self.assertEqual(backup.read_bytes(), kept)
+        self.assertEqual(len(json.loads(kept)["blocs"]), 2)
+
+    def test_absent_block_keeps_its_first_absence_date(self):
+        key = f"{OVERWORLD}|4|64|0"
+        self.receive(MACHINE, CHEST, t=START, covered=True)
+        self.receive(MACHINE, t=START + 3_000, covered=True)
+        for k in range(2, 23):  # toujours absent pendant plus d'une minute
+            self.receive(MACHINE, t=START + 3_000 * k, covered=True)
+        marker = self.world.blocks[key]
+        self.assertEqual((marker["absent"], marker["objets"]), (True, []))
+        self.assertEqual(marker["t"], START + 3_000)
+        # Absence relevée, puis un seul enregistrement des dates de la machine.
+        self.assertEqual(self.saves.call_count, 3)
+        self.assertEqual(World(self.path).blocks[key]["t"], START + 3_000)
+        published = json.loads(self.publish.call_args.args[1])
+        self.assertEqual(
+            [(c["objets"], c["t"]) for c in published["conteneurs"]], [([], START + 3_000)]
+        )
+        self.assertEqual(self.world.blocks[f"{OVERWORLD}|3|64|0"]["t"], START + 66_000)
+
+    def test_leaving_the_live_view_saves_pending_dates_and_a_failure_keeps_them(self):
+        self.receive(MACHINE, CHEST, t=START)
+        self.receive(MACHINE, CHEST, t=START + 3_000)
+        with patch(
+            "monifactory_assistant.persistence._replace_bytes",
+            side_effect=PermissionError("fichier verrouillé"),
+        ):
+            self.world.invalidate_live()
+        self.assertFalse(self.world.active)
+        self.assertEqual(self.saved_dates(), {START})
+        self.world.invalidate_live()
+        self.assertEqual(self.saved_dates(), {START + 3_000})
+        self.assertFalse(self.saves.call_args.kwargs["backup"])
+        calls = self.saves.call_count
+        self.world.flush()
+        self.assertEqual(self.saves.call_count, calls)
+        self.game.publish_known_chests(self.world)
+        self.assertIn(f'"t":{START + 3_000}', self.publish.call_args.args[1])
+
+    def test_world_session_or_dimension_switch_saves_pending_dates(self):
+        first = WorldScope("m1_" + "a" * 64, "1" * 32, OVERWORLD)
+        switches = (
+            ("connexion", WorldScope(first.world, "2" * 32, OVERWORLD)),
+            ("dimension", WorldScope(first.world, first.session, NETHER)),
+            ("monde", WorldScope("m1_" + "b" * 64, first.session, OVERWORLD)),
+        )
+        for label, scope in switches:
+            with (
+                self.subTest(label),
+                patch("monifactory_assistant.application.game.ROOT", self.root),
+            ):
+                path = self.root / f"{label}.json"
+                world = World(path)
+                self.assertTrue(world.update(frame(MACHINE, CHEST, t=START)))
+                self.assertTrue(world.update(frame(MACHINE, CHEST, t=START + 3_000)))
+                self.assertEqual(self.saved_dates(path), {START})
+                self.game.world, self.game.speaker = world, Mock()
+                self.game.active_world_scope = first
+                self.game.apply_world_scope(scope)
+                self.assertEqual(self.saved_dates(path), {START + 3_000})
+                self.assertEqual(self.game.world is world, label != "monde")
+
+    def test_assistant_exit_saves_pending_dates_and_closes_publications(self):
+        from monifactory_assistant.app import App
+
+        self.receive(MACHINE, CHEST, t=START)
+        self.receive(MACHINE, CHEST, t=START + 3_000)
+        app = App.__new__(App)
+        app.root, app.bridge, app.world = Mock(), Mock(), self.world
+        app.root.mainloop.side_effect = KeyboardInterrupt  # Ctrl+C dans la console
+        with self.assertRaises(KeyboardInterrupt):
+            app.run()
+        self.assertEqual(self.saved_dates(), {START + 3_000})
+        app.bridge.close_publications.assert_called_once_with()

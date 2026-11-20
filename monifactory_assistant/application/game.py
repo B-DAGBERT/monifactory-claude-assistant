@@ -188,9 +188,10 @@ class GameController:
     def publish_known_chests(self, world):
         """Relevés du serveur pour l'onglet Recette du mod (coffres_connus.json), écrits s'ils changent.
 
-        La mémoire du serveur est remplacée à chaque relevé qui la modifie : même objet, rien à faire.
+        Seule la mémoire enregistrée est publiée. Elle est remplacée à chaque changement de contenu,
+        et au plus toutes les 60 s pour des dates seules : même objet, rien à faire.
         """
-        blocks = getattr(world, "blocks", None)
+        blocks = getattr(world, "saved_blocks", None)
         if not isinstance(blocks, dict):
             return
         published = getattr(self, "known_chests_published", None)
