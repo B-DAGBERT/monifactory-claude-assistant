@@ -18,6 +18,8 @@ class Fixture(ConversationController):
                 return_value=("8 plaques, 2 lots, couverture des stocks inconnue.", self.proof)
             ),
             context_valid=Mock(return_value=True),
+            context_bound=Mock(return_value=True),
+            delivery_verdict=Mock(return_value=True),
         )
         self.conversation = SimpleNamespace(ask=Mock())
         self.bridge = SimpleNamespace(scope=None, isolated=False)
@@ -53,7 +55,7 @@ class ProductionConversationTests(unittest.TestCase):
                     "Le calcul prévoit huit plaques.<actions>" + json.dumps(payload) + "</actions>"
                 )
 
-                def ask(prompt, on_text, _on_tool, on_preview):
+                def ask(prompt, on_text, _on_tool, on_preview, **_options):
                     self.assertIn("8 plaques, 2 lots, couverture des stocks inconnue", prompt)
                     self.assertIn("objectif en pause", prompt)
                     self.assertNotIn(ACTIONS_HELP, prompt)
@@ -77,8 +79,10 @@ class ProductionConversationTests(unittest.TestCase):
     def test_a_late_v2_explanation_has_no_preview_voice_or_effect(self, _log):
         app = Fixture()
 
-        def ask(_prompt, on_text, _on_tool, on_preview):
-            app.production.context_valid.return_value = False
+        def ask(_prompt, on_text, _on_tool, on_preview, **_options):
+            # The world changed after sending: neither the binding nor the delivery proof holds.
+            app.production.context_bound.return_value = False
+            app.production.delivery_verdict.return_value = False
             on_text("Ancien monde.")
             on_preview("Ancien aperçu.")
             return "Ancienne réponse."
@@ -92,6 +96,59 @@ class ProductionConversationTests(unittest.TestCase):
         self.assertFalse(app.history)
         app.notify.assert_called_once()
         app.run_actions.assert_not_called()
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_previews_check_the_binding_and_tk_reuses_the_worker_verdict(self, _log):
+        app = Fixture()
+
+        def ask(_prompt, on_text, _on_tool, on_preview, **_options):
+            on_preview("Le calcul")
+            on_text("Le calcul prévoit huit plaques.")
+            return "Le calcul prévoit huit plaques."
+
+        app.conversation.ask.side_effect = ask
+        app.work_question("Explique le plan de production.", None, None)
+        # Only the check before sending and the worker's delivery check reach the client.
+        app.production.context_valid.assert_called_once_with(app.proof)
+        app.production.delivery_verdict.assert_called_once_with(app.proof)
+        self.assertTrue(app.production.context_bound.called)
+        self.assertTrue(app.results("live_text"))
+        ((_kind, question, answer, proof, verdict),) = app.results("answer")
+        self.assertEqual((proof, verdict), (app.proof, True))
+        for _kind, text, preview_proof in app.results("live_text"):
+            app.on_live_text(text, preview_proof)
+        app.on_answer(question, answer, proof, verdict)
+        app.production.context_valid.assert_called_once()
+        app.production.delivery_verdict.assert_called_once()
+        self.assertEqual(app.history[-1]["texte"], "Le calcul prévoit huit plaques.")
+        app.notify.assert_not_called()
+
+    def test_tk_delivery_combines_the_worker_verdict_and_the_current_binding(self):
+        stale = "Le calcul de production n’est plus courant. Relance-le dans Minecraft."
+        unverified = "Le calcul de production n’a pas pu être revérifié. Repose ta question."
+        for verdict, bound, message in (
+            (True, True, None),
+            (False, True, stale),
+            (True, False, stale),
+            (None, True, unverified),
+            (None, False, stale),
+        ):
+            with self.subTest(verdict=verdict, bound=bound):
+                app = Fixture()
+                app.production.context_bound.return_value = bound
+                app.on_answer(
+                    "Explique le plan de production.", "Huit plaques.", app.proof, verdict
+                )
+                if message is None:
+                    app.notify.assert_not_called()
+                    self.assertEqual(app.history[-1]["texte"], "Huit plaques.")
+                else:
+                    app.notify.assert_called_once_with(message, 8)
+                    self.assertFalse(app.history)
+                app.production.context_bound.assert_called_once_with(app.proof)
+                app.production.context_valid.assert_not_called()
+                app.production.delivery_verdict.assert_not_called()
+                app.run_actions.assert_not_called()
 
     @patch("monifactory_assistant.application.conversation.log")
     def test_ordinary_question_keeps_existing_prompt_and_action_guard(self, _log):
@@ -108,6 +165,8 @@ class ProductionConversationTests(unittest.TestCase):
         app.on_answer(*app.results("answer")[0][1:])
         app.run_actions.assert_called_once()
         app.production.context_valid.assert_not_called()
+        app.production.context_bound.assert_not_called()
+        app.production.delivery_verdict.assert_not_called()
 
     @patch("monifactory_assistant.application.conversation.log")
     def test_late_ordinary_answer_is_neither_previewed_nor_spoken(self, _log):
@@ -118,7 +177,7 @@ class ProductionConversationTests(unittest.TestCase):
         app.bridge.scope_valid = Mock(return_value=True)
         app.production.context.return_value = None
 
-        def ask(_prompt, on_text, _on_tool, on_preview):
+        def ask(_prompt, on_text, _on_tool, on_preview, **_options):
             app.bridge.scope = "session-b"
             on_preview("Ancienne réponse")
             on_text("Ancienne réponse.")

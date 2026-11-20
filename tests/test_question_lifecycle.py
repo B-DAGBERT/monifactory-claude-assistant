@@ -235,7 +235,7 @@ class QuestionLifecycleTests(TestCase):
         app.load_places(path)
         initial = path.read_bytes()
 
-        def answer(_prompt, on_text, on_tool, on_preview):
+        def answer(_prompt, on_text, on_tool, on_preview, **_options):
             # The bridge will still carry the admitted scope until the next game tick.
             (app.bridge.dir / "identite_monde.json").unlink()
             self.assertEqual(app.bridge.scope, original)

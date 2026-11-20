@@ -44,6 +44,9 @@ _RESOURCE = re.compile(r"[a-z0-9_.-]+:[a-z0-9_./-]+")
 _MAX_AGE = 45_000
 _RESULT_MAX_AGE = 180_000
 _PROOF_VERSION = 2
+# Une réponse de Discussion attend jusqu’à 2 s le client natif : un à-coup du jeu plus court
+# que ce délai ne révoque pas le calcul.
+_DELIVERY_TIMEOUT = 2.0
 
 
 def _safe(text, limit=300):
@@ -296,18 +299,40 @@ class ProductionService:
             )
         return None
 
+    def context_bound(self, proof):
+        """Liaison de la preuve au résultat courant, sans attestation du client natif.
+
+        Les aperçus et le thread Tk s’en contentent : rien n’est écrit et rien n’attend le
+        client. Comme poll, la vérification relit l’identité du monde et le marqueur du
+        catalogue, dont la lecture reste en cache tant qu’il ne change pas.
+        """
+        with self._lock:
+            return self._bound_context(proof)
+
     def context_valid(self, proof):
+        """Attestation immédiate avant l’envoi ; une boîte occupée ne valide rien."""
+        return self._verdict(proof) is True
+
+    def delivery_verdict(self, proof):
+        """Attestation à la livraison, sur le worker : True, False ou None sans verdict.
+
+        Elle attend la boîte et la réponse du client natif jusqu’à _DELIVERY_TIMEOUT. None
+        signifie qu’un autre consommateur détient la boîte : ce n’est pas une révocation.
+        """
+        return self._verdict(proof, wait=True, timeout=_DELIVERY_TIMEOUT)
+
+    def _verdict(self, proof, *, wait=False, timeout=None):
         with self._lock:
             if not self._bound_context(proof):
                 return False
             catalogue, scope = self._result.get("catalogue"), self._scope
-        current = self._live_catalogue(catalogue, scope)
+        current = self._live_catalogue(catalogue, scope, wait=wait, timeout=timeout)
         with self._lock:
             if not self._bound_context(proof):
                 return False
             if current is False:
                 self._revoke_result()
-            return current is True
+            return None if current is None else current is True
 
     def _bound_context(self, proof):
         if (
@@ -341,11 +366,12 @@ class ProductionService:
         age = int(self.clock() * 1000) - self._result.get("t", 0)
         return 0 <= age <= _RESULT_MAX_AGE
 
-    def _live_catalogue(self, catalogue, scope, *, wait=False):
+    def _live_catalogue(self, catalogue, scope, *, wait=False, timeout=None):
+        """timeout : attente de la réponse du client, celle d’attest_catalogue par défaut."""
         if catalogue is None or scope is None:
             return False  # Every ready consultation is bound to an EMI tree.
         acquired = (
-            self._attestation_lock.acquire(timeout=0.5)
+            self._attestation_lock.acquire(timeout=max(0.5, timeout or 0))
             if wait
             else self._attestation_lock.acquire(blocking=False)
         )
@@ -354,7 +380,8 @@ class ProductionService:
                 None  # Another consumer owns the mailbox; absence of a verdict is not revocation.
             )
         try:
-            return attest_catalogue(self.bridge.dir, scope, catalogue)
+            options = {} if timeout is None else {"timeout": timeout}
+            return attest_catalogue(self.bridge.dir, scope, catalogue, **options)
         finally:
             self._attestation_lock.release()
 
