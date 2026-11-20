@@ -31,6 +31,7 @@ class Conversation:
     def __init__(self, data_dir, clock=None):
         self.clock = clock or time.time
         self.renewed = False
+        self.generation = self._session_generation = object()
         self.impl = ai_provider.conversation(
             data_dir,
             SYSTEM_PROMPT,
@@ -52,23 +53,44 @@ class Conversation:
             return "plus de 4 h sans question"
         return ""
 
-    def ask(self, prompt, on_text=None, on_tool=None, on_preview=None, *, previous=""):
-        self.impl.configure(ai_provider.model("question"), ai_provider.effort("question", "low"))
-        reason = self.renewal_reason()
-        if reason:
-            self.impl.restart()
-            self.renewed = True
-            log(f"Discussion : nouvelle session {ai_provider.label()} ({reason}).")
-        if self.renewed and previous:
-            prompt = previous + "\n\n" + prompt
-        self.impl.count_question(self.clock())
-        answer = self.impl.ask(prompt, on_text, on_tool, on_preview)
-        self.renewed = False
-        return answer
+    def ask(
+        self, prompt, on_text=None, on_tool=None, on_preview=None, *, previous="", generation=None
+    ):
+        with self.impl.lock:
+            self.apply_pending_restart()
+            self.impl.configure(
+                ai_provider.model("question"), ai_provider.effort("question", "low")
+            )
+            reason = self.renewal_reason()
+            if reason:
+                self.impl.restart()
+                self.renewed = True
+                log(f"Discussion : nouvelle session {ai_provider.label()} ({reason}).")
+            if generation is not None and generation is not self.generation:
+                raise ValueError("La conversation a changé pendant la demande.")
+            if self.renewed and previous:
+                prompt = previous + "\n\n" + prompt
+            self.impl.count_question(self.clock())
+            answer = self.impl.ask(prompt, on_text, on_tool, on_preview)
+            self.renewed = False
+            return answer
+
+    def request_restart(self):
+        """Invalide le tour courant sans attendre la fin de l’inférence sur le fil Tk."""
+        self.generation = object()
+
+    def apply_pending_restart(self):
+        """Le worker de remise à zéro ou la prochaine question applique la demande."""
+        with self.impl.lock:
+            generation = self.generation
+            if generation is not self._session_generation:
+                self.impl.restart()
+                self.renewed = False
+                self._session_generation = generation
 
     def restart(self):
-        self.renewed = False  # « Nouvelle conversation » ne reprend aucun échange.
-        return self.impl.restart()
+        self.request_restart()
+        self.apply_pending_restart()
 
     def stop(self):
         return self.impl.stop()

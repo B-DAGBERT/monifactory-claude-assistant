@@ -235,6 +235,7 @@ class ParityTests(unittest.TestCase):
             "App.describe_journal",  # retain usable records beside a damaged record; test_journal_tail.py
             "App.on_talk_start",  # serialize typed and voice questions; test_discussion_menu.py
             "App.on_talk_end",
+            "App.on_new",  # Invalidate the generation before restarting; test_question_lifecycle.py.
             "App.submit",
         }
         tested_action_guard_changes = {

@@ -1,6 +1,7 @@
 """Characterize prompts and delayed turns through the Python application entry points."""
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 from queue import Queue
@@ -8,12 +9,18 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, call, patch
 
+import monifactory_assistant.providers as ai_provider
+import monifactory_assistant.providers.claude as claude
+import monifactory_assistant.providers.codex as codex
 from monifactory_assistant.app import App
 from monifactory_assistant.game.recipes import RecipeIndex
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.world import OBSERVATION_MAX_AGE_MS, observation_date
 from monifactory_assistant.prompts import ACTIONS_HELP
+from monifactory_assistant.providers.session import Conversation
+from monifactory_assistant.ui.discussion import recent_history
 from tests.benchmarks.question_context import START
+from tests.test_discussion_session import FAKE_CLAUDE
 from tests.test_world_routing import (
     NETHER,
     OVERWORLD,
@@ -55,9 +62,14 @@ class QuestionLifecycleTests(TestCase):
                 return_value="Codex",
             )
         )
-        self.thread = self.enterContext(
-            patch("monifactory_assistant.application.conversation.threading.Thread")
-        )
+        self.thread = Mock()
+        for module in ("conversation", "interface"):
+            self.enterContext(
+                patch(
+                    f"monifactory_assistant.application.{module}.threading",
+                    SimpleNamespace(Thread=self.thread),
+                )
+            )
         app = self.app = App.__new__(App)
         app.root, app.speaker = Mock(), Mock()
         app.notify, app.refresh, app.show_overlay = Mock(), Mock(), Mock()
@@ -67,7 +79,7 @@ class QuestionLifecycleTests(TestCase):
         app.active_world_scope = "initialisation"
         app.apply_world_scope(None)
         app.recipe_index = RecipeIndex()
-        app.conversation = SimpleNamespace(ask=Mock(return_value="Réponse."))
+        app.conversation = SimpleNamespace(ask=Mock(return_value="Réponse."), generation=None)
         app.settings = {"voix": False}
         app.busy, app.popup = False, None
         app.history = [{"de": "claude", "texte": "Tour précédent."}]
@@ -96,8 +108,231 @@ class QuestionLifecycleTests(TestCase):
 
     def run_worker(self):
         call = self.thread.call_args.kwargs
-        call["target"](*call["args"])
+        call["target"](*call.get("args", ()))
         return list(self.app.events.queue)
+
+    def use_codex(self):
+        self.enterContext(patch.object(codex, "HERE", self.directory))
+        self.enterContext(patch.object(ai_provider, "CONFIG", {"provider": "codex"}))
+        client = self.enterContext(patch.object(codex, "CLIENT"))
+        sent = []
+
+        def run(prompt, thread, *_args, **options):
+            thread = thread or f"thread-{len(sent)}"
+            options["on_thread"](thread)
+            sent.append((thread, prompt))
+            return self.reply, thread
+
+        client.run.side_effect = run
+        self.reply = "Réponse du moteur."
+        self.app.conversation = Conversation(self.app.bridge.dir)
+        return sent
+
+    def exchange(self, text, *, deliver=True):
+        self.assertTrue(self.app.start_question(text, None))
+        self.run_worker()
+        if deliver:
+            self.app.poll()
+
+    def after_idle(self, text, world=WORLD_A, session=SESSION_A, dimension=OVERWORLD):
+        self.clock.return_value += Conversation.MAX_IDLE + 1
+        self.enter_world(world, session, dimension)
+        self.exchange(text)
+
+    def test_renewal_in_another_world_does_not_send_the_previous_world(self):
+        sent = self.use_codex()
+        self.enter_world()
+        self.exchange("Première question du monde A")
+        self.exchange("Deuxième question du monde A")
+        self.after_idle("Question du monde B", WORLD_B, SESSION_B)
+        self.assertEqual(len(sent), 3)
+        self.assertNotEqual(sent[1][0], sent[2][0])
+        self.assertNotIn("Échanges précédents", sent[2][1])
+        self.assertIn("Ma question : Question du monde B", sent[2][1])
+        self.assertIn("Deuxième question du monde A", [row["texte"] for row in self.app.history])
+
+    def test_renewal_does_not_recall_exchanges_before_new_conversation(self):
+        sent = self.use_codex()
+        self.enter_world()
+        self.exchange("Première question avant remise à zéro")
+        self.exchange("Deuxième question avant remise à zéro")
+        self.app.on_new()
+        self.app.notify.assert_called_once_with("Nouvelle conversation.", 4)
+        self.run_worker()
+        self.exchange("Question depuis la remise à zéro")
+        self.assertNotIn("Échanges précédents", sent[2][1])
+        self.after_idle("Quelle suite ?")
+        self.assertEqual(len(sent), 4)
+        self.assertNotEqual(sent[2][0], sent[3][0])
+        self.assertIn("Question : Question depuis la remise à zéro", sent[3][1])
+        self.assertNotIn("avant remise à zéro", sent[3][1])
+
+    def test_late_answer_is_visible_but_never_recalled_after_reconnection(self):
+        sent = self.use_codex()
+        app = self.app
+        self.enter_world()
+        self.reply = REPLY
+        self.exchange("Question dont la réponse attend dans la file", deliver=False)
+        self.enter_world(session=SESSION_B)
+        app.poll()
+        self.assertFalse(app.places_file.exists())
+        self.assertEqual(
+            app.history[-1]["texte"], "Réponse de la connexion précédente · Voici le lieu."
+        )
+        self.reply = "Réponse de la nouvelle connexion."
+        self.exchange("Question de la nouvelle connexion")
+        self.after_idle("Quelle suite ?", session=SESSION_B)
+        self.assertIn("Question : Question de la nouvelle connexion", sent[-1][1])
+        self.assertNotIn("attend dans la file", sent[-1][1])
+        self.assertNotIn("Voici le lieu", sent[-1][1])
+
+    def test_visible_history_restored_from_disk_is_not_sent_to_the_provider(self):
+        sent = self.use_codex()
+        app = self.app
+        self.enter_world()
+        self.exchange("Question originale")
+        rows = [
+            {"de": "toi", "texte": "Question historique sans provenance"},
+            {"de": "claude", "texte": "Réponse historique sans provenance"},
+        ]
+        dump(app.bridge.dir / "vue_mod.json", {"moteur": "Codex", "ecran": {"conversation": rows}})
+        app.history = recent_history(app.bridge.dir, "Codex")
+        app.conversation = Conversation(app.bridge.dir)
+        self.assertEqual(app.history, rows)
+        self.after_idle("Question après restauration")
+        self.assertEqual(len(sent), 2)
+        self.assertNotEqual(sent[0][0], sent[1][0])
+        self.assertNotIn("historique sans provenance", sent[1][1])
+        self.assertEqual(app.history[:2], rows)
+
+    def test_new_exchanges_without_a_verified_world_remain_visible_only(self):
+        sent = self.use_codex()
+        self.assertIsNone(self.app.bridge.scope)
+        self.exchange("Question hors partie")
+        self.clock.return_value += Conversation.MAX_IDLE + 1
+        self.exchange("Suite hors partie")
+        self.assertEqual(len(sent), 2)
+        self.assertNotEqual(sent[0][0], sent[1][0])
+        self.assertNotIn("Échanges précédents", sent[1][1])
+        self.assertIn({"de": "toi", "texte": "Question hors partie"}, self.app.history)
+
+    def test_display_notification_cannot_answer_a_failed_question_in_recall(self):
+        sent = self.use_codex()
+        self.enter_world()
+        self.exchange("Question livrée")
+        run = codex.CLIENT.run.side_effect
+        codex.CLIENT.run.side_effect = RuntimeError("Inférence interrompue")
+        self.exchange("Question sans réponse")
+        self.app.add_history("claude", "Conseil automatique hors échange.")
+        codex.CLIENT.run.side_effect = run
+        self.after_idle("Quelle suite ?")
+        self.assertEqual(codex.CLIENT.run.call_count, 3)
+        self.assertIn("Question : Question livrée", sent[-1][1])
+        self.assertNotIn("Question sans réponse", sent[-1][1])
+        self.assertNotIn("Conseil automatique hors échange", sent[-1][1])
+
+    def test_same_scope_renewal_sends_two_clean_bounded_exchanges_once(self):
+        sent = self.use_codex()
+        self.enter_world()
+        self.exchange("Premier échange")
+        action = '<actions>[{"type":"memoriser_lieu","nom":"Mine"}]</actions>'
+        long_answer = "Il faut " + "du bronze " * 300
+        self.reply = long_answer + action
+        self.exchange("Q" * 1400)
+        self.reply = "Dans gtceu:bronze_crate." + action
+        self.exchange("Où est le coffre ?")
+        self.after_idle("Quelle suite ?")
+        self.assertEqual(len(sent), 4)
+        self.assertNotEqual(sent[2][0], sent[3][0])
+        prompt = sent[3][1]
+        recall = prompt.split("\n\n", 1)[0]
+        lines = recall.splitlines()
+        self.assertEqual(len(lines), 5)
+        self.assertEqual(lines[1], "Question : " + "Q" * 1199 + "…")
+        self.assertEqual(lines[2], "Réponse : " + long_answer[:1199].rstrip() + "…")
+        self.assertEqual(
+            lines[3:], ["Question : Où est le coffre ?", "Réponse : Dans Bronze Crate."]
+        )
+        self.assertEqual(prompt.count("Ma question : Quelle suite ?"), 1)
+        self.assertNotIn("Premier échange", recall)
+        self.assertNotIn("<actions>", recall)
+
+    def test_switch_to_claude_preserves_world_and_manual_boundaries(self):
+        self.use_codex()
+        app = self.app
+        self.enter_world()
+        self.exchange("Échange Codex dans le monde A")
+        self.app.on_new()
+        self.run_worker()
+        self.enter_world(WORLD_B, SESSION_B)
+        script = self.directory / "fake_claude.py"
+        script.write_text(FAKE_CLAUDE, encoding="utf-8")
+        actual_start = claude.start
+        self.enterContext(patch.object(claude, "HERE", self.directory))
+        self.enterContext(patch.object(claude, "find_claude", return_value=str(script)))
+        self.enterContext(
+            patch.object(
+                claude, "start", side_effect=lambda args: actual_start([sys.executable, *args])
+            )
+        )
+        self.enterContext(patch.object(ai_provider, "CONFIG", {"provider": "claude"}))
+        dump(
+            self.directory / "session_claude.json",
+            {"data_dir": str(app.bridge.dir.resolve()), "session_id": "ancienne-session-claude"},
+        )
+        app.conversation = Conversation(app.bridge.dir)
+        self.addCleanup(app.conversation.stop)
+        self.exchange("Première question Claude dans B")
+        app.on_new()
+        self.run_worker()
+        self.exchange("Question Claude depuis la remise à zéro")
+        self.after_idle("Suite avec Claude", WORLD_B, SESSION_B)
+        requests = [
+            json.loads(line)
+            for line in (self.directory / "requests.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertEqual(len(requests), 3)
+        self.assertNotIn("Échanges précédents", requests[0])
+        self.assertNotIn("Échanges précédents", requests[1])
+        self.assertIn("Question : Question Claude depuis la remise à zéro", requests[2])
+        self.assertNotIn("Première question Claude dans B", requests[2])
+
+    def test_restart_during_inference_discards_old_actions_and_orders_the_next_turn(self):
+        sent = self.use_codex()
+        app = self.app
+        self.enter_world()
+        app.settings["voix"] = True
+        client = codex.CLIENT
+        run = client.run.side_effect
+
+        def reset_during_turn(*args, **options):
+            app.on_new()
+            options["on_preview"]("Aperçu de la conversation précédente.")
+            return run(*args, **options)
+
+        self.reply = REPLY
+        client.run.side_effect = reset_during_turn
+        self.exchange("Question en cours lors de la remise à zéro")
+        self.assertFalse(app.places_file.exists())
+        self.assertEqual(app.message, "")
+        self.assertEqual(
+            app.history[-1]["texte"], "Réponse de la conversation précédente · Voici le lieu."
+        )
+        app.speaker.add.assert_not_called()
+        self.assertFalse(app.busy)
+        reset_worker = self.thread.call_args.kwargs["target"]
+        client.run.side_effect = run
+        self.reply = "Nouvelle réponse."
+        # The question worker may run before the deferred restart worker.
+        self.exchange("Première question de la nouvelle conversation")
+        self.assertNotEqual(sent[0][0], sent[1][0])
+        self.assertNotIn("Échanges précédents", sent[1][1])
+        reset_worker()
+        self.exchange("Deuxième question de la nouvelle conversation")
+        self.assertEqual(sent[1][0], sent[2][0])
+        self.after_idle("Rappel de la nouvelle conversation")
+        self.assertEqual(len(sent), 4)
+        self.assertNotIn("Question en cours lors de la remise à zéro", sent[3][1])
 
     def test_offline_question_has_exact_prompt_and_history(self):
         app = self.app

@@ -26,9 +26,11 @@ Chaque question joint environ 40 Ko de contexte du monde. Comme l’assistant d�
 
 Le compteur et l’heure de la dernière question survivent au redémarrage de l’assistant. La règle est commune à Claude et Codex.
 
-Le renouvellement n’envoie rien. La question en cours part une seule fois, précédée des deux derniers échanges de l’historique affiché dans Discussion. Ce rappel est étiqueté « Échanges précédents ». Les réponses y perdent leurs actions et chaque texte est borné à environ 1 200 caractères. Une question restée sans réponse n’y figure pas et n’est jamais renvoyée. Si la première question de la session neuve échoue, la suivante porte encore le rappel.
+Le renouvellement n’envoie rien. La question en cours part une seule fois, précédée d’au plus deux échanges livrés dans la même portée vérifiée (monde, connexion et dimension) et la même génération de conversation. Ce rappel est étiqueté « Échanges précédents ». Il conserve le texte des réponses sans leurs actions et borne chaque texte à environ 1 200 caractères. Une question restée sans réponse n’y figure pas et n’est jamais renvoyée. Si la première question de la session neuve échoue, la suivante porte encore le rappel admissible.
 
-**Nouvelle conversation** repart sans rappel. Au démarrage, Codex réclame la session enregistrée seulement si elle ne doit pas être renouvelée.
+La provenance du rappel reste en mémoire. Les messages restaurés depuis la vue, les échanges sans portée vérifiée et les réponses livrées après un changement de contexte peuvent rester visibles dans Discussion. Le rappel exclut ces messages.
+
+**Nouvelle conversation** change la génération immédiatement. Une réponse déjà en cours peut arriver et rester visible avec la mention « Réponse de la conversation précédente ». Ses actions sont écartées. Le fournisseur termine la remise à zéro avant d’accepter le premier tour de la nouvelle génération. Au démarrage, Codex réclame la session enregistrée seulement si elle ne doit pas être renouvelée.
 
 ## Lecture du contexte d’une question
 

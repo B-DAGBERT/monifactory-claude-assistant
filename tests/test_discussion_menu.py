@@ -181,6 +181,7 @@ class QuestionInputTests(unittest.TestCase):
             accepts=Mock(return_value=True),
         )
         app.busy, app.popup = False, None
+        app.conversation = SimpleNamespace(generation=object())
         app.speaker = Mock()
         app.recorder = SimpleNamespace(stream=None)
         app.safe_screenshot = Mock(return_value="capture vocale")

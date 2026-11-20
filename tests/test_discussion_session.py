@@ -14,8 +14,10 @@ import monifactory_assistant.providers.claude as claude
 import monifactory_assistant.providers.codex as codex
 from monifactory_assistant.application.conversation import (
     ConversationController,
+    RecallExchange,
     previous_exchanges,
 )
+from monifactory_assistant.game.world_scope import WorldScope
 from monifactory_assistant.prompts import ACTIONS_HELP
 from monifactory_assistant.providers.session import Conversation
 
@@ -225,25 +227,21 @@ class Controller(ConversationController):
 
 
 class RecallAndTimingTests(unittest.TestCase):
-    def test_recall_keeps_two_answered_exchanges_without_actions_and_bounded(self):
+    def test_recall_keeps_two_answered_exchanges_of_the_requested_provenance(self):
+        scope = WorldScope("monde", "connexion", "dimension")
+        other_scope = WorldScope("autre monde", "autre connexion", "dimension")
+        generation = object()
         long_answer = "Il faut " + "du bronze " * 300
-        history = [
-            {"de": "claude", "texte": "Message du coach sans question."},
-            {"de": "toi", "texte": "Première question"},
-            {"de": "claude", "texte": "Première réponse."},
-            {"de": "toi", "texte": "Comment faire des plaques ?"},
-            {
-                "de": "claude",
-                "texte": long_answer
-                + '<actions>[{"type":"surligner","items":["gtceu:bronze_plate"]}]</actions>',
-            },
-            {"de": "claude", "texte": "Certaines actions proposées n’ont pas été exécutées."},
-            {"de": "toi", "texte": "Question restée sans réponse"},
-            {"de": "toi", "texte": "Où est le coffre ?"},
-            {"de": "claude", "texte": "Dans gtceu:bronze_crate près de la base."},
-            {"de": "toi", "texte": "Question en cours"},
+        exchanges = [
+            RecallExchange(scope, generation, "Première question", "Première réponse."),
+            RecallExchange(scope, generation, "Comment faire des plaques ?", long_answer),
+            RecallExchange(other_scope, generation, "Autre monde", "Autre réponse."),
+            RecallExchange(
+                scope, generation, "Où est le coffre ?", "Dans Bronze Crate près de la base."
+            ),
+            RecallExchange(scope, object(), "Autre génération", "Réponse isolée."),
         ]
-        lines = previous_exchanges(history).splitlines()
+        lines = previous_exchanges(exchanges, scope, generation).splitlines()
         self.assertTrue(lines[0].startswith("Échanges précédents"))
         self.assertIn("pas de nouvelles demandes", lines[0])
         self.assertEqual(len(lines), 5)
@@ -257,13 +255,14 @@ class RecallAndTimingTests(unittest.TestCase):
             ["Question : Où est le coffre ?", "Réponse : Dans Bronze Crate près de la base."],
         )
         text = "\n".join(lines)
-        for absent in ("<actions", "surligner", "Première", "coach", "sans réponse", "en cours"):
+        for absent in ("Première", "Autre monde", "Autre génération"):
             self.assertNotIn(absent, text)
-        self.assertEqual(previous_exchanges([]), "")
-        self.assertEqual(previous_exchanges(history[:1]), "")
+        self.assertEqual(previous_exchanges([], scope, generation), "")
+        self.assertEqual(previous_exchanges(exchanges, None, generation), "")
+        self.assertEqual(previous_exchanges(exchanges, scope, None), "")
 
     @patch("monifactory_assistant.application.conversation.log")
-    def test_each_question_offers_the_recall_from_the_displayed_history(self, _log):
+    def test_visible_history_alone_supplies_no_recall(self, _log):
         history = [{"de": "toi", "texte": "Q"}, {"de": "claude", "texte": "R"}]
         app = Controller(history)
         app.work_question("Et ensuite ?", None, None)
@@ -271,8 +270,7 @@ class RecallAndTimingTests(unittest.TestCase):
         self.assertEqual(
             sent.args[0], f"Contexte du joueur\n\n{ACTIONS_HELP}\n\nMa question : Et ensuite ?"
         )
-        self.assertEqual(sent.kwargs["previous"], previous_exchanges(history))
-        self.assertIn("Question : Q\nRéponse : R", sent.kwargs["previous"])
+        self.assertEqual(sent.kwargs["previous"], "")
 
     def test_first_word_is_timed_at_the_first_visible_preview(self):
         clock = [NOW]

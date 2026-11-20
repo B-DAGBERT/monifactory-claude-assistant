@@ -27,6 +27,7 @@ class ConnectionDisplayTests(unittest.TestCase):
                 "on_connection_ready",
                 "on_connection_problem",
                 "question_scope_valid",
+                "question_generation_valid",
             }
         ]
         actions = [{"type": "test"}]
@@ -39,6 +40,7 @@ class ConnectionDisplayTests(unittest.TestCase):
         exec(compile(ast.Module(body=[app], type_ignores=[]), "assistant_mc.py", "exec"), namespace)
         instance = namespace["App"]()
         instance.game = object()
+        instance.question_generation = None
         instance.notify, instance.add_history, instance.refresh, instance.run_actions = (
             Mock(),
             Mock(),

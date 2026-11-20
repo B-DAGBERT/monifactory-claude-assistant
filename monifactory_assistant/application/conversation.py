@@ -4,12 +4,14 @@ import json
 import threading
 import time
 import traceback
+from dataclasses import dataclass
 
 import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.application.question_context import (
     QuestionContextSources,
     build_question_context,
 )
+from monifactory_assistant.game.world_scope import WorldScope
 from monifactory_assistant.persistence import atomic_json
 from monifactory_assistant.platform.hooks import keyboard
 from monifactory_assistant.prompts import ACTIONS_HELP, INFO_REQUEST
@@ -34,34 +36,34 @@ PREVIOUS_EXCHANGES = 2
 PREVIOUS_LIMIT = 1200
 
 
-def previous_exchanges(history, count=PREVIOUS_EXCHANGES, limit=PREVIOUS_LIMIT):
-    """Les derniers échanges affichés dans Discussion, en texte court étiqueté.
+@dataclass(frozen=True)
+class RecallExchange:
+    """Un tour livré avec une provenance vérifiée, conservé en mémoire."""
 
-    Une réponse suit immédiatement sa question dans l’historique. Ses actions sont retirées
-    comme à l’affichage et chaque texte est borné à environ `limit` caractères. Une question
-    restée sans réponse n’est pas reprise.
-    """
+    scope: WorldScope
+    generation: object
+    question: str
+    answer: str
 
-    def said(row, who):
-        if isinstance(row, dict) and row.get("de") == who and isinstance(row.get("texte"), str):
-            return row["texte"]
-        return None
+
+def previous_exchanges(
+    exchanges, scope, generation, count=PREVIOUS_EXCHANGES, limit=PREVIOUS_LIMIT
+):
+    """Les derniers tours livrés dans la même portée et la même génération."""
+    if scope is None or generation is None:
+        return ""
 
     def short(text):
         text = text.strip()
         return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
-    rows, pairs = list(history or ()), []
-    index = len(rows) - 1
-    while index > 0 and len(pairs) < count:
-        question, answer = said(rows[index - 1], "toi"), said(rows[index], "claude")
-        if question is None or answer is None:
-            index -= 1
+    pairs = []
+    for exchange in reversed(exchanges):
+        if len(pairs) >= count:
+            break
+        if exchange.scope != scope or exchange.generation is not generation:
             continue
-        answer = short(readable(split_actions(answer)[0]))
-        if answer:
-            pairs.append((short(question), answer))
-        index -= 2
+        pairs.append((short(exchange.question), short(exchange.answer)))
     if not pairs:
         return ""
     lines = [
@@ -76,6 +78,9 @@ def previous_exchanges(history, count=PREVIOUS_EXCHANGES, limit=PREVIOUS_LIMIT):
 
 class ConversationController:
     """Questions, fiches et commandes vocales de la discussion."""
+
+    recall_exchanges: tuple[RecallExchange, ...] = ()
+    question_generation = None
 
     def prepare_conversation(self):
         try:
@@ -227,6 +232,9 @@ class ConversationController:
             bridge.scope == scope and (scope is None or bridge.scope_valid(scope))
         )
 
+    def question_generation_valid(self, generation):
+        return generation is None or generation is self.conversation.generation
+
     def start_question(self, text, audio, shot=None):
         if self.busy:
             self.notify("Patience, je réfléchis encore…", 4)
@@ -235,6 +243,7 @@ class ConversationController:
             self.notify("Termine l’enregistrement vocal avant de poser une autre question.", 4)
             return False
         self.question_scope = self.world_scope()
+        self.question_generation = self.conversation.generation
         self.busy = True
         try:
             self.set_status(
@@ -253,6 +262,7 @@ class ConversationController:
 
     def work_question(self, text, audio, shot):
         scope = getattr(self, "question_scope", None)
+        generation = self.question_generation
         timing = {"début": time.time()}  # pour le journal : où passe le temps
         try:
             if audio is not None:
@@ -264,6 +274,8 @@ class ConversationController:
                     )
             if not self.question_scope_valid(scope):
                 raise ValueError("Le monde a changé pendant la demande.")
+            if not self.question_generation_valid(generation):
+                raise ValueError("La conversation a changé pendant la demande.")
             self.events.put(("status", f"« {text} » : {ai_provider.label()} réfléchit…"))
             self.events.put(("history", "toi", text))
             spoken = [0]
@@ -271,7 +283,9 @@ class ConversationController:
 
             def show_preview(partial):
                 nonlocal last_preview
-                if not self.question_scope_valid(scope):
+                if not (
+                    self.question_generation_valid(generation) and self.question_scope_valid(scope)
+                ):
                     return None
                 now = time.monotonic()
                 if proof is not None:
@@ -325,11 +339,13 @@ class ConversationController:
             )
 
             def on_tool(name, data):
-                if self.question_scope_valid(scope):
+                if self.question_generation_valid(generation) and self.question_scope_valid(scope):
                     self.events.put(("status", tool_status(name, data)))
 
             if not self.question_scope_valid(scope):
                 raise ValueError("Le monde a changé pendant la préparation de la demande.")
+            if not self.question_generation_valid(generation):
+                raise ValueError("La conversation a changé pendant la demande.")
             if proof is not None and not production.context_valid(proof):
                 raise ValueError(
                     "Le calcul de production a changé pendant la préparation de la demande."
@@ -339,7 +355,8 @@ class ConversationController:
                 on_text,
                 on_tool,
                 show_preview,
-                previous=previous_exchanges(getattr(self, "history", ())),
+                previous=previous_exchanges(self.recall_exchanges, scope, generation),
+                generation=generation,
             )
             # L’attestation de livraison reste sur ce worker ; Tk revérifie seulement la liaison.
             verdict = production.delivery_verdict(proof) if proof is not None else None
@@ -348,6 +365,7 @@ class ConversationController:
                 self.speak
                 and spoken[0] < len(shown)
                 and proof is None
+                and self.question_generation_valid(generation)
                 and self.question_scope_valid(scope)
             ):
                 self.events.put(("voice_text", shown[spoken[0] :], scope))
@@ -370,10 +388,16 @@ class ConversationController:
         self.set_status(text)
 
     def on_voice_text(self, text, scope):
-        if self.speak and self.question_scope_valid(scope):
+        if (
+            self.speak
+            and self.question_generation_valid(self.question_generation)
+            and self.question_scope_valid(scope)
+        ):
             self.speaker.add(text)
 
     def on_live_text(self, text, production_proof=None):
+        if not self.question_generation_valid(self.question_generation):
+            return
         if production_proof is not None and not self.production.context_bound(production_proof):
             visible = getattr(self, "production_message_proof", None)
             if visible is not None and visible == (
@@ -419,7 +443,15 @@ class ConversationController:
             self.add_history("claude", "Réponse de la connexion précédente · " + answer)
             self.refresh(force=True)
             return
+        generation = self.question_generation
+        if not self.question_generation_valid(generation):
+            self.add_history("claude", "Réponse de la conversation précédente · " + answer)
+            self.refresh(force=True)
+            return
         self.add_history("claude", answer)
+        if scope is not None and generation is not None and answer:
+            exchange = RecallExchange(scope, generation, question, answer)
+            self.recall_exchanges = (*self.recall_exchanges, exchange)[-30:]
         if production_proof is not None and self.speak:
             self.speaker.add(answer)
         self.message, self.message_until = answer, time.time() + 180

@@ -312,7 +312,8 @@ class InterfaceController:
         self.open_popup()
 
     def on_new(self):
-        threading.Thread(target=self.conversation.restart, daemon=True).start()
+        self.conversation.request_restart()
+        threading.Thread(target=self.conversation.apply_pending_restart, daemon=True).start()
         self.notify("Nouvelle conversation.", 4)
 
     def on_hide(self):
