@@ -3,9 +3,11 @@
 import json
 import math
 import os
+import sys
 import threading
 import time
 import traceback
+from concurrent.futures import wait
 from datetime import datetime
 
 from monifactory_assistant.game.emi_search import RecipeChestSearch
@@ -15,6 +17,7 @@ from monifactory_assistant.game.storage import Storage, StorageMonitor, known_ch
 from monifactory_assistant.game.veins import find_veins, vein_files_stamp
 from monifactory_assistant.game.world import (
     DATES_PUBLISH_INTERVAL_MS,
+    SaveResult,
     World,
     machine_status,
     observation_date,
@@ -82,8 +85,14 @@ class GameController:
         self.forgotten_keys = set()
         self.storage, self.storage_monitor = Storage([]), StorageMonitor()
         self.emi_search = RecipeChestSearch()
-        self.world.invalidate_live()
+        result = self.world.invalidate_live()
         if scope is None or previous is None or scope.world != previous.world:
+            pending = getattr(self, "_pending_world_saves", {})
+            if result in (SaveResult.FAILED, SaveResult.PENDING):
+                path = self.world.memory_file
+                pending[path] = self.world
+                self._pending_world_saves = pending
+                log(f"Sauvegarde du monde en attente ({len(pending)} partition(s)) : {path}")
             self.session_open = False
             self.journal_file = None
             self.world = World(enabled=False)
@@ -92,10 +101,68 @@ class GameController:
                 folder = scope_folder(ROOT, scope.world, create=True)
                 for name in ("monde_memoire.json", "lieux.json"):
                     scope_file(folder, name + ".bak")
-                self.world = World(scope_file(folder, "monde_memoire.json"))
+                path = scope_file(folder, "monde_memoire.json")
                 self.load_places(scope_file(folder, "lieux.json"))
                 self.journal_file = scope_file(folder, "journal.jsonl")
+                self.world = World(path, partition_root=ROOT, pending=pending.get(path))
+                pending.pop(path, None)
         self.active_world_scope = scope
+
+    def retry_world_saves(self):
+        pending = getattr(self, "_pending_world_saves", {})
+        for path, world in tuple(pending.items()):
+            if not world.save_pending():
+                del pending[path]
+        running = getattr(self, "_world_save_retry", None)
+        if running is not None and not running.done():
+            return
+        self._world_save_retry = None
+        for world in (getattr(self, "world", None), *pending.values()):
+            if world is not None and world.retry_due():
+                self._world_save_retry = world.flush_in_background()
+                path = world.memory_file
+                if path in pending:
+                    pending[path] = pending.pop(path)  # Laisser leur tour aux autres partitions.
+                break
+
+    def flush_world_saves(self):
+        """Fait une dernière tentative par partition avant de rendre la main au processus."""
+        pending = getattr(self, "_pending_world_saves", {})
+        worlds = (*pending.values(), self.world)
+        futures = []
+        running = getattr(self, "_world_save_retry", None)
+        retry_owner = None
+        deadline = time.monotonic() + 2
+        for world in worlds:
+            try:
+                future = world.flush_in_background()
+                if future is not None:
+                    futures.append(future)
+                    if future is running:
+                        retry_owner = world
+            except Exception:
+                log(traceback.format_exc())
+        if retry_owner is not None:
+            wait([running], timeout=max(0, deadline - time.monotonic()))
+            if running.done() and time.monotonic() < deadline:
+                try:
+                    future = retry_owner.flush_in_background()
+                    if future is not None:
+                        futures.append(future)
+                except Exception:
+                    log(traceback.format_exc())
+        wait(futures, timeout=max(0, deadline - time.monotonic()))
+        for world in worlds:
+            try:
+                if not world.save_pending():
+                    pending.pop(world.memory_file, None)
+                    continue
+            except Exception:
+                log(traceback.format_exc())
+            message = f"Erreur de sauvegarde à l’arrêt : observations non confirmées sur disque ({world.memory_file})."
+            log(message)
+            if sys.stderr is not None:
+                print(message, file=sys.stderr)
 
     def watch_game(self):
         try:
@@ -123,6 +190,10 @@ class GameController:
                 self.check_death(state)
                 self.previous_state = state
             self.flush_coach()
+        except Exception:
+            log(traceback.format_exc())
+        try:
+            self.retry_world_saves()
         except Exception:
             log(traceback.format_exc())
         try:

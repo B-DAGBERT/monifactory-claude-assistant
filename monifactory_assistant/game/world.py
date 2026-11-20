@@ -2,22 +2,35 @@
 
 import re
 import time
+from concurrent.futures import Future
 from datetime import datetime
+from enum import Enum, auto
+from threading import Lock, Thread
+from time import monotonic
 
 from monifactory_assistant.game.snapshots import file_stamp
 from monifactory_assistant.game.storage import Storage, distinct_containers
+from monifactory_assistant.game.world_scope import scope_file, scope_folder
 from monifactory_assistant.paths import WORLD_FILE
 from monifactory_assistant.persistence import atomic_json, load_json
 
 OBSERVATION_MAX_AGE_MS = 15_000
 # monde_memoire.json n'est relu qu'au démarrage : au plus un enregistrement toutes les 30 s.
 MEMORY_SAVE_INTERVAL_MS = 30_000
+MEMORY_RETRY_INTERVAL = 5
 # État à publier : contenu aussitôt, dates et niveaux de machine au plus toutes les 60 s.
 DATES_PUBLISH_INTERVAL_MS = 60_000
 # État de machine que voit le joueur : statut, multibloc formé, chaudière à sec. Les niveaux
 # envoyés par etatMachine (pr, du, r, eau, t, vap) bougent à chaque trame, comme les dates.
 VISIBLE_STATE = ("s", "f", "se")
 MAX_INTEGER = 2**53 - 1
+
+
+class SaveResult(Enum):
+    CLEAN = auto()
+    SAVED = auto()
+    FAILED = auto()
+    PENDING = auto()  # Écriture de reprise déjà en cours.
 
 
 def block_name(block_id):
@@ -124,12 +137,31 @@ class World:
     saved_blocks = publishable_blocks = saved_t = None
     publishable_t = 0
     unsaved_content = False  # un contenu attend le fichier : son enregistrement refait la .bak
+    _retry = _retry_at = None
+    _flush_after_retry = False
+    _memory_t = 0
+    _save_lock = partition_root = None
 
-    def __init__(self, path=None, *, enabled=True):
+    def __init__(self, path=None, *, enabled=True, partition_root=None, pending=None):
         self.memory_file = (path or WORLD_FILE) if enabled else None
-        saved = load_json(self.memory_file, {}) if self.memory_file is not None else {}
-        self.blocks = saved.get("blocs", {})  # clé "dimension|x|y|z" -> bloc vu par le serveur
-        self.saved_blocks = self.publishable_blocks = self.blocks  # rien n'attend encore
+        self.partition_root = partition_root
+        if pending is None:
+            # Une reprise d'une autre partition ne doit pas bloquer les écritures du direct.
+            self._save_lock = Lock()
+            saved = load_json(self.memory_file, {}) if self.memory_file is not None else {}
+            self.blocks = saved.get("blocs", {})  # clé "dimension|x|y|z" -> bloc vu par le serveur
+            self.saved_blocks = self.blocks
+        else:
+            # Transférer la mémoire et l'écriture en cours, sans reprendre le contexte du direct.
+            if pending.memory_file != self.memory_file:
+                raise ValueError("La mémoire en attente appartient à une autre partition.")
+            self._save_lock = pending._save_lock
+            self.blocks, self.saved_blocks = pending.blocks, pending.saved_blocks
+            self._memory_t, self.saved_t = pending._memory_t, pending.saved_t
+            self.unsaved_content = pending.unsaved_content
+            self._retry, self._retry_at = pending._retry, pending._retry_at
+            self._flush_after_retry = pending._flush_after_retry
+        self.publishable_blocks = self.blocks
         self.players = []
         self.errors = []
         self.last_t = 0  # heure de la dernière vue du serveur (ms)
@@ -147,25 +179,96 @@ class World:
     def invalidate_live(self):
         """Une sortie du monde clôt le direct, avec conservation du dernier relevé."""
         self.live_dimension = None
-        self.flush()
+        return self.flush()
 
     def flush(self):
-        """Enregistre tout ce que la mémoire vive a de plus que le fichier."""
-        if self.blocks is not self.saved_blocks:
-            self._save(self.blocks, self.last_t)
+        """Enregistre la mémoire en attente et indique si elle reste à sauvegarder."""
+        if not self.save_pending():
+            return SaveResult.CLEAN
+        if self._retry is not None:
+            self._flush_after_retry = True
+            return SaveResult.PENDING
+        return self._save(self.blocks, self._memory_t)
 
     def _save(self, blocks, date):
-        """Un échec, signalé par persistence, garde l'enregistrement en attente."""
-        memory_file = getattr(self, "memory_file", WORLD_FILE)
+        if getattr(self, "memory_file", WORLD_FILE) is None:
+            self.saved_blocks, self.saved_t, self.unsaved_content = blocks, date, False
+            return SaveResult.CLEAN
+        backup = self.unsaved_content
+        result = self._write_memory(blocks, backup)
+        self.unsaved_content = False
+        return self._record_save(result, blocks, date, backup)
+
+    def _write_memory(self, blocks, backup):
+        path = getattr(self, "memory_file", WORLD_FILE)
         try:
-            if memory_file is not None:
-                # La .bak n'est refaite que par un enregistrement qui porte un contenu nouveau.
-                atomic_json(
-                    memory_file, {"blocs": blocks}, backup=self.unsaved_content, compact=True
-                )
+            if self.partition_root is not None:
+                folder = scope_folder(self.partition_root, path.parent.name)
+                if scope_file(folder, path.name) != path:
+                    return SaveResult.FAILED
+                scope_file(folder, path.name + ".bak")
+            atomic_json(path, {"blocs": blocks}, backup=backup, compact=True, lock=self._save_lock)
         except (OSError, ValueError):
-            return
-        self.saved_blocks, self.saved_t, self.unsaved_content = blocks, date, False
+            return SaveResult.FAILED
+        return SaveResult.SAVED
+
+    def _record_save(self, result, blocks, date, backup):
+        if result is SaveResult.SAVED:
+            self.saved_blocks, self.saved_t = blocks, date
+            self._retry_at = (
+                monotonic() if self._flush_after_retry and self.blocks is not blocks else None
+            )
+        else:
+            self.unsaved_content |= backup
+            self._retry_at = monotonic() + MEMORY_RETRY_INTERVAL
+        self._flush_after_retry = False
+        return result
+
+    def _finish_retry(self):
+        if self._retry is not None:
+            future, blocks, date, backup = self._retry
+            if future.done():
+                self._retry = None
+                result = SaveResult.FAILED
+                try:
+                    result = future.result()
+                finally:
+                    self._record_save(result, blocks, date, backup)
+
+    def save_pending(self):
+        self._finish_retry()
+        return (
+            getattr(self, "memory_file", WORLD_FILE) is not None
+            and self.blocks is not self.saved_blocks
+        )
+
+    def retry_due(self):
+        return (
+            self.save_pending()
+            and self._retry is None
+            and self._retry_at is not None
+            and monotonic() >= self._retry_at
+        )
+
+    def flush_in_background(self):
+        """Fige le relevé à écrire. Seul le propriétaire courant applique le résultat."""
+        if not self.save_pending():
+            return None
+        if self._retry is not None:
+            return self._retry[0]
+        future = Future()
+        blocks, backup = self.blocks, self.unsaved_content
+
+        def write():
+            try:
+                future.set_result(self._write_memory(blocks, backup))
+            except Exception as error:
+                future.set_exception(error)
+
+        Thread(target=write, name="monde-memoire", daemon=True).start()
+        self._retry = (future, blocks, self._memory_t, backup)
+        self.unsaved_content = False
+        return future
 
     def observation_live(self, block):
         return (
@@ -274,8 +377,12 @@ class World:
         ):
             self.publishable_blocks, self.publishable_t = memory, date
         self.blocks = memory
-        if memory is not self.saved_blocks and (
-            self.saved_t is None or date - self.saved_t >= MEMORY_SAVE_INTERVAL_MS
+        self._memory_t = date
+        self._finish_retry()
+        if (
+            memory is not self.saved_blocks
+            and self._retry is None
+            and (self.saved_t is None or date - self.saved_t >= MEMORY_SAVE_INTERVAL_MS)
         ):
             self._save(memory, date)
         players, errors = snapshot.get("joueurs"), snapshot.get("erreurs")

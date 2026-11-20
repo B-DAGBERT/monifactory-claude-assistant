@@ -81,7 +81,8 @@ def backup_json(path, raw=None):
         _replace_bytes(path.with_name(path.name + ".bak"), raw, mode)
 
 
-def atomic_json(path, value, *, backup=True, compact=False, backup_kind=None):
+def atomic_json(path, value, *, backup=True, compact=False, backup_kind=None, lock=None):
+    """Use a dedicated lock only when all writes to this file share that lock."""
     path = Path(path)
     raw = json.dumps(
         value,
@@ -90,7 +91,7 @@ def atomic_json(path, value, *, backup=True, compact=False, backup_kind=None):
         separators=(",", ":") if compact else None,
         allow_nan=False,
     ).encode("utf-8")
-    with _LOCK:
+    with _LOCK if lock is None else lock:
         try:
             mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
             if backup and path.exists():

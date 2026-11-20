@@ -12,6 +12,7 @@
 - Vérifier la portée monde, session et dimension avant d’utiliser une demande ou un résultat. Après reconnexion, ignorer les accusés et exports de l’ancienne connexion.
 - Réutiliser l’identité de la demande après un retard ou une nouvelle tentative. Un accusé durable empêche de rejouer l’action. Une erreur dans un parcours doit laisser les autres demandes traitables.
 - Un relevé manquant ou illisible reste indisponible. Les observations historiques restent dans leur monde. Les migrations personnelles sont des commandes explicites.
+- Une reprise d’écriture de `monde_memoire.json` conserve le chemin de la partition d’origine. Elle passe par la mémoire du monde et le contrôleur de jeu. La publication de `coffres_connus.json` utilise la portée active du pont. [Persistance de la mémoire du monde](base.md#règles-à-préserver)
 - Si le script client change, vérifier le numéro de script et la compatibilité avec le JAR. Respecter les permissions de stockage du serveur et le fonctionnement client seul.
 
 ## Tests à lancer

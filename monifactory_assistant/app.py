@@ -182,7 +182,7 @@ class App(GameController, ConversationController, InterfaceController):
             self.root.mainloop()
         finally:
             try:
-                self.world.flush()  # dates de la mémoire du monde encore en attente
+                self.flush_world_saves()
             finally:
                 self.bridge.close_publications()
 
