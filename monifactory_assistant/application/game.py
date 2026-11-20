@@ -14,7 +14,7 @@ from monifactory_assistant.game.snapshots import file_stamp, frame_value
 from monifactory_assistant.game.storage import Storage, StorageMonitor, known_chests
 from monifactory_assistant.game.veins import find_veins, vein_files_stamp
 from monifactory_assistant.game.world import (
-    DATES_SAVE_INTERVAL_MS,
+    DATES_PUBLISH_INTERVAL_MS,
     World,
     machine_status,
     observation_date,
@@ -193,11 +193,11 @@ class GameController:
     def publish_known_chests(self, world):
         """Relevés du serveur pour l'onglet Recette du mod (coffres_connus.json), écrits s'ils changent.
 
-        Seule la mémoire enregistrée est relue, à chaque enregistrement. Un contenu publié différent
-        (objets, blocs, positions) part aussitôt ; des dates plus récentes seules, au plus toutes
-        les 60 s, avec l'enregistrement dû. L'état des machines n'est pas publié.
+        Seul l'état à publier de la mémoire vive est relu, à chaque remplacement, sans attendre le
+        fichier. Un contenu publié différent (objets, blocs, positions) part aussitôt ; des dates
+        plus récentes seules, au plus toutes les 60 s. L'état des machines n'est pas publié.
         """
-        blocks = getattr(world, "saved_blocks", None)
+        blocks = getattr(world, "publishable_blocks", None)
         if not isinstance(blocks, dict):
             return
         published = getattr(self, "known_chests_published", None)
@@ -210,11 +210,11 @@ class GameController:
             [{key: value for key, value in entry.items() if key != "t"} for entry in chests[part]]
             for part in ("conteneurs", "machines")
         ]
-        date = getattr(world, "saved_t", 0)
+        date = getattr(world, "publishable_t", 0)
         if (
             published is not None
             and published[2] == undated
-            and date - published[3] < DATES_SAVE_INTERVAL_MS
+            and date - published[3] < DATES_PUBLISH_INTERVAL_MS
         ):
             self.known_chests_published = (blocks, *published[1:])
             return

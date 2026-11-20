@@ -217,10 +217,19 @@ BOILER = {
 BOILER_KEY = f"{OVERWORLD}|5|64|0"
 
 
-class WorldSaveCadenceTests(unittest.TestCase):
-    """Contenu enregistré aussitôt ; dates et niveaux de machine au plus toutes les 60 s.
+CHEST_KEY = f"{OVERWORLD}|4|64|0"
+MACHINE_KEY = f"{OVERWORLD}|3|64|0"
 
-    coffres_connus.json n'est republié que si son contenu hors dates change.
+
+def tin(n):
+    return {**CHEST, "o": [["gtceu:tin_ingot", n]]}
+
+
+class WorldSaveCadenceTests(unittest.TestCase):
+    """Fichier au plus toutes les 30 s, quel que soit le changement ; la .bak avec un contenu.
+
+    coffres_connus.json part de la mémoire vive : aussitôt si son contenu hors dates change,
+    des dates plus récentes seules au plus toutes les 60 s.
     """
 
     def setUp(self):
@@ -289,7 +298,7 @@ class WorldSaveCadenceTests(unittest.TestCase):
         for shown in ("en marche 20 %", "steam 9000/16000 mB", "en attente (Sortie pleine)"):
             self.assertIn(shown, text)
 
-    def test_visible_machine_state_is_written_at_once_without_republishing(self):
+    def test_visible_machine_state_waits_for_the_next_save_and_is_not_republished(self):
         furnace = {
             "p": [7, 64, 0],
             "b": "gtceu:electric_blast_furnace",
@@ -307,78 +316,100 @@ class WorldSaveCadenceTests(unittest.TestCase):
             ("se", (idle, dry, unformed)),
             ("en marche", (idle, state(dry, pr=1, du=20), unformed)),
         )
-        for count, (label, machines) in enumerate(steps, start=2):
+        for k, (label, machines) in enumerate(steps, start=1):
             with self.subTest(label):
-                self.receive(*machines, CHEST, t=START + 3_000 * (count - 1))
-                self.assertEqual(self.counts(), (count, 1))  # l'état n'est pas publié
-                self.assertTrue(self.saves.call_args.kwargs["backup"])
-                self.assertEqual(World(self.path).blocks, self.world.blocks)
+                self.receive(*machines, CHEST, t=START + 3_000 * k)
+                self.assertEqual(self.counts(), (1, 1))  # l'état n'est pas publié
+        self.assertEqual(World(self.path).blocks[MACHINE_KEY]["etat"]["s"], "WORKING")
+        for k in range(5, 11):  # enregistrement dû 30 s après le premier, avec la .bak
+            self.receive(*steps[-1][1], CHEST, t=START + 3_000 * k)
+        self.assertEqual(self.counts(), (2, 1))
+        self.assertTrue(self.saves.call_args.kwargs["backup"])
+        self.assertEqual(World(self.path).blocks, self.world.blocks)
 
-    def test_contents_change_is_written_and_republished_at_the_next_frame(self):
+    def test_drawer_changing_every_frame_is_republished_at_once_and_saved_every_30_s(self):
         self.receive(MACHINE, CHEST, t=START)
-        tin = {**CHEST, "o": [["gtceu:tin_ingot", 8]]}
-        mv = {**MACHINE, "b": "gtceu:mv_bender"}
-        steps = (
-            ("objets", (MACHINE, tin), False),
-            ("bloc", (mv, tin), False),
-            ("absence", (mv,), True),
-            ("retour", (mv, tin), True),
-        )
-        for count, (label, blocks, covered) in enumerate(steps, start=2):
-            with self.subTest(label):
-                self.receive(*blocks, t=START + 3_000 * (count - 1), covered=covered)
-                self.assertEqual(self.counts(), (count, count))
-                self.assertTrue(self.saves.call_args.kwargs["backup"])
-                self.assertEqual(World(self.path).blocks, self.world.blocks)
-        self.assertIn('"n":8', self.publish.call_args.args[1])
+        for k in range(1, 21):
+            self.receive(MACHINE, tin(9 + k), t=START + 3_000 * k)
+            self.assertEqual(self.publish.call_count, 1 + k)
+            self.assertIn(f'"n":{9 + k}', self.publish.call_args.args[1])
+        self.assertEqual(self.saves.call_count, 3)  # au démarrage, à 30 s et à 60 s
+        self.assertTrue(all(call.kwargs["backup"] for call in self.saves.call_args_list))
+        self.assertEqual(World(self.path).blocks[CHEST_KEY]["objets"][0]["n"], 29)
 
-    def test_dates_and_levels_are_saved_and_republished_once_per_minute(self):
-        tin = {**CHEST, "o": [["gtceu:tin_ingot", 8]]}
+    def test_backup_is_refreshed_only_by_a_save_that_carries_new_content(self):
+        backup = self.path.with_name(self.path.name + ".bak")
+        self.receive(MACHINE, CHEST, t=START)
+        self.receive(MACHINE, tin(8), t=START + 3_000)
+        for k in range(2, 11):  # à 30 s : contenu nouveau, la .bak reçoit l'état précédent
+            self.receive(MACHINE, tin(8), t=START + 3_000 * k)
+        self.assertEqual(self.saves.call_count, 2)
+        self.assertTrue(self.saves.call_args.kwargs["backup"])
+        kept = backup.read_bytes()
+        self.assertEqual(json.loads(kept)["blocs"][CHEST_KEY]["objets"][0]["n"], 9)
+        for k in range(11, 21):  # à 60 s : dates seules, la .bak ne change pas
+            self.receive(MACHINE, tin(8), t=START + 3_000 * k)
+        self.assertEqual(self.saves.call_count, 3)
+        self.assertFalse(self.saves.call_args.kwargs["backup"])
+        self.assertEqual(backup.read_bytes(), kept)
+        for k in range(21, 31):  # nouveau contenu à 63 s, enregistré à 90 s avec la .bak
+            self.receive(MACHINE, CHEST, t=START + 3_000 * k)
+        self.assertEqual(self.saves.call_count, 4)
+        self.assertTrue(self.saves.call_args.kwargs["backup"])
+        self.assertEqual(json.loads(backup.read_bytes())["blocs"][CHEST_KEY]["objets"][0]["n"], 8)
 
+    def test_dates_and_levels_are_saved_every_30_s_and_republished_once_per_minute(self):
         def boiler(k):
             return state(BOILER, vap=[16000 - 100 * k, 16000])
 
         self.receive(BOILER, CHEST, t=START)
-        self.receive(BOILER, tin, t=START + 3_000)
-        backup = self.path.with_name(self.path.name + ".bak")
-        kept = backup.read_bytes()
-        for k in range(2, 21):  # niveaux et dates seuls jusqu'à 60 s après l'enregistrement
-            self.receive(boiler(k), tin, t=START + 3_000 * k)
-        self.assertEqual(self.counts(), (2, 2))
-        self.receive(boiler(21), tin, t=START + 63_000)
-        self.assertEqual(self.counts(), (3, 3))
+        for k in range(1, 20):
+            self.receive(boiler(k), CHEST, t=START + 3_000 * k)
+        self.assertEqual(self.counts(), (2, 1))  # fichier à 30 s, sans .bak
         self.assertFalse(self.saves.call_args.kwargs["backup"])
+        self.receive(boiler(20), CHEST, t=START + 60_000)
+        self.assertEqual(self.counts(), (3, 2))
         saved = World(self.path).blocks
-        self.assertEqual({b["t"] for b in saved.values()}, {START + 63_000})
-        self.assertEqual(saved[BOILER_KEY]["etat"]["vap"], [13900, 16000])
-        self.assertIn(f'"t":{START + 63_000}', self.publish.call_args.args[1])
-        self.assertEqual(backup.read_bytes(), kept)
-        self.assertEqual(len(json.loads(kept)["blocs"]), 2)
-        for k in range(22, 41):
-            self.receive(boiler(k), tin, t=START + 3_000 * k)
-        self.assertEqual(self.counts(), (3, 3))
+        self.assertEqual({b["t"] for b in saved.values()}, {START + 60_000})
+        self.assertEqual(saved[BOILER_KEY]["etat"]["vap"], [14000, 16000])
+        self.assertIn(f'"t":{START + 60_000}', self.publish.call_args.args[1])
+        for k in range(21, 40):
+            self.receive(boiler(k), CHEST, t=START + 3_000 * k)
+        self.assertEqual(self.counts(), (4, 2))
 
     def test_absent_block_keeps_its_first_absence_date(self):
-        key = f"{OVERWORLD}|4|64|0"
         self.receive(MACHINE, CHEST, t=START, covered=True)
         self.receive(MACHINE, t=START + 3_000, covered=True)
         for k in range(2, 23):  # toujours absent pendant plus d'une minute
             self.receive(MACHINE, t=START + 3_000 * k, covered=True)
-        marker = self.world.blocks[key]
+        marker = self.world.blocks[CHEST_KEY]
         self.assertEqual((marker["absent"], marker["objets"]), (True, []))
         self.assertEqual(marker["t"], START + 3_000)
-        # Absence relevée, puis un seul enregistrement des dates de la machine.
-        self.assertEqual(self.saves.call_count, 3)
-        self.assertEqual(World(self.path).blocks[key]["t"], START + 3_000)
+        self.assertEqual(self.saves.call_count, 3)  # au démarrage, à 30 s et à 60 s
+        self.assertEqual(World(self.path).blocks[CHEST_KEY]["t"], START + 3_000)
         published = json.loads(self.publish.call_args.args[1])
         self.assertEqual(
             [(c["objets"], c["t"]) for c in published["conteneurs"]], [([], START + 3_000)]
         )
-        self.assertEqual(self.world.blocks[f"{OVERWORLD}|3|64|0"]["t"], START + 66_000)
+        self.assertEqual(self.world.blocks[MACHINE_KEY]["t"], START + 66_000)
 
-    def test_leaving_the_live_view_saves_pending_levels_and_a_failure_keeps_them(self):
+    def test_restart_reloads_the_last_saved_state(self):
+        self.receive(MACHINE, CHEST, t=START)
+        for k in range(1, 11):  # enregistré à 30 s
+            self.receive(MACHINE, tin(9 + k), t=START + 3_000 * k)
+        self.receive(state(MACHINE, s="IDLE"), tin(30), t=START + 33_000)
+        # Arrêt forcé : rien n'est enregistré à la sortie.
+        restarted = World(self.path)
+        self.assertEqual(restarted.blocks, self.world.saved_blocks)
+        self.assertEqual(restarted.blocks[CHEST_KEY]["objets"][0]["n"], 19)
+        self.assertEqual(restarted.blocks[MACHINE_KEY]["etat"]["s"], "WORKING")
+        self.world.flush()
+        self.assertEqual(World(self.path).blocks, self.world.blocks)
+
+    def test_leaving_the_live_view_saves_everything_pending_and_a_failure_keeps_it(self):
         self.receive(BOILER, CHEST, t=START)
-        self.receive(state(BOILER, vap=[9000, 16000]), CHEST, t=START + 3_000)
+        self.receive(state(BOILER, vap=[9000, 16000]), tin(8), t=START + 3_000)
+        self.assertEqual(self.publish.call_count, 2)  # la publication n'attend pas le fichier
         with patch(
             "monifactory_assistant.persistence._replace_bytes",
             side_effect=PermissionError("fichier verrouillé"),
@@ -387,17 +418,17 @@ class WorldSaveCadenceTests(unittest.TestCase):
         self.assertFalse(self.world.active)
         self.assertEqual(self.saved_dates(), {START})
         self.world.invalidate_live()
-        self.assertEqual(self.saved_dates(), {START + 3_000})
-        self.assertEqual(World(self.path).blocks[BOILER_KEY]["etat"]["vap"], [9000, 16000])
-        self.assertFalse(self.saves.call_args.kwargs["backup"])
+        saved = World(self.path).blocks
+        self.assertEqual({b["t"] for b in saved.values()}, {START + 3_000})
+        self.assertEqual(saved[BOILER_KEY]["etat"]["vap"], [9000, 16000])
+        self.assertEqual(saved[CHEST_KEY]["objets"][0]["n"], 8)
+        self.assertTrue(self.saves.call_args.kwargs["backup"])  # il porte un contenu nouveau
         calls = self.saves.call_count
         self.world.flush()
-        self.assertEqual(self.saves.call_count, calls)
-        # Des dates plus récentes seules attendent la minute suivante pour être republiées.
         self.game.publish_known_chests(self.world)
-        self.assertEqual(self.publish.call_count, 1)
+        self.assertEqual(self.counts(), (calls, 2))
 
-    def test_world_session_or_dimension_switch_saves_pending_levels(self):
+    def test_world_session_or_dimension_switch_saves_everything_pending(self):
         first = WorldScope("m1_" + "a" * 64, "1" * 32, OVERWORLD)
         switches = (
             ("connexion", WorldScope(first.world, "2" * 32, OVERWORLD)),
@@ -413,25 +444,29 @@ class WorldSaveCadenceTests(unittest.TestCase):
                 world = World(path)
                 self.assertTrue(world.update(frame(BOILER, CHEST, t=START)))
                 low = state(BOILER, vap=[9000, 16000])
-                self.assertTrue(world.update(frame(low, CHEST, t=START + 3_000)))
+                self.assertTrue(world.update(frame(low, tin(8), t=START + 3_000)))
                 self.assertEqual(self.saved_dates(path), {START})
                 self.game.world, self.game.speaker = world, Mock()
                 self.game.active_world_scope = first
                 self.game.apply_world_scope(scope)
-                self.assertEqual(self.saved_dates(path), {START + 3_000})
-                self.assertEqual(World(path).blocks[BOILER_KEY]["etat"]["vap"], [9000, 16000])
+                saved = World(path).blocks
+                self.assertEqual({b["t"] for b in saved.values()}, {START + 3_000})
+                self.assertEqual(saved[BOILER_KEY]["etat"]["vap"], [9000, 16000])
+                self.assertEqual(saved[CHEST_KEY]["objets"][0]["n"], 8)
                 self.assertEqual(self.game.world is world, label != "monde")
 
-    def test_assistant_exit_saves_pending_levels_and_closes_publications(self):
+    def test_assistant_exit_saves_everything_pending_and_closes_publications(self):
         from monifactory_assistant.app import App
 
         self.receive(BOILER, CHEST, t=START)
-        self.receive(state(BOILER, vap=[9000, 16000]), CHEST, t=START + 3_000)
+        self.receive(state(BOILER, vap=[9000, 16000]), tin(8), t=START + 3_000)
         app = App.__new__(App)
         app.root, app.bridge, app.world = Mock(), Mock(), self.world
         app.root.mainloop.side_effect = KeyboardInterrupt  # Ctrl+C dans la console
         with self.assertRaises(KeyboardInterrupt):
             app.run()
-        self.assertEqual(self.saved_dates(), {START + 3_000})
-        self.assertEqual(World(self.path).blocks[BOILER_KEY]["etat"]["vap"], [9000, 16000])
+        saved = World(self.path).blocks
+        self.assertEqual({b["t"] for b in saved.values()}, {START + 3_000})
+        self.assertEqual(saved[BOILER_KEY]["etat"]["vap"], [9000, 16000])
+        self.assertEqual(saved[CHEST_KEY]["objets"][0]["n"], 8)
         app.bridge.close_publications.assert_called_once_with()

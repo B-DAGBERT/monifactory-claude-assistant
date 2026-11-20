@@ -265,9 +265,9 @@ class StorageSnapshotTests(unittest.TestCase):
                         self.assertTrue(world.update({**frame, "t": 1000 + 3000 * i}))
                 previous = world.blocks.copy()
                 self.assertTrue(all(b["t"] == 598_000 for b in previous.values()))
-                # Contenu à la première trame, puis des dates seules toutes les 60 s, sans copie.
-                self.assertEqual(writes, ["world.json"] * 10)
-                self.assertTrue(all(b["t"] == 541_000 for b in World().blocks.values()))
+                # Contenu à la première trame, puis des dates seules toutes les 30 s, sans copie.
+                self.assertEqual(writes, ["world.json"] * 20)
+                self.assertTrue(all(b["t"] == 571_000 for b in World().blocks.values()))
                 world.invalidate_live()  # sortie du direct : les dates en attente sont enregistrées
                 self.assertEqual(World().blocks, previous)
                 self.assertNotIn(b"\n", path.read_bytes())
@@ -283,10 +283,10 @@ class StorageSnapshotTests(unittest.TestCase):
                         raise PermissionError("fichier ouvert par un autre programme")
                     return replace(target, raw, mode)
 
+                # Enregistrement dû refusé : la mémoire vive suit, le fichier reste intact.
                 with patch.object(persistence, "_replace_bytes", side_effect=fail_primary):
-                    with self.assertRaises(PermissionError):
-                        world.update({**frame, "t": 601_000, "blocs": [changed]})
-                self.assertEqual(world.blocks, previous)
+                    self.assertTrue(world.update({**frame, "t": 631_000, "blocs": [changed]}))
+                self.assertEqual(world.machines()[0]["etat"]["s"], "WORKING")
                 self.assertEqual(World().blocks, previous)
 
                 # Un fichier temporaire interrompu reste ignoré. Une copie principale
@@ -297,7 +297,8 @@ class StorageSnapshotTests(unittest.TestCase):
                 self.assertEqual(World().blocks, previous)
                 path.write_text('{"blocs":', encoding="utf-8")
                 self.assertEqual(World().blocks, previous)
-                self.assertTrue(world.update({**frame, "t": 601_000, "blocs": [changed]}))
+                # La trame suivante réessaie l'enregistrement en attente.
+                self.assertTrue(world.update({**frame, "t": 634_000, "blocs": [changed]}))
                 self.assertEqual(World().machines()[0]["etat"]["s"], "WORKING")
                 self.assertEqual(World().containers()[0]["t"], 598_000)
 

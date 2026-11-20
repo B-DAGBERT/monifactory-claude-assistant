@@ -80,7 +80,7 @@ class App(GameController, ConversationController, InterfaceController):
         self.storage = Storage([])
         self.storage_text = None
         self.storage_export_key = None
-        # (mémoire relue, texte de coffres_connus.json, contenu sans dates, date d'enregistrement)
+        # (état à publier relu, texte de coffres_connus.json, contenu sans dates, date de l'état)
         self.known_chests_published = None
         self.logged_errors = set()
         self.status = ""

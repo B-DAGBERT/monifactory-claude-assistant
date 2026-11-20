@@ -10,8 +10,10 @@ from monifactory_assistant.paths import WORLD_FILE
 from monifactory_assistant.persistence import atomic_json, load_json
 
 OBSERVATION_MAX_AGE_MS = 15_000
-# Contenu inchangé : dates et niveaux de machine enregistrés et publiés au plus toutes les 60 s.
-DATES_SAVE_INTERVAL_MS = 60_000
+# monde_memoire.json n'est relu qu'au démarrage : au plus un enregistrement toutes les 30 s.
+MEMORY_SAVE_INTERVAL_MS = 30_000
+# État à publier : contenu aussitôt, dates et niveaux de machine au plus toutes les 60 s.
+DATES_PUBLISH_INTERVAL_MS = 60_000
 # État de machine que voit le joueur : statut, multibloc formé, chaudière à sec. Les niveaux
 # envoyés par etatMachine (pr, du, r, eau, t, vap) bougent à chaque trame, comme les dates.
 VISIBLE_STATE = ("s", "f", "se")
@@ -111,20 +113,23 @@ def _same_content(old, new):
 class World:
     """Relevés serveur récents et mémoire persistante des blocs précédemment observés.
 
-    `blocks` porte les dates et niveaux de machine de la dernière trame. `saved_blocks` est la
-    mémoire enregistrée : un changement de contenu y entre aussitôt, des dates et niveaux seuls
-    au plus toutes les DATES_SAVE_INTERVAL_MS, à la sortie du direct et à l'arrêt de l'assistant.
+    `blocks` porte les dates et niveaux de machine de la dernière trame : les consommateurs en
+    direct le lisent. `publishable_blocks` est l'état à publier : un changement de contenu y entre
+    aussitôt, des dates et niveaux seuls au plus toutes les DATES_PUBLISH_INTERVAL_MS.
+    `saved_blocks` est le contenu du fichier : au plus un enregistrement toutes les
+    MEMORY_SAVE_INTERVAL_MS, puis à la sortie du direct et à l'arrêt de l'assistant.
     """
 
-    # Monde créé sans __init__ : rien n'est encore enregistré.
-    saved_blocks = None
-    saved_t = 0
+    # Monde créé sans __init__ : rien n'est encore enregistré ni publié.
+    saved_blocks = publishable_blocks = saved_t = None
+    publishable_t = 0
+    unsaved_content = False  # un contenu attend le fichier : son enregistrement refait la .bak
 
     def __init__(self, path=None, *, enabled=True):
         self.memory_file = (path or WORLD_FILE) if enabled else None
         saved = load_json(self.memory_file, {}) if self.memory_file is not None else {}
         self.blocks = saved.get("blocs", {})  # clé "dimension|x|y|z" -> bloc vu par le serveur
-        self.saved_blocks = self.blocks  # même objet tant qu'aucune date n'attend
+        self.saved_blocks = self.publishable_blocks = self.blocks  # rien n'attend encore
         self.players = []
         self.errors = []
         self.last_t = 0  # heure de la dernière vue du serveur (ms)
@@ -145,19 +150,22 @@ class World:
         self.flush()
 
     def flush(self):
-        """Enregistre les dates gardées en mémoire seulement. Un échec les garde en attente."""
-        if self.blocks is self.saved_blocks:
-            return
-        try:
-            self._save(self.blocks, self.last_t, backup=False)
-        except (OSError, ValueError):
-            pass  # persistence signale l'échec ; le prochain enregistrement réessaie.
+        """Enregistre tout ce que la mémoire vive a de plus que le fichier."""
+        if self.blocks is not self.saved_blocks:
+            self._save(self.blocks, self.last_t)
 
-    def _save(self, blocks, date, *, backup):
+    def _save(self, blocks, date):
+        """Un échec, signalé par persistence, garde l'enregistrement en attente."""
         memory_file = getattr(self, "memory_file", WORLD_FILE)
-        if memory_file is not None:
-            atomic_json(memory_file, {"blocs": blocks}, backup=backup, compact=True)
-        self.saved_blocks, self.saved_t = blocks, date
+        try:
+            if memory_file is not None:
+                # La .bak n'est refaite que par un enregistrement qui porte un contenu nouveau.
+                atomic_json(
+                    memory_file, {"blocs": blocks}, backup=self.unsaved_content, compact=True
+                )
+        except (OSError, ValueError):
+            return
+        self.saved_blocks, self.saved_t, self.unsaved_content = blocks, date, False
 
     def observation_live(self, block):
         return (
@@ -256,13 +264,20 @@ class World:
                 volatile = True
         updated.update(seen)
         memory = updated if content or volatile else self.blocks
-        # Un contenu changé est enregistré aussitôt, avec copie de récupération. Dates et
-        # niveaux seuls attendent l'enregistrement suivant, sans recopier la sauvegarde.
-        if content or (
-            memory is not self.saved_blocks and date - self.saved_t >= DATES_SAVE_INTERVAL_MS
+        if content:
+            # Publié aussitôt ; le prochain enregistrement refera la copie de récupération.
+            self.unsaved_content = True
+            self.publishable_blocks, self.publishable_t = memory, date
+        elif (
+            memory is not self.publishable_blocks
+            and date - self.publishable_t >= DATES_PUBLISH_INTERVAL_MS
         ):
-            self._save(memory, date, backup=content)
+            self.publishable_blocks, self.publishable_t = memory, date
         self.blocks = memory
+        if memory is not self.saved_blocks and (
+            self.saved_t is None or date - self.saved_t >= MEMORY_SAVE_INTERVAL_MS
+        ):
+            self._save(memory, date)
         players, errors = snapshot.get("joueurs"), snapshot.get("erreurs")
         self.players = (
             [
