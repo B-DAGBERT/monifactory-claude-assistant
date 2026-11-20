@@ -113,6 +113,7 @@ def run_world():
                     "frame_p95_ms": percentile(times, 0.95),
                     "frame_max_ms": max(times),
                 }
+            world.flush()  # dates encore en attente, enregistrées à l'arrêt de l'assistant
             read_started = time.perf_counter()
             reboot = World()
             metrics["restart_read_ms"] = (time.perf_counter() - read_started) * 1000

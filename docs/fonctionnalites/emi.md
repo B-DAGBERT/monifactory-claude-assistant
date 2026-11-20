@@ -34,6 +34,19 @@
   le demande. Le stock porté, le tampon relevé, le coffre ordinaire mémorisé et l’entrée d’une
   machine sont des sources différentes. Tester le moule absent, présent et remplacé par une
   autre variante. **Réglages → Diagnostic…** détaille le comptage par plan. [DiagnosticMoules](../../mod/src/main/java/fr/assistantia/compat/emi/DiagnosticMoules.java)
+- Les chemins rejoués à chaque tick ou toutes les 250 ms ne copient ni ne nomment les piles
+  sans nécessité. `GregTechMachines` retrouve une seule fois par classe ses méthodes et champs,
+  absence comprise : un câble ou un tuyau scanné par Repérage ne lève pas d’exception.
+  `OrdonnancementEmi` compare le stock par clé EMI, NBT et provenance, sans texte ni registre,
+  et laisse `FluidUtil` faire l’unique copie unitaire de sa sonde. `AideEcran` compare les
+  comptes de l’écran, pas leur texte.
+- Les boutons **Repérage**, **Suivi** et **Aide…** de la barre EMI sont rangés par écran dans des
+  cartes faibles. Leur action ne capture jamais l’écran : elle retrouve au clic l’écran affiché qui
+  les porte, sinon elle ne fait rien. Un écran fermé, son menu et, après une reconnexion, l’ancien
+  niveau ne restent pas en mémoire. [CoffresArbreEmi](../../mod/src/main/java/fr/assistantia/compat/emi/CoffresArbreEmi.java)
+- À la déconnexion, [Deconnexion](../../mod/src/main/java/fr/assistantia/Deconnexion.java) oublie
+  l’écran de machine, son plan et sa commande de circuit, les reprises d’**Envoyer** et le retour
+  depuis une recette EMI. La partie suivante repart comme au premier usage.
 
 ## Tests à lancer
 
@@ -42,6 +55,8 @@ Depuis la racine du dépôt, dans l’environnement de développement avec JDK 1
 ```sh
 python -m unittest tests.test_emi tests.test_emi_backpack_tree tests.test_recipe_tab
 python -m unittest tests.test_recipe_followed_plan
+python -m unittest tests.test_gregtech_reflexion
+python -m unittest tests.test_emi_toolbar_screens tests.test_logout_world_references
 ```
 
 Pour un changement de stock commun, rejouer le même cas dans EMI, Repérage, Réseau ME et

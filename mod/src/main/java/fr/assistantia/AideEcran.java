@@ -48,7 +48,8 @@ public final class AideEcran {
     private static AbstractContainerScreen<?> ecranActuel;
     private static List<Proposition> propositions = List.of();
     private static Item choisi; // gardé quand la liste change (après une fabrication)
-    private static String cle = ""; // inventaire sur lequel la liste est calculée
+    // Inventaire sur lequel la liste est calculée ; null force le prochain calcul.
+    private static Map<Item, Integer> cle;
     private static Zone occupee;
     private static Disposition disposition;
     private static int page;
@@ -61,7 +62,7 @@ public final class AideEcran {
     @SubscribeEvent
     public static void initialisation(ScreenEvent.Init.Post event) {
         Screen ecran = event.getScreen();
-        cle = "";
+        cle = null;
         prochainCalcul = 0;
         propositions = List.of();
         disposition = null;
@@ -111,7 +112,7 @@ public final class AideEcran {
                 courante = p;
                 break;
             }
-        cle = "";
+        cle = null;
         if (courante == null) {
             informer("Recette modifiée ou ingrédients indisponibles · choix actualisés.");
             return;
@@ -182,12 +183,12 @@ public final class AideEcran {
     @SubscribeEvent
     public static void avantRendu(ScreenEvent.Render.Pre event) {
         if (event.getScreen() != ecranActuel) return;
+        // Comparer les comptes, pas leur texte : toString relit le registre pour chaque objet.
         Map<Item, Integer> stock = stock(ecranActuel);
-        String nouvelleCle = stock.toString();
         long maintenant = System.nanoTime();
-        if (!nouvelleCle.equals(cle) || maintenant >= prochainCalcul) {
+        if (!stock.equals(cle) || maintenant >= prochainCalcul) {
             propositions = calculer(ecranActuel, stock);
-            cle = nouvelleCle;
+            cle = stock;
             // L'arbre, ses réservations et le chargement EMI évoluent sans changer le stock.
             prochainCalcul = maintenant + 250_000_000L;
             occupee = PanneauAssistant.occupeeEtPanneau(ecranActuel);

@@ -49,6 +49,16 @@ public class BridgeWorldScopeTest {
  static JsonObject json(String s){return JsonParser.parseString(s).getAsJsonObject();}
  // Periodic exports are written on the mod's writer thread: wait for them before reading.
  static JsonObject read(String s)throws Exception{assert Ecritures.attendre(5000);return json(Files.readString(root.resolve(s)));}
+ static final String FIN=System.lineSeparator();
+ // A file the writer thread is expected to reach while another target of it still waits.
+ static void attendreTexte(Path p,String texte)throws Exception{
+  for(int i=0;i<500&&!(Files.isRegularFile(p)&&Files.readString(p).equals(texte));i++)Thread.sleep(10);
+  assert Files.readString(p).equals(texte):p;
+ }
+ static String sha(byte[] b)throws Exception{return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(b));}
+ // A non-empty directory in place of the target: every replacement fails until it is removed.
+ static void bloquer(Path p)throws Exception{Files.createDirectories(p.resolve("bloque"));}
+ static void debloquer(Path p)throws Exception{Files.delete(p.resolve("bloque"));Files.delete(p);}
  static void context(String world,String session,String dimension){
   IdentiteMonde.isole=true;IdentiteMonde.monde=world;IdentiteMonde.session=session;
   Minecraft.getInstance().level=new Minecraft.Level();Minecraft.getInstance().level.dim=dimension;
@@ -74,28 +84,39 @@ public class BridgeWorldScopeTest {
    publish(view("legacy"),time);assert Pont.vue().get("title").getAsString().equals("legacy");
    var request=json("{\"type\":\"question\"}");assert Pont.envoyerInventaire(request);
    assert !read("inventaire_joueur.json").has("monde_actif");
-   Pont.ecrireTexte("inventaire_details.txt",List.of("ancien"));assert Files.readString(root.resolve("inventaire_details.txt")).contains("ancien");return;
+   assert Pont.publierInventaireDetaille(List.of("ancien","fer x2"));assert Ecritures.attendre(5000);
+   assert Files.readString(root.resolve("inventaire_details.txt")).equals("ancien"+FIN+"fer x2"+FIN);
+   assert !Files.exists(root.resolve("mondes"));return;
   }
   if(args[0].equals("publication")){
+   // Handed to the writer thread at once; a failed replacement is retried, never dropped.
    Path legacy=root.resolve("inventaire_details.txt");
-   Files.writeString(legacy,"legacy intact");
-   Path tmp=root.resolve("inventaire_details.txt.tmp");Files.createDirectory(tmp);
-   assert !Pont.ecrireTexte("inventaire_details.txt",List.of("nouveau"));
-   assert Files.readString(legacy).equals("legacy intact");Files.delete(tmp);
-   assert Pont.ecrireTexte("inventaire_details.txt",List.of("nouveau"));
-   assert Files.readString(legacy).contains("nouveau");
+   bloquer(legacy);
+   assert Pont.publierInventaireDetaille(List.of("nouveau"));
+   assert !Ecritures.attendre(300)&&Files.isDirectory(legacy);
+   debloquer(legacy);
+   assert Ecritures.attendre(5000);
+   assert Files.readString(legacy).equals("nouveau"+FIN);
    context(a,s1,dim);
-   String prefix="mondes/"+a+"/";Files.createDirectories(root.resolve(prefix));
-   Path metadataTmp=root.resolve(prefix+"inventaire_details_contexte.json.tmp");
-   Files.createDirectory(metadataTmp);
-   assert !Pont.ecrireTexte("inventaire_details.txt",List.of("fer x2"));
-   assert Files.readString(root.resolve(prefix+"inventaire_details.txt")).contains("fer x2");
-   assert !Files.exists(root.resolve(prefix+"inventaire_details_contexte.json"));
-   Files.delete(metadataTmp);
-   assert Pont.ecrireTexte("inventaire_details.txt",List.of("fer x2"));
-   assert Pont.contexteValide(read(prefix+"inventaire_details_contexte.json"));
+   String prefix="mondes/"+a+"/";
+   Path texte=root.resolve(prefix+"inventaire_details.txt");
+   Path marqueur=root.resolve(prefix+"inventaire_details_contexte.json");
+   bloquer(texte);
+   assert Pont.publierInventaireDetaille(List.of("fer x2"));
+   assert !Ecritures.attendre(300)&&!Files.exists(marqueur):"the marker never precedes its text";
+   debloquer(texte);
+   var premier=read(prefix+"inventaire_details_contexte.json");assert Pont.contexteValide(premier);
+   assert premier.get("sha256").getAsString().equals(sha(Files.readAllBytes(texte)));
+   Files.delete(marqueur);bloquer(marqueur);
+   assert Pont.publierInventaireDetaille(List.of("fer x3"));
+   attendreTexte(texte,"fer x3"+FIN);
+   assert !Ecritures.attendre(300)&&Files.isDirectory(marqueur);
+   debloquer(marqueur);
+   var second=read(prefix+"inventaire_details_contexte.json");assert Pont.contexteValide(second);
+   assert second.get("sha256").getAsString().equals(sha(Files.readAllBytes(texte)));
    context("","",dim);
-   assert !Pont.ecrireTexte("inventaire_details.txt",List.of("inconnu"));return;
+   assert !Pont.publierInventaireDetaille(List.of("inconnu"));assert Ecritures.attendre(5000);
+   assert Files.readString(texte).equals("fer x3"+FIN);return;
   }
   context(a,s1,dim);
   if(args[0].equals("transition")){
@@ -124,22 +145,27 @@ public class BridgeWorldScopeTest {
   if(args[0].equals("unknown")){
    context("","",dim);assert !Pont.annoterContexte(new JsonObject());assert !Pont.envoyer(new JsonObject());
    assert !Pont.envoyerInventaire(new JsonObject());assert !Pont.envoyerRechercheEmi(new JsonObject());
-   Pont.ecrireTexte("inventaire_details.txt",List.of("secret"));assert !Files.exists(root.resolve("mondes"));
+   assert !Pont.publierInventaireDetaille(List.of("secret"));assert Ecritures.attendre(5000);
+   assert !Files.exists(root.resolve("mondes"))&&!Files.exists(root.resolve("inventaire_details.txt"));
    Files.writeString(root.resolve("vue_mod.json"),"{\"ecran\":{\"objectif\":\"ancien\"}}");Pont.rafraichir();empty();
    context(a,s1,dim);assert !Pont.contexteValide(json("{\"monde_actif\":true,\"session_monde\":[],\"dimension_monde\":{}}"));
    var partial=new JsonObject();partial.addProperty("monde_actif",a);assert !Pont.annoterContexte(partial);return;
   }
   if(args[0].equals("details")){
    Files.writeString(root.resolve("inventaire_details.txt"),"legacy exact\r\n");
-   Pont.ecrireTexte("inventaire_details.txt",List.of("équipement","fer x2"));
+   assert Pont.publierInventaireDetaille(List.of("équipement","fer x2"));
    String prefix="mondes/"+a+"/";var metadata=read(prefix+"inventaire_details_contexte.json");assert Pont.contexteValide(metadata);
    byte[] bytes=Files.readAllBytes(root.resolve(prefix+"inventaire_details.txt"));
-   assert metadata.get("sha256").getAsString().equals(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)));
+   // Same bytes as the former synchronous write: UTF-8 lines, each ended by the platform separator.
+   assert Arrays.equals(bytes,("équipement"+FIN+"fer x2"+FIN).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+   assert metadata.get("sha256").getAsString().equals(sha(bytes));
+   assert new ArrayList<>(metadata.keySet()).equals(List.of("monde_actif","session_monde","dimension_monde","sha256"));
    assert Files.readString(root.resolve("inventaire_details.txt")).equals("legacy exact\r\n");
-   context(a,s2,dim);assert !Pont.contexteValide(metadata);Pont.ecrireTexte("inventaire_details.txt",List.of("équipement","fer x2"));
+   context(a,s2,dim);assert !Pont.contexteValide(metadata);assert Pont.publierInventaireDetaille(List.of("équipement","fer x2"));
    assert Pont.contexteValide(read(prefix+"inventaire_details_contexte.json"));
-   context(b,s1,dim);Pont.ecrireTexte("inventaire_details.txt",List.of("or"));
+   context(b,s1,dim);assert Pont.publierInventaireDetaille(List.of("or"));assert Ecritures.attendre(5000);
    assert Arrays.equals(bytes,Files.readAllBytes(root.resolve(prefix+"inventaire_details.txt")));
+   assert Files.readString(root.resolve("mondes/"+b+"/inventaire_details.txt")).equals("or"+FIN);
    Pont.ecrireTexte("stats_objets.txt",List.of("catalogue"));assert Files.exists(root.resolve("stats_objets.txt"));return;
   }
   throw new AssertionError(args[0]);
@@ -236,5 +262,5 @@ class BridgeWorldScopeTests(unittest.TestCase):
     def test_scoped_inventory_text_hash_reconnect_and_legacy_preservation(self):
         self.run_case("details")
 
-    def test_text_publication_acknowledges_both_files_and_retries_after_io_failure(self):
+    def test_detail_publication_writes_text_then_marker_and_retries_after_io_failure(self):
         self.run_case("publication")

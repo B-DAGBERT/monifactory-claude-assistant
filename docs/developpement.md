@@ -552,8 +552,9 @@ et la qualité des modèles en partie réelle ne sont pas mesurés ici.
 
 ## Écritures de la mémoire serveur et recherche EMI
 
-La mémoire serveur est écrite en JSON compact avec le même schéma. Chaque observation et sa date
-restent enregistrées immédiatement avec remplacement atomique et copie de récupération. La fusion
+La mémoire serveur est écrite en JSON compact avec le même schéma, par remplacement atomique, au
+plus toutes les 30 s, puis à la sortie du direct ou à l’arrêt. La copie de récupération suit
+chaque enregistrement qui porte un contenu nouveau ([Base](fonctionnalites/base.md)). La fusion
 choisit toujours la source la plus récente avant de préparer la recherche. Le cache EMI compare
 ensuite les positions et les inventaires sous une forme immuable. Les positions en conflit et les
 stocks invalides repassent par le calcul normal.
@@ -692,7 +693,8 @@ jamais et n’attend pas le disque. Pour un même fichier, seul le dernier conte
 plus ancien ne passe jamais après lui. Quand Windows refuse le remplacement parce que l’assistant lit
 encore le fichier, le fil réessaie tant que la demande reste valable (45 s). Les demandes du menu
 tentent une écriture immédiate puis passent par ce fil. `inventaire_joueur.json`, l’identité du monde
-et les raccourcis Mac (signal toutes les 500 ms) l’utilisent aussi.
+et les raccourcis Mac (signal toutes les 500 ms) l’utilisent aussi, comme `inventaire_details.txt`,
+retenté jusqu’à réussite et suivi en mode isolé de son marqueur une fois le texte écrit.
 
 `EchangesKubeJS` est le point d’entrée du script client : `etat.json` et `quetes.json` passent par le
 fil d’écriture, le relevé du serveur (`monde.json`) y est assemblé et vérifié, et la progression des
@@ -717,7 +719,9 @@ Sans le mod, le script écrit directement comme avant. Il ne dessine plus de pan
 n’écrit plus `plan.json` et `fabrication_emi.json` a disparu. Avec `VERSION_SCRIPT` 17,
 le catalogue de Discussion garde deux groupes de fichiers. KubeJS écrit dans le groupe inactif,
 puis publie `recettes_info.json` avec le nombre de parties et la génération. Python vérifie
-chaque partie et conserve l’index précédent si un groupe est incomplet.
+chaque partie et conserve l’index précédent si un groupe est incomplet. Une fois un groupe publié,
+Python supprime l’ancien catalogue sans groupe (`recettes_<n>.json`). Les invites nomment le seul
+groupe actif : Grep ne parcourt plus deux catalogues.
 
 `RelachementSouris` empêche qu’un clic sur la barre EMI ou un panneau de l’assistant (bouton grisé
 compris), ou un retour vers le coffre ou la machine, laisse le relâchement atteindre le conteneur :

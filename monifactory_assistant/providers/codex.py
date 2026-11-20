@@ -2,9 +2,9 @@
 
 import threading
 
-from monifactory_assistant.config import HERE, write_json
-from monifactory_assistant.persistence import load_json
+from monifactory_assistant.config import HERE
 from monifactory_assistant.providers.codex_transport import CLIENT
+from monifactory_assistant.providers.saved_session import SavedSession
 
 
 def instructions(prompt, data_dir):
@@ -44,22 +44,17 @@ def ask(
     return answer
 
 
-class Conversation:
+class Conversation(SavedSession):
     """One saved thread per instance; resuming it does not start an inference."""
+
+    SESSION_KEY = "thread_id"
 
     def __init__(self, data_dir, system_prompt, model, effort="low", timeout=420):
         self.data_dir = data_dir
         self.instructions = instructions(system_prompt, data_dir)
         self.model, self.effort, self.timeout = model, effort, timeout
         self.lock = threading.RLock()
-        self.path = HERE / "session.json"
-        self.session_id = None
-        try:
-            saved = load_json(self.path, {})
-            if saved.get("data_dir") == str(data_dir.resolve()):
-                self.session_id = saved.get("thread_id")
-        except (OSError, ValueError, AttributeError):
-            pass
+        self.load_session(HERE / "session.json", data_dir)
 
     def configure(self, model, effort):
         with self.lock:
@@ -74,8 +69,7 @@ class Conversation:
     def restart(self):
         with self.lock:
             old = self.session_id
-            self.session_id = None
-            write_json(self.path, {"data_dir": str(self.data_dir.resolve()), "thread_id": None})
+            self.forget_session()
             if old and CLIENT.proc and CLIENT.proc.poll() is None:
                 try:
                     CLIENT.request("thread/unsubscribe", {"threadId": old})
@@ -104,9 +98,7 @@ class Conversation:
 
     def _save_thread(self, ident):
         # Save before the first turn: a timeout must not silently discard the conversation.
-        if ident != self.session_id:
-            write_json(self.path, {"data_dir": str(self.data_dir.resolve()), "thread_id": ident})
-            self.session_id = ident
+        self.adopt_session(ident)
 
     def stop(self):
         CLIENT.close()

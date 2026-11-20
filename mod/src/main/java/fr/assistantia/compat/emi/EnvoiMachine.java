@@ -282,6 +282,15 @@ public final class EnvoiMachine {
         return REPRISES;
     }
 
+    /**
+     * Déconnexion : les reprises et leur portée (connexion, niveau, joueur) ne valent que pour la
+     * partie quittée ; la suivante repart comme au premier envoi.
+     */
+    public static void oublierMonde() {
+        REPRISES.clear();
+        porteeReprises = null;
+    }
+
     private static void clic(AbstractContainerMenu menu, Slot slot, int bouton) {
         var mc = Minecraft.getInstance();
         if (mc.player == null || mc.gameMode == null || mc.player.containerMenu != menu)

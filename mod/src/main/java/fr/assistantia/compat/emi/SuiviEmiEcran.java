@@ -628,6 +628,12 @@ public final class SuiviEmiEcran extends Screen {
         }
     }
 
+    /** Déconnexion : le retour depuis la recette EMI ne retient plus le suivi ni son conteneur. */
+    public static void oublierMonde() {
+        retourRecette = null;
+        recetteAffichee = null;
+    }
+
     @net.minecraftforge.eventbus.api.SubscribeEvent
     public static void navigation(net.minecraftforge.client.event.ScreenEvent.Opening event) {
         if (retourRecette == null

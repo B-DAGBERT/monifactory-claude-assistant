@@ -1,4 +1,8 @@
-"""Production stats exporter retries failed publications without forgetting unchanged inputs."""
+"""Production stats exporter retries failed publications without forgetting unchanged inputs.
+
+The live inventory detail is handed to the writer thread only while the assistant runs, and only
+changed stacks have their line (tooltip, attributes, tools) computed again.
+"""
 
 import os
 import shutil
@@ -13,9 +17,13 @@ STUBS = {
  public static final java.util.Map<String,Integer> essais=new java.util.HashMap<>();
  public static final java.util.Set<String> echecs=new java.util.HashSet<>();
  public static final java.util.Map<String,java.util.List<String>> publies=new java.util.HashMap<>();
+ public static boolean actif=true;
  public static String cleContexte(){return "";}
+ public static boolean assistantActif(){return actif;}
  public static boolean ecrireTexte(String nom,java.util.List<String> lignes){essais.merge(nom,1,Integer::sum);
- if(echecs.remove(nom))return false;publies.put(nom,java.util.List.copyOf(lignes));return true;}}
+ if(echecs.remove(nom))return false;publies.put(nom,java.util.List.copyOf(lignes));return true;}
+ public static boolean publierInventaireDetaille(java.util.List<String> lignes){
+ return ecrireTexte("inventaire_details.txt",lignes);}}
 """,
     "fr.assistantia.Emi": 'public class Emi {public static java.util.List<String> postesDeTravail(){return java.util.List.of("machine");}}',
     "fr.assistantia.InventaireJoueur": "public class InventaireJoueur {public static boolean synchronise(){return true;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return java.util.List.of();}}",
@@ -39,14 +47,29 @@ STUBS = {
     "net.minecraft.world.item.ArmorItem": "public class ArmorItem extends Item {public ArmorItem(String id){super(id);}public int getDefense(){return 0;}public float getToughness(){return 0;}}",
     "net.minecraft.world.item.DiggerItem": "public class DiggerItem extends TieredItem {public DiggerItem(String id){super(id);}}",
     "net.minecraft.world.item.TooltipFlag": "public class TooltipFlag {public static final TooltipFlag ADVANCED=new TooltipFlag();}",
+    # Infobulle comptée et dépendante du NBT : une ligne mémorisée à tort se voit dans le texte.
     "net.minecraft.world.item.ItemStack": """public class ItemStack {
- private final Item item;public ItemStack(Item item){this.item=item;}public Item getItem(){return item;}
- public boolean isEmpty(){return item==null;}public int getCount(){return 1;}public int getDamageValue(){return 0;}
- public Object getTag(){return null;}public boolean isDamageableItem(){return false;}public int getMaxDamage(){return 0;}
+ public static int infobulles;
+ private final Item item;public int count=1,damage;public net.minecraft.nbt.CompoundTag tag;
+ public ItemStack(Item item){this.item=item;}public Item getItem(){return item;}
+ public boolean isEmpty(){return item==null;}public int getCount(){return count;}public int getDamageValue(){return damage;}
+ public net.minecraft.nbt.CompoundTag getTag(){return tag;}public boolean isDamageableItem(){return false;}public int getMaxDamage(){return 0;}
  public float getDestroySpeed(Object b){return 1;}public boolean isCorrectToolForDrops(Object b){return false;}
  public net.minecraft.network.chat.Component getHoverName(){return new net.minecraft.network.chat.Component(item.id);}
- public java.util.List<net.minecraft.network.chat.Component> getTooltipLines(Object p,Object f){return java.util.List.of();}
+ public java.util.List<net.minecraft.network.chat.Component> getTooltipLines(Object p,Object f){infobulles++;
+ return java.util.List.of(new net.minecraft.network.chat.Component(item.id),
+  new net.minecraft.network.chat.Component(tag==null?"":"nbt "+tag),
+  new net.minecraft.network.chat.Component("usure "+damage));}
  public java.util.Map<Object,java.util.List<net.minecraft.world.entity.ai.attributes.AttributeModifier>> getAttributeModifiers(Object slot){return java.util.Map.of(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE,java.util.List.of());}}
+""",
+    # Empreinte limitée aux clés : une valeur changée en place garde la même empreinte, et seule
+    # une copie du NBT dans la clé mémorisée évite de reprendre une ligne périmée.
+    "net.minecraft.nbt.CompoundTag": """public class CompoundTag {
+ private final java.util.TreeMap<String,Integer> valeurs=new java.util.TreeMap<>();
+ public void putInt(String cle,int valeur){valeurs.put(cle,valeur);}
+ public CompoundTag copy(){var c=new CompoundTag();c.valeurs.putAll(valeurs);return c;}
+ public boolean equals(Object o){return o instanceof CompoundTag c&&valeurs.equals(c.valeurs);}
+ public int hashCode(){return valeurs.keySet().hashCode();}public String toString(){return valeurs.toString();}}
 """,
     "net.minecraft.world.item.enchantment.Enchantment": 'public class Enchantment {public net.minecraft.network.chat.Component getFullname(int n){return new net.minecraft.network.chat.Component("e");}}',
     "net.minecraft.world.item.enchantment.EnchantmentHelper": "public class EnchantmentHelper {public static java.util.Map<Enchantment,Integer> getEnchantments(Object s){return java.util.Map.of();}}",
@@ -127,3 +150,9 @@ class StatsPublicationTests(unittest.TestCase):
 
     def test_catalogue_and_machine_lists_are_acknowledged_only_after_success(self):
         self.run_case("catalogue")
+
+    def test_unchanged_stacks_keep_their_line_and_the_text_stays_identical(self):
+        self.run_case("memo")
+
+    def test_nothing_is_computed_or_written_until_the_assistant_runs_and_returns(self):
+        self.run_case("inactive")

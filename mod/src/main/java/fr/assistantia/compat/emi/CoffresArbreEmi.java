@@ -104,11 +104,13 @@ public final class CoffresArbreEmi {
                 && !name.equals("dev.emi.emi.screen.RecipeScreen")
                 && !name.equals("dev.emi.emi.screen.BoMScreen")) return;
         var scan = outil("Repérage OFF", b -> basculer());
+        // Les cartes tiennent l'écran faiblement : un bouton qui le capturerait le garderait en
+        // vie pour toujours, avec son menu, le joueur et le niveau. L'écran est retrouvé au clic.
         var suivi =
-                outil("Suivi", b -> ouvrirSuivi(screen))
+                outil("Suivi", b -> ouvrirSuivi(ecranAffiche(suivis, b)))
                         .infobulle("Suivre les fabrications, recalculer ou annuler un lot");
         var menu =
-                outil("Aide…", b -> ouvrirDepuisCoffre(screen, new Menu(screen)))
+                outil("Aide…", b -> ouvrirMenu(ecranAffiche(menus, b)))
                         .infobulle(
                                 "Outils EMI : repérage des coffres et machines, suivi des fabrications");
         boutons.put(screen, scan);
@@ -129,8 +131,18 @@ public final class CoffresArbreEmi {
         return List.of(boutons, suivis, menus);
     }
 
+    /** L'écran affiché qui porte ce bouton, sinon null : rien ne s'ouvre depuis un autre écran. */
+    private static Screen ecranAffiche(Map<Screen, BoutonTheme> carte, Button bouton) {
+        Screen screen = Minecraft.getInstance().screen;
+        return screen != null && carte.get(screen) == bouton ? screen : null;
+    }
+
     private static void ouvrirSuivi(Screen parent) {
-        ouvrirDepuisCoffre(parent, new SuiviEmiEcran(parent));
+        if (parent != null) ouvrirDepuisCoffre(parent, new SuiviEmiEcran(parent));
+    }
+
+    private static void ouvrirMenu(Screen parent) {
+        if (parent != null) ouvrirDepuisCoffre(parent, new Menu(parent));
     }
 
     private static void ouvrirDepuisCoffre(Screen parent, Screen suivant) {

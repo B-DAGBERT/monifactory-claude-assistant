@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from concurrent.futures import Future
@@ -690,7 +691,7 @@ class ProductionServiceTests(unittest.TestCase):
             )
         )
         result = list(app.events.queue)[-1]
-        self.assertEqual(result, ("answer", question, answer, proof))
+        self.assertEqual(result, ("answer", question, answer, proof, True))
         self.write("catalogue_production_etat.json", {**self.metadata, "generation": 2})
         app.on_answer(*result[1:])
         app.notify.assert_called_once_with(
@@ -698,6 +699,101 @@ class ProductionServiceTests(unittest.TestCase):
         )
         self.assertEqual(app.history, [])
         app.run_actions.assert_not_called()
+
+    def discussion(self, ask):
+        app = conversation_fixture()
+        app.production = self.service
+        app.events, app.speaker, app.speak = Queue(), Mock(), False
+        app.history, app.notify, app.refresh, app.run_actions = [], Mock(), Mock(), Mock()
+        app.conversation = SimpleNamespace(ask=Mock(side_effect=ask))
+        return app
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_previews_never_attest_and_the_worker_attests_delivery(self, _log):
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        calls, sent = [], []
+
+        def attest(*_args, **options):
+            calls.append((threading.current_thread(), options))
+            return True
+
+        def ask(_prompt, on_text, _on_tool, on_preview, **_options):
+            sent.append(len(calls))
+            on_preview("Le plan prévoit")
+            on_text("Le plan prévoit huit plaques.")
+            sent.append(len(calls))
+            return "Le plan prévoit huit plaques."
+
+        self.attestation.side_effect = attest
+        app = self.discussion(ask)
+        worker = threading.Thread(
+            target=app.work_question, args=("Explique le plan de production", None, None)
+        )
+        worker.start()
+        worker.join(10)
+        self.assertFalse(worker.is_alive())
+        events = list(app.events.queue)
+        self.assertTrue([event for event in events if event[0] == "live_text"])
+        self.assertEqual(events[-1][0], "answer")
+        self.assertIs(events[-1][-1], True)
+        # Checked before sending, never for previews, then once at delivery.
+        self.assertEqual(sent, [len(calls) - 1] * 2)
+        self.assertTrue(all(thread is worker for thread, _ in calls))
+        self.assertEqual(calls[-1][1], {"timeout": 2.0})
+        attested = len(calls)
+        for event in events:
+            if event[0] in ("live_text", "answer"):
+                getattr(app, "on_" + event[0])(*event[1:])
+        self.assertEqual(len(calls), attested)  # Tk never asks the native client.
+        self.assertEqual(app.history[-1]["texte"], "Le plan prévoit huit plaques.")
+        app.notify.assert_not_called()
+
+    def test_binding_check_never_attests_and_delivery_waits_longer(self):
+        self.service.submit(self.request())
+        self.finish()
+        _, proof = self.service.context("explique la production")
+        self.attestation.reset_mock()
+        self.assertTrue(self.service.context_bound(proof))
+        self.attestation.assert_not_called()
+        self.assertIs(self.service.delivery_verdict(proof), True)
+        self.attestation.assert_called_once_with(
+            self.data, self.scope, self.service.view()["resultat"]["catalogue"], timeout=2.0
+        )
+        self.reconnect()
+        self.assertFalse(self.service.context_bound(proof))
+        self.assertIs(self.service.delivery_verdict(proof), False)
+        self.attestation.assert_called_once()
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_delivery_without_a_verdict_is_not_a_revocation(self, _log):
+        self.enterContext(patch("monifactory_assistant.production.service._DELIVERY_TIMEOUT", 0.05))
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        _, proof = self.service.context("explique la production")
+        with self.service._attestation_lock:  # Another consumer owns the mailbox.
+            self.assertIsNone(self.service.delivery_verdict(proof))
+        self.assertEqual(self.service.view()["resultat"]["etat"], "pret")
+
+        def ask(_prompt, _on_text, _on_tool, _on_preview, **_options):
+            self.service._attestation_lock.acquire()
+            return "Le plan prévoit huit plaques."
+
+        app = self.discussion(ask)
+        try:
+            app.work_question("Explique le plan de production", None, None)
+        finally:
+            self.service._attestation_lock.release()
+        result = list(app.events.queue)[-1]
+        self.assertEqual((result[0], result[3], result[4]), ("answer", proof, None))
+        app.on_answer(*result[1:])
+        app.notify.assert_called_once_with(
+            "Le calcul de production n’a pas pu être revérifié. Repose ta question.", 8
+        )
+        self.assertEqual(app.history, [])
+        app.run_actions.assert_not_called()
+        self.assertEqual(self.service.view()["resultat"]["etat"], "pret")
+        self.assertTrue(self.service.context_valid(proof))
 
     def test_readable_old_catalogue_without_live_client_cannot_authorize_ai(self):
         self.service.submit(self.request())

@@ -1,6 +1,7 @@
 package fr.assistantia;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -26,17 +27,19 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Les caractéristiques des objets, que les recettes ne donnent pas, pour que Codex réponde à «
  * quelle pioche est la meilleure ? » : durabilité, ce qu'un outil peut miner et à quelle vitesse,
  * dégâts, armure, enchantements, et l'infobulle complète du jeu (ce que les mods y ajoutent :
  * niveau de minage GregTech, charge, contenu...). - inventaire_details.txt : ce que le joueur a sur
- * lui et dans le coffre ouvert, mis à jour en direct ; - stats_objets.txt : tous les outils, armes
- * et armures du pack (écrit une fois par lancement du jeu).
+ * lui et dans le coffre ouvert, mis à jour en direct si l'assistant tourne ; - stats_objets.txt :
+ * tous les outils, armes et armures du pack (écrit une fois par lancement du jeu).
  */
 public final class Stats {
     private static final String ENTETE =
@@ -48,6 +51,17 @@ public final class Stats {
     private static final String[] NOMS_REPERES = {
         "Stone", "Iron Ore", "Diamond Ore", "Obsidian", "Ancient Debris"
     };
+
+    /** Lignes des piles déjà vues, les moins récemment lues oubliées au-delà de cette taille. */
+    private static final int LIGNES_MAX = 512;
+
+    private static final Map<Pile, String> LIGNES =
+            new LinkedHashMap<>(64, 0.75F, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Pile, String> ancienne) {
+                    return size() > LIGNES_MAX;
+                }
+            };
     private static int tick;
     private static String signature;
     private static int prochainePublicationCatalogue;
@@ -86,8 +100,17 @@ public final class Stats {
         }
     }
 
-    /** Ce que le joueur a sur lui (et dans le coffre ouvert), réécrit seulement quand ça change. */
+    /**
+     * Ce que le joueur a sur lui (et dans le coffre ouvert), réécrit seulement quand ça change et
+     * seulement pour l'assistant : seule son IA lit ce fichier. Sans lui, rien n'est relevé ; à son
+     * retour, le fichier est réécrit même si rien n'a changé.
+     */
     private static void inventaire(Player joueur) {
+        if (!Pont.assistantActif()) {
+            signature = null;
+            LIGNES.clear();
+            return;
+        }
         List<String> emplacements = new ArrayList<>();
         List<ItemStack> objets = new ArrayList<>();
         Inventory inv = joueur.getInventory();
@@ -136,9 +159,65 @@ public final class Stats {
         List<String> lignes = new ArrayList<>();
         lignes.add(ENTETE);
         for (int i = 0; i < objets.size(); i++) {
-            lignes.add(ligne(emplacements.get(i), objets.get(i), joueur));
+            lignes.add(emplacements.get(i) + " | " + ligneMemorisee(objets.get(i), joueur));
         }
-        if (Pont.ecrireTexte("inventaire_details.txt", lignes)) signature = nouvelle.toString();
+        // Retenue une fois l'écriture confiée au fil d'écriture : sinon, nouvel essai plus tard.
+        if (Pont.publierInventaireDetaille(lignes)) signature = nouvelle.toString();
+    }
+
+    /**
+     * La ligne d'une pile sans son emplacement, recalculée seulement si l'objet, la quantité,
+     * l'usure ou le NBT ont changé : infobulle, attributs et outils coûtent cher à relire.
+     */
+    private static String ligneMemorisee(ItemStack s, Player joueur) {
+        Pile cle = new Pile(s.getItem(), s.getCount(), s.getDamageValue(), s.getTag());
+        String ligne = LIGNES.get(cle);
+        if (ligne == null) {
+            ligne = ligne(null, s, joueur);
+            LIGNES.put(cle.copie(), ligne);
+        }
+        return ligne;
+    }
+
+    /**
+     * Ce dont dépend la ligne d'une pile. La clé retenue garde une copie du NBT, modifiable dans la
+     * pile ; une recherche lit celui de la pile sans le copier.
+     */
+    private static final class Pile {
+        private final Item objet;
+        private final int nombre, usure, empreinte;
+        private final CompoundTag tag;
+
+        Pile(Item objet, int nombre, int usure, CompoundTag tag) {
+            this(objet, nombre, usure, tag, Objects.hash(objet, nombre, usure, tag));
+        }
+
+        private Pile(Item objet, int nombre, int usure, CompoundTag tag, int empreinte) {
+            this.objet = objet;
+            this.nombre = nombre;
+            this.usure = usure;
+            this.tag = tag;
+            this.empreinte = empreinte;
+        }
+
+        Pile copie() {
+            return tag == null ? this : new Pile(objet, nombre, usure, tag.copy(), empreinte);
+        }
+
+        @Override
+        public int hashCode() {
+            return empreinte;
+        }
+
+        @Override
+        public boolean equals(Object autre) {
+            return autre instanceof Pile p
+                    && objet == p.objet
+                    && nombre == p.nombre
+                    && usure == p.usure
+                    && empreinte == p.empreinte
+                    && Objects.equals(tag, p.tag);
+        }
     }
 
     private static void avancerCatalogue(Player joueur) {

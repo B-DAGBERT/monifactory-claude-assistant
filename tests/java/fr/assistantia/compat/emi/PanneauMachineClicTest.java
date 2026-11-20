@@ -321,7 +321,40 @@ public final class PanneauMachineClicTest {
         aucunEnvoi();
     }
 
+    private static Object champ(String nom) throws ReflectiveOperationException {
+        var champ = MachinesEmi.class.getDeclaredField(nom);
+        champ.setAccessible(true);
+        return champ.get(null);
+    }
+
+    /** Déconnexion : écran, plan et commande de circuit oubliés, puis premier usage intact. */
+    private void deconnexion() throws ReflectiveOperationException {
+        var circuit = pile("gtceu:programmed_circuit", 1);
+        circuit.chance = 0;
+        var recette = new GTEmiRecipe(List.of(pile("tin", 2), circuit), List.of());
+        recette.outputs = List.of(pile("produit", 1));
+        GregTechMachines.machineCircuit = 3;
+        preparer(recette, 3);
+        var image = rendre();
+        assert image.circuit() && image.actionActive();
+        for (String nom : List.of("ecran", "plan", "commandeCircuit")) assert champ(nom) != null;
+        MachinesEmi.oublierMonde();
+        for (String nom : List.of("ecran", "plan", "commandeCircuit"))
+            assert champ(nom) == null : nom;
+        assert rendre() == null && !clic(image.disposition().prendre(), 0);
+        assert ReglageCircuitMachine.envoyee == null;
+        aucunEnvoi();
+        GregTechMachines.machineCircuit = 7;
+        MachinesEmi.init(new ScreenEvent.Init.Post(ecran));
+        afficherA();
+        System.out.println("PASS deconnexion");
+    }
+
     public static void main(String[] args) throws ReflectiveOperationException {
+        if (args.length > 0 && args[0].equals("deconnexion")) {
+            new PanneauMachineClicTest().deconnexion();
+            return;
+        }
         new PanneauMachineClicTest().ancienneImage();
         new PanneauMachineClicTest().aToujoursValide(false);
         new PanneauMachineClicTest().aToujoursValide(true);

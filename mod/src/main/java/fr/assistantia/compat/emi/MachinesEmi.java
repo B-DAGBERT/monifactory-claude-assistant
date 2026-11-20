@@ -1046,6 +1046,13 @@ public final class MachinesEmi {
         actualise = 0;
     }
 
+    /** Déconnexion : l'écran de machine, son plan et sa commande de circuit sont oubliés. */
+    public static void oublierMonde() {
+        ecran = null;
+        plan = null;
+        commandeCircuit = null;
+    }
+
     private static boolean affiche(Screen s) {
         var player = Minecraft.getInstance().player;
         return s == ecran

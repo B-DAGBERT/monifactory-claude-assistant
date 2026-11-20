@@ -10,6 +10,13 @@ from monifactory_assistant.paths import WORLD_FILE
 from monifactory_assistant.persistence import atomic_json, load_json
 
 OBSERVATION_MAX_AGE_MS = 15_000
+# monde_memoire.json n'est relu qu'au démarrage : au plus un enregistrement toutes les 30 s.
+MEMORY_SAVE_INTERVAL_MS = 30_000
+# État à publier : contenu aussitôt, dates et niveaux de machine au plus toutes les 60 s.
+DATES_PUBLISH_INTERVAL_MS = 60_000
+# État de machine que voit le joueur : statut, multibloc formé, chaudière à sec. Les niveaux
+# envoyés par etatMachine (pr, du, r, eau, t, vap) bougent à chaque trame, comme les dates.
+VISIBLE_STATE = ("s", "f", "se")
 MAX_INTEGER = 2**53 - 1
 
 
@@ -83,13 +90,46 @@ def _block_observation(block, dimension, zone, date):
     }
 
 
+def _visible_state(state):
+    """Statut, alertes et « en marche » de machine_status, sans les niveaux ; None sans machine."""
+    if not isinstance(state, dict):
+        return state
+    return (
+        *(state.get(key) for key in VISIBLE_STATE),
+        state.get("s") == "WORKING" and bool(state.get("du")),
+    )
+
+
+def _same_content(old, new):
+    """Même bloc, même contenu : seuls la date et les niveaux de la machine peuvent différer."""
+    return (
+        isinstance(old, dict)
+        and old.keys() == new.keys()
+        and all(old[key] == new[key] for key in new if key not in ("t", "etat"))
+        and _visible_state(old["etat"]) == _visible_state(new["etat"])
+    )
+
+
 class World:
-    """Relevés serveur récents et mémoire persistante des blocs précédemment observés."""
+    """Relevés serveur récents et mémoire persistante des blocs précédemment observés.
+
+    `blocks` porte les dates et niveaux de machine de la dernière trame : les consommateurs en
+    direct le lisent. `publishable_blocks` est l'état à publier : un changement de contenu y entre
+    aussitôt, des dates et niveaux seuls au plus toutes les DATES_PUBLISH_INTERVAL_MS.
+    `saved_blocks` est le contenu du fichier : au plus un enregistrement toutes les
+    MEMORY_SAVE_INTERVAL_MS, puis à la sortie du direct et à l'arrêt de l'assistant.
+    """
+
+    # Monde créé sans __init__ : rien n'est encore enregistré ni publié.
+    saved_blocks = publishable_blocks = saved_t = None
+    publishable_t = 0
+    unsaved_content = False  # un contenu attend le fichier : son enregistrement refait la .bak
 
     def __init__(self, path=None, *, enabled=True):
         self.memory_file = (path or WORLD_FILE) if enabled else None
         saved = load_json(self.memory_file, {}) if self.memory_file is not None else {}
         self.blocks = saved.get("blocs", {})  # clé "dimension|x|y|z" -> bloc vu par le serveur
+        self.saved_blocks = self.publishable_blocks = self.blocks  # rien n'attend encore
         self.players = []
         self.errors = []
         self.last_t = 0  # heure de la dernière vue du serveur (ms)
@@ -107,6 +147,25 @@ class World:
     def invalidate_live(self):
         """Une sortie du monde clôt le direct, avec conservation du dernier relevé."""
         self.live_dimension = None
+        self.flush()
+
+    def flush(self):
+        """Enregistre tout ce que la mémoire vive a de plus que le fichier."""
+        if self.blocks is not self.saved_blocks:
+            self._save(self.blocks, self.last_t)
+
+    def _save(self, blocks, date):
+        """Un échec, signalé par persistence, garde l'enregistrement en attente."""
+        memory_file = getattr(self, "memory_file", WORLD_FILE)
+        try:
+            if memory_file is not None:
+                # La .bak n'est refaite que par un enregistrement qui porte un contenu nouveau.
+                atomic_json(
+                    memory_file, {"blocs": blocks}, backup=self.unsaved_content, compact=True
+                )
+        except (OSError, ValueError):
+            return
+        self.saved_blocks, self.saved_t, self.unsaved_content = blocks, date, False
 
     def observation_live(self, block):
         return (
@@ -185,6 +244,7 @@ class World:
             else set()
         )
         updated = dict(self.blocks)
+        content = volatile = False  # volatile : dates ou niveaux de machine seulement
         if complete:
             for key, b in self.blocks.items():
                 if (
@@ -192,13 +252,32 @@ class World:
                     and (b["x"] // 16, b["z"] // 16) in complete
                     and key not in seen
                 ):
+                    if b.get("absent") is True and b.get("objets") == [] and b.get("etat") is None:
+                        continue  # Absence déjà relevée : garder sa première date.
                     updated[key] = {**b, "t": date, "objets": [], "etat": None, "absent": True}
+                    content = True
+        for key, observation in seen.items():
+            previous = self.blocks.get(key)
+            if previous is None or not _same_content(previous, observation):
+                content = True
+            elif previous != observation:
+                volatile = True
         updated.update(seen)
-        if updated != self.blocks:
-            memory_file = getattr(self, "memory_file", WORLD_FILE)
-            if memory_file is not None:
-                atomic_json(memory_file, {"blocs": updated}, compact=True)
-            self.blocks = updated
+        memory = updated if content or volatile else self.blocks
+        if content:
+            # Publié aussitôt ; le prochain enregistrement refera la copie de récupération.
+            self.unsaved_content = True
+            self.publishable_blocks, self.publishable_t = memory, date
+        elif (
+            memory is not self.publishable_blocks
+            and date - self.publishable_t >= DATES_PUBLISH_INTERVAL_MS
+        ):
+            self.publishable_blocks, self.publishable_t = memory, date
+        self.blocks = memory
+        if memory is not self.saved_blocks and (
+            self.saved_t is None or date - self.saved_t >= MEMORY_SAVE_INTERVAL_MS
+        ):
+            self._save(memory, date)
         players, errors = snapshot.get("joueurs"), snapshot.get("erreurs")
         self.players = (
             [

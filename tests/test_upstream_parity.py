@@ -243,11 +243,17 @@ class ParityTests(unittest.TestCase):
         tested_storage_changes = {
             "Storage.twins",  # Position evidence before treating two chests as halves.
         }  # test_storage_memory.py and test_recipe_tab.py.
+        tested_recipe_changes = {
+            "RecipeIndex.items_in",  # a material name joins its ingot and dust, gem otherwise
+            "RecipeIndex.about",  # recycling of finished items comes last
+            "RecipeIndex.hint",  # names the active recipe group
+        }  # test_question_context.py.
         tested_changes = (
             tested_resilience_changes
             | tested_bridge_changes
             | tested_action_guard_changes
             | tested_storage_changes
+            | tested_recipe_changes
         )
         compatibility_changes |= tested_changes
         checked = 0
