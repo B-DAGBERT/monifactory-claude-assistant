@@ -289,6 +289,10 @@ class GameController:
         elif self.recipe_stamp() == stamp:
             self.recipe_index = loaded
             self.recipe_revision = stamp
+            # Un groupe a ou b publié rend caduc l'ancien catalogue sans groupe, que Grep lirait aussi.
+            removed = loaded.remove_legacy_parts(self.bridge.dir)
+            if removed:
+                log("Ancien catalogue de recettes supprimé : " + ", ".join(removed))
 
     def on_game_connected(self):
         if self.session_open:

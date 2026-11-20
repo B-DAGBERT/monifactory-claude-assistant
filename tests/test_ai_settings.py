@@ -365,7 +365,7 @@ def app_logic():
         log=Mock(),
         ask_claude=Mock(return_value="answer"),
         parse_info=lambda text: text,
-        INFO_REQUEST="Info {nom} {item}",
+        INFO_REQUEST="Info {nom} {item} {recettes}",
         SYSTEM_PROMPT="rules",
         TIMEOUT=420,
     )
@@ -390,7 +390,9 @@ class DynamicRoutingTests(unittest.TestCase):
         }
         logic = app_logic()
         app = logic["App"]()
-        app.recipe_index = SimpleNamespace(about=lambda _: "known")
+        app.recipe_index = SimpleNamespace(
+            about=lambda _: "known", catalog_files="recettes_a_*.json"
+        )
         app.bridge = SimpleNamespace(dir=Path("/fake/game"), read=lambda _: {})
         app.context = lambda *args, **kwargs: "context"
         app.events = queue.Queue()
@@ -403,6 +405,9 @@ class DynamicRoutingTests(unittest.TestCase):
             conversation = logic["Conversation"](app.bridge.dir)
             app.work_info("item", "Name")
             self.assertEqual(logic["ask_claude"].call_args.args[2], "old")
+            self.assertTrue(
+                logic["ask_claude"].call_args.args[0].startswith("Info Name item recettes_a_*.json")
+            )
             config["providers"]["codex"].update(
                 model_question="new",
                 effort_question="high",
