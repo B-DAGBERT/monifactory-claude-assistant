@@ -1,6 +1,7 @@
 package fr.assistantia;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.locale.Language;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -14,13 +15,16 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.DiggerItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.MapItem;
 import net.minecraft.world.item.TieredItem;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -64,6 +68,11 @@ public final class Stats {
             };
     private static int tick;
     private static String signature;
+    private static String porteeInventaire;
+    private static Player joueurInventaire;
+    private static Level niveauInventaire;
+    private static Language langueInventaire;
+    private static double attaqueInventaire, vitesseAttaqueInventaire;
     private static int prochainePublicationCatalogue;
     private static Iterator<Item>
             catalogue; // tous les objets du jeu, parcourus quelques centaines par tick
@@ -71,6 +80,44 @@ public final class Stats {
     private static boolean catalogueFait, machinesFaites;
 
     private Stats() {}
+
+    @SubscribeEvent
+    public static void deconnexion(ClientPlayerNetworkEvent.LoggingOut event) {
+        oublierInventaire();
+    }
+
+    private static void oublierInventaire() {
+        signature = null;
+        porteeInventaire = null;
+        joueurInventaire = null;
+        niveauInventaire = null;
+        langueInventaire = null;
+        LIGNES.clear();
+    }
+
+    private static void actualiserContexte(Player joueur) {
+        String portee = Pont.cleContexte();
+        Level niveau = joueur.level();
+        Language langue = Language.getInstance();
+        // L'infobulle vanilla ajoute les attributs de base du joueur aux modificateurs d'attaque.
+        double attaque = joueur.getAttributeBaseValue(Attributes.ATTACK_DAMAGE);
+        double vitesse = joueur.getAttributeBaseValue(Attributes.ATTACK_SPEED);
+        if (joueur != joueurInventaire
+                || niveau != niveauInventaire
+                || langue != langueInventaire
+                || attaque != attaqueInventaire
+                || vitesse != vitesseAttaqueInventaire
+                || !portee.equals(porteeInventaire)) {
+            signature = null;
+            LIGNES.clear();
+            porteeInventaire = portee;
+            joueurInventaire = joueur;
+            niveauInventaire = niveau;
+            langueInventaire = langue;
+            attaqueInventaire = attaque;
+            vitesseAttaqueInventaire = vitesse;
+        }
+    }
 
     @SubscribeEvent
     public static void tick(TickEvent.ClientTickEvent event) {
@@ -107,10 +154,10 @@ public final class Stats {
      */
     private static void inventaire(Player joueur) {
         if (!Pont.assistantActif()) {
-            signature = null;
-            LIGNES.clear();
+            oublierInventaire();
             return;
         }
+        actualiserContexte(joueur);
         List<String> emplacements = new ArrayList<>();
         List<ItemStack> objets = new ArrayList<>();
         Inventory inv = joueur.getInventory();
@@ -143,34 +190,54 @@ public final class Stats {
                 }
             }
         }
-        StringBuilder nouvelle = new StringBuilder(Pont.cleContexte());
+        StringBuilder empreinte = new StringBuilder(porteeInventaire);
+        int[] cartes = null;
         for (int i = 0; i < objets.size(); i++) {
             ItemStack s = objets.get(i);
-            nouvelle.append(emplacements.get(i))
+            empreinte
+                    .append(emplacements.get(i))
                     .append(id(s))
                     .append(s.getCount())
                     .append(s.getDamageValue())
                     .append(s.getTag() == null ? 0 : s.getTag().hashCode())
                     .append(';');
+            if (s.getItem() instanceof MapItem) {
+                if (cartes == null) cartes = new int[objets.size()];
+                cartes[i] = etatCarte(s, niveauInventaire);
+                empreinte.append(cartes[i]).append(';');
+            }
         }
-        if (nouvelle.toString().equals(signature)) {
+        String nouvelle = empreinte.toString();
+        if (nouvelle.equals(signature)) {
             return;
         }
         List<String> lignes = new ArrayList<>();
         lignes.add(ENTETE);
         for (int i = 0; i < objets.size(); i++) {
-            lignes.add(emplacements.get(i) + " | " + ligneMemorisee(objets.get(i), joueur));
+            lignes.add(
+                    emplacements.get(i)
+                            + " | "
+                            + ligneMemorisee(
+                                    objets.get(i), joueur, cartes == null ? 0 : cartes[i]));
         }
         // Retenue une fois l'écriture confiée au fil d'écriture : sinon, nouvel essai plus tard.
-        if (Pont.publierInventaireDetaille(lignes)) signature = nouvelle.toString();
+        if (Pont.publierInventaireDetaille(lignes)) signature = nouvelle;
+    }
+
+    /** Données du niveau lues par l'infobulle native de carte, hors NBT de la pile. */
+    private static int etatCarte(ItemStack pile, Level niveau) {
+        var donnees = MapItem.getSavedData(MapItem.getMapId(pile), niveau);
+        return donnees == null
+                ? 1
+                : 2 + 2 * Byte.toUnsignedInt(donnees.scale) + (donnees.locked ? 1 : 0);
     }
 
     /**
-     * La ligne d'une pile sans son emplacement, recalculée seulement si l'objet, la quantité,
-     * l'usure ou le NBT ont changé : infobulle, attributs et outils coûtent cher à relire.
+     * La ligne d'une pile sans son emplacement, dans le contexte de rendu courant. L'état d'une
+     * carte complète les données propres à sa pile.
      */
-    private static String ligneMemorisee(ItemStack s, Player joueur) {
-        Pile cle = new Pile(s.getItem(), s.getCount(), s.getDamageValue(), s.getTag());
+    private static String ligneMemorisee(ItemStack s, Player joueur, int carte) {
+        Pile cle = new Pile(s.getItem(), s.getCount(), s.getDamageValue(), s.getTag(), carte);
         String ligne = LIGNES.get(cle);
         if (ligne == null) {
             ligne = ligne(null, s, joueur);
@@ -185,23 +252,32 @@ public final class Stats {
      */
     private static final class Pile {
         private final Item objet;
-        private final int nombre, usure, empreinte;
+        private final int nombre, usure, carte, empreinte;
         private final CompoundTag tag;
 
-        Pile(Item objet, int nombre, int usure, CompoundTag tag) {
-            this(objet, nombre, usure, tag, Objects.hash(objet, nombre, usure, tag));
+        Pile(Item objet, int nombre, int usure, CompoundTag tag, int carte) {
+            this(
+                    objet,
+                    nombre,
+                    usure,
+                    tag,
+                    carte,
+                    31 * Objects.hash(objet, nombre, usure, tag) + carte);
         }
 
-        private Pile(Item objet, int nombre, int usure, CompoundTag tag, int empreinte) {
+        private Pile(Item objet, int nombre, int usure, CompoundTag tag, int carte, int empreinte) {
             this.objet = objet;
             this.nombre = nombre;
             this.usure = usure;
             this.tag = tag;
+            this.carte = carte;
             this.empreinte = empreinte;
         }
 
         Pile copie() {
-            return tag == null ? this : new Pile(objet, nombre, usure, tag.copy(), empreinte);
+            return tag == null
+                    ? this
+                    : new Pile(objet, nombre, usure, tag.copy(), carte, empreinte);
         }
 
         @Override
@@ -215,6 +291,7 @@ public final class Stats {
                     && objet == p.objet
                     && nombre == p.nombre
                     && usure == p.usure
+                    && carte == p.carte
                     && empreinte == p.empreinte
                     && Objects.equals(tag, p.tag);
         }

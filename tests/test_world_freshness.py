@@ -14,8 +14,10 @@ from monifactory_assistant.application.game import GameController
 from monifactory_assistant.game.recipes import RecipeIndex
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.world import World, describe_world
-from monifactory_assistant.game.world_scope import WorldScope
+from monifactory_assistant.game.world_scope import WorldScope, scope_folder
 from monifactory_assistant.persistence import atomic_json
+from monifactory_assistant.production.acquisition import acquire
+from monifactory_assistant.production.knowledge import Freshness
 
 OVERWORLD = "minecraft:overworld"
 NETHER = "minecraft:the_nether"
@@ -376,6 +378,82 @@ class WorldSaveCadenceTests(unittest.TestCase):
         for k in range(21, 40):
             self.receive(boiler(k), CHEST, t=START + 3_000 * k)
         self.assertEqual(self.counts(), (4, 2))
+
+    def test_staggered_publication_filters_can_wait_117_seconds_between_chest_exports(self):
+        self.receive(MACHINE, CHEST, t=START)
+        published = self.publish.call_args.args[1]
+        for k in range(1, 19):
+            self.receive(MACHINE, CHEST, t=START + 3_000 * k)
+        self.assertEqual(self.counts(), (2, 1))
+        # Un état visible de machine change à +57 s. Il renouvelle le
+        # candidat mondial mais son état ne figure pas dans la projection des coffres.
+        idle = state(MACHINE, s="IDLE")
+        self.receive(idle, CHEST, t=START + 57_000)
+        self.assertEqual(self.counts(), (2, 1))
+        self.assertEqual(self.world.publishable_t, START + 57_000)
+        self.assertIs(self.game.known_chests_published[0], self.world.publishable_blocks)
+        self.assertEqual(self.game.known_chests_published[3], START)
+        for k in range(20, 39):
+            self.receive(idle, CHEST, t=START + 3_000 * k)
+        self.assertEqual(self.counts(), (4, 1))
+        self.assertEqual(self.world.blocks[CHEST_KEY]["t"], START + 114_000)
+        self.assertEqual(self.saved_dates(), {START + 90_000})
+        self.assertEqual(self.publish.call_args.args[1], published)
+        self.receive(idle, CHEST, t=START + 117_000)
+        self.assertEqual(self.counts(), (4, 2))
+        self.assertIn(f'"t":{START + 117_000}', self.publish.call_args.args[1])
+
+    def test_without_new_frames_cadences_do_not_flush_a_healthy_save_or_refresh_publication(self):
+        self.receive(MACHINE, CHEST, t=START)
+        self.receive(MACHINE, tin(8), t=START + 3_000)
+        self.receive(MACHINE, tin(8), t=START + 6_000)
+        self.clock.return_value += 180
+        self.game.publish_known_chests(self.world)
+        self.assertFalse(self.world.active)
+        self.assertFalse(self.world.retry_due())
+        self.assertEqual(self.counts(), (1, 2))
+        self.assertEqual(self.world.blocks[CHEST_KEY]["t"], START + 6_000)
+        self.assertEqual(World(self.path).blocks[CHEST_KEY]["objets"][0]["n"], 9)
+        self.assertIn(f'"t":{START + 3_000}', self.publish.call_args.args[1])
+        self.world.flush()
+        self.assertEqual(self.counts(), (2, 2))
+        self.assertEqual(World(self.path).blocks[CHEST_KEY]["t"], START + 6_000)
+
+    def test_production_reloads_the_saved_history_and_uses_separate_current_evidence(self):
+        scope = WorldScope("m1_" + "a" * 64, "1" * 32, OVERWORLD)
+        folder = scope_folder(self.root, scope.world, create=True)
+        self.world = World(folder / "monde_memoire.json", partition_root=self.root)
+        self.receive(CHEST, t=START)
+        now = START + 3_000
+        self.receive(tin(8), t=now)
+        bridge = SimpleNamespace(dir=self.root, routing=SimpleNamespace(mode="isolated"))
+        (self.root / "identite_monde.json").write_text(
+            json.dumps(
+                {
+                    "v": 1,
+                    "monde": scope.world,
+                    "session": scope.session,
+                    "dimension": OVERWORLD,
+                    "t": now,
+                }
+            )
+        )
+        (self.root / "coffres_connus.json").write_text(self.publish.call_args.args[1])
+        historical = acquire(bridge, self.root, scope, {"preuves_natives": 2}, now)
+        [observation] = historical.select("storage")
+        self.assertEqual(observation.value["items"]["gtceu:tin_ingot"], 9)
+        self.assertEqual(observation.evidence[0].freshness, Freshness.HISTORICAL)
+        self.assertEqual(observation.evidence[0].received_at_ms, START)
+        self.assertEqual(historical.availability(), {})
+
+        live_path = self.root / "monde.json"
+        live_path.write_text(json.dumps({**frame(tin(8), t=now), **scope.fields()}))
+        os.utime(live_path, ns=(now * 1_000_000, now * 1_000_000))
+        current = acquire(bridge, self.root, scope, {"preuves_natives": 2}, now)
+        [observation] = current.select("storage")
+        self.assertEqual(observation.value["items"]["gtceu:tin_ingot"], 8)
+        self.assertEqual(observation.evidence[0].freshness, Freshness.LIVE)
+        self.assertEqual(current.history[0].evidence[0].source, "monde_memoire.json")
 
     def test_absent_block_keeps_its_first_absence_date(self):
         self.receive(MACHINE, CHEST, t=START, covered=True)

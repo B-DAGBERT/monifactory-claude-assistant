@@ -265,8 +265,9 @@ class GameController:
         """Relevés du serveur pour l'onglet Recette du mod (coffres_connus.json), écrits s'ils changent.
 
         Seul l'état à publier de la mémoire vive est relu, à chaque remplacement, sans attendre le
-        fichier. Un contenu publié différent (objets, blocs, positions) part aussitôt ; des dates
-        plus récentes seules, au plus toutes les 60 s. L'état des machines n'est pas publié.
+        fichier. Un contenu projeté différent est aussitôt confié au fil d'écriture. Les dates seules
+        exigent un candidat renouvelé et daté d'au moins 60 s après le dernier export accepté.
+        La projection contient les emplacements des machines, sans leur état.
         """
         blocks = getattr(world, "publishable_blocks", None)
         if not isinstance(blocks, dict):

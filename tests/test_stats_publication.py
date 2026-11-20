@@ -1,7 +1,6 @@
 """Production stats exporter retries failed publications without forgetting unchanged inputs.
 
-The live inventory detail is handed to the writer thread only while the assistant runs, and only
-changed stacks have their line (tooltip, attributes, tools) computed again.
+The live inventory detail is handed to the writer thread only while the assistant runs.
 """
 
 import os
@@ -18,7 +17,8 @@ STUBS = {
  public static final java.util.Set<String> echecs=new java.util.HashSet<>();
  public static final java.util.Map<String,java.util.List<String>> publies=new java.util.HashMap<>();
  public static boolean actif=true;
- public static String cleContexte(){return "";}
+ public static String contexte="legacy";
+ public static String cleContexte(){return contexte;}
  public static boolean assistantActif(){return actif;}
  public static boolean ecrireTexte(String nom,java.util.List<String> lignes){essais.merge(nom,1,Integer::sum);
  if(echecs.remove(nom))return false;publies.put(nom,java.util.List.copyOf(lignes));return true;}
@@ -29,20 +29,42 @@ STUBS = {
     "fr.assistantia.InventaireJoueur": "public class InventaireJoueur {public static boolean synchronise(){return true;}public static java.util.List<net.minecraft.world.item.ItemStack> sacs(){return java.util.List.of();}}",
     "fr.assistantia.compat.backpacks.SacsPortes": "public class SacsPortes {public static SacsPortes client(){return new SacsPortes();}public boolean ouvertPorte(Object p){return false;}}",
     "net.minecraft.client.Minecraft": """public class Minecraft {
- public static final Minecraft INSTANCE=new Minecraft();public Object level=new Object();
+ public static final Minecraft INSTANCE=new Minecraft();
  public net.minecraft.world.entity.player.Player player=new net.minecraft.world.entity.player.Player();
+ public net.minecraft.world.level.Level level=player.level();
  public static Minecraft getInstance(){return INSTANCE;}}
 """,
+    "net.minecraft.locale.Language": 'public class Language {public static Language active=new Language();public static Language getInstance(){return active;}public String suffixe="";}',
     "net.minecraft.network.chat.Component": "public record Component(String text){public String getString(){return text;}}",
     "net.minecraft.resources.ResourceLocation": "public record ResourceLocation(String text){public String toString(){return text;}}",
     "net.minecraft.world.entity.EquipmentSlot": "public enum EquipmentSlot {MAINHAND}",
     "net.minecraft.world.entity.ai.attributes.AttributeModifier": "public class AttributeModifier {public enum Operation {ADDITION};public Operation getOperation(){return Operation.ADDITION;}public double getAmount(){return 0;}}",
-    "net.minecraft.world.entity.ai.attributes.Attributes": "public class Attributes {public static final Object ATTACK_DAMAGE=new Object();}",
+    "net.minecraft.world.entity.ai.attributes.Attributes": "public class Attributes {public static final Object ATTACK_DAMAGE=new Object(), ATTACK_SPEED=new Object();}",
     "net.minecraft.world.entity.player.Inventory": "public class Inventory {public int selected;public final java.util.List<net.minecraft.world.item.ItemStack> items=new java.util.ArrayList<>();public int getContainerSize(){return items.size();}public net.minecraft.world.item.ItemStack getItem(int i){return items.get(i);}}",
-    "net.minecraft.world.entity.player.Player": "public class Player {public final Inventory inventory=new Inventory();public final net.minecraft.world.inventory.AbstractContainerMenu inventoryMenu=new net.minecraft.world.inventory.AbstractContainerMenu();public net.minecraft.world.inventory.AbstractContainerMenu containerMenu=inventoryMenu;public Inventory getInventory(){return inventory;}}",
+    "net.minecraft.world.entity.player.Player": """public class Player {
+ public final Inventory inventory=new Inventory();public final net.minecraft.world.inventory.AbstractContainerMenu inventoryMenu=new net.minecraft.world.inventory.AbstractContainerMenu();
+ public net.minecraft.world.inventory.AbstractContainerMenu containerMenu=inventoryMenu;
+ public net.minecraft.world.level.Level level=new net.minecraft.world.level.Level();public double attack=1;
+ public Inventory getInventory(){return inventory;}public net.minecraft.world.level.Level level(){return level;}
+ public double getAttributeBaseValue(Object attribute){return attack;}}
+""",
     "net.minecraft.world.inventory.AbstractContainerMenu": "public class AbstractContainerMenu {public java.util.List<Slot> slots=new java.util.ArrayList<>();}",
     "net.minecraft.world.inventory.Slot": "public class Slot {public Object container;public boolean hasItem(){return false;}public net.minecraft.world.item.ItemStack getItem(){return null;}}",
     "net.minecraft.world.item.Item": "public class Item {public final String id;public Item(String id){this.id=id;}}",
+    "net.minecraft.world.item.MapItem": """public class MapItem extends Item {
+ public static int lectures;public MapItem(){super("minecraft:filled_map");}
+ public static Integer getMapId(ItemStack s){return s.getTag()==null?null:s.getTag().getInt("map");}
+ public static net.minecraft.world.level.saveddata.maps.MapItemSavedData getSavedData(Integer id,net.minecraft.world.level.Level l){
+  lectures++;return l.cartes.get(id);}}
+""",
+    "net.minecraft.world.level.Level": """public class Level {
+ public String nom="overworld";
+ public final java.util.Map<Integer,net.minecraft.world.level.saveddata.maps.MapItemSavedData> cartes=new java.util.HashMap<>();}
+""",
+    "net.minecraft.world.level.saveddata.maps.MapItemSavedData": """public class MapItemSavedData {
+ public final byte scale;public final boolean locked;
+ public MapItemSavedData(int scale,boolean locked){this.scale=(byte)scale;this.locked=locked;}}
+""",
     "net.minecraft.world.item.TieredItem": "public class TieredItem extends Item {public TieredItem(String id){super(id);}}",
     "net.minecraft.world.item.ArmorItem": "public class ArmorItem extends Item {public ArmorItem(String id){super(id);}public int getDefense(){return 0;}public float getToughness(){return 0;}}",
     "net.minecraft.world.item.DiggerItem": "public class DiggerItem extends TieredItem {public DiggerItem(String id){super(id);}}",
@@ -56,7 +78,12 @@ STUBS = {
  public net.minecraft.nbt.CompoundTag getTag(){return tag;}public boolean isDamageableItem(){return false;}public int getMaxDamage(){return 0;}
  public float getDestroySpeed(Object b){return 1;}public boolean isCorrectToolForDrops(Object b){return false;}
  public net.minecraft.network.chat.Component getHoverName(){return new net.minecraft.network.chat.Component(item.id);}
- public java.util.List<net.minecraft.network.chat.Component> getTooltipLines(Object p,Object f){infobulles++;
+ public java.util.List<net.minecraft.network.chat.Component> getTooltipLines(net.minecraft.world.entity.player.Player p,Object f){infobulles++;
+ if(item instanceof MapItem){var carte=p.level().cartes.get(tag.getInt("map"));
+  return java.util.List.of(getHoverName(),new net.minecraft.network.chat.Component(
+   carte==null?"Unknown map":"Scale "+carte.scale+(carte.locked?" locked":"")));}
+ if(item instanceof TieredItem)return java.util.List.of(getHoverName(),new net.minecraft.network.chat.Component(
+  "attack "+p.attack+net.minecraft.locale.Language.getInstance().suffixe));
  return java.util.List.of(new net.minecraft.network.chat.Component(item.id),
   new net.minecraft.network.chat.Component(tag==null?"":"nbt "+tag),
   new net.minecraft.network.chat.Component("usure "+damage));}
@@ -66,7 +93,7 @@ STUBS = {
     # une copie du NBT dans la clé mémorisée évite de reprendre une ligne périmée.
     "net.minecraft.nbt.CompoundTag": """public class CompoundTag {
  private final java.util.TreeMap<String,Integer> valeurs=new java.util.TreeMap<>();
- public void putInt(String cle,int valeur){valeurs.put(cle,valeur);}
+ public void putInt(String cle,int valeur){valeurs.put(cle,valeur);}public int getInt(String cle){return valeurs.getOrDefault(cle,0);}
  public CompoundTag copy(){var c=new CompoundTag();c.valeurs.putAll(valeurs);return c;}
  public boolean equals(Object o){return o instanceof CompoundTag c&&valeurs.equals(c.valeurs);}
  public int hashCode(){return valeurs.keySet().hashCode();}public String toString(){return valeurs.toString();}}
@@ -77,6 +104,7 @@ STUBS = {
     "net.minecraft.world.level.block.Blocks": "public class Blocks {public static final Block STONE=new Block(),IRON_ORE=new Block(),DIAMOND_ORE=new Block(),OBSIDIAN=new Block(),ANCIENT_DEBRIS=new Block();}",
     "net.minecraft.world.level.block.state.BlockState": "public class BlockState {}",
     "net.minecraftforge.event.TickEvent": "public class TickEvent {public enum Phase {START,END};public static class ClientTickEvent {public Phase phase=Phase.END;}}",
+    "net.minecraftforge.client.event.ClientPlayerNetworkEvent": "public class ClientPlayerNetworkEvent {public static class LoggingOut {}}",
     "net.minecraftforge.eventbus.api.SubscribeEvent": "public @interface SubscribeEvent {}",
     "net.minecraftforge.registries.ForgeRegistries": """public class ForgeRegistries {
  public static final Registry ITEMS=new Registry();public static class Registry {public int lectures;
@@ -156,3 +184,15 @@ class StatsPublicationTests(unittest.TestCase):
 
     def test_nothing_is_computed_or_written_until_the_assistant_runs_and_returns(self):
         self.run_case("inactive")
+
+    def test_map_changes_without_any_change_to_stacks(self):
+        self.run_case("map-alone")
+
+    def test_map_changes_when_another_stack_also_changes(self):
+        self.run_case("map-republish")
+
+    def test_context_transitions_discard_old_descriptions(self):
+        self.run_case("context")
+
+    def test_lru_evicts_the_least_recently_used_line(self):
+        self.run_case("eviction")

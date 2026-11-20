@@ -15,6 +15,14 @@
 - Un coffre double forme un seul stock physique. Un bus ME qui expose un tampon ne rend pas ses objets disponibles deux fois.
 - **Envoyer** utilise les vraies entrées de la machine et les ingrédients accessibles dans les poches. Pour un sac fermé, l’étape indique de sortir l’ingrédient avant l’envoi.
 
+## Inventaire détaillé de Discussion
+
+[Stats.java](../../mod/src/main/java/fr/assistantia/Stats.java) échantillonne les piles toutes les 40 ticks client quand l’assistant est actif. Le texte décrit les piles portées et celles du menu de coffre ouvert. Les lignes restent dans un LRU de 512 entrées, indexé par objet, quantité, usure et NBT. Les données de la carte présentes dans le niveau (disponibilité, échelle et verrouillage) participent aussi à sa ligne et à la décision de republication.
+
+Le cache et la signature repartent à zéro au changement de portée du pont, de niveau, de joueur, de langue chargée ou d’attributs de base d’attaque, à la déconnexion et lorsque l’assistant est constaté absent. En mode historique, l’identité du niveau et du joueur détecte aussi les transitions. Les extensions Forge peuvent ajouter des données propres à leurs infobulles. Les dépendances internes inconnues d’un mod peuvent évoluer dans un même contexte sans faire changer la signature.
+
+[Pont.java](../../mod/src/main/java/fr/assistantia/Pont.java) remet les lignes au fil d’écriture. En mode historique, celui-ci écrit le texte. En mode isolé, il écrit le texte dans le dossier du monde puis publie le marqueur monde, connexion, dimension et SHA-256. Le lecteur Python vérifie la portée et l’empreinte pour reconnaître le texte publié. [Lecture du couple texte et marqueur](../../monifactory_assistant/game/bridge.py)
+
 ## Tests à lancer
 
 Lancer ces tests depuis la racine du dépôt avec Python et le JDK 17.
@@ -22,6 +30,7 @@ Lancer ces tests depuis la racine du dépôt avec Python et le JDK 17.
 ```sh
 python -m unittest discover -s tests -p 'test_buffer_chest.py'
 python -m unittest tests.test_backpack_inventory tests.test_emi_backpack_tree tests.scenarios.test_parcours_stock
+python -m unittest tests.test_stats_publication tests.test_bridge_world_scope
 ```
 
 Dans une copie du pack, déplacer la même pile entre poches, sac et tampon. Comparer le manque dans EMI, Repérage, Réseau ME et Envoyer. Rejouer après fermeture du coffre, déchargement et reconnexion. [Recette du coffre tampon](../developpement.md#recette-coffre-tampon-en-jeu), [guide des transferts](../emi-transferts.md#coffres-tampons).

@@ -4,14 +4,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
+import net.minecraft.locale.Language;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.MapItem;
+import net.minecraft.world.item.TieredItem;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.registries.ForgeRegistries;
 
 public final class StatsPublicationTest {
+    private static final String INVENTAIRE = "inventaire_details.txt";
+
     static void inventaire(Player joueur) throws Exception {
         var methode = Stats.class.getDeclaredMethod("inventaire", Player.class);
         methode.setAccessible(true);
@@ -122,6 +130,127 @@ public final class StatsPublicationTest {
         assert Pont.publies.get(inventaire).equals(publie);
     }
 
+    static void carte(Player joueur, boolean autrePileChange) throws Exception {
+        var carte = new ItemStack(new MapItem());
+        carte.tag = new CompoundTag();
+        carte.tag.putInt("map", 7);
+        var copie = new ItemStack(carte.getItem());
+        copie.tag = carte.tag.copy();
+        var fer = new ItemStack(new Item("test:iron"));
+        joueur.inventory.items.addAll(List.of(carte, fer, copie));
+        inventaire(joueur);
+        assert Pont.publies.get(INVENTAIRE).get(1).contains("Unknown map");
+        assert ItemStack.infobulles == 2 && essais(INVENTAIRE) == 1;
+        inventaire(joueur);
+        assert ItemStack.infobulles == 2 && essais(INVENTAIRE) == 1;
+        assert MapItem.lectures == 4 : "Un seul contrôle par pile de carte et par échantillon";
+
+        // Le paquet de carte arrive après la pile, sans toucher à son NBT ni à ses quantités.
+        joueur.level.cartes.put(7, new MapItemSavedData(2, false));
+        if (autrePileChange) fer.count++;
+        inventaire(joueur);
+        assert essais(INVENTAIRE) == 2 : "La signature doit détecter les données de carte";
+        assert Pont.publies.get(INVENTAIRE).get(1).contains("Scale 2")
+                : "La republication a réutilisé l'ancienne infobulle";
+        assert Pont.publies.get(INVENTAIRE).equals(attendu(joueur));
+        assert ItemStack.infobulles == (autrePileChange ? 4 : 3);
+
+        joueur.level.cartes.put(7, new MapItemSavedData(2, true));
+        inventaire(joueur);
+        assert essais(INVENTAIRE) == 3 && Pont.publies.get(INVENTAIRE).equals(attendu(joueur));
+        assert Pont.publies.get(INVENTAIRE).get(3).contains("locked");
+
+        // Des données remplacées par des valeurs identiques ne changent pas le texte.
+        joueur.level.cartes.put(7, new MapItemSavedData(2, true));
+        int calculs = ItemStack.infobulles;
+        inventaire(joueur);
+        assert essais(INVENTAIRE) == 3 && ItemStack.infobulles == calculs;
+        joueur.level.cartes.clear();
+        inventaire(joueur);
+        assert essais(INVENTAIRE) == 4 && ItemStack.infobulles == calculs
+                : "Réutilise l'entrée carte inconnue";
+        assert Pont.publies.get(INVENTAIRE).equals(attendu(joueur));
+    }
+
+    static void transitions(Player joueur) throws Exception {
+        var carte = new ItemStack(new MapItem());
+        carte.tag = new CompoundTag();
+        carte.tag.putInt("map", 7);
+        var outil = new ItemStack(new TieredItem("test:pickaxe"));
+        joueur.inventory.items.addAll(List.of(carte, outil));
+        joueur.level.cartes.put(7, new MapItemSavedData(1, false));
+        inventaire(joueur);
+        assert Pont.publies.get(INVENTAIRE).equals(attendu(joueur));
+
+        // En historique, la clé du pont reste "legacy" entre niveaux et joueurs.
+        joueur.level = new Level();
+        joueur.level.nom = "nether";
+        joueur.level.cartes.put(7, new MapItemSavedData(3, true));
+        inventaire(joueur);
+        assert essais(INVENTAIRE) == 2 && Pont.publies.get(INVENTAIRE).equals(attendu(joueur))
+                : "La dimension change aussi en mode historique";
+
+        joueur.level = new Level(); // autre monde, même dimension qu'au départ, même NBT
+        joueur.level.cartes.put(7, new MapItemSavedData(4, false));
+        inventaire(joueur);
+        assert essais(INVENTAIRE) == 3 && Pont.publies.get(INVENTAIRE).equals(attendu(joueur));
+
+        var autre = new Player();
+        autre.level = joueur.level;
+        autre.inventory.items.addAll(joueur.inventory.items);
+        autre.attack = 2;
+        inventaire(autre);
+        assert essais(INVENTAIRE) == 4 && Pont.publies.get(INVENTAIRE).equals(attendu(autre));
+        autre.attack = 3;
+        inventaire(autre);
+        assert essais(INVENTAIRE) == 5 && Pont.publies.get(INVENTAIRE).equals(attendu(autre));
+
+        Language.active = new Language();
+        Language.active.suffixe = " traduit";
+        inventaire(autre);
+        assert essais(INVENTAIRE) == 6 && Pont.publies.get(INVENTAIRE).equals(attendu(autre));
+
+        Pont.contexte = "monde|session|overworld";
+        inventaire(autre);
+        assert essais(INVENTAIRE) == 7 && lignesMemorisees() == 2;
+
+        // Une déconnexion efface aussi les lignes entre deux échantillons de 40 ticks.
+        Stats.class
+                .getDeclaredMethod("deconnexion", ClientPlayerNetworkEvent.LoggingOut.class)
+                .invoke(null, new ClientPlayerNetworkEvent.LoggingOut());
+        assert lignesMemorisees() == 0;
+        Pont.contexte = "monde|nouvelle-session|overworld";
+        inventaire(autre);
+        assert essais(INVENTAIRE) == 8 && Pont.publies.get(INVENTAIRE).equals(attendu(autre));
+    }
+
+    static void eviction(Player joueur) throws Exception {
+        var piles = joueur.inventory.items;
+        for (int i = 0; i < 512; i++) piles.add(new ItemStack(new Item("test:item_" + i)));
+        var premiere = piles.get(0);
+        var deuxieme = piles.get(1);
+        inventaire(joueur);
+        assert lignesMemorisees() == 512 && ItemStack.infobulles == 512;
+        piles.clear();
+        piles.addAll(List.of(premiere, new ItemStack(new Item("test:extra"))));
+        inventaire(joueur);
+        assert lignesMemorisees() == 512 && ItemStack.infobulles == 513;
+        piles.set(1, deuxieme);
+        inventaire(joueur);
+        assert lignesMemorisees() == 512 && ItemStack.infobulles == 514;
+        assert Pont.publies.get(INVENTAIRE).equals(attendu(joueur));
+        var remplacement = new ItemStack(new Item("test:replacement"));
+        piles.set(1, remplacement);
+        inventaire(joueur);
+        assert essais(INVENTAIRE) == 4 && ItemStack.infobulles == 515;
+        assert Pont.publies.get(INVENTAIRE).equals(attendu(joueur));
+        remplacement.tag = new CompoundTag();
+        remplacement.tag.putInt("Energy", 4);
+        inventaire(joueur);
+        assert essais(INVENTAIRE) == 5 && ItemStack.infobulles == 516;
+        assert Pont.publies.get(INVENTAIRE).equals(attendu(joueur));
+    }
+
     public static void main(String[] args) throws Exception {
         var mc = Minecraft.getInstance();
         String inventaire = "inventaire_details.txt";
@@ -145,6 +274,12 @@ public final class StatsPublicationTest {
             memorisation(mc.player);
         } else if (args[0].equals("inactive")) {
             assistantInactif(mc.player);
+        } else if (args[0].equals("map-alone") || args[0].equals("map-republish")) {
+            carte(mc.player, args[0].equals("map-republish"));
+        } else if (args[0].equals("context")) {
+            transitions(mc.player);
+        } else if (args[0].equals("eviction")) {
+            eviction(mc.player);
         } else {
             String catalogue = "stats_objets.txt", machines = "machines_recettes.txt";
             Pont.echecs.add(catalogue);

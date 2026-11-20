@@ -552,10 +552,12 @@ et la qualité des modèles en partie réelle ne sont pas mesurés ici.
 
 ## Écritures de la mémoire serveur et recherche EMI
 
-La mémoire serveur est écrite en JSON compact avec le même schéma, par remplacement atomique, au
-plus toutes les 30 s, puis à la sortie du direct ou à l’arrêt. La copie de récupération suit
-chaque enregistrement qui porte un contenu nouveau ([Base](fonctionnalites/base.md)). La fusion
-choisit toujours la source la plus récente avant de préparer la recherche. Le cache EMI compare
+La mémoire serveur est écrite en JSON compact par remplacement atomique. En flux régulier, une
+trame peut déclencher une nouvelle sauvegarde après 30 s. Une sortie du direct ou un arrêt normal
+demande aussi la sauvegarde des observations en attente. La copie de récupération suit chaque
+enregistrement qui porte un contenu nouveau. [Cadences et conditions de fraîcheur](fonctionnalites/base.md#fraîcheur-des-observations)
+
+La fusion choisit la source la plus récente avant de préparer la recherche. Le cache EMI compare
 ensuite les positions et les inventaires sous une forme immuable. Les positions en conflit et les
 stocks invalides repassent par le calcul normal.
 

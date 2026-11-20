@@ -15,10 +15,10 @@ from monifactory_assistant.paths import WORLD_FILE
 from monifactory_assistant.persistence import atomic_json, load_json
 
 OBSERVATION_MAX_AGE_MS = 15_000
-# monde_memoire.json n'est relu qu'au démarrage : au plus un enregistrement toutes les 30 s.
+# Cadence des sauvegardes déclenchées par les trames. Production relit le fichier comme historique.
 MEMORY_SAVE_INTERVAL_MS = 30_000
 MEMORY_RETRY_INTERVAL = 5
-# État à publier : contenu aussitôt, dates et niveaux de machine au plus toutes les 60 s.
+# Cadence de renouvellement du candidat pour les dates et niveaux seuls, au fil des trames.
 DATES_PUBLISH_INTERVAL_MS = 60_000
 # État de machine que voit le joueur : statut, multibloc formé, chaudière à sec. Les niveaux
 # envoyés par etatMachine (pr, du, r, eau, t, vap) bougent à chaque trame, comme les dates.
