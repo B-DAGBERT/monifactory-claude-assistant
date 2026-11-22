@@ -23,6 +23,8 @@ from monifactory_assistant.providers.session import Conversation
 
 NOW = 1_800_000_000.0
 RAPPEL = "Échanges précédents : rappel de test"
+SCOPE = WorldScope("monde", "connexion", "dimension")
+OTHER_DIMENSION = WorldScope(SCOPE.world, SCOPE.session, "autre dimension")
 FAKE_CLAUDE = r"""import json, sys
 args = sys.argv[1:]
 session = args[args.index("--resume") + 1] if "--resume" in args else args[args.index("--session-id") + 1]
@@ -33,6 +35,11 @@ for line in sys.stdin:
     with open("requests.jsonl", "a", encoding="utf-8") as stream:
         stream.write(json.dumps(prompt) + "\n")
     print(json.dumps({"type": "system", "subtype": "init", "session_id": session}), flush=True)
+    if "Tour interrompu avec action" in prompt:
+        delta = {"type": "text_delta", "text": 'Aperçu.<actions>[{"type":"memoriser_lieu","nom":"Mine"}]</actions>'}
+        print(json.dumps({"type": "stream_event", "event": {"type": "content_block_delta", "delta": delta}}), flush=True)
+        print(json.dumps({"type": "result", "is_error": True, "result": "Inférence interrompue", "session_id": session}), flush=True)
+        continue
     print(json.dumps({"type": "result", "is_error": False, "result": "Réponse", "session_id": session}), flush=True)
 """
 
@@ -70,12 +77,12 @@ class CodexSessionTests(unittest.TestCase):
     def test_eleventh_question_opens_a_new_session_once_with_the_recall(self):
         chat = self.chat()
         for number in range(10):
-            chat.ask(f"Question {number}", previous=RAPPEL)
+            chat.ask(f"Question {number}", previous=RAPPEL, scope=SCOPE)
             self.now += 60
         self.assertEqual(self.sent, [("thread-1", f"Question {n}") for n in range(10)])
         self.assertEqual(self.saved()["questions"], 10)
         self.client.request.assert_not_called()
-        chat.ask("Et la suite ?", previous=RAPPEL)
+        chat.ask("Et la suite ?", previous=RAPPEL, scope=SCOPE)
         self.client.request.assert_called_once_with("thread/unsubscribe", {"threadId": "thread-1"})
         # Renewing sends nothing: only the new question leaves, once, after the recall.
         self.assertEqual(self.sent[10:], [("thread-2", RAPPEL + "\n\nEt la suite ?")])
@@ -86,35 +93,38 @@ class CodexSessionTests(unittest.TestCase):
                 "thread_id": "thread-2",
                 "questions": 1,
                 "last_question_at": self.now,
+                "scope": SCOPE.fields(),
+                "generation": chat.generation.hex,
             },
         )
-        chat.ask("Encore", previous=RAPPEL)
+        chat.ask("Encore", previous=RAPPEL, scope=SCOPE)
         self.assertEqual(self.sent[-1], ("thread-2", "Encore"))
         self.assertEqual(self.client.run.call_count, 12)
 
     def test_a_session_idle_for_more_than_four_hours_is_renewed(self):
         chat = self.chat()
-        chat.ask("Avant la pause", previous=RAPPEL)
+        chat.ask("Avant la pause", previous=RAPPEL, scope=SCOPE)
         self.now += chat.MAX_IDLE
-        chat.ask("Quatre heures pile", previous=RAPPEL)
+        chat.ask("Quatre heures pile", previous=RAPPEL, scope=SCOPE)
         self.assertEqual(self.sent[-1], ("thread-1", "Quatre heures pile"))
         self.now += chat.MAX_IDLE + 1
         self.assertEqual(chat.renewal_reason(), "plus de 4 h sans question")
-        chat.ask("Après la pause", previous=RAPPEL)
+        chat.ask("Après la pause", previous=RAPPEL, scope=SCOPE)
         self.assertEqual(self.sent[-1], ("thread-2", RAPPEL + "\n\nAprès la pause"))
         self.assertEqual(len(self.sent), 3)
 
     def test_count_and_last_use_survive_a_new_conversation_object(self):
         chat = self.chat()
         for number in range(9):
-            chat.ask(f"Question {number}")
+            chat.ask(f"Question {number}", scope=SCOPE)
         restored = self.chat()
         self.assertEqual(restored.impl.usage(), ("thread-1", 9, NOW))
-        restored.ask("Dixième", previous=RAPPEL)
+        self.assertEqual(restored.generation, chat.generation)
+        restored.ask("Dixième", previous=RAPPEL, scope=SCOPE)
         self.assertEqual(self.sent[-1], ("thread-1", "Dixième"))
         again = self.chat()
         self.assertEqual(again.impl.usage(), ("thread-1", 10, NOW))
-        again.ask("Onzième", previous=RAPPEL)
+        again.ask("Onzième", previous=RAPPEL, scope=SCOPE)
         self.assertEqual(self.sent[-1], ("thread-2", RAPPEL + "\n\nOnzième"))
 
     def test_a_saved_thread_without_a_count_is_renewed_and_not_claimed(self):
@@ -123,17 +133,17 @@ class CodexSessionTests(unittest.TestCase):
         chat = self.chat()
         self.assertEqual(chat.impl.usage(), ("ancien", None, None))
         self.assertEqual(chat.renewal_reason(), "usage inconnu")
-        chat.prepare()
+        chat.prepare(SCOPE)
         self.client.load_thread.assert_not_called()
-        chat.ask("Question", previous=RAPPEL)
+        chat.ask("Question", previous=RAPPEL, scope=SCOPE)
         self.client.request.assert_called_once_with("thread/unsubscribe", {"threadId": "ancien"})
         self.assertEqual(self.sent, [("thread-1", RAPPEL + "\n\nQuestion")])
         self.assertEqual(self.saved()["questions"], 1)
 
     def test_prepare_still_claims_a_current_thread_without_a_turn(self):
-        self.chat().ask("Question")
+        self.chat().ask("Question", scope=SCOPE)
         restored = self.chat()
-        restored.prepare()
+        restored.prepare(SCOPE)
         self.client.load_thread.assert_called_once_with(
             "thread-1", self.data_dir, restored.impl.model, restored.impl.instructions
         )
@@ -142,13 +152,13 @@ class CodexSessionTests(unittest.TestCase):
     def test_a_failed_question_after_renewal_is_not_replayed(self):
         chat = self.chat()
         for number in range(10):
-            chat.ask(f"Question {number}")
+            chat.ask(f"Question {number}", scope=SCOPE)
         self.client.run.side_effect = RuntimeError("Connexion Codex interrompue.")
         with self.assertRaises(RuntimeError):
-            chat.ask("Perdue", previous=RAPPEL)
+            chat.ask("Perdue", previous=RAPPEL, scope=SCOPE)
         self.assertEqual(self.client.run.call_count, 11)
         self.client.run.side_effect = self.run_turn
-        chat.ask("Suivante", previous=RAPPEL)
+        chat.ask("Suivante", previous=RAPPEL, scope=SCOPE)
         # The recall waits for the first answered question; the lost one is never resent.
         self.assertEqual(self.sent[-1], ("thread-2", RAPPEL + "\n\nSuivante"))
         self.assertEqual(self.client.run.call_count, 12)
@@ -156,12 +166,93 @@ class CodexSessionTests(unittest.TestCase):
 
     def test_manual_restart_starts_a_new_conversation_without_recall(self):
         chat = self.chat()
-        chat.ask("Question")
+        chat.ask("Question", scope=SCOPE)
         chat.restart()
         self.assertEqual((self.saved()["thread_id"], self.saved()["questions"]), (None, 0))
         self.assertEqual(chat.renewal_reason(), "")
-        chat.ask("Nouvelle", previous=RAPPEL)
+        chat.ask("Nouvelle", previous=RAPPEL, scope=SCOPE)
         self.assertEqual(self.sent[-1], ("thread-2", "Nouvelle"))
+
+    def test_adoption_before_turn_submission_is_already_bound_to_the_scope(self):
+        chat = self.chat()
+        self.client.run.side_effect = RuntimeError("Échec avant l’identifiant")
+        with self.assertRaisesRegex(RuntimeError, "avant l’identifiant"):
+            chat.ask("Avant adoption", scope=SCOPE)
+        self.assertIsNone(self.saved()["thread_id"])
+
+        def fail_after_adoption(_prompt, ident, *_args, **options):
+            self.assertIsNone(ident)
+            options["on_thread"]("adopté sans envoi")
+            self.assertEqual(self.saved()["scope"], SCOPE.fields())
+            raise TimeoutError("Échec avant l’envoi")
+
+        self.client.run.side_effect = fail_after_adoption
+        with self.assertRaisesRegex(TimeoutError, "avant l’envoi"):
+            chat.ask("Avant envoi", scope=SCOPE)
+        self.assertEqual(self.saved()["thread_id"], "adopté sans envoi")
+        self.client.run.side_effect = self.run_turn
+        restored = self.chat()
+        restored.prepare(OTHER_DIMENSION)
+        self.client.load_thread.assert_not_called()
+        restored.ask("Autre dimension", scope=OTHER_DIMENSION)
+        self.assertIsNone(self.client.run.call_args.args[1])
+        self.assertEqual(self.sent, [("thread-1", "Autre dimension")])
+
+    def test_saved_provenance_is_required_even_when_the_usage_is_current(self):
+        path = self.root / "session.json"
+        legacy = {
+            "data_dir": str(self.data_dir.resolve()),
+            "thread_id": "ancien",
+            "questions": 1,
+            "last_question_at": NOW,
+        }
+        for provenance in ({}, {"scope": SCOPE.fields(), "generation": "invalide"}):
+            with self.subTest(provenance=provenance):
+                path.write_text(json.dumps({**legacy, **provenance}), encoding="utf-8")
+                chat = self.chat()
+                self.assertEqual(chat.renewal_reason(), "")
+                chat.prepare(SCOPE)
+                self.client.load_thread.assert_not_called()
+                chat.ask("Nouvelle", scope=SCOPE)
+                self.assertIsNone(self.client.run.call_args.args[1])
+
+    def test_manual_reset_stays_durable_before_the_worker_and_after_late_adoption(self):
+        chat = self.chat()
+        chat.ask("Premier tour", scope=SCOPE)
+        old_generation = chat.generation
+
+        def reset_before_adoption(_prompt, ident, *_args, **options):
+            self.assertEqual(ident, "thread-1")
+            chat.request_restart()
+            options["on_thread"]("identifiant tardif")
+            raise RuntimeError("Interrompu")
+
+        self.client.run.side_effect = reset_before_adoption
+        with self.assertRaisesRegex(RuntimeError, "Interrompu"):
+            chat.ask("Tour en cours", scope=SCOPE, generation=old_generation)
+        self.assertIsNot(chat.generation, old_generation)
+        self.assertIsNone(self.saved()["thread_id"])
+        self.assertEqual(self.saved()["generation"], chat.generation.hex)
+        # Reopen before apply_pending_restart gets the transport lock.
+        restored = self.chat()
+        restored.prepare(SCOPE)
+        self.client.load_thread.assert_not_called()
+        self.client.run.side_effect = self.run_turn
+        restored.ask("Nouvelle question", scope=SCOPE)
+        self.assertEqual(self.sent[-1], ("thread-2", "Nouvelle question"))
+
+    def test_backup_is_not_used_to_resume_a_retired_thread(self):
+        chat = self.chat()
+        chat.ask("Premier tour", scope=SCOPE)
+        chat.restart()
+        backup = chat.impl.path.with_suffix(".json.bak")
+        self.assertEqual(json.loads(backup.read_text(encoding="utf-8"))["thread_id"], "thread-1")
+        chat.impl.path.write_text("{", encoding="utf-8")
+        restored = self.chat()
+        restored.prepare(SCOPE)
+        self.client.load_thread.assert_not_called()
+        restored.ask("Tour suivant", scope=SCOPE)
+        self.assertEqual(self.sent[-1], ("thread-2", "Tour suivant"))
 
 
 class ClaudeSessionTests(unittest.TestCase):
@@ -188,7 +279,7 @@ class ClaudeSessionTests(unittest.TestCase):
         impl = claude.Conversation(self.data_dir, "Read {data_dir}", "sonnet", timeout=30)
         self.addCleanup(impl.stop)
         with patch.object(ai_provider, "conversation", return_value=impl):
-            return Conversation(self.data_dir)
+            return Conversation(self.data_dir, clock=lambda: NOW)
 
     def lines(self, name):
         path = self.root / name
@@ -199,8 +290,8 @@ class ClaudeSessionTests(unittest.TestCase):
         (self.root / "session_claude.json").write_text(json.dumps(legacy), encoding="utf-8")
         chat = self.chat()
         self.assertEqual(chat.renewal_reason(), "usage inconnu")
-        self.assertEqual(chat.ask("Et la suite ?", previous=RAPPEL), "Réponse")
-        self.assertEqual(chat.ask("Encore une", previous=RAPPEL), "Réponse")
+        self.assertEqual(chat.ask("Et la suite ?", previous=RAPPEL, scope=SCOPE), "Réponse")
+        self.assertEqual(chat.ask("Encore une", previous=RAPPEL, scope=SCOPE), "Réponse")
         (launch,) = self.lines("launches.jsonl")
         self.assertNotIn("--resume", launch)
         session = launch[launch.index("--session-id") + 1]
@@ -209,10 +300,55 @@ class ClaudeSessionTests(unittest.TestCase):
         chat.stop()
         restored = self.chat()
         self.assertEqual(restored.impl.usage()[:2], (session, 2))
-        restored.ask("Retour", previous=RAPPEL)
+        self.assertEqual(restored.generation, chat.generation)
+        restored.ask("Retour", previous=RAPPEL, scope=SCOPE)
         launches = self.lines("launches.jsonl")
         self.assertEqual(launches[-1][launches[-1].index("--resume") + 1], session)
         self.assertEqual(self.lines("requests.jsonl")[-1], "Retour")
+
+    def test_same_scope_after_failure_resumes_but_a_new_scope_drops_the_live_process(self):
+        chat = self.chat()
+        with self.assertRaisesRegex(RuntimeError, "Inférence interrompue"):
+            chat.ask("Tour interrompu avec action", scope=SCOPE)
+        first_launch = self.lines("launches.jsonl")[0]
+        first_id = first_launch[first_launch.index("--session-id") + 1]
+        self.assertIsNone(chat.impl.proc)
+        self.assertEqual(chat.impl.session_id, first_id)
+        restored = self.chat()
+        restored.ask("Dans la même portée", scope=SCOPE)
+        live = restored.impl.proc
+        restored.ask("Toujours dans la même portée", scope=SCOPE)
+        self.assertIs(restored.impl.proc, live)
+        restored.ask("Autre dimension", scope=OTHER_DIMENSION)
+        self.assertIsNotNone(live.poll())
+        _, resumed, fresh = self.lines("launches.jsonl")
+        self.assertEqual(resumed[resumed.index("--resume") + 1], first_id)
+        self.assertNotIn("--resume", fresh)
+        self.assertNotEqual(fresh[fresh.index("--session-id") + 1], first_id)
+        self.assertEqual(
+            self.lines("requests.jsonl"),
+            [
+                "Tour interrompu avec action",
+                "Dans la même portée",
+                "Toujours dans la même portée",
+                "Autre dimension",
+            ],
+        )
+
+    def test_current_legacy_usage_does_not_authorize_resume(self):
+        legacy = {
+            "data_dir": str(self.data_dir.resolve()),
+            "session_id": "ancienne",
+            "questions": 1,
+            "last_question_at": NOW,
+        }
+        (self.root / "session_claude.json").write_text(json.dumps(legacy), encoding="utf-8")
+        chat = self.chat()
+        self.assertEqual(chat.renewal_reason(), "")
+        chat.ask("Question", scope=SCOPE)
+        (launch,) = self.lines("launches.jsonl")
+        self.assertNotIn("--resume", launch)
+        self.assertEqual(self.lines("requests.jsonl"), ["Question"])
 
 
 class Controller(ConversationController):

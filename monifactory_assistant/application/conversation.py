@@ -84,7 +84,7 @@ class ConversationController:
 
     def prepare_conversation(self):
         try:
-            self.conversation.prepare()
+            self.conversation.prepare(self.bridge.routing.current())
             log("Discussion prête pour le mod (aucune question envoyée).")
             self.events.put(("connection_ready",))
         except Exception as error:
@@ -358,6 +358,7 @@ class ConversationController:
                 show_preview,
                 previous=previous_exchanges(self.recall_exchanges, scope, generation),
                 generation=generation,
+                scope=scope,
             )
             # Tk vérifiera la liaison et le reçu sans lancer d’attestation.
             verdict = production.delivery_verdict(proof) if proof is not None else None

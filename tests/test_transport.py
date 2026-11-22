@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import monifactory_assistant.providers as ai_provider
+from monifactory_assistant.game.world_scope import WorldScope
+from monifactory_assistant.providers import codex
 from monifactory_assistant.providers.codex_transport import PersistentCodex, RpcError
+from monifactory_assistant.providers.session import Conversation
 
 FAKE = r"""
 import json,sys,os,time
@@ -110,6 +114,38 @@ class PersistentTests(unittest.TestCase):
         self.assertIn("hello", preview)
         self.assertNotIn("Never speak this", preview)
         self.assertEqual(self.client.metrics[-1]["status"], "failed")
+
+    def test_failed_turn_resumes_only_in_the_same_scope_on_the_app_server_wire(self):
+        self.enterContext(patch.multiple(codex, HERE=self.root, CLIENT=self.client))
+        self.enterContext(patch.object(ai_provider, "CONFIG", {"provider": "codex"}))
+        self.enterContext(patch.object(codex, "instructions", return_value="rules"))
+        self.enterContext(patch("monifactory_assistant.providers.session.log"))
+        scope = WorldScope("monde A", "connexion", "dimension")
+        other_world = WorldScope("monde B", scope.session, scope.dimension)
+        chat = Conversation(self.root)
+        with self.assertRaisesRegex(RuntimeError, "quota"):
+            chat.ask("failure", scope=scope)
+        failed_ident = chat.impl.session_id
+        self.client.close()
+
+        restored = Conversation(self.root)
+        restored.prepare(other_world)
+        self.assertEqual(self.client.starts, 1)
+        self.assertEqual(restored.ask("Même portée", scope=scope), "hello")
+        self.assertEqual(restored.ask("Autre monde", scope=other_world), "hello")
+        rows = self.requests()
+        self.assertEqual(
+            [r["params"]["threadId"] for r in rows if r["method"] == "thread/resume"],
+            [failed_ident],
+        )
+        turns = [r["params"] for r in rows if r["method"] == "turn/start"]
+        self.assertEqual(
+            [turn["input"][0]["text"] for turn in turns],
+            ["failure", "Même portée", "Autre monde"],
+        )
+        self.assertEqual([turn["threadId"] for turn in turns[:2]], [failed_ident, failed_ident])
+        self.assertNotEqual(turns[2]["threadId"], failed_ident)
+        self.assertEqual(sum(r["method"] == "thread/start" for r in rows), 2)
 
     def test_completed_answer_is_spoken_once(self):
         preview = []

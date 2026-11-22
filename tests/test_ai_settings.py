@@ -404,6 +404,8 @@ class DynamicRoutingTests(unittest.TestCase):
             backend.ask.return_value = "answer"
             # A current session: changing the model or effort must not renew it.
             backend.usage.return_value = ("thread", 1, time.time())
+            backend.generation = backend.session_generation = object()
+            backend.matches_scope.return_value = True
             conversation = logic["Conversation"](app.bridge.dir)
             app.work_info("item", "Name")
             self.assertEqual(logic["ask_claude"].call_args.args[2], "old")

@@ -31,7 +31,6 @@ class Conversation:
     def __init__(self, data_dir, clock=None):
         self.clock = clock or time.time
         self.renewed = False
-        self.generation = self._session_generation = object()
         self.impl = ai_provider.conversation(
             data_dir,
             SYSTEM_PROMPT,
@@ -39,6 +38,10 @@ class Conversation:
             ai_provider.effort("question", "low"),
             TIMEOUT,
         )
+
+    @property
+    def generation(self):
+        return self.impl.generation
 
     def renewal_reason(self):
         """Motif de renouvellement de la session enregistrée, sinon une chaîne vide."""
@@ -54,7 +57,15 @@ class Conversation:
         return ""
 
     def ask(
-        self, prompt, on_text=None, on_tool=None, on_preview=None, *, previous="", generation=None
+        self,
+        prompt,
+        on_text=None,
+        on_tool=None,
+        on_preview=None,
+        *,
+        previous="",
+        generation=None,
+        scope=None,
     ):
         with self.impl.lock:
             self.apply_pending_restart()
@@ -62,6 +73,9 @@ class Conversation:
                 ai_provider.model("question"), ai_provider.effort("question", "low")
             )
             reason = self.renewal_reason()
+            ident, questions, _ = self.impl.usage()
+            if not reason and (ident or questions) and not self.impl.matches_scope(scope):
+                reason = "portée différente ou inconnue"
             if reason:
                 self.impl.restart()
                 self.renewed = True
@@ -70,23 +84,21 @@ class Conversation:
                 raise ValueError("La conversation a changé pendant la demande.")
             if self.renewed and previous:
                 prompt = previous + "\n\n" + prompt
-            self.impl.count_question(self.clock())
+            self.impl.count_question(self.clock(), scope)
             answer = self.impl.ask(prompt, on_text, on_tool, on_preview)
             self.renewed = False
             return answer
 
     def request_restart(self):
         """Invalide le tour courant sans attendre la fin de l’inférence sur le fil Tk."""
-        self.generation = object()
+        self.impl.invalidate_generation()
 
     def apply_pending_restart(self):
         """Le worker de remise à zéro ou la prochaine question applique la demande."""
         with self.impl.lock:
-            generation = self.generation
-            if generation is not self._session_generation:
+            if self.generation is not self.impl.session_generation:
                 self.impl.restart()
                 self.renewed = False
-                self._session_generation = generation
 
     def restart(self):
         self.request_restart()
@@ -95,11 +107,11 @@ class Conversation:
     def stop(self):
         return self.impl.stop()
 
-    def prepare(self):
+    def prepare(self, scope=None):
         prepare = getattr(self.impl, "prepare", None)
-        # Une session à renouveler n’est pas réclamée : la prochaine question en ouvre une neuve.
-        if prepare and not self.renewal_reason():
-            prepare()
+        with self.impl.lock:
+            if prepare and self.impl.matches_scope(scope) and not self.renewal_reason():
+                prepare()
 
 
 def tool_status(name, data):

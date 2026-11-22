@@ -6,7 +6,7 @@
 - [Contrôleur de conversation](../../monifactory_assistant/application/conversation.py) reçoit les questions, les fiches d’objets et les événements vocaux. [Audio](../../monifactory_assistant/audio.py) gère la capture, la transcription et la lecture.
 - [Construction du contexte](../../monifactory_assistant/application/question_context.py) assemble le texte des observations à partir de lecteurs explicites fournis par le contrôleur.
 - [Index des recettes](../../monifactory_assistant/game/recipes.py) relie les noms cités aux objets du pack et joint leurs recettes à la question. Le [contrôleur de jeu](../../monifactory_assistant/application/game.py) le recharge après chaque export.
-- [Session](../../monifactory_assistant/providers/session.py) délègue à [Codex](../../monifactory_assistant/providers/codex.py) ou [Claude](../../monifactory_assistant/providers/claude.py) et décide du renouvellement de leur session. [Session enregistrée](../../monifactory_assistant/providers/saved_session.py) tient l’identifiant, le nombre de questions et l’heure de la dernière question dans `session.json` ou `session_claude.json`. [Discussion en lecture seule](../../monifactory_assistant/ui/discussion.py) sert le suivi local.
+- [Session](../../monifactory_assistant/providers/session.py) délègue à [Codex](../../monifactory_assistant/providers/codex.py) ou [Claude](../../monifactory_assistant/providers/claude.py) et décide du renouvellement de leur session. [Session enregistrée](../../monifactory_assistant/providers/saved_session.py) tient l’identifiant, sa portée, la génération manuelle, le nombre de questions et l’heure de la dernière question dans `session.json` ou `session_claude.json`. [Discussion en lecture seule](../../monifactory_assistant/ui/discussion.py) sert le suivi local.
 
 ## Règles à préserver
 
@@ -26,11 +26,15 @@ Chaque question joint environ 40 Ko de contexte du monde. Comme l’assistant d�
 
 Le compteur et l’heure de la dernière question survivent au redémarrage de l’assistant. La règle est commune à Claude et Codex.
 
+La reprise d’un fil exige aussi la même portée vérifiée (monde, connexion et dimension) et la même génération manuelle. La portée est fixée avant l’envoi et enregistrée avec l’identifiant dès son adoption, y compris si le tour échoue ensuite. Au redémarrage de l’assistant, seul le fichier principal peut autoriser une reprise. Une copie `.bak` peut contenir un fil déjà abandonné. Chaque question sans portée vérifiable démarre un fil neuf.
+
 Le renouvellement n’envoie rien. La question en cours part une seule fois, précédée d’au plus deux échanges livrés dans la même portée vérifiée (monde, connexion et dimension) et la même génération de conversation. Ce rappel est étiqueté « Échanges précédents ». Il conserve le texte des réponses sans leurs actions et borne chaque texte à environ 1 200 caractères. Une question restée sans réponse n’y figure pas et n’est jamais renvoyée. Si la première question de la session neuve échoue, la suivante porte encore le rappel admissible.
 
 La provenance du rappel reste en mémoire. Les messages restaurés depuis la vue, les échanges sans portée vérifiée et les réponses livrées après un changement de contexte peuvent rester visibles dans Discussion. Le rappel exclut ces messages.
 
-**Nouvelle conversation** change la génération immédiatement. Une réponse déjà en cours peut arriver et rester visible avec la mention « Réponse de la conversation précédente ». Ses actions sont écartées. Le fournisseur termine la remise à zéro avant d’accepter le premier tour de la nouvelle génération. Au démarrage, Codex réclame la session enregistrée seulement si elle ne doit pas être renouvelée.
+**Nouvelle conversation** change immédiatement la génération et tente d’effacer l’identifiant du fichier principal. Une adoption tardive dans l’ancienne génération ne peut plus le réinscrire. Une réponse déjà en cours peut arriver et rester visible avec la mention « Réponse de la conversation précédente ». Ses actions sont écartées. Le fournisseur termine la remise à zéro avant d’accepter le premier tour de la nouvelle génération. Au démarrage, Codex réclame le fil enregistré seulement si la portée courante est vérifiée et si le fil reste réutilisable.
+
+Si l’écriture d’invalidation échoue, le worker réessaie. Si l’assistant s’arrête avant qu’une écriture réussisse, l’ancien identifiant peut rester dans le fichier principal et être repris au redémarrage dans la même portée vérifiée.
 
 ## Lecture du contexte d’une question
 

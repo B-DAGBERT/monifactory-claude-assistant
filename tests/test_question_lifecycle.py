@@ -173,6 +173,7 @@ class QuestionLifecycleTests(TestCase):
         self.enter_world()
         self.reply = REPLY
         self.exchange("Question dont la réponse attend dans la file", deliver=False)
+        self.disconnect()
         self.enter_world(session=SESSION_B)
         app.poll()
         self.assertFalse(app.places_file.exists())
@@ -181,6 +182,7 @@ class QuestionLifecycleTests(TestCase):
         )
         self.reply = "Réponse de la nouvelle connexion."
         self.exchange("Question de la nouvelle connexion")
+        self.assertNotEqual(sent[0][0], sent[1][0])
         self.after_idle("Quelle suite ?", session=SESSION_B)
         self.assertIn("Question : Question de la nouvelle connexion", sent[-1][1])
         self.assertNotIn("attend dans la file", sent[-1][1])
@@ -209,7 +211,6 @@ class QuestionLifecycleTests(TestCase):
         sent = self.use_codex()
         self.assertIsNone(self.app.bridge.scope)
         self.exchange("Question hors partie")
-        self.clock.return_value += Conversation.MAX_IDLE + 1
         self.exchange("Suite hors partie")
         self.assertEqual(len(sent), 2)
         self.assertNotEqual(sent[0][0], sent[1][0])
@@ -257,14 +258,39 @@ class QuestionLifecycleTests(TestCase):
         self.assertNotIn("Premier échange", recall)
         self.assertNotIn("<actions>", recall)
 
-    def test_switch_to_claude_preserves_world_and_manual_boundaries(self):
-        self.use_codex()
+    def test_codex_does_not_reuse_the_thread_of_a_failed_first_turn_in_another_world(self):
+        sent = self.use_codex()
         app = self.app
         self.enter_world()
-        self.exchange("Échange Codex dans le monde A")
-        self.app.on_new()
-        self.run_worker()
+        self.exchange("Question livrée dans A")
+        client = codex.CLIENT
+        run = client.run.side_effect
+
+        def interrupted(prompt, thread, *args, **options):
+            run(prompt, thread, *args, **options)  # on_thread, puis acceptation de l'envoi
+            options["on_preview"](REPLY)
+            raise TimeoutError("Inférence interrompue")
+
+        client.run.side_effect = interrupted
+        self.after_idle("Tour interrompu avec action")
+        failed_thread = sent[-1][0]
+        self.assertNotEqual(sent[0][0], failed_thread)
+        saved = json.loads((self.directory / "session.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved["thread_id"], failed_thread)
+        self.assertEqual(saved["questions"], 1)
+        self.assertEqual(app.conversation.renewal_reason(), "")
+        client.run.side_effect = run
         self.enter_world(WORLD_B, SESSION_B)
+        self.exchange("Question dans B")
+        self.assertEqual(len(sent), 3)
+        self.assertIn("Ma question : Question dans B", sent[-1][1])
+        self.assertNotIn("Tour interrompu", sent[-1][1])
+        self.assertNotIn("Échanges précédents", sent[-1][1])
+        self.assertFalse(app.places_file.exists())
+        self.assertIsNone(client.run.call_args.args[1])
+        self.assertNotEqual(sent[-1][0], failed_thread)
+
+    def use_claude(self):
         script = self.directory / "fake_claude.py"
         script.write_text(FAKE_CLAUDE, encoding="utf-8")
         actual_start = claude.start
@@ -276,6 +302,50 @@ class QuestionLifecycleTests(TestCase):
             )
         )
         self.enterContext(patch.object(ai_provider, "CONFIG", {"provider": "claude"}))
+
+    def claude_trace(self, name):
+        return [
+            json.loads(line)
+            for line in (self.directory / (name + ".jsonl"))
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+
+    def test_claude_does_not_resume_the_session_of_a_failed_first_turn_in_another_world(self):
+        self.use_claude()
+        app = self.app
+        app.conversation = Conversation(app.bridge.dir)
+        self.addCleanup(app.conversation.stop)
+        self.enter_world()
+        self.exchange("Question livrée dans A")
+        self.after_idle("Tour interrompu avec action")
+        saved = json.loads((self.directory / "session_claude.json").read_text(encoding="utf-8"))
+        _, failed_launch = self.claude_trace("launches")
+        failed_id = failed_launch[failed_launch.index("--session-id") + 1]
+        self.assertEqual(saved["session_id"], failed_id)
+        self.assertEqual(saved["questions"], 1)
+        self.assertEqual(app.conversation.renewal_reason(), "")
+        self.enter_world(WORLD_B, SESSION_B)
+        self.exchange("Question dans B")
+        requests = self.claude_trace("requests")
+        self.assertEqual(len(requests), 3)
+        self.assertIn("Ma question : Question dans B", requests[-1])
+        self.assertNotIn("Tour interrompu", requests[-1])
+        self.assertNotIn("Échanges précédents", requests[-1])
+        self.assertFalse(app.places_file.exists())
+        launch = self.claude_trace("launches")[-1]
+        self.assertNotIn("--resume", launch)
+        self.assertNotEqual(launch[launch.index("--session-id") + 1], failed_id)
+
+    def test_switch_to_claude_preserves_world_and_manual_boundaries(self):
+        self.use_codex()
+        app = self.app
+        self.enter_world()
+        self.exchange("Échange Codex dans le monde A")
+        self.app.on_new()
+        self.run_worker()
+        self.enter_world(WORLD_B, SESSION_B)
+        self.use_claude()
         dump(
             self.directory / "session_claude.json",
             {"data_dir": str(app.bridge.dir.resolve()), "session_id": "ancienne-session-claude"},
