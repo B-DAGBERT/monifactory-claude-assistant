@@ -40,8 +40,23 @@ for line in sys.stdin:
         print(json.dumps({"type": "stream_event", "event": {"type": "content_block_delta", "delta": delta}}), flush=True)
         print(json.dumps({"type": "result", "is_error": True, "result": "Inférence interrompue", "session_id": session}), flush=True)
         continue
-    print(json.dumps({"type": "result", "is_error": False, "result": "Réponse", "session_id": session}), flush=True)
+    answer = answers.get(prompt.rsplit("Ma question : ", 1)[-1], "Réponse")
+    print(json.dumps({"type": "result", "is_error": False, "result": answer, "session_id": session}), flush=True)
 """
+
+
+def use_fake_claude(test, root, *, answers=None):
+    script = root / "fake_claude.py"
+    script.write_text(f"answers = {answers or {}!r}\n" + FAKE_CLAUDE, encoding="utf-8")
+    actual_start = claude.start
+    test.enterContext(patch.object(claude, "HERE", root))
+    test.enterContext(patch.object(claude, "find_claude", return_value=str(script)))
+    test.enterContext(
+        patch.object(
+            claude, "start", side_effect=lambda args: actual_start([sys.executable, *args])
+        )
+    )
+    test.enterContext(patch.object(ai_provider, "CONFIG", {"provider": "claude"}))
 
 
 class CodexSessionTests(unittest.TestCase):
@@ -262,17 +277,7 @@ class ClaudeSessionTests(unittest.TestCase):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.data_dir = self.root / "game"
         self.data_dir.mkdir()
-        script = self.root / "fake_claude.py"
-        script.write_text(FAKE_CLAUDE, encoding="utf-8")
-        actual_start = claude.start
-        self.enterContext(patch.object(claude, "HERE", self.root))
-        self.enterContext(patch.object(claude, "find_claude", return_value=str(script)))
-        self.enterContext(
-            patch.object(
-                claude, "start", side_effect=lambda args: actual_start([sys.executable, *args])
-            )
-        )
-        self.enterContext(patch.object(ai_provider, "CONFIG", {"provider": "claude"}))
+        use_fake_claude(self, self.root)
         self.enterContext(patch("monifactory_assistant.providers.session.log"))
 
     def chat(self):

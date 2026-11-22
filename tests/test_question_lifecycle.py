@@ -1,7 +1,6 @@
 """Characterize prompts and delayed turns through the Python application entry points."""
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 from queue import Queue
@@ -10,7 +9,6 @@ from unittest import TestCase
 from unittest.mock import Mock, call, patch
 
 import monifactory_assistant.providers as ai_provider
-import monifactory_assistant.providers.claude as claude
 import monifactory_assistant.providers.codex as codex
 from monifactory_assistant.app import App
 from monifactory_assistant.game.recipes import RecipeIndex
@@ -20,7 +18,7 @@ from monifactory_assistant.prompts import ACTIONS_HELP
 from monifactory_assistant.providers.session import Conversation
 from monifactory_assistant.ui.discussion import recent_history
 from tests.benchmarks.question_context import START
-from tests.test_discussion_session import FAKE_CLAUDE
+from tests.test_discussion_session import use_fake_claude
 from tests.test_world_routing import (
     NETHER,
     OVERWORLD,
@@ -290,19 +288,6 @@ class QuestionLifecycleTests(TestCase):
         self.assertIsNone(client.run.call_args.args[1])
         self.assertNotEqual(sent[-1][0], failed_thread)
 
-    def use_claude(self):
-        script = self.directory / "fake_claude.py"
-        script.write_text(FAKE_CLAUDE, encoding="utf-8")
-        actual_start = claude.start
-        self.enterContext(patch.object(claude, "HERE", self.directory))
-        self.enterContext(patch.object(claude, "find_claude", return_value=str(script)))
-        self.enterContext(
-            patch.object(
-                claude, "start", side_effect=lambda args: actual_start([sys.executable, *args])
-            )
-        )
-        self.enterContext(patch.object(ai_provider, "CONFIG", {"provider": "claude"}))
-
     def claude_trace(self, name):
         return [
             json.loads(line)
@@ -312,7 +297,7 @@ class QuestionLifecycleTests(TestCase):
         ]
 
     def test_claude_does_not_resume_the_session_of_a_failed_first_turn_in_another_world(self):
-        self.use_claude()
+        use_fake_claude(self, self.directory)
         app = self.app
         app.conversation = Conversation(app.bridge.dir)
         self.addCleanup(app.conversation.stop)
@@ -345,7 +330,7 @@ class QuestionLifecycleTests(TestCase):
         self.app.on_new()
         self.run_worker()
         self.enter_world(WORLD_B, SESSION_B)
-        self.use_claude()
+        use_fake_claude(self, self.directory)
         dump(
             self.directory / "session_claude.json",
             {"data_dir": str(app.bridge.dir.resolve()), "session_id": "ancienne-session-claude"},

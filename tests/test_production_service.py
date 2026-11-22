@@ -44,11 +44,14 @@ from monifactory_assistant.production.report_lines import (
     missing_and_waiting_lines,
 )
 from monifactory_assistant.production.service import ProductionService, _historical_lines
+from monifactory_assistant.providers.session import Conversation
 from monifactory_assistant.settings import SETTINGS
 from monifactory_assistant.ui.views import build_mod_view
 from tests.benchmarks.question_context import fixture as conversation_fixture
+from tests.test_discussion_session import use_fake_claude
 from tests.test_production_native_evidence import WATER, lot
 from tests.test_production_native_evidence import fixture as native_fixture
+from tests.test_world_routing import SESSION_B, WORLD_B, enter, setup_bridge
 
 IRON = Resource("item", "minecraft:iron_ingot", "item")
 PLATE = Resource("item", "gtceu:iron_plate", "item")
@@ -140,8 +143,8 @@ class ProductionServiceTests(unittest.TestCase):
     def setUp(self):
         directory = self.enterContext(tempfile.TemporaryDirectory())
         self.root = Path(directory)
-        self.data = self.root / "game"
-        self.data.mkdir()
+        self.data = self.root / "game" / "kubejs" / "assistant"
+        self.data.mkdir(parents=True)
         self.now = int(time.time() * 1000)
         self.enterContext(
             patch(
@@ -782,7 +785,7 @@ class ProductionServiceTests(unittest.TestCase):
                 patch.object(audio, "tempfile", SimpleNamespace(gettempdir=lambda: self.root))
             )
             stack.enter_context(patch.object(audio, "neural_voice", side_effect=synthesize))
-            stack.enter_context(patch.object(audio.subprocess, "Popen", side_effect=spawn))
+            stack.enter_context(patch.object(audio, "subprocess", SimpleNamespace(Popen=spawn)))
             stack.enter_context(patch.object(audio, "log"))
             with (
                 patch.object(audio.queue, "Queue", side_effect=[texts, sounds]),
@@ -902,6 +905,100 @@ class ProductionServiceTests(unittest.TestCase):
                 self.assertEqual(self.played_through_fence(speaker, played, release), expected)
                 self.assertEqual(app.history[-1]["texte"], words)
                 self.assertEqual(self.attestation.call_count, attested)
+
+    @patch("monifactory_assistant.providers.session.log")
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_revoked_production_voice_and_provider_recall_across_worlds(self, *_logs):
+        bridge = setup_bridge(self.root)
+        self.addCleanup(bridge.close_publications)
+        self.service.bridge = bridge
+        first = "Où se trouve la fonderie de A ?"
+        production = "Explique le plan de production de A"
+        current = "Où se trouve la base de B ?"
+        follow_up = "Et dans cette base ?"
+        old_voice = "La fonderie de A doit produire huit plaques."
+        current_voice = "La base de B est ici."
+        answers = {production: old_voice, current: current_voice}
+        use_fake_claude(self, self.root, answers=answers)
+        clock = Mock(return_value=self.now / 1000)
+        chat = Conversation(bridge.dir, clock=clock)
+        self.addCleanup(chat.stop)
+
+        with self.voice_pipeline(old_voice) as (speaker, entered, release, played):
+            app = self.voice_discussion(speaker, "")
+            app.bridge, app.conversation, app.busy = bridge, chat, False
+
+            def ask(question):
+                # Execute the admitted worker before dispatching its events through App.poll.
+                with patch(
+                    "monifactory_assistant.application.conversation.threading.Thread"
+                ) as worker:
+                    self.assertTrue(app.start_question(question, None))
+                call = worker.call_args.kwargs
+                call["target"](*call["args"])
+                App.poll(app)
+                self.assertFalse(app.busy)
+                self.assertEqual(
+                    [row["texte"] for row in app.history[-2:]],
+                    [question, answers.get(question, "Réponse")],
+                )
+
+            app.game = enter(bridge, self.scope.world, self.scope.session)
+            self.service.poll(app)
+            self.service.submit(self.request())
+            self.assertEqual(self.finish()["etat"], "pret")
+            receipt = self.simulate_revocable_receipts()
+            self.attestation.side_effect = attest_catalogue
+
+            app.speak = False
+            ask(first)
+            clock.return_value += Conversation.MAX_IDLE + 1
+            app.speak = True
+            ask(production)
+            self.assertTrue(entered.wait(10))
+            _, _, proof = app.production_message_proof
+            self.assertIs(self.service.delivery_current(proof), True)
+            receipt.unlink()
+            self.assertIsNone(self.service.delivery_current(proof))
+
+            app.game = enter(bridge, WORLD_B, SESSION_B)
+            self.service.poll(app)
+            self.assertIsNone(self.service.view()["resultat"])
+            with patch("monifactory_assistant.application.interface.threading.Thread") as reset:
+                App.on_new(app)
+            reset.call_args.kwargs["target"]()
+            # Drain A before B can cancel it independently via the next question's stop().
+            self.assertEqual(self.played_through_fence(speaker, played, release), [])
+            ask(current)
+            self.assertEqual(
+                self.played_through_fence(speaker, played, release), [("neural", current_voice)]
+            )
+            clock.return_value += Conversation.MAX_IDLE + 1
+            app.speak = False
+            ask(follow_up)
+
+        def trace(name):
+            return [json.loads(row) for row in (self.root / name).read_text("utf-8").splitlines()]
+
+        launches = trace("launches.jsonl")
+        self.assertEqual(len(launches), 4)
+        ids = [args[args.index("--session-id") + 1] for args in launches]
+        self.assertEqual(len(set(ids)), 4)
+        for args in launches:
+            self.assertNotIn("--resume", args)
+        prompts = trace("requests.jsonl")
+        self.assertEqual(
+            [p.rsplit("Ma question : ", 1)[-1] for p in prompts],
+            [first, production, current, follow_up],
+        )
+        self.assertIn("Question : " + first, prompts[1])
+        calculation = "Recette choisie : " + RECIPE.id
+        self.assertIn(calculation, prompts[1])
+        self.assertNotIn("Échanges précédents", prompts[2])
+        self.assertIn("Question : " + current, prompts[3])
+        for prompt in prompts[2:]:
+            for old in (first, production, old_voice, calculation):
+                self.assertNotIn(old, prompt)
 
     def test_revoked_voice_waiting_for_synthesis_does_not_block_other_messages(self):
         self.service.submit(self.request())

@@ -53,7 +53,7 @@ def state(world, session, dimension=OVERWORLD):
 def setup_bridge(root, *, active=True):
     game = root / "game"
     directory = game / "kubejs/assistant"
-    directory.mkdir(parents=True)
+    directory.mkdir(parents=True, exist_ok=True)
     if active:
         dump(
             directory / "isolation_mondes.json",

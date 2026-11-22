@@ -70,4 +70,6 @@ python -m unittest tests.test_stats_publication tests.test_bridge_world_scope -v
 
 En jeu, essayer une question texte, un doublon de clic et le retour depuis une fenêtre ouverte par Discussion. Un parcours automatisé avec CLI simulé n’atteste pas un échange réel. [Usage en jeu](../utilisation.md#discussion-dans-minecraft)
 
-`test_production_service` exerce les deux files audio avec des barrières de test et des sorties sonores simulées. Dans une copie du pack, rejouer une explication vocale Production avec la capture valide puis révoquée pendant l’attente, avec la voix neuronale et le secours natif de la plateforme.
+`test_production_service` exerce les deux files audio avec des barrières de test et des sorties sonores simulées. Le test `test_revoked_production_voice_and_provider_recall_across_worlds` retire le reçu pendant la synthèse dans A, passe dans B et démarre une nouvelle conversation. Il contrôle les phrases jouées et les prompts reçus par un CLI Claude simulé, y compris le rappel après renouvellement dans B.
+
+Dans une copie du pack, rejouer une explication vocale Production avec la capture valide puis révoquée pendant l’attente, avec la voix neuronale et le secours natif de la plateforme.
