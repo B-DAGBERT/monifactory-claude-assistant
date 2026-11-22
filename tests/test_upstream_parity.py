@@ -237,6 +237,10 @@ class ParityTests(unittest.TestCase):
             "App.on_talk_end",
             "App.on_new",  # Invalidate the generation before restarting; test_question_lifecycle.py.
             "App.submit",
+            # Carry Production proof through both audio queues; test_production_service.py.
+            "Speaker.add",
+            "Speaker._synthesize_loop",
+            "Speaker._play_loop",
         }
         tested_action_guard_changes = {
             "App.run_actions",  # Closed model-action boundary; test_ai_action_guard.py.

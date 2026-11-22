@@ -312,6 +312,10 @@ class InterfaceController:
         self.open_popup()
 
     def on_new(self):
+        cancelled = getattr(self, "_production_voice_cancelled", None)
+        if cancelled is not None:
+            cancelled.set()
+            self._production_voice_cancelled = None
         self.conversation.request_restart()
         threading.Thread(target=self.conversation.apply_pending_restart, daemon=True).start()
         self.notify("Nouvelle conversation.", 4)

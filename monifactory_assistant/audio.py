@@ -9,6 +9,8 @@ import sys
 import tempfile
 import threading
 import traceback
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from monifactory_assistant.paths import PACKAGE_ROOT
@@ -179,6 +181,13 @@ def neural_voice(text):
     return np.concatenate(samples)
 
 
+@dataclass(frozen=True, slots=True)
+class _Speech:
+    generation: int
+    text: str
+    can_play: Callable[[], bool] | None
+
+
 class Speaker:
     """Lit les phrases à la suite : la suivante est synthétisée pendant que la précédente est lue.
     Voix neuronale gratuite (il faut Internet), voix Windows en secours."""
@@ -195,10 +204,11 @@ class Speaker:
         self.stop()
         self.add(text)
 
-    def add(self, text):
+    def add(self, text, *, can_play=None):
+        """Le contrôle facultatif est exécuté sur le fil de lecture, juste avant le son."""
         text = re.sub(r"[*#`_>|]", "", text).strip()
         if text:
-            self.texts.put((self.generation, text))
+            self.texts.put(_Speech(self.generation, text, can_play))
 
     def stop(self):
         self.generation += 1
@@ -215,43 +225,49 @@ class Speaker:
 
     def _synthesize_loop(self):
         while True:
-            generation, text = self.texts.get()
-            if generation != self.generation:
+            speech = self.texts.get()
+            if speech.generation != self.generation:
                 continue
             try:
-                self.sounds.put((generation, neural_voice(text), text))
+                self.sounds.put((speech, neural_voice(speech.text)))
             except Exception:
                 log(
                     "Voix neuronale indisponible, voix Windows à la place :\n"
                     + traceback.format_exc()
                 )
-                self.sounds.put((generation, None, text))
+                self.sounds.put((speech, None))
+
+    def _can_start(self, speech):
+        if speech.can_play is not None and speech.can_play() is not True:
+            return False
+        # Un stop peut survenir pendant la lecture du reçu ou la préparation du secours.
+        return speech.generation == self.generation
 
     def _play_loop(self):
         while True:
-            generation, audio, text = self.sounds.get()
-            if generation != self.generation:
+            speech, audio = self.sounds.get()
+            if speech.generation != self.generation:
                 continue
             try:
                 if audio is not None:
                     import sounddevice
 
-                    sounddevice.play(audio, VOICE_SAMPLE_RATE)
-                    sounddevice.wait()
+                    if self._can_start(speech):
+                        sounddevice.play(audio, VOICE_SAMPLE_RATE)
+                        sounddevice.wait()
                 else:
-                    self._windows_voice(text)
+                    self._windows_voice(speech)
             except Exception:
                 log(traceback.format_exc())
 
-    def _windows_voice(self, text):
+    def _windows_voice(self, speech):
         if sys.platform == "darwin":
-            self.proc = subprocess.Popen(["/usr/bin/say", "-v", "Amélie", "-r", "175", text])
-            self.proc.wait()
-            return
-        text_file = Path(tempfile.gettempdir()) / "assistant_mc_parole.txt"
-        text_file.write_text(text, encoding="utf-8")
-        self.proc = subprocess.Popen(
-            [
+            command = ["/usr/bin/say", "-v", "Amélie", "-r", "175", speech.text]
+            options = {}
+        else:
+            text_file = Path(tempfile.gettempdir()) / "assistant_mc_parole.txt"
+            text_file.write_text(speech.text, encoding="utf-8")
+            command = [
                 "powershell",
                 "-NoProfile",
                 "-ExecutionPolicy",
@@ -259,7 +275,9 @@ class Speaker:
                 "-File",
                 str(PACKAGE_ROOT / "platform/parler.ps1"),
                 str(text_file),
-            ],
-            creationflags=NO_WINDOW,
-        )
+            ]
+            options = {"creationflags": NO_WINDOW}
+        if not self._can_start(speech):
+            return
+        self.proc = subprocess.Popen(command, **options)
         self.proc.wait()

@@ -46,6 +46,8 @@ Pour une explication Production, le worker atteste la preuve avant l’envoi, pu
 
 Une fois l’événement sorti de la file, Tk vérifie la liaison et lit une seule fois l’acquittement natif (4 Kio au plus). Cette lecture s’applique aussi aux aperçus, après l’attestation qui précède l’envoi. Elle exige le catalogue, la portée, l’identifiant et l’empreinte de la capture. Un client Forge qui annonce `preuve_revocable` retire son acquittement dès que le tick constate que le validateur natif refuse la capture. Une réponse dont le reçu a disparu, a été remplacé par celui d’une autre capture ou est illisible est écartée avant l’historique et la voix. Un ancien JAR sans cette garantie entraîne le même refus. Tk n’écrit aucune demande et n’attend aucun acquittement. Le contrôle porte sur le dernier état publié par le client.
 
+Les files de synthèse et de lecture conservent la preuve des réponses vocales Production. Le lecteur revérifie le résultat et l’acquittement local juste avant `sounddevice.play` ou le lancement de la voix de secours macOS ou Windows. Une nouvelle conversation manuelle rend ses anciennes réponses Production inadmissibles à la lecture. Si la preuve n’est plus courante, la réponse déjà livrée reste dans l’historique et le lecteur passe au message suivant. Une révocation après cette dernière lecture locale peut laisser démarrer ou continuer le son. Les réponses ordinaires gardent leur lecture progressive et ne consultent aucun acquittement Production.
+
 `inventaire_details.txt`, lu seulement par l’IA, n’est relevé que pendant que l’assistant tourne (`Pont.assistantActif()`). Sans lui, rien n’est calculé. À son retour, le fichier est réécrit même inchangé. Seules les piles nouvelles ou modifiées (objet, quantité, usure, NBT) recalculent leur ligne, et le texte reste identique octet pour octet. Le fil d’écriture le remplace, puis écrit en mode isolé son marqueur `inventaire_details_contexte.json` une fois le texte écrit. [Stats](../../mod/src/main/java/fr/assistantia/Stats.java) · [Pont](../../mod/src/main/java/fr/assistantia/Pont.java)
 
 ## Recettes jointes à une question
@@ -67,3 +69,5 @@ python -m unittest tests.test_stats_publication tests.test_bridge_world_scope -v
 ```
 
 En jeu, essayer une question texte, un doublon de clic et le retour depuis une fenêtre ouverte par Discussion. Un parcours automatisé avec CLI simulé n’atteste pas un échange réel. [Usage en jeu](../utilisation.md#discussion-dans-minecraft)
+
+`test_production_service` exerce les deux files audio avec des barrières de test et des sorties sonores simulées. Dans une copie du pack, rejouer une explication vocale Production avec la capture valide puis révoquée pendant l’attente, avec la voix neuronale et le secours natif de la plateforme.

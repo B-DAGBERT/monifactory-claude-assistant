@@ -310,7 +310,11 @@ class ProductionService:
             return self._bound_context(proof)
 
     def delivery_current(self, proof):
-        """Après un acquittement du worker, vérifier sa présence sans attendre le client."""
+        """Relire l'acquittement du worker sur Tk ou sur le lecteur audio.
+
+        Le verrou protège la liaison et le cache. La vérification utilise les relevés
+        locaux bornés et n'attend aucune réponse du client natif.
+        """
         with self._lock:
             if not self._bound_context(proof):
                 return False

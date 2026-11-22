@@ -7,13 +7,16 @@ import threading
 import time
 import unittest
 from concurrent.futures import Future
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 from queue import Queue
+from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from monifactory_assistant import audio
 from monifactory_assistant.app import App
 from monifactory_assistant.application.conversation import RecallExchange
 from monifactory_assistant.game.requests import CommandQueue
@@ -88,6 +91,16 @@ class DeferredExecutor:
         future, fn, args = self.calls[-1]
         fn(*args)
         future.set_result(None)
+
+
+class VoiceQueue(Queue):
+    end = object()
+
+    def get(self, *args, **kwargs):
+        item = super().get(*args, **kwargs)
+        if item is self.end:
+            raise SystemExit
+        return item
 
 
 class ProductionReportLinesTests(unittest.TestCase):
@@ -726,6 +739,267 @@ class ProductionServiceTests(unittest.TestCase):
             patch("monifactory_assistant.production.acquisition.atomic_json", side_effect=respond)
         )
         return reply
+
+    @contextmanager
+    def voice_pipeline(self, blocked_text, *, fallback=False, platform="darwin", block_play=False):
+        entered, release = Event(), Event()
+        played = Queue()
+
+        def block():
+            entered.set()
+            if not release.wait(10):
+                raise TimeoutError("Barrière audio non libérée")
+
+        def synthesize(text):
+            if text == blocked_text and not block_play:
+                block()
+                if fallback:
+                    raise RuntimeError("Synthèse indisponible")
+            return text
+
+        def spawn(args, **_options):
+            text = args[-1] if platform == "darwin" else Path(args[-1]).read_text("utf-8")
+            played.put((platform, text))
+            return Mock()
+
+        def play(text, _rate):
+            played.put(("neural", text))
+            if text == blocked_text and block_play:
+                block()
+
+        threads = []
+
+        def thread(**kwargs):
+            worker = Thread(**kwargs)
+            threads.append(worker)
+            return worker
+
+        texts, sounds = VoiceQueue(), VoiceQueue()
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict("sys.modules", {"sounddevice": Mock(play=play)}))
+            stack.enter_context(patch.object(audio, "sys", SimpleNamespace(platform=platform)))
+            stack.enter_context(
+                patch.object(audio, "tempfile", SimpleNamespace(gettempdir=lambda: self.root))
+            )
+            stack.enter_context(patch.object(audio, "neural_voice", side_effect=synthesize))
+            stack.enter_context(patch.object(audio.subprocess, "Popen", side_effect=spawn))
+            stack.enter_context(patch.object(audio, "log"))
+            with (
+                patch.object(audio.queue, "Queue", side_effect=[texts, sounds]),
+                patch.object(audio.threading, "Thread", side_effect=thread),
+            ):
+                speaker = audio.Speaker()
+            try:
+                yield speaker, entered, release, played
+            finally:
+                release.set()
+                for worker, pending in zip(threads, (texts, sounds), strict=True):
+                    pending.put(pending.end)
+                    worker.join(10)
+                    self.assertFalse(worker.is_alive())
+
+    def voice_discussion(self, speaker, answer):
+        app = self.discussion(lambda *_args, **_options: answer)
+        app.speaker, app.speak = speaker, True
+        app.root, app.set_status, app.poll = Mock(), Mock(), Mock()
+        app.question_scope = self.scope
+        app.question_generation = app.conversation.generation = object()
+        return app
+
+    def deliver_production_voice(self, app, *, before_tk=None):
+        question = "Explique le plan de production"
+        with patch("monifactory_assistant.application.conversation.log"):
+            app.work_question(question, None, None)
+            event = list(app.events.queue)[-1]
+            self.assertEqual(event[:2], ("answer", question))
+            self.assertIs(event[-1], True)
+            if before_tk is not None:
+                before_tk()
+            App.poll(app)
+        app.notify.assert_not_called()
+        app.run_actions.assert_not_called()
+        self.assertEqual(app.history[-1]["texte"], event[2])
+        return event[3]
+
+    def played_through_fence(self, speaker, played, release):
+        speaker.add("Témoin de fin.")
+        release.set()
+        outputs = []
+        while (output := played.get(timeout=10)) != ("neural", "Témoin de fin."):
+            outputs.append(output)
+        return outputs
+
+    def test_voice_rechecks_proof_at_playback_after_synthesis(self):
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        reply = self.simulate_revocable_receipts()
+        self.attestation.side_effect = attest_catalogue
+        words = "Le plan prévoit huit plaques."
+        original_scope = self.scope
+        for condition in (
+            "valide",
+            "longue synthèse et preuve valide",
+            "révocation",
+            "autre capture",
+            "reçu illisible",
+            "ancien JAR",
+            "autre monde",
+            "autre connexion",
+            "autre dimension",
+            "annulation audio",
+            "nouvelle conversation",
+            "nouveau calcul",
+            "nouvelle génération du service",
+        ):
+            with self.subTest(condition=condition), self.voice_pipeline(words) as pipeline:
+                speaker, entered, release, played = pipeline
+                self.scope = original_scope
+                self.identity()
+                self.service.poll(self.app)
+                self.metadata["preuve_revocable"] = True
+                self.write("catalogue_production_etat.json", self.metadata)
+                app = self.voice_discussion(speaker, words)
+                proof = self.deliver_production_voice(app)
+                self.assertTrue(entered.wait(10))
+                if condition == "longue synthèse et preuve valide":
+                    self.now += 30_000
+                    self.identity()
+                    self.service.poll(self.app)
+                elif condition == "révocation":
+                    reply.unlink()
+                    self.assertTrue(self.service.context_bound(proof))
+                elif condition == "autre capture":
+                    self.write(reply.name, {**read_capture(reply)[0], "capture": "capture-2"})
+                elif condition == "reçu illisible":
+                    reply.write_text("{", encoding="utf-8")
+                elif condition == "ancien JAR":
+                    self.metadata.pop("preuve_revocable")
+                    self.write("catalogue_production_etat.json", self.metadata)
+                elif condition == "autre monde":
+                    self.scope = replace(self.scope, world="m1_" + "d" * 64)
+                    self.identity()
+                elif condition == "autre connexion":
+                    self.reconnect()
+                elif condition == "autre dimension":
+                    self.scope = replace(self.scope, dimension="minecraft:the_nether")
+                    self.identity()
+                elif condition == "annulation audio":
+                    speaker.stop()
+                elif condition == "nouvelle conversation":
+                    app.conversation.request_restart = Mock(
+                        side_effect=lambda: setattr(app.conversation, "generation", object())
+                    )
+                    app.conversation.apply_pending_restart = Mock()
+                    App.on_new(app)
+                elif condition == "nouveau calcul":
+                    self.service.submit(self.request(n=self.now + 1))
+                    self.assertEqual(self.finish()["n"], self.now + 1)
+                elif condition == "nouvelle génération du service":
+                    with self.service._lock:
+                        self.service._generation += 1
+                attested = self.attestation.call_count
+                expected = [("neural", words)] if condition.endswith("valide") else []
+                self.assertEqual(self.played_through_fence(speaker, played, release), expected)
+                self.assertEqual(app.history[-1]["texte"], words)
+                self.assertEqual(self.attestation.call_count, attested)
+
+    def test_revoked_voice_waiting_for_synthesis_does_not_block_other_messages(self):
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        reply = self.simulate_revocable_receipts()
+        self.attestation.side_effect = attest_catalogue
+        first, stale, last = "Première phrase.", "Huit plaques.", "Dernière phrase."
+        for block_play in (False, True):
+            with (
+                self.subTest(block_play=block_play),
+                self.voice_pipeline(first, block_play=block_play) as pipeline,
+            ):
+                speaker, entered, release, played = pipeline
+                app = self.voice_discussion(speaker, stale)
+                self.deliver_production_voice(app, before_tk=lambda: speaker.add(first))
+                self.assertTrue(entered.wait(10))
+                app.on_voice_text(last, app.question_scope)
+                if block_play:
+                    # Observe actual passage into the playback queue before retracting the receipt.
+                    with speaker.sounds.not_empty:
+                        self.assertTrue(
+                            speaker.sounds.not_empty.wait_for(
+                                lambda: len(speaker.sounds.queue) == 2, timeout=10
+                            )
+                        )
+                reply.unlink()
+                self.assertEqual(
+                    self.played_through_fence(speaker, played, release),
+                    [("neural", first), ("neural", last)],
+                )
+
+    def test_fallback_voice_rechecks_receipt_before_launch(self):
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        reply = self.simulate_revocable_receipts()
+        self.attestation.side_effect = attest_catalogue
+        words = "Huit plaques."
+        for platform in ("darwin", "win32"):
+            for valid in (True, False):
+                with (
+                    self.subTest(platform=platform, valid=valid),
+                    self.voice_pipeline(words, fallback=True, platform=platform) as pipeline,
+                ):
+                    speaker, entered, release, played = pipeline
+                    self.deliver_production_voice(self.voice_discussion(speaker, words))
+                    self.assertTrue(entered.wait(10))
+                    if not valid:
+                        reply.unlink()
+                    self.assertEqual(
+                        self.played_through_fence(speaker, played, release),
+                        [(platform, words)] if valid else [],
+                    )
+
+    def test_new_answer_and_recreated_speaker_use_the_current_queue(self):
+        self.service.submit(self.request())
+        self.assertEqual(self.finish()["etat"], "pret")
+        self.simulate_revocable_receipts()
+        self.attestation.side_effect = attest_catalogue
+        old, current = "Ancienne réponse.", "Nouvelle réponse."
+        with self.voice_pipeline(old) as (speaker, entered, release, played):
+            app = self.voice_discussion(speaker, old)
+            self.deliver_production_voice(app)
+            self.assertTrue(entered.wait(10))
+            app.conversation.ask.side_effect = lambda *_args, **_options: current
+            self.deliver_production_voice(app)  # Le nouveau tour appelle stop avant l'envoi.
+            self.assertEqual(
+                self.played_through_fence(speaker, played, release), [("neural", current)]
+            )
+        with self.voice_pipeline(old) as (speaker, _entered, release, played):
+            app.speaker = speaker
+            self.deliver_production_voice(app)
+            self.assertEqual(
+                self.played_through_fence(speaker, played, release), [("neural", current)]
+            )
+
+    @patch("monifactory_assistant.application.conversation.log")
+    def test_ordinary_answer_streams_without_reading_a_production_receipt(self, _log):
+        with self.voice_pipeline(None) as (speaker, _entered, release, played):
+            app = self.voice_discussion(speaker, "")
+
+            def ask(_prompt, on_text, *_args, **_options):
+                on_text("Première phrase. D")
+                return "Première phrase. Deuxième phrase."
+
+            app.conversation.ask.side_effect = ask
+            with patch(
+                "monifactory_assistant.production.service.live_catalogue_receipt"
+            ) as receipt:
+                app.work_question("Comment aller à la base ?", None, None)
+                self.assertEqual(
+                    len([row for row in app.events.queue if row[0] == "voice_text"]), 2
+                )
+                App.poll(app)
+                self.assertEqual(
+                    self.played_through_fence(speaker, played, release),
+                    [("neural", "Première phrase."), ("neural", "Deuxième phrase.")],
+                )
+            receipt.assert_not_called()
 
     @patch("monifactory_assistant.application.conversation.log")
     def test_tk_rejects_capture_revoked_after_positive_worker_attestation(self, _log):

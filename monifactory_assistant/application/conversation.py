@@ -4,6 +4,7 @@ import json
 import threading
 import time
 import traceback
+from copy import deepcopy
 from dataclasses import dataclass
 
 import monifactory_assistant.providers as ai_provider
@@ -457,7 +458,16 @@ class ConversationController:
             exchange = RecallExchange(scope, generation, question, answer)
             self.recall_exchanges = (*self.recall_exchanges, exchange)[-30:]
         if production_proof is not None and self.speak:
-            self.speaker.add(answer)
+            production = self.production
+            proof = deepcopy(production_proof)
+            cancelled = getattr(self, "_production_voice_cancelled", None)
+            if cancelled is None:
+                cancelled = self._production_voice_cancelled = threading.Event()
+
+            def can_play():
+                return production.delivery_current(proof) is True and not cancelled.is_set()
+
+            self.speaker.add(answer, can_play=can_play)
         self.message, self.message_until = answer, time.time() + 180
         if production_proof is not None:
             self.production_message_proof = (answer, self.message_until, production_proof)
