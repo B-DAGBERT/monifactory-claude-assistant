@@ -244,6 +244,12 @@ class ProductionKnowledgeTests(unittest.TestCase):
                     self.assertTrue(entry.value["shared_identity_inferred"])
                     self.assertEqual(entry.evidence[-1].status, KnowledgeStatus.DERIVED)
 
+    def test_server_native_single_chests_keep_independent_stock(self):
+        result = view(
+            source("monde.json", frame(*(block(x, b="minecraft:chest", jumeau=[]) for x in (0, 1))))
+        )
+        self.assertEqual(result.availability(), {IRON: 20})
+
     def test_dedup_compares_whole_inventory_and_keeps_ambiguous_chests_unallocated(self):
         result = view(
             source(
@@ -463,6 +469,7 @@ class ProductionKnowledgeTests(unittest.TestCase):
             self.assertEqual(result.select("block")[0].value["items"], {IRON: 10})
         for identifier in (
             "functionalstorage:oak_1",
+            "functionalstorage:compacting_framed_drawer",
             "sophisticatedstorage:limited_1_barrel",
             "sophisticatedstorage:netherite_chest",
         ):

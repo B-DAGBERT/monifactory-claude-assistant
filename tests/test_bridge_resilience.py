@@ -58,7 +58,7 @@ class LegacyRequestRecoveryTests(unittest.TestCase):
         self.write(type="question", texte="Question de test")
         first = self.app()
         first.check_mod_requests()
-        first.start_question.assert_called_once_with("Question de test", None)
+        first.start_question.assert_called_once_with("Question de test", None, action_scope=None)
         restarted = self.app()
         restarted.check_mod_requests()
         restarted.start_question.assert_not_called()

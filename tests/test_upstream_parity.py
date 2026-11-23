@@ -9,7 +9,9 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
+from monifactory_assistant.application.game import GameController
 from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,11 +82,40 @@ class ParityTests(unittest.TestCase):
         self.assertNotEqual(java_tokens("x++;"), java_tokens("x + + y;"))
         self.assertNotEqual(java_tokens('"a b"'), java_tokens('"ab"'))
 
+    def test_guidance_preserves_upstream_target_apart_from_dimension(self):
+        tree = ast.parse(upstream("assistant_mc.py"))
+        app = next(
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "App"
+        )
+        method = next(node for node in app.body if getattr(node, "name", None) == "action_guider")
+        scope = {}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), "<upstream>", "exec"), scope)
+        for action in (
+            {"nom": "Mine", "x": 99, "z": 30},
+            {"nom": "inconnu", "x": 0, "z": 0},
+            {"label": "Cible", "x": 5, "y": 10, "z": 15},
+            {"y": 24},
+            {"z": 15},
+            {},
+        ):
+            with self.subTest(action=action):
+                places = {"Mine": {"x": 1, "y": 6, "z": 2, "dimension": "minecraft:the_nether"}}
+                old = SimpleNamespace(places=places, guide={"label": "Destination précédente"})
+                new = SimpleNamespace(
+                    places=places, guide=old.guide.copy(), game={"dimension": "minecraft:overworld"}
+                )
+                scope["action_guider"](old, action)
+                GameController.action_guider(new, action)
+                self.assertEqual(
+                    {k: v for k, v in new.guide.items() if k != "dimension"}, old.guide
+                )
+
     def test_gameplay_functions_preserved(self):
         before = methods(upstream("assistant_mc.py"))
         after = methods(ast.unparse(application_tree()))
         tested_bridge_changes = {
             "split_actions",  # Reject scalar action JSON without losing text; test_bridge_resilience.py.
+            "App.action_guider",  # Original target above, scoped beam and arrival in test_mod_view.py.
             "App.action_oublier_coffre",  # Coordinates need a dimension; test_bridge_resilience.py.
         }
         compatibility_changes = {
@@ -244,6 +275,7 @@ class ParityTests(unittest.TestCase):
         }
         tested_action_guard_changes = {
             "App.run_actions",  # Closed model-action boundary; test_ai_action_guard.py.
+            "App.action_memoriser_lieu",  # Coordinates from a scoped frame; test_question_lifecycle.py.
         }
         tested_storage_changes = {
             "Storage.twins",  # Position evidence before treating two chests as halves.

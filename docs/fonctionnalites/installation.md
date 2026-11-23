@@ -13,6 +13,10 @@
 - Garder les lanceurs Mac et Windows et le choix Codex ou Claude. Distinguer compilation, installation, chargement réel du JAR et vérification du SHA distant.
 - Pour une régression de mise à jour, identifier le stade atteint dans le journal local avant de relancer ou de restaurer.
 
+Après l’installation du couple JAR/script, le lanceur verrouille la référence `main` à la révision de départ avant d’actualiser les fichiers suivis. Si le joueur a changé de branche, le journal reste disponible. Revenir sur `main` puis relancer permet la reprise, même hors ligne. La reprise vérifie la révision, les fichiers installés et le reçu.
+
+Si Git refuse une bascule sous le verrou de `HEAD` après avoir copié l’autre branche dans l’index, la relance hors ligne reconnaît l’arbre exact d’une branche locale. Elle termine le passage à la révision installée sous le verrou de `main` et vérifie les fichiers suivis, l’index et le reçu. Une modification en conflit ou un index d’origine inconnue suspend la reprise. Les fichiers non suivis sans conflit sont conservés.
+
 ## Tests à lancer
 
 ```sh

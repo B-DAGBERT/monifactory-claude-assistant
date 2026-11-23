@@ -25,12 +25,11 @@ public final class RechercheEmi {
     private static boolean attente, inventaireEnAttente;
     private static boolean sacsInclus;
     private static MemoireCollecte collecte;
-    private static java.util.function.Predicate<net.minecraft.world.item.ItemStack> conforme =
-            s -> false;
+    private static Function<ItemStack, String> objet = s -> "";
     private static Function<ItemStack, RessourceCollecte> fluide = s -> null;
     private static int ticks, reessais;
     private static Object connexion;
-    private static Set<String> objets = Set.of(), demandes = Set.of();
+    private static Set<String> objets = Set.of(), demandes = Set.of(), idsDemandes = Set.of();
     private static List<Pont.Repere> reperes = List.of();
     private static Set<String> resultatsPrets = Set.of();
     private static JsonObject derniereVue;
@@ -106,11 +105,17 @@ public final class RechercheEmi {
      * ingrédient qui ne se consomme pas (moule, presse, outil) encore demandé. Avant, un moule dans
      * le coffre surligné n'était pas toujours surligné lui-même.
      */
-    public static boolean cherche(String id) {
-        if (!actif() || !stockCalculPret()) return false;
-        if (objets.contains(id)) return true;
-        var suivi = collecte;
-        return suivi != null && demandes.contains(id) && suivi.outils().contains(id);
+    public static boolean cherche(ItemStack pile) {
+        if (!actif() || !stockCalculPret() || collecte == null) return false;
+        String cle = objetCollecte(pile);
+        return !cle.isEmpty()
+                && collecte.accepte(demandes, cle)
+                && (objets.contains(identifiant(pile)) || collecte.accepte(collecte.outils(), cle));
+    }
+
+    /** Clé physique du scan actif, vide si aucune branche n'accepte la pile. */
+    public static String objetCollecte(ItemStack pile) {
+        return objet.apply(pile);
     }
 
     public static List<Pont.Repere> reperes() {
@@ -123,7 +128,8 @@ public final class RechercheEmi {
         Map<String, Integer> autres = new HashMap<>();
         quantites.forEach(
                 (id, n) -> {
-                    if (collecte.enFabrication(id)) autres.put(id, n);
+                    if (collecte.variantesObjet(id).equals(Set.of(id))
+                            && collecte.enFabrication(id)) autres.put(id, n);
                 });
         // Le coffre ouvert compte tout de suite, sans attendre le relevé du serveur : le lot
         // passe « À récupérer » avant le retrait. L'ouverture peut relire la même source que
@@ -132,7 +138,7 @@ public final class RechercheEmi {
         var pilesOuvertes =
                 CoffreTampon.menuExclu() ? List.<ItemStack>of() : RetraitCoffre.coffreOuvert();
         for (var item : pilesOuvertes) {
-            String id = identifiant(item);
+            String id = objet.apply(item);
             if (collecte.enFabrication(id)) ajouter(ici, id, item.getCount());
         }
         var groupeOuvert = CoffreTampon.menuObserve() ? tampons : autres;
@@ -162,17 +168,17 @@ public final class RechercheEmi {
                 menu, locaux -> retraitDirect(locaux, ouvert), RechercheEmi::ressource);
     }
 
-    /** L'identifiant compté par le scan, ou "" pour une variante refusée (NBT, autre forme). */
+    /** Identifiant de registre des relevés historiques sans variantes. */
     private static String identifiant(net.minecraft.world.item.ItemStack item) {
-        if (item.isEmpty() || !conforme.test(item)) return "";
+        if (item.isEmpty()) return "";
         var id = ForgeRegistries.ITEMS.getKey(item.getItem());
         return id == null ? "" : id.toString();
     }
 
     private static RessourceCollecte ressource(ItemStack item) {
-        String id = identifiant(item);
+        String id = objet.apply(item);
         // Si une branche demande le contenant comme objet, sa pile n'est comptée qu'une fois.
-        if (!id.isEmpty() && collecte.tous().contains(id)) return new RessourceCollecte(id, 1);
+        if (!id.isEmpty()) return new RessourceCollecte(id, 1);
         return fluide.apply(item);
     }
 
@@ -223,9 +229,12 @@ public final class RechercheEmi {
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
         for (int i = 0; i < r.stocks().size(); i++) {
             String groupe = r.groupes().get(i);
+            var stock = r.stocks().get(i);
             if (!groupe.equals(exclu)
                     && positions.containsKey(groupe)
-                    && demandes.contains(r.stocks().get(i).objet())) stocks.add(r.stocks().get(i));
+                    && idsDemandes.contains(stock.objet())
+                    && collecte.variantesObjet(stock.objet()).equals(Set.of(stock.objet())))
+                stocks.add(stock);
         }
         return stocks;
     }
@@ -274,13 +283,14 @@ public final class RechercheEmi {
         }
         if (!InventaireJoueur.fabricationSynchronisee()) return;
         long version = collecte.version();
-        var cumul = Emi.fabricationsConfirmees();
+        var cumul = Emi.fabricationsCollecte();
         Map<String, Integer> preuves = new HashMap<>();
-        cumul.forEach(
-                (id, n) -> {
-                    int gain = n - fabricationsPrecedentes.getOrDefault(id, 0);
-                    if (gain > 0) preuves.put(id, gain);
-                });
+        if (cumul != fabricationsPrecedentes)
+            cumul.forEach(
+                    (id, n) -> {
+                        int gain = n - fabricationsPrecedentes.getOrDefault(id, 0);
+                        if (gain > 0) preuves.put(id, gain);
+                    });
         fabricationsPrecedentes = cumul;
         collecte.reserver(Emi.reservationsFabrication());
         collecte.outilsMachines(Emi.outilsMachines());
@@ -297,7 +307,7 @@ public final class RechercheEmi {
         }
         var inventaire = new HashMap<>(portes);
         for (var credit : Emi.creditsFabrication())
-            ajouter(inventaire, identifiant(credit.objet()), credit.quantite());
+            ajouter(inventaire, objet.apply(credit.objet()), credit.quantite());
         collecte.actualiser(inventaire, preuves);
         boolean suiviChange = collecte.version() != version;
         if (suiviChange) derniereVue = null;
@@ -310,6 +320,11 @@ public final class RechercheEmi {
         if (inventaireEnAttente || !restants.equals(demandes)) {
             inventaireEnAttente = false;
             demandes = restants;
+            idsDemandes =
+                    restants.stream()
+                            .filter(v -> !RessourceCollecte.estFluide(v))
+                            .map(RessourceCollecte::idObjet)
+                            .collect(java.util.stream.Collectors.toUnmodifiableSet());
             transmettre();
         }
     }
@@ -333,6 +348,21 @@ public final class RechercheEmi {
             String id,
             MemoireCollecte suivi,
             java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte,
+            Function<ItemStack, RessourceCollecte> lireFluide) {
+        basculerArbre(
+                id,
+                suivi,
+                pile -> {
+                    String cle = identifiant(pile);
+                    return suivi.tous().contains(cle) && accepte.test(pile) ? cle : "";
+                },
+                lireFluide);
+    }
+
+    public static void basculerArbre(
+            String id,
+            MemoireCollecte suivi,
+            Function<ItemStack, String> lireObjet,
             Function<ItemStack, RessourceCollecte> lireFluide) {
         Set<String> ingredients = suivi.tous();
         long now = horloge.getAsLong();
@@ -365,11 +395,11 @@ public final class RechercheEmi {
         fin = now + 600_000;
         collecte = suivi;
         sacsInclus = SacsFabrication.actif();
-        fabricationsPrecedentes = Emi.fabricationsConfirmees();
-        conforme = accepte;
+        fabricationsPrecedentes = Emi.fabricationsCollecte();
+        objet = lireObjet;
         fluide = lireFluide;
         inventaireEnAttente = true;
-        demandes = Set.of();
+        demandes = idsDemandes = Set.of();
         actualiserCollecte();
     }
 
@@ -385,13 +415,28 @@ public final class RechercheEmi {
             java.util.function.Predicate<net.minecraft.world.item.ItemStack> accepte,
             Function<ItemStack, RessourceCollecte> lireFluide,
             boolean conserver) {
+        recalculerArbre(
+                suivi,
+                pile -> {
+                    String cle = identifiant(pile);
+                    return suivi.tous().contains(cle) && accepte.test(pile) ? cle : "";
+                },
+                lireFluide,
+                conserver);
+    }
+
+    public static void recalculerArbre(
+            MemoireCollecte suivi,
+            Function<ItemStack, String> lireObjet,
+            Function<ItemStack, RessourceCollecte> lireFluide,
+            boolean conserver) {
         if (!actif()) return;
         RetraitCoffre.arreter();
         AideCoffre.vider();
         if (conserver) suivi.reprendre(collecte);
         collecte = suivi;
-        fabricationsPrecedentes = Emi.fabricationsConfirmees();
-        conforme = accepte;
+        fabricationsPrecedentes = Emi.fabricationsCollecte();
+        objet = lireObjet;
         fluide = lireFluide;
         invaliderSelection();
         fin = horloge.getAsLong() + 600_000;
@@ -400,7 +445,7 @@ public final class RechercheEmi {
 
     private static void invaliderSelection() {
         inventaireEnAttente = true;
-        demandes = Set.of();
+        demandes = idsDemandes = Set.of();
         // Invalider les quotas de l'ancien arbre. Le dernier relevé reste : ses coffres sont
         // recomptés pour le nouvel arbre dès que ses besoins sont connus.
         objets = Set.of();
@@ -448,8 +493,7 @@ public final class RechercheEmi {
         long now = horloge.getAsLong();
         numero = Math.max(now, numero + 1);
         envoye = now;
-        var objetsDemandes =
-                demandes.stream().filter(id -> !RessourceCollecte.estFluide(id)).toList();
+        var objetsDemandes = idsDemandes;
         attente = !objetsDemandes.isEmpty();
         // Annoncer seulement une recherche qui demande des objets encore jamais relevés.
         annoncer |= attente && (releve == null || !releve.objets().containsAll(objetsDemandes));
@@ -490,7 +534,7 @@ public final class RechercheEmi {
         AideCoffre.vider();
         recette = contexte = "";
         attente = inventaireEnAttente = false;
-        objets = demandes = Set.of();
+        objets = demandes = idsDemandes = Set.of();
         quantites = portes = resultatsTampons = Map.of();
         aSortir = Map.of();
         reperes = List.of();
@@ -503,7 +547,7 @@ public final class RechercheEmi {
         annoncer = false;
         revision++;
         collecte = null;
-        conforme = s -> false;
+        objet = s -> "";
         fluide = s -> null;
     }
 
@@ -631,13 +675,17 @@ public final class RechercheEmi {
         Map<String, List<Pont.Repere>> positions = r == null ? Map.of() : positionsEligibles(r);
         var tampons = stocksTampons(CoffreTampon.piles());
         List<PlanRetrait.Stock<String>> stocks = new ArrayList<>(tampons);
-        List<String> groupes = new ArrayList<>();
+        List<String> groupes = new ArrayList<>(), idsReleves = new ArrayList<>();
         if (r != null)
             for (int i = 0; i < r.stocks().size(); i++) {
                 String groupe = r.groupes().get(i);
-                if (positions.containsKey(groupe) && demandes.contains(r.stocks().get(i).objet())) {
-                    stocks.add(r.stocks().get(i));
+                var stock = r.stocks().get(i);
+                if (positions.containsKey(groupe) && idsDemandes.contains(stock.objet())) {
+                    // Le relevé distant ne connaît que l'ID. Une seule réserve indique où regarder.
+                    String possible = suivi.groupe(suivi.variantesObjet(stock.objet()));
+                    stocks.add(new PlanRetrait.Stock<>(possible, stock.quantite(), false));
                     groupes.add(groupe);
+                    idsReleves.add(stock.objet());
                 }
             }
         Set<String> utiles = new java.util.LinkedHashSet<>(),
@@ -656,11 +704,13 @@ public final class RechercheEmi {
                 continue;
             }
             String groupe = groupes.get(index);
+            id = idsReleves.get(index);
             selection.merge(id, prise.quantite(), Integer::sum);
             parGroupe.merge(groupe, prise.quantite(), Integer::sum);
             utiles.add(id);
             visibles.add(groupe);
-            if (suivi.enFabrication(id)) groupesPrets.add(groupe);
+            if (suivi.variantesObjet(id).equals(Set.of(id)) && suivi.enFabrication(id))
+                groupesPrets.add(groupe);
         }
         resultatsTampons = Map.copyOf(dansTampons);
         List<Pont.Repere> coffres = new ArrayList<>();

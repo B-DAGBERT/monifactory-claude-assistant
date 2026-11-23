@@ -41,6 +41,7 @@ STUBS = {
     "net.minecraftforge.eventbus.api.SubscribeEvent": "public @interface SubscribeEvent {}",
     "net.minecraftforge.registries.ForgeRegistries": "public class ForgeRegistries {public static final Registry ITEMS=new Registry();public static class Registry {public String getKey(String id){return id;}}}",
     "fr.assistantia.compat.emi.CoffresArbreEmi": "public class CoffresArbreEmi {public static Object arbreActif(){return Boolean.TRUE;}}",
+    "fr.assistantia.RechercheEmi": 'public class RechercheEmi {public static String objetCollecte(net.minecraft.world.item.ItemStack pile){return "";}}',
     "fr.assistantia.compat.emi.GregTechMachines": """public class GregTechMachines {
  public record Interface(Object machine,java.util.List<?> entrees,java.util.List<?> cuves,Object circuit){
    public net.minecraft.core.BlockPos position(){return new net.minecraft.core.BlockPos(0,64,0);}

@@ -59,5 +59,18 @@ python -m unittest tests.test_gregtech_reflexion
 python -m unittest tests.test_emi_toolbar_screens tests.test_logout_world_references
 ```
 
+`test_variantes_nbt_dans_emi_et_les_entrees_du_terminal` ouvre un réseau simulé avec les poches
+vides et compare le manque de chaque branche EMI aux indices et quantités proposés par Réseau ME.
+Deux A en cellule couvrent seulement la branche A. Un A et un B couvrent les deux branches dans
+les deux ordres. Une branche qui accepte indifféremment A ou B utilise l’un ou l’autre.
+
+Ce test rejoue également les deux variantes en poches, terminal fermé. Un gestionnaire EMI
+peut réunir A et B dans une pile de deux portant le NBT du premier objet. Pour le calcul de
+l’arbre, `InventaireArbreEmi.completer` retrouve la répartition dans les poches et la grille.
+Les autres entrées du gestionnaire gardent leurs quantités. Si son entrée fusionnée dépasse
+le total des variantes observées, seules les quantités dont le NBT est connu couvrent ces
+branches. Si cette entrée est plus petite que le total physique, le calcul conserve la
+sélection restreinte du gestionnaire.
+
 Pour un changement de stock commun, rejouer le même cas dans EMI, Repérage, Réseau ME et
 Envoyer. [Parcours stock](../scenarios.md#parcours-stock) · [Ordonnancement](../ordonnancement-machines.md)

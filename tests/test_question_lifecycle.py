@@ -7,11 +7,13 @@ from queue import Queue
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, call, patch
+from uuid import uuid4
 
 import monifactory_assistant.providers as ai_provider
 import monifactory_assistant.providers.codex as codex
 from monifactory_assistant.app import App
 from monifactory_assistant.game.recipes import RecipeIndex
+from monifactory_assistant.game.requests import CommandQueue
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.world import OBSERVATION_MAX_AGE_MS, observation_date
 from monifactory_assistant.prompts import ACTIONS_HELP
@@ -28,7 +30,10 @@ from tests.test_world_routing import (
     WORLD_B,
     dump,
     enter,
+    receipt,
     setup_bridge,
+    state,
+    tags,
 )
 
 EMPTY_OBSERVATIONS = (
@@ -553,6 +558,120 @@ class QuestionLifecycleTests(TestCase):
         )
         self.assertEqual(app.message, "")
 
+    def test_queued_place_question_keeps_its_click_world(self):
+        app = self.app
+        for isolated in (False, True):
+            for legacy_file in (False, True):
+                with self.subTest(isolated=isolated, legacy_file=legacy_file):
+                    app.bridge = setup_bridge(
+                        self.directory / str((isolated, legacy_file)), active=isolated
+                    )
+                    self.addCleanup(app.bridge.close_publications)
+                    app.conversation.ask.reset_mock(return_value=True)
+                    app.conversation.ask.return_value = REPLY
+                    first = state(WORLD_A, SESSION_A) | {"x": 12}
+                    receipt(app.bridge, WORLD_A, SESSION_A)
+                    dump(app.bridge.dir / "etat.json", first)
+                    app.game = app.bridge.state()
+                    app.apply_world_scope(app.bridge.scope)
+                    app.game = app.bridge.state()
+                    n = int(self.clock.return_value * 1000)
+                    question = {
+                        "type": "question",
+                        "texte": "Retiens ma mine",
+                        "n": n,
+                        "requete": str(uuid4()),
+                        "dimension_envoi": OVERWORLD,
+                        **tags(WORLD_A, SESSION_A),
+                    }
+                    queue = CommandQueue(app.bridge.dir, clock=lambda: self.clock.return_value)
+                    request = (
+                        app.bridge.dir / "demande_mod.json"
+                        if legacy_file
+                        else queue.inbox / (question["requete"] + ".json")
+                    )
+                    dump(request, question)
+                    self.clock.return_value += 12
+                    receipt(app.bridge, WORLD_B, SESSION_B)
+                    dump(app.bridge.dir / "etat.json", state(WORLD_B, SESSION_B) | {"x": 92})
+                    app.game = app.bridge.state()
+                    app.apply_world_scope(app.bridge.scope)
+                    app.game = app.bridge.state()
+                    places = app.bridge.dir / "lieux-test.json"
+                    dump(places, {"Camp": {"x": 3, "y": 64, "z": 4, "dimension": OVERWORLD}})
+                    app.load_places(places)
+                    before = places.read_bytes()
+                    app.question_ack = {}
+                    with patch.object(app, "save_places", wraps=app.save_places) as save:
+                        dispatch, restore = app.dispatch_queued_request, app.restore_request_reply
+                        processed = (
+                            queue.accept_legacy(json.loads(request.read_bytes()), dispatch, restore)
+                            if legacy_file
+                            else queue.poll(dispatch, restore)
+                        )
+                        self.assertTrue(processed)
+                        if app.question_ack.get("etat") == "acceptee":
+                            self.run_worker()
+                            app.poll()
+                        self.assertEqual(
+                            (queue.last["etat"], save.call_count, json.loads(places.read_bytes())),
+                            ("refusee", 0, json.loads(before)),
+                        )
+                        self.assertEqual(places.read_bytes(), before)
+                        app.conversation.ask.assert_not_called()
+
+    def test_place_coordinates_are_fresh_and_proven_at_delivery(self):
+        app = self.app
+        for isolated in (False, True):
+            for new_frame in ("B", "A", "sans portée"):
+                with self.subTest(isolated=isolated, new_frame=new_frame):
+                    app.bridge = setup_bridge(
+                        self.directory / str((isolated, new_frame)), active=isolated
+                    )
+                    self.addCleanup(app.bridge.close_publications)
+                    app.conversation.ask.return_value = REPLY
+                    receipt(app.bridge, WORLD_B, SESSION_B)
+                    # Forge annonce B avant que le prochain relevé KubeJS soit disponible.
+                    before_frame = state(WORLD_A, SESSION_A) | {"x": 12}
+                    dump(app.bridge.dir / "etat.json", before_frame)
+                    if isolated:
+                        app.apply_world_scope(self.app.bridge.routing.current())
+                        app.bridge.scope = app.active_world_scope
+                    app.game = before_frame
+                    places = app.bridge.dir / "lieux-test.json"
+                    dump(places, {})
+                    app.load_places(places)
+                    before = places.read_bytes()
+                    result = app.dispatch_queued_request(
+                        {
+                            "type": "question",
+                            "texte": "Retiens ma mine",
+                            "n": 1,
+                            "dimension_envoi": OVERWORLD,
+                            **tags(WORLD_B, SESSION_B),
+                        }
+                    )
+                    self.assertEqual(result["question"]["etat"], "acceptee")
+                    self.run_worker()
+                    new = state(WORLD_B, SESSION_B) | {"x": 92}
+                    if new_frame == "sans portée":
+                        new = {
+                            key: val
+                            for key, val in new.items()
+                            if key not in tags(WORLD_B, SESSION_B)
+                        }
+                    dump(app.bridge.dir / "etat.json", before_frame if new_frame == "A" else new)
+                    with patch.object(app, "save_places", wraps=app.save_places) as save:
+                        app.poll()
+                        expected = {"Mine": {"x": 92, "y": 64, "z": 0, "dimension": OVERWORLD}}
+                        self.assertEqual(app.game["x"], 12)
+                        self.assertEqual(
+                            (save.call_count, json.loads(places.read_bytes())),
+                            (1, expected) if new_frame == "B" else (0, {}),
+                        )
+                        if new_frame != "B":
+                            self.assertEqual(places.read_bytes(), before)
+
     def test_current_action_uses_live_state_at_delivery(self):
         app = self.app
         self.enter_world()
@@ -560,11 +679,88 @@ class QuestionLifecycleTests(TestCase):
         app.dispatch_queued_request(self.request())
         self.run_worker()
         self.assertIn("Position : x=0", app.conversation.ask.call_args.args[0])
-        app.game = {**app.game, "x": 17}
+        dump(app.bridge.dir / "etat.json", {**app.game, "x": 17})
         app.poll()
         expected = {"Mine": {"x": 17, "y": 64, "z": 0, "dimension": OVERWORLD}}
         self.assertEqual(json.loads(app.places_file.read_text(encoding="utf-8")), expected)
         self.assertEqual(app.history[-1]["texte"], "Voici le lieu.")
+
+    def test_legacy_place_requires_same_forge_identity_from_admission_to_delivery(self):
+        app = self.app
+        question = "Retiens ma mine"
+        app.conversation.ask.return_value = REPLY
+
+        def observe(world=WORLD_A, session=SESSION_A, dimension=OVERWORLD, x=12):
+            receipt(app.bridge, world, session, dimension)
+            frame = state(world, session, dimension)
+            dump(app.bridge.dir / "etat.json", {**frame, "x": x})
+            app.game = app.bridge.state()
+
+        for change in (
+            "monde",
+            "connexion",
+            "dimension",
+            "absente",
+            "illisible",
+            "périmée",
+            "demande sans portée",
+            "aller-retour",
+            "même partie",
+        ):
+            with self.subTest(change=change):
+                folder = self.directory / change
+                app.bridge = setup_bridge(folder, active=False)
+                self.addCleanup(app.bridge.close_publications)
+                self.assertFalse((app.bridge.dir / "isolation_mondes.json").exists())
+                places = folder / "lieux.json"
+                base = {"Camp": {"x": -3, "y": 65, "z": 4, "dimension": OVERWORLD}}
+                dump(places, base)
+                app.load_places(places)
+                before = places.read_bytes()
+                observe()
+                identity = app.bridge.dir / "identite_monde.json"
+                click = {} if change == "demande sans portée" else tags(WORLD_A, SESSION_A)
+                result = app.dispatch_queued_request(
+                    {"type": "question", "texte": question, "n": 1, **click}
+                )
+                self.assertEqual(result["question"]["etat"], "acceptee")
+                self.assertEqual(self.run_worker()[-1], ("answer", question, REPLY))
+                if change == "monde":
+                    observe(world=WORLD_B, x=92)
+                elif change == "connexion":
+                    observe(session=SESSION_B, x=81)
+                elif change == "dimension":
+                    observe(dimension=NETHER, x=73)
+                elif change == "absente":
+                    identity.unlink()
+                elif change == "illisible":
+                    identity.write_text("{", encoding="utf-8")
+                elif change == "périmée":
+                    self.clock.return_value += 4
+                elif change == "aller-retour":
+                    observe(dimension=NETHER, x=73)
+                    with (
+                        patch.object(app, "check_recipes"),
+                        patch.object(app, "check_game"),
+                        patch.object(app, "check_death"),
+                        patch.object(app, "flush_coach"),
+                    ):
+                        app.watch_game()
+                    observe()
+                else:
+                    observe(x=24)
+                with patch.object(app, "save_places", wraps=app.save_places) as save:
+                    app.poll()
+                    if change == "même partie":
+                        self.assertEqual(
+                            json.loads(places.read_bytes()),
+                            {**base, "Mine": {"x": 24, "y": 64, "z": 0, "dimension": OVERWORLD}},
+                        )
+                        save.assert_called_once_with()
+                    else:
+                        self.assertEqual(places.read_bytes(), before, app.places.get("Mine"))
+                        save.assert_not_called()
+                        self.assertIn("Voici le lieu.", [row["texte"] for row in app.history])
 
     def test_answer_already_in_queue_stays_in_history_after_reconnection(self):
         app = self.app

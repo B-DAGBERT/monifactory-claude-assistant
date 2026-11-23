@@ -6,6 +6,8 @@ import fr.assistantia.PlanRetrait;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
@@ -17,7 +19,11 @@ import net.minecraft.world.item.ItemStack;
 
 /** Même inventaire que le cycle machine. Le terminal simule uniquement les réponses du serveur. */
 final class RetraitMeCycle {
-    private record Vue(InstantaneArbreEmi arbre, List<Lot> retraits) {}
+    private record Vue(InstantaneArbreEmi arbre, List<Lot> retraits) {
+        java.util.Set<?> incertaines() {
+            return java.util.Set.of();
+        }
+    }
 
     private static final class Int2ObjectOpenHashMap<T> {}
 
@@ -98,6 +104,19 @@ final class RetraitMeCycle {
 
     private static boolean occupe() {
         return menu != null;
+    }
+
+    private static boolean verifierPrise(Lot lot) {
+        return true;
+    }
+
+    private static boolean posteARevalider() {
+        return false;
+    }
+
+    // This full-machine fixture has no external AE2 destination.
+    private static void retirer(Lot lot, Object action) throws ReflectiveOperationException {
+        ACCES.retirer().invoke(menu, lot.serial(), action);
     }
 
     private static void actualiser(boolean complet) throws ReflectiveOperationException {

@@ -8,6 +8,7 @@ import fr.assistantia.PlanRetrait;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
@@ -23,6 +24,11 @@ public final class ProjectionLotsEmiTest {
     private static ProjectionLotsEmi.Portee scope = portee(TREE, CONNECTION, MANAGER);
     private static List<PlanRetrait.Stock<EmiStack>> inventory = List.of();
     private static int changes;
+    private static long temps;
+
+    static long nanoTime() {
+        return temps;
+    }
 
     private static ProjectionLotsEmi.Portee portee(Object tree, Object connection, Object manager) {
         return new ProjectionLotsEmi.Portee(
@@ -171,6 +177,119 @@ public final class ProjectionLotsEmiTest {
         assert manuel.totalRecu() == 2 : "l'arrivée suivante n'est plus attribuée à ce retrait";
     }
 
+    private static void releverEngrenages(
+            SuiviLotsEmi owner, Inventory poches, int case4, int case8, int case9, int... recus) {
+        var piles = new ArrayList<PlanRetrait.Stock<EmiStack>>();
+        for (int i = 0; i < 36; i++) {
+            var pile = poches.getItem(i);
+            int attendu = i == 4 ? case4 : i == 8 ? case8 : i == 9 ? case9 : 0;
+            assert pile.getCount() == attendu : "case " + i + " = " + pile.getCount();
+            if (!pile.isEmpty()) {
+                assert pile.is("gtceu:bronze_gear");
+                piles.add(stock(EmiStack.of(pile), pile.getCount()));
+            }
+        }
+        inventory = List.copyOf(piles);
+        owner.recevoir(List.of());
+        assert owner.actifs().size() == recus.length;
+        for (int i = 0; i < recus.length; i++) {
+            var lot = owner.actifs().get(i);
+            assert lot.suivi().total() == 1;
+            assert lot.suivi().totalRecu() == recus[i]
+                    : "cases 4/8/9 = "
+                            + case4
+                            + "/"
+                            + case8
+                            + "/"
+                            + case9
+                            + ", lot "
+                            + (i + 1)
+                            + " : attendu "
+                            + recus[i]
+                            + "/1, reçu "
+                            + lot.suivi().totalRecu()
+                            + "/1";
+        }
+    }
+
+    private static void resynchroniserDepot(
+            SuiviLotsEmi owner, long delai, boolean ancienEngrenage) {
+        owner.vider();
+        var engrenage = new ItemStack("gtceu:bronze_gear", 1);
+        var recette = recipe(EmiStack.of(engrenage));
+        var joueur = net.minecraft.client.Minecraft.getInstance().player;
+        var poches = joueur.getInventory();
+        int ancien = ancienEngrenage ? 1 : 0;
+        if (ancienEngrenage) poches.setItem(8, engrenage.copy());
+        releverEngrenages(owner, poches, 0, ancien, 0);
+        owner.ajouter(recette, 1, new BlockPos(0, 64, 0));
+        releverEngrenages(owner, poches, 0, ancien, 0, 0);
+        joueur.containerMenu = new net.minecraft.world.inventory.ChestMenu();
+        var reception = owner.preparerCollecte(List.of(engrenage));
+        joueur.containerMenu = joueur.inventoryMenu;
+        reception.accepter(engrenage, 1, new SuiviLotsEmi.DepotMe(poches, 4, 0));
+        releverEngrenages(owner, poches, 0, ancien, 0, 1);
+        owner.ajouter(recette, 1, null);
+        releverEngrenages(owner, poches, 0, ancien, 0, 1, 0);
+
+        temps = delai;
+        poches.setItem(4, engrenage.copy());
+        poches.setItem(8, ItemStack.EMPTY);
+        releverEngrenages(owner, poches, 1, 0, 0, 1, 0);
+        poches.setItem(9, engrenage.copy());
+        releverEngrenages(owner, poches, 1, 0, 1, 1, 1);
+    }
+
+    private static void collecteMeTardive(SuiviLotsEmi owner, long delai, String ordre) {
+        owner.vider();
+        inventory = List.of();
+        var engrenage = new ItemStack("gtceu:bronze_gear", 1);
+        var pile = EmiStack.of(engrenage);
+        var recette = recipe(pile);
+        var joueur = net.minecraft.client.Minecraft.getInstance().player;
+        var poches = joueur.getInventory();
+        int destination = 4;
+        owner.ajouter(recette, 1, new BlockPos(0, 64, 0));
+        owner.preparerCollecte(List.of(engrenage))
+                .accepter(engrenage, 1, new SuiviLotsEmi.DepotMe(poches, destination, 0));
+        assert owner.actifs().get(0).suivi().totalRecu() == 1;
+        owner.ajouter(recette, 1, null);
+        var manuel = owner.actifs().get(1).suivi();
+        assert manuel.totalRecu() == 0;
+
+        temps = delai;
+        owner.recevoir(List.of());
+        if (ordre.equals("remplacee")) {
+            var remplacement = new ItemStack("test:unrelated", 1);
+            poches.setItem(destination, remplacement);
+            inventory = List.of(stock(EmiStack.of(remplacement), 1));
+            owner.recevoir(List.of());
+            poches.setItem(destination, engrenage);
+            inventory = List.of(stock(pile, 1));
+            owner.recevoir(List.of());
+            assert manuel.totalRecu() == 1 : "la case remplacée libère l'ancien rapprochement";
+            return;
+        }
+        if (ordre.equals("avant")) {
+            inventory = List.of(stock(pile, 1));
+            owner.recevoir(List.of());
+            assert manuel.totalRecu() == 1 : "un gain d'une autre case compte immédiatement";
+            owner.ajouter(recette, 1, null);
+            poches.setItem(destination, engrenage);
+            inventory = List.of(stock(pile, 2));
+            owner.recevoir(List.of());
+            assert owner.actifs().get(2).suivi().totalRecu() == 0
+                    : "le dépôt réapparu ne solde pas le nouveau lot";
+            return;
+        }
+        assert ordre.equals("ensemble");
+        poches.setItem(destination, engrenage.copy());
+        poches.setItem(9, engrenage.copy());
+        inventory = List.of(stock(pile, 2));
+        owner.recevoir(List.of());
+        assert manuel.totalRecu() == 1 : "un gain indépendant au même relevé reste compté";
+    }
+
     public static void main(String[] args) {
         String scenario = args[0];
         inventory = List.of(stock(item("test:unrelated", 1), 1));
@@ -198,6 +317,18 @@ public final class ProjectionLotsEmiTest {
             assert !view.has("reserved") && !lot.has("stock");
         } else if (scenario.equals("collecte_differee")) {
             collecteDifferee(owner);
+        } else if (scenario.equals("collecte_me_tardive")) {
+            resynchroniserDepot(owner, 125_000_000_000L, false);
+        } else if (scenario.equals("collecte_me_courte")) {
+            resynchroniserDepot(owner, 5_000_000_000L, false);
+        } else if (scenario.equals("collecte_me_total_constant")) {
+            resynchroniserDepot(owner, 125_000_000_000L, true);
+        } else if (scenario.equals("collecte_me_gain_avant")) {
+            collecteMeTardive(owner, 125_000_000_000L, "avant");
+        } else if (scenario.equals("collecte_me_gain_simultane")) {
+            collecteMeTardive(owner, 125_000_000_000L, "ensemble");
+        } else if (scenario.equals("collecte_me_case_remplacee")) {
+            collecteMeTardive(owner, 125_000_000_000L, "remplacee");
         } else if (scenario.equals("partial_cancel")) {
             receiveExplicitModel(owner, 3);
             var partial = only(project(owner));
@@ -498,6 +629,21 @@ public final class ProjectionLotsEmiTest {
             assert only(after).get("etat").getAsString().equals("a_recuperer");
             assert revision == owner.revision();
             assert !before.get("empreinte").equals(after.get("empreinte"));
+        } else if (scenario.equals("available_variant")) {
+            owner.vider();
+            var a = new ItemStack("test:gear", 1);
+            a.tag = 1;
+            var b = a.copy();
+            b.tag = 2;
+            owner.ajouter(recipe(EmiStack.of(a)), 1, null);
+            owner.ajouter(recipe(EmiStack.of(b)), 1, null);
+            fr.assistantia.RechercheEmi.disponibles = java.util.Map.of("test:gear|2", 1);
+            owner.actualiser();
+            assert owner.actifs().get(0).suivi().etat()
+                    == fr.assistantia.LotFabrication.Etat.EN_MACHINE;
+            assert owner.actifs().get(1).suivi().etat()
+                    == fr.assistantia.LotFabrication.Etat.A_RECUPERER;
+            assert owner.actifs().stream().allMatch(lot -> lot.suivi().totalRecu() == 0);
         } else if (scenario.equals("fluids_variants")) {
             owner.vider();
             var tagged = new ItemStack("test:plate", 1);

@@ -6,12 +6,14 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
+import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 
 import java.util.ArrayList;
@@ -78,7 +80,26 @@ public final class Hud {
     private static int placeLue = -1;
     private static List<String> detailLignes = List.of();
 
+    private static GuiGraphics imagePanneau;
+    private static Rect2i fiche;
+
     private Hud() {}
+
+    /** Rectangle effectivement peint par Jade pendant cette image, en coordonnées GUI. */
+    public static void ficheDessinee(Rect2i rectangle) {
+        fiche = rectangle;
+    }
+
+    /** Le panneau se place après le dessin de la fiche, y compris pendant son animation. */
+    public static void finirImage(RenderGuiEvent.Post event) {
+        GuiGraphics g = event.getGuiGraphics();
+        if (g == imagePanneau) {
+            int largeur = event.getWindow().getGuiScaledWidth();
+            panneau(g, Minecraft.getInstance(), largeur, echelle(largeur));
+        }
+        imagePanneau = null;
+        fiche = null;
+    }
 
     /**
      * Branche la source du panneau en haut à gauche ; {@code null} la débranche. Elle est lue à
@@ -105,6 +126,8 @@ public final class Hud {
 
     private static void dessiner(
             ForgeGui gui, GuiGraphics g, float partialTick, int largeurEcran, int hauteurEcran) {
+        imagePanneau = null;
+        fiche = null;
         Minecraft mc = Minecraft.getInstance();
         // Rien par-dessus les menus et les interfaces (EMI s'y affiche) : la surbrillance et «
         // Remplir » prennent le relais
@@ -117,7 +140,7 @@ public final class Hud {
         float echelle = echelle(largeurEcran);
         JsonObject hud = Pont.partie("hud");
         if (!hud.has("visible") || Pont.vrai(hud, "visible")) {
-            panneau(g, mc, largeurEcran, echelle);
+            imagePanneau = g;
         }
         bulle(g, mc, largeurEcran, hauteurEcran, echelle);
     }
@@ -219,7 +242,15 @@ public final class Hud {
                 Math.max(icone.isEmpty() ? 0 : ICONE + 2 * Theme.ECART, lignes * Theme.LIGNE + 6);
         int hauteur = bloc + (lignesSuite.isEmpty() ? 0 : lignesSuite.size() * Theme.LIGNE + 6);
         g.pose().pushPose();
-        g.pose().translate(4, 15, 0); // sous le compteur de FPS
+        int yPanneau = 15; // sous le compteur de FPS
+        if (fiche != null
+                && fiche.getX() < 4 + largeur * echelle
+                && fiche.getX() + fiche.getWidth() > 4
+                && fiche.getY() < yPanneau + hauteur * echelle
+                && fiche.getY() + fiche.getHeight() > yPanneau) {
+            yPanneau = fiche.getY() + fiche.getHeight() + Theme.ECART;
+        }
+        g.pose().translate(4, yPanneau, 0);
         g.pose().scale(echelle, echelle, 1);
         Theme.panneau(g, 0, 0, largeur, hauteur);
         if (!icone.isEmpty()) {

@@ -295,10 +295,7 @@ class _Planner:
         self.missing[resource] += quantity
         self.issue(code, message, resource, recipe_id, candidates)
 
-    def demand(self, resource, quantity, path, consumer):
-        quantity, dependencies = self.take(resource, quantity, consumer)
-        if not quantity:
-            return dependencies
+    def recipe_for_shortage(self, resource, quantity, path):
         if resource in path:
             self.fail(
                 resource,
@@ -307,7 +304,7 @@ class _Planner:
                 "Cycle de recettes sans stock initial suffisant.",
                 candidates=tuple(r.id for r in path + (resource,)),
             )
-            return dependencies
+            return None
         if len(path) >= self.max_depth or self.serial >= self.max_steps:
             self.fail(
                 resource,
@@ -315,7 +312,7 @@ class _Planner:
                 "plan_limit",
                 "Limite de profondeur ou d'étapes atteinte ; plan partiel.",
             )
-            return dependencies
+            return None
         candidates = self.index.get(resource, ())
         choice = self.recipe_choices.get(resource)
         if choice:
@@ -327,7 +324,7 @@ class _Planner:
                 "missing_recipe",
                 "Aucune recette déclarée : cette quantité reste à obtenir.",
             )
-            return dependencies
+            return None
         if len(candidates) > 1:
             self.fail(
                 resource,
@@ -336,7 +333,7 @@ class _Planner:
                 "Plusieurs recettes : choisir explicitement une variante.",
                 candidates=tuple(r.id for r in candidates),
             )
-            return dependencies
+            return None
         recipe = candidates[0]
         if recipe.unsupported:
             self.fail(
@@ -346,7 +343,7 @@ class _Planner:
                 "Conditions non interprétées : " + "; ".join(recipe.unsupported),
                 recipe.id,
             )
-            return dependencies
+            return None
         yield_per_batch = sum(
             o.amount.quantity
             for o in recipe.outputs
@@ -360,7 +357,7 @@ class _Planner:
                 "Aucune quantité garantie pour cette sortie probabiliste.",
                 recipe.id,
             )
-            return dependencies
+            return None
         chosen = []
         ambiguous = False
         for i, ingredient in enumerate(recipe.inputs):
@@ -389,8 +386,38 @@ class _Planner:
                 )
         if ambiguous:
             self.missing[resource] += quantity
-            return dependencies
-        batches = (quantity + yield_per_batch - 1) // yield_per_batch
+            return None
+        return recipe, yield_per_batch, chosen
+
+    def demand(self, resource, quantity, path, consumer):
+        available = min(quantity, sum(b.quantity for b in self.pool[resource]))
+        shortage = quantity - available
+        if not shortage:
+            return self.take(resource, quantity, consumer)[1]
+        selection = self.recipe_for_shortage(resource, shortage, path)
+        if selection is None:
+            return self.take(resource, available, consumer)[1]
+
+        recipe, yield_per_batch, chosen = selection
+        seed = sum(a.quantity for a, reusable in chosen if not reusable and a.resource == resource)
+        recycled = 0
+        if 0 < seed < yield_per_batch:
+            # The first batch needs a real seed. Each subsequent batch consumes part of
+            # the previous guaranteed output; only net growth increases the final stock.
+            catalyst = sum(
+                a.quantity for a, reusable in chosen if reusable and a.resource == resource
+            )
+            startup = seed + max(0, catalyst - self.held_catalysts[resource])
+            available_for_target = max(0, available - startup)
+            net = yield_per_batch - seed
+            need_from_batches = quantity - available_for_target
+            batches = max(1, (need_from_batches - seed + net - 1) // net)
+            recycled = seed * (batches - 1)
+        else:
+            available_for_target = available
+            batches = (shortage + yield_per_batch - 1) // yield_per_batch
+        _, dependencies = self.take(resource, available_for_target, consumer)
+        quantity -= available_for_target
         inputs = _amounts(
             tuple(
                 Amount(a.resource, a.quantity * batches) for a, reusable in chosen if not reusable
@@ -413,7 +440,12 @@ class _Planner:
             children.update(self.catalyst_dependencies[catalyst.resource])
         for amount in inputs:
             children.update(
-                self.demand(amount.resource, amount.quantity, path + (resource,), step_id)
+                self.demand(
+                    amount.resource,
+                    amount.quantity - (recycled if amount.resource == resource else 0),
+                    path + (resource,),
+                    step_id,
+                )
             )
         outputs = _amounts(
             tuple(
@@ -441,7 +473,12 @@ class _Planner:
             )
         )
         for amount in outputs:
-            self.pool[amount.resource].append(_Balance(amount.quantity, "planned", step_id))
+            internal = recycled if amount.resource == resource else 0
+            if internal:
+                self.allocations.append(Allocation(resource, internal, "planned", step_id, step_id))
+            self.pool[amount.resource].append(
+                _Balance(amount.quantity - internal, "planned", step_id)
+            )
         if not recipe.machines:
             self.issue(
                 "machines_unknown",

@@ -360,6 +360,37 @@ class ProductionPlannerTests(unittest.TestCase):
         self.assertEqual(result.issues[0].code, "unsupported_recipe")
         self.assertEqual(counts(result.missing), {goal: 1})
 
+    def test_positive_net_batches_reuse_only_guaranteed_outputs_after_the_seed(self):
+        template, ore = item("template"), item("ore")
+        duplicate = recipe("duplicate", [ing(template, 2), ing(ore)], [(template, 3)])
+        catalog = Catalog(1, (duplicate,))
+        for seeds, consumed_seed, missing in ((3, 2, {}), (1, 1, {template: 1})):
+            with self.subTest(seeds=seeds):
+                result = plan(catalog, Amount(template, 7), stock((template, seeds), (ore, 6)))
+                self.assertEqual(counts(result.missing), missing)
+                self.assertEqual(result.surplus, ())
+                expected_batches = 7 - max(seeds, 2)
+                (step,) = result.steps
+                self.assertEqual(step.batches, expected_batches)
+                self.assertEqual(
+                    counts(step.inputs), {template: 2 * expected_batches, ore: expected_batches}
+                )
+                self.assertEqual(counts(step.outputs), {template: 3 * expected_batches})
+                self.assertEqual(step.dependencies, ())
+                self.assertEqual(
+                    sum(
+                        a.quantity
+                        for a in result.allocations
+                        if a.resource == template
+                        and a.source_kind == "physical"
+                        and a.consumer == step.id
+                    ),
+                    consumed_seed,
+                )
+                self.assertEqual(
+                    sum(a.quantity for a in result.allocations if a.consumer == "target"), 7
+                )
+
     def test_cycles_and_depth_limits_are_partial_not_infinite_or_exact(self):
         a, b = item("a"), item("b")
         catalog = Catalog(1, (recipe("a", [ing(b)], [(a, 1)]), recipe("b", [ing(a)], [(b, 1)])))

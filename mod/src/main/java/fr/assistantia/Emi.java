@@ -192,13 +192,21 @@ public final class Emi {
         }
     }
 
-    @SuppressWarnings("unchecked")
     public static Map<String, Integer> fabricationsConfirmees() {
+        return fabrications("totaux");
+    }
+
+    public static Map<String, Integer> fabricationsCollecte() {
+        return fabrications("totauxCollecte");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Integer> fabrications(String methode) {
         if (!pret()) return Map.of();
         try {
             return (Map<String, Integer>)
                     Class.forName("fr.assistantia.compat.emi.OrigineFabrication")
-                            .getMethod("totaux")
+                            .getMethod(methode)
                             .invoke(null);
         } catch (ReflectiveOperationException | LinkageError e) {
             return Map.of();
@@ -211,7 +219,7 @@ public final class Emi {
         try {
             return (Map<String, Integer>)
                     Class.forName("fr.assistantia.compat.emi.MachinesEmi")
-                            .getMethod("reservationsObjets")
+                            .getMethod("reservationsCollecte")
                             .invoke(null);
         } catch (ReflectiveOperationException | LinkageError e) {
             return Map.of();
@@ -224,7 +232,7 @@ public final class Emi {
         try {
             return (Map<String, Integer>)
                     Class.forName("fr.assistantia.compat.emi.MachinesEmi")
-                            .getMethod("outilsObjets")
+                            .getMethod("outilsCollecte")
                             .invoke(null);
         } catch (ReflectiveOperationException | LinkageError e) {
             return Map.of();

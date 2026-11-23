@@ -118,7 +118,7 @@ assert "monifactory_assistant.providers.claude" not in sys.modules
         app.set_setting.assert_called_once_with("panneau", False)
         # The question protocol of the same requests keeps working.
         App.handle_mod_request(app, {"type": "question", "texte": "Recette ?", "n": 6})
-        app.start_question.assert_called_once_with("Recette ?", None)
+        app.start_question.assert_called_once_with("Recette ?", None, action_scope=None)
 
     def test_controller_composition_does_not_hide_any_method(self):
         from monifactory_assistant.app import App

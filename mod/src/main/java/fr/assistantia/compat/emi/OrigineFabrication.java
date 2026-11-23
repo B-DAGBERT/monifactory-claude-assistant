@@ -1,6 +1,7 @@
 package fr.assistantia.compat.emi;
 
 import fr.assistantia.PlanRetrait;
+import fr.assistantia.RechercheEmi;
 import fr.assistantia.ReceptionSortie;
 import java.util.*;
 import net.minecraft.client.Minecraft;
@@ -32,6 +33,7 @@ public final class OrigineFabrication {
     private static final Map<Slot, ItemStack> sortiesEnCours = new IdentityHashMap<>();
     private static int age;
     private static final Map<String, Integer> totalFabrique = new HashMap<>();
+    private static Map<String, Integer> totalCollecte = Map.of();
 
     /** Une lecture de production ne force jamais le rapprochement des preuves différées. */
     public static boolean receptionEnAttente() {
@@ -40,6 +42,15 @@ public final class OrigineFabrication {
 
     public static Map<String, Integer> totaux() {
         return Map.copyOf(totalFabrique);
+    }
+
+    /** Cumul immuable des preuves classées selon les branches du Repérage actif lors du gain. */
+    public static Map<String, Integer> totauxCollecte() {
+        return totalCollecte;
+    }
+
+    private static int additionner(int a, int b) {
+        return (int) Math.min(1_000_000_000L, (long) a + b);
     }
 
     private static List<PlanRetrait.Stock<ItemStack>> receptions = List.of();
@@ -58,6 +69,7 @@ public final class OrigineFabrication {
     public static void vider() {
         crafts.clear();
         totalFabrique.clear();
+        totalCollecte = Map.of();
         precedent = receptions = List.of();
         provenances = new Provenances(List.of(), null);
         receptionSortie = new ReceptionSortie<>(ItemStack::isSameItemSameTags, true);
@@ -209,16 +221,20 @@ public final class OrigineFabrication {
                         retires.isEmpty() ? null : new ReceptionMachine(menu, position, retires));
         gains.addAll(retires);
         receptions = List.copyOf(gains);
+        Map<String, Integer> collecte = null;
         for (var gain : gains) {
             var id =
                     net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(
                             gain.objet().getItem());
-            if (id != null)
-                totalFabrique.merge(
-                        id.toString(),
-                        gain.quantite(),
-                        (a, b) -> (int) Math.min(1_000_000_000L, (long) a + b));
+            if (id == null) continue;
+            totalFabrique.merge(id.toString(), gain.quantite(), OrigineFabrication::additionner);
+            var variante = RechercheEmi.objetCollecte(gain.objet());
+            if (!variante.isEmpty()) {
+                if (collecte == null) collecte = new HashMap<>(totalCollecte);
+                collecte.merge(variante, gain.quantite(), OrigineFabrication::additionner);
+            }
         }
+        if (collecte != null) totalCollecte = Map.copyOf(collecte);
         crafts.removeIf(
                 item ->
                         fabriques.stream()

@@ -58,6 +58,10 @@ python -m unittest tests.test_craft_proof_cost
 de la recette A à un panneau préparé pour B. Il vérifie le refus si A a disparu et l’envoi d’A
 à la quantité recalculée si elle est encore nécessaire. Les menus du contrat sont simulés.
 
+`test_envoyer_respecte_les_variantes_nbt_des_branches_et_des_cases` vérifie les deux entrées
+de machine et les poches avant et après les clics simulés. Une recette exigeant A et B bloque
+avec deux A. Une case appartenant à un autre conteneur du menu conserve sa pile de B.
+
 Dans une copie du pack, comparer un retrait direct et un retrait par hopper. Refaire chaque
 retrait avec Échap dans le même tick et vérifier le nombre reçu une fois dans Suivi. Voir
 [la recette GregTech en jeu](../recette-fabrication.md#gregtech--envoyer-fabriquer-et-récupérer)

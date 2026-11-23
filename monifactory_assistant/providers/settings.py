@@ -47,10 +47,24 @@ class AISettings:
     def _read_files(self):
         rows = []
         for name in FILES:
+            path = self.root / name
             try:
-                rows.append((self.root / name).read_bytes())
+                primary = path.read_bytes()
             except FileNotFoundError:
-                rows.append(None)
+                primary = None
+            if primary is not None:
+                try:
+                    self._object(primary)
+                except ValueError:
+                    pass
+                else:
+                    rows.append((primary, None))
+                    continue
+            try:
+                backup = path.with_name(name + ".bak").read_bytes()
+            except FileNotFoundError:
+                backup = None
+            rows.append((primary, backup))
         return tuple(rows)
 
     @staticmethod
@@ -63,15 +77,16 @@ class AISettings:
     @classmethod
     def _merged(cls, rows):
         config = {}
-        for raw in rows:
-            config.update(cls._object(raw))
+        for primary, backup in rows:
+            config.update(cls._object(backup if backup is not None else primary))
         return config
 
     @staticmethod
     def _revision(rows):
         digest = hashlib.sha256()
-        for raw in rows or ():
-            digest.update(b"missing" if raw is None else str(len(raw)).encode() + b":" + raw)
+        for pair in rows or ():
+            for raw in pair:
+                digest.update(b"missing" if raw is None else str(len(raw)).encode() + b":" + raw)
         return digest.hexdigest()
 
     def values(self):
@@ -150,7 +165,9 @@ class AISettings:
                 raise ConfigurationChanged(
                     "Configuration modifiée en dehors du jeu : relance l’assistant."
                 )
-            backup_json(path, self.baseline[-1])
+            primary, backup = self.baseline[-1]
+            if primary is not None and backup is None:
+                backup_json(path, primary)
             if self._read_files() != self.baseline:
                 raise ConfigurationChanged(
                     "Configuration modifiée en dehors du jeu : relance l’assistant."
@@ -160,7 +177,7 @@ class AISettings:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
-        return (*self.baseline[:-1], raw)
+        return (*self.baseline[:-1], (raw, None))
 
     def _apply(self, request, app):
         now = self.clock() * 1000
@@ -184,7 +201,8 @@ class AISettings:
         reason = self.unavailable(app)
         if reason:
             raise ValueError(reason)
-        local = self._object(self.baseline[-1])
+        primary, backup = self.baseline[-1]
+        local = self._object(backup if backup is not None else primary)
         # Copy effective providers as well: writing a local providers object must not
         # erase another engine inherited from the legacy configuration's shallow merge.
         configured = copy.deepcopy(self.config.get("providers", {}))

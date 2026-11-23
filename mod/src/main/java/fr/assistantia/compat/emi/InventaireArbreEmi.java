@@ -58,7 +58,8 @@ public final class InventaireArbreEmi {
                 && stock.tampon().isEmpty()
                 && reservations.isEmpty()
                 && resultat.inventory.values().stream()
-                        .noneMatch(pile -> pile.getKey() instanceof Fluid)) return natif;
+                        .noneMatch(pile -> pile.getKey() instanceof Fluid))
+            return separerVariantes(natif, resultat);
         // Un handler natif peut inclure des cases du sac ouvert sans indiquer leur origine.
         if (avecSacs)
             for (var pile : natif.inventory.values())
@@ -72,6 +73,45 @@ public final class InventaireArbreEmi {
         ajouter(resultat, reservations);
         ORIGINES.put(resultat, natif);
         return resultat;
+    }
+
+    /** Un handler EMI peut agréger A et B sous le seul NBT de la première pile. */
+    private static EmiPlayerInventory separerVariantes(
+            EmiPlayerInventory natif, EmiPlayerInventory physiques) {
+        if (physiques.inventory.values().stream().noneMatch(p -> p.getNbt() != null)) return natif;
+        var variantes = new HashMap<Object, List<EmiStack>>();
+        for (var pile : physiques.inventory.values())
+            variantes.computeIfAbsent(pile.getKey(), k -> new ArrayList<>()).add(pile);
+        variantes.values().removeIf(piles -> piles.size() < 2);
+        if (variantes.isEmpty()) return natif;
+
+        var uniques = new HashMap<Object, EmiStack>();
+        for (var pile : natif.inventory.values()) {
+            var cle = pile.getKey();
+            if (variantes.containsKey(cle) && uniques.putIfAbsent(cle, pile) != null)
+                variantes.remove(cle);
+        }
+        EmiPlayerInventory corrige = null;
+        for (var groupe : variantes.entrySet()) {
+            var pile = uniques.get(groupe.getKey());
+            var exactes = groupe.getValue();
+            // Le handler peut exposer moins de cases que le joueur. Un surplus déjà fusionné
+            // n'indique pas son NBT : seules les quantités physiques sont alors répartissables.
+            if (pile == null
+                    || !physiques.inventory.containsKey(pile)
+                    || pile.getAmount() < exactes.stream().mapToLong(EmiStack::getAmount).sum())
+                continue;
+            if (corrige == null) {
+                corrige = new EmiPlayerInventory(List.of());
+                corrige.inventory.clear();
+                corrige.inventory.putAll(natif.inventory);
+            }
+            corrige.inventory.remove(pile);
+            for (var exacte : exactes) corrige.inventory.put(exacte, exacte);
+        }
+        if (corrige == null) return natif;
+        ORIGINES.put(corrige, natif);
+        return corrige;
     }
 
     static EmiPlayerInventory personnel() {

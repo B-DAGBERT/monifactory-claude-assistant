@@ -58,12 +58,19 @@ STUBS["net.minecraft.world.entity.player.Player"] = STUBS[
 ].replace(
     "private final Object inventory=new Object();\n    public Object getInventory(){return inventory;}",
     """private final Inventory inventory=new Inventory();
-    public Inventory getInventory(){return inventory;}
-    public static class Inventory {
-        public int getSlotWithRemainingSpace(net.minecraft.world.item.ItemStack pile){return -1;}
-        public int getFreeSlot(){return -1;}
-    }""",
+    public Inventory getInventory(){return inventory;}""",
 )
+STUBS["net.minecraft.world.entity.player.Inventory"] = """
+public class Inventory {
+    private final java.util.Map<Integer, net.minecraft.world.item.ItemStack> cases = new java.util.HashMap<>();
+    public net.minecraft.world.item.ItemStack getItem(int n){
+        return cases.getOrDefault(n, net.minecraft.world.item.ItemStack.EMPTY);
+    }
+    public void setItem(int n, net.minecraft.world.item.ItemStack item){cases.put(n, item);}
+    public int getSlotWithRemainingSpace(net.minecraft.world.item.ItemStack pile){return -1;}
+    public int getFreeSlot(){return -1;}
+}
+"""
 STUBS["net.minecraft.world.inventory.AbstractContainerMenu"] = STUBS[
     "net.minecraft.world.inventory.AbstractContainerMenu"
 ].replace(
@@ -159,8 +166,14 @@ public class GTEmiRecipe extends dev.emi.emi.api.recipe.EmiRecipe {
         "com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient": "public class IntCircuitIngredient {private final int configuration;public IntCircuitIngredient(int n){configuration=n;}}",
         "com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient": "public record SizedIngredient(Object getInner) {}",
         "net.minecraft.core.BlockPos": 'public record BlockPos(int x,int y,int z){public BlockPos immutable(){return this;}public String toShortString(){return x+", "+y+", "+z;}}',
-        "fr.assistantia.RechercheEmi": "public class RechercheEmi {public static java.util.Map<String,Integer> disponibles=java.util.Map.of();public static java.util.Map<String,Integer> resultatsDisponibles(){return disponibles;}}",
-        "fr.assistantia.InventaireJoueur": "public class InventaireJoueur {public static boolean synchronise(){return true;}}",
+        "fr.assistantia.RechercheEmi": 'public class RechercheEmi {public static java.util.Map<String,Integer> disponibles=java.util.Map.of();public static java.util.Map<String,Integer> resultatsDisponibles(){return disponibles;}public static String objetCollecte(net.minecraft.world.item.ItemStack s){return s.tag==0?s.id:s.id+"|"+s.tag;}}',
+        "fr.assistantia.InventaireJoueur": """
+public class InventaireJoueur {
+    public static boolean synchronise() { return true; }
+    public static net.minecraft.world.item.ItemStack caseRelevee(int index) {
+        return net.minecraft.client.Minecraft.getInstance().player.getInventory().getItem(index);
+    }
+}""",
         "fr.assistantia.RetraitCoffre": "public class RetraitCoffre {public static boolean busy;public static boolean occupe(){return busy;}}",
         "fr.assistantia.compat.emi.CoffresArbreEmi": "public class CoffresArbreEmi {public static Object arbreActif(){return fr.assistantia.ArbreEmi.tree;}}",
         "net.minecraftforge.registries.ForgeRegistries": "public class ForgeRegistries {public static final Registry ITEMS=new Registry(); public static class Registry {public String getKey(String item){return item;}}}",
@@ -191,10 +204,10 @@ import fr.assistantia.PlanRetrait.Stock;
 import dev.emi.emi.api.stack.EmiStack;
 public class MachinesEmi {
     static SuiviLotsEmi suivi;
-    static java.util.function.BiConsumer<net.minecraft.world.item.ItemStack,Integer> receptionCollecte(
+    static SuiviLotsEmi.ReceptionCollecte receptionCollecte(
         net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> ecran,
         List<net.minecraft.world.item.ItemStack> variantes
-    ) { return suivi==null ? (pile,n) -> {} : suivi.preparerCollecte(variantes); }
+    ) { return suivi==null ? (pile,n,depot) -> {} : suivi.preparerCollecte(variantes); }
     static List<Stock<EmiStack>> reservationsArbre() {
         return suivi==null ? List.of() : suivi.actifs().stream()
                 .flatMap(lot -> lot.suivi().restants().stream()).toList();
@@ -386,6 +399,9 @@ class MachineInputTests(unittest.TestCase):
         ):
             with self.subTest(scenario=scenario):
                 self.rejouer(scenario)
+
+    def test_envoyer_respecte_les_variantes_nbt_des_branches_et_des_cases(self):
+        self.rejouer("fr.assistantia.EnvoiMachineTest", "variantes-nbt")
 
     def rejouer_cycle(self, *scenarios):
         for scenario in scenarios:

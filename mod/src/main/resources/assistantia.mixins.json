@@ -4,6 +4,7 @@
   "package": "fr.assistantia.mixin",
   "compatibilityLevel": "JAVA_17",
   "client": [
+    "FicheJadeMixin",
     "ContextePaquetForgeMixin",
     "OrigineMondeKubeJSMixin",
     "IdentiteGregTechMixin",

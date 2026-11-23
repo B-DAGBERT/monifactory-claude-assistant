@@ -12,9 +12,11 @@ from monifactory_assistant.application.question_context import (
     QuestionContextSources,
     build_question_context,
 )
+from monifactory_assistant.game.inventory import recent_state
 from monifactory_assistant.game.world_scope import WorldScope
 from monifactory_assistant.persistence import atomic_json
 from monifactory_assistant.platform.hooks import keyboard
+from monifactory_assistant.production.acquisition import active_scope
 from monifactory_assistant.prompts import ACTIONS_HELP, INFO_REQUEST
 from monifactory_assistant.providers.responses import (
     parse_info,
@@ -82,6 +84,7 @@ class ConversationController:
 
     recall_exchanges: tuple[RecallExchange, ...] = ()
     question_generation = None
+    question_action_scope = None
 
     def prepare_conversation(self):
         try:
@@ -233,10 +236,31 @@ class ConversationController:
             bridge.scope == scope and (scope is None or bridge.scope_valid(scope))
         )
 
+    def world_action_scope(self):
+        """Les actions suivent l’identité Forge même lorsque le pont utilise le dossier historique."""
+        bridge = getattr(self, "bridge", None)
+        scope = active_scope(bridge)
+        if getattr(bridge, "isolated", False) is True and scope != bridge.scope:
+            return None
+        return scope
+
+    def question_position(self, scope):
+        # The view cache can contain a position from the previous connection.
+        frame = self.bridge.read("etat.json")
+        if (
+            recent_state(frame, time.time() * 1000)
+            and scope.accepts(frame)
+            and frame.get("dimension") == scope.dimension
+            and all(type(frame.get(axis)) is int for axis in ("x", "y", "z"))
+            and self.world_action_scope() == scope
+        ):
+            return frame
+        return None
+
     def question_generation_valid(self, generation):
         return generation is None or generation is self.conversation.generation
 
-    def start_question(self, text, audio, shot=None):
+    def start_question(self, text, audio, shot=None, *, action_scope=...):
         if self.busy:
             self.notify("Patience, je réfléchis encore…", 4)
             return False
@@ -244,6 +268,9 @@ class ConversationController:
             self.notify("Termine l’enregistrement vocal avant de poser une autre question.", 4)
             return False
         self.question_scope = self.world_scope()
+        self.question_action_scope = (
+            self.world_action_scope() if action_scope is ... else action_scope
+        )
         self.question_generation = self.conversation.generation
         self.busy = True
         try:
@@ -480,17 +507,16 @@ class ConversationController:
     def run_actions(self, actions):
         # This entry point is exclusively model-sourced. Native menu commands keep their
         # separate handlers; no field supplied by a model constitutes user consent.
-        allowed = {
+        world_actions = {
             "surligner",
             "effacer_surbrillance",
             "guider",
             "arreter_guidage",
-            "voix",
-            "affichage",
-            "reglage",
             "memoriser_lieu",
         }
+        allowed = world_actions | {"voix", "affichage", "reglage"}
         rejected = not isinstance(actions, list)
+        world_changed = False
         prepared, new_places = [], set()
         previous_message = getattr(self, "message", "")
         for action in actions if isinstance(actions, list) else []:
@@ -539,15 +565,31 @@ class ConversationController:
         # not mutate local memory when it accompanies an unauthorized destructive action.
         if not rejected:
             for handler, payload in prepared:
+                if payload["type"] in world_actions and (
+                    self.question_action_scope is None
+                    or self.world_action_scope() != self.question_action_scope
+                ):
+                    self.question_action_scope = None
+                    world_changed = True
+                    continue
                 try:
-                    handler(payload)
+                    if payload["type"] == "memoriser_lieu":
+                        position = self.question_position(self.question_action_scope)
+                        if position is None:
+                            world_changed = True
+                            continue
+                        handler(payload, position=position)
+                    else:
+                        handler(payload)
                     log(f"Action : {json.dumps(payload, ensure_ascii=False)}")
                 except Exception:
                     log(f"Action ratée : {payload}\n" + traceback.format_exc())
-        if rejected:
+        if rejected or world_changed:
             notice = (
                 "Certaines actions proposées n’ont pas été exécutées. La discussion ne peut pas "
                 "effacer, remplacer ou réinitialiser tes données."
+                if rejected
+                else "Action en jeu écartée : la partie de cette question n’est plus vérifiable."
             )
             self.add_history("claude", notice)
             self.message = (previous_message + "\n\n" if previous_message else "") + notice

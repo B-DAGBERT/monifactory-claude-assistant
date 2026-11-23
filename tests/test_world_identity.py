@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.scenarios.test_stock_craft import methode
+
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / "mod/src/main/java/fr/assistantia"
 
@@ -194,6 +196,24 @@ public class IdentiteMondeTest {
   mc.solo=null;solo=null;mc.listener=null;mc.level=null;mc.player=null;tick();
   for(int i=0;i<50&&faible.get()!=null;i++){System.gc();Thread.sleep(20);}
   assert faible.get()==null:"stopped integrated server still referenced";
+  // Two local save directories contain the same GT world ID and the same prospector account.
+  Path previous=null;
+  for(String name:new String[]{"Copie A","Copie B","Copie A"}){
+   mc.listener=new ClientPacketListener(new Connection());mc.level=new ClientLevel();mc.player=new Object();
+   mc.solo=new net.minecraft.client.server.IntegratedServer(DIR.resolve("saves").resolve(name));
+   // L'activation entre A et B ne change pas la destination retrouvée au retour en A.
+   if(name.equals("Copie B")){
+    marker("{\"v\":1,\"actif\":true,\"monde\":\""+world+"\",\"revision\":\""+"a".repeat(64)+"\",\"preuve_restauration\":\""+"b".repeat(64)+"\"}");
+    assert IdentiteMonde.isolation();
+   }
+   tick();
+   IdentiteMonde.recevoirGregTech(mc.listener.getConnection(),GT);
+   Path memory=Filons.destination(mc);
+   if(previous==null){Files.createDirectories(memory.getParent());Files.writeString(memory,"épuisé");previous=memory;}
+   else if(name.equals("Copie B")){
+    assert !Files.exists(memory):"B retrouve le marquage de A dans "+memory;
+   }else assert memory.equals(previous)&&Files.readString(memory).equals("épuisé");
+  }
   System.out.println("IdentiteMonde OK");
  }
 }
@@ -220,6 +240,28 @@ class WorldIdentityTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(f"package {name.rsplit('.', 1)[0]};\n{body}")
                 sources.append(path)
+            # Exercise the production selector and file path without loading the Forge renderer.
+            filons = (JAVA / "Filons.java").read_text()
+            selector = temp / "fr/assistantia/Filons.java"
+            selector.parent.mkdir(parents=True, exist_ok=True)
+            selector.write_text(
+                """package fr.assistantia;
+                import java.nio.file.*;
+                import java.security.MessageDigest;
+                import java.nio.charset.StandardCharsets;
+                import java.util.HexFormat;
+                import net.minecraft.client.Minecraft;
+                class GregTechFilons {static String monde(){return "/journal/compte/meme-gt";}}
+                class Pont {static String cleContexte(){return IdentiteMonde.monde();}}
+                class Filons {
+                  private static final Path DOSSIER=Path.of(System.getProperty("test.game"));
+                  static Path destination(Minecraft mc){return fichier(identite(mc));}
+                """
+                + methode(filons, "private static String identite(")
+                + methode(filons, "private static Path fichier(")
+                + "}"
+            )
+            sources.append(selector)
             harness = temp / "fr/assistantia/IdentiteMondeTest.java"
             harness.parent.mkdir(parents=True, exist_ok=True)
             harness.write_text(ADAPTER_TEST)
@@ -255,9 +297,9 @@ class WorldIdentityTests(unittest.TestCase):
                         os.pathsep.join([str(temp), str(gson)]),
                         f"fr.assistantia.{test}",
                     ],
-                    check=True,
                     capture_output=True,
                     text=True,
                     timeout=10,
                 )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("OK", result.stdout)

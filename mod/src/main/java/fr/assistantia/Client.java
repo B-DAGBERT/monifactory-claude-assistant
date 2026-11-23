@@ -1,6 +1,7 @@
 package fr.assistantia;
 
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 /** Branchement des événements côté client. */
@@ -53,6 +54,7 @@ public final class Client {
         var modBus = FMLJavaModLoadingContext.get().getModEventBus();
         modBus.addListener(Touches::enregistrer);
         modBus.addListener(Hud::enregistrer);
+        MinecraftForge.EVENT_BUS.addListener(EventPriority.LOW, Hud::finirImage);
         Hud.source(Client::etapeRecette);
         MinecraftForge.EVENT_BUS.register(InventaireJoueur.class);
         MinecraftForge.EVENT_BUS.register(Touches.class);

@@ -133,6 +133,7 @@ public class InventaireJoueurTest {
   tick();
   check(Pont.exports==1&&Pont.dernier.get("t").getAsLong()==maintenant,"first snapshot exported at once");
   check(nombre("minecraft:iron_ingot")==12&&Pont.dernier.get("actif").getAsBoolean(),"first snapshot content");
+  check(InventaireJoueur.caseRelevee(2).isEmpty(),"empty native slot");
   var piles=InventaireJoueur.piles();long revision=InventaireJoueur.revision();int copies=ItemStack.copies;
   avancer(39);
   check(ItemStack.copies==copies,"no ItemStack copy while nothing changes: "+(ItemStack.copies-copies));
@@ -148,11 +149,16 @@ public class InventaireJoueurTest {
   revision=InventaireJoueur.revision();
   p.inventory.items.get(0).setCount(11);avancer(1);
   check(InventaireJoueur.revision()==revision+1,"in-place count change detected");
+  var charbon=p.inventory.items.get(2);
+  p.inventory.items.set(2,ItemStack.EMPTY);p.inventory.items.set(3,charbon);
+  check(InventaireJoueur.caseRelevee(2).getCount()==5&&InventaireJoueur.caseRelevee(3).isEmpty(),"slot and totals use the same snapshot");
+  avancer(1);
+  check(InventaireJoueur.caseRelevee(2).isEmpty()&&InventaireJoueur.caseRelevee(3).getCount()==5,"slot move observed with unchanged totals");
   revision=InventaireJoueur.revision();
   outil.getTag().putInt("Damage",4);avancer(20);
   check(InventaireJoueur.revision()==revision+1,"in-place NBT change caught by the periodic check");
   revision=InventaireJoueur.revision();piles=InventaireJoueur.piles();
-  p.inventory.items.set(2,new ItemStack("minecraft:coal",5));avancer(1);
+  p.inventory.items.set(3,new ItemStack("minecraft:coal",5));avancer(1);
   check(InventaireJoueur.revision()==revision&&InventaireJoueur.piles()==piles,"equal replacement keeps the view");
   p.containerMenu.carried=new ItemStack("minecraft:coal",2);avancer(10);
   check(nombre("minecraft:coal")==7,"carried stack counted");

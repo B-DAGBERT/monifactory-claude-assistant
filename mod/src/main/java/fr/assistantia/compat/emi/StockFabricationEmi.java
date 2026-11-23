@@ -8,6 +8,8 @@ import fr.assistantia.ReceptionLots;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.item.ItemStack;
@@ -92,10 +94,18 @@ record StockFabricationEmi(
     }
 
     <R> List<PlanRetrait.Prise> retraitsReseau(PlanMachines.Noeud<EmiStack, R> arbre, long lots) {
+        return retraitsReseau(arbre, lots, Map.of(), Set.of());
+    }
+
+    <R> List<PlanRetrait.Prise> retraitsReseau(
+            PlanMachines.Noeud<EmiStack, R> arbre,
+            long lots,
+            Map<R, List<PlanRetrait.Stock<EmiStack>>> entrees,
+            Set<R> postesInconnus) {
         if (reseau.stream().noneMatch(s -> s.quantite() > 0)) return List.of();
         var couverture = couverture();
         int debutReseau = couverture.size() - reseau.size();
-        return PlanMachines.retraits(arbre, lots, couverture).stream()
+        return PlanMachines.retraits(arbre, lots, couverture, entrees, postesInconnus).stream()
                 .filter(p -> p.index() >= debutReseau)
                 .map(p -> new PlanRetrait.Prise(p.index() - debutReseau, p.quantite()))
                 .toList();

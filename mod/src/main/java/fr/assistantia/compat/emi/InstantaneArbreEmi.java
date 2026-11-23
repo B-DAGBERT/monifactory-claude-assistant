@@ -2,9 +2,11 @@ package fr.assistantia.compat.emi;
 
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiIngredient;
+import dev.emi.emi.api.stack.Comparison;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.ArbreCollecte;
 import fr.assistantia.PlanMachines;
+import fr.assistantia.MemoireCollecte;
 import fr.assistantia.RessourceCollecte;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -169,6 +171,59 @@ public record InstantaneArbreEmi(
         return variantes.stream().anyMatch(v -> ComparaisonEmi.meme(pile, v));
     }
 
+    private static final java.util.Map<Comparison, Long> comparaisons =
+            new java.util.WeakHashMap<>();
+    private static long numeroComparaison;
+
+    private static String cleObjet(EmiStack pile) {
+        String base =
+                RessourceCollecte.cleObjet(
+                        pile.getId().toString(),
+                        pile.getItemStack().hasTag() ? pile.getNbt() : null);
+        // L'API EMI donne le comparateur installé à cette fonction. Conserver l'instance :
+        // deux exemples identiques peuvent imposer des comparaisons différentes à une vraie pile.
+        long[] regle = {0};
+        pile.comparison(
+                c -> {
+                    if (c != Comparison.DEFAULT_COMPARISON)
+                        regle[0] = comparaisons.computeIfAbsent(c, k -> ++numeroComparaison);
+                    return c;
+                });
+        return regle[0] == 0 ? base : base + "|comparaison:" + regle[0];
+    }
+
+    /**
+     * Les clés des variantes sont calculées une fois pour la recherche, hors du rendu des cases.
+     */
+    java.util.function.Function<ItemStack, String> objets(MemoireCollecte suivi) {
+        record Variante(EmiStack pile, String cle) {}
+        var parObjet = new java.util.HashMap<Object, List<Variante>>();
+        for (var variante : variantes)
+            parObjet.computeIfAbsent(variante.getKey(), k -> new ArrayList<>())
+                    .add(new Variante(variante, cleObjet(variante)));
+        return item -> {
+            if (item.isEmpty()) return "";
+            var candidats = parObjet.get(item.getItem());
+            if (candidats == null) return "";
+            var reel = EmiStack.of(item);
+            String premiere = "";
+            Set<String> compatibles = null;
+            for (var attendu : candidats) {
+                if (!ComparaisonEmi.meme(reel, attendu.pile())) continue;
+                String cle = attendu.cle();
+                if (premiere.isEmpty()) premiere = cle;
+                else if (!premiere.equals(cle)) {
+                    if (compatibles == null) {
+                        compatibles = new LinkedHashSet<>();
+                        compatibles.add(premiere);
+                    }
+                    compatibles.add(cle);
+                }
+            }
+            return compatibles == null ? premiere : suivi.groupe(compatibles);
+        };
+    }
+
     RessourceCollecte fluide(ItemStack objet) {
         if (fluides.isEmpty()) return null;
         var fluide = FluidUtil.getFluidContained(objet).orElse(null);
@@ -185,7 +240,10 @@ public record InstantaneArbreEmi(
     }
 
     private static List<String> cles(List<EmiStack> stacks) {
-        return stacks.stream().map(s -> s.getId() + "|" + s.getNbt()).sorted().toList();
+        return stacks.stream()
+                .map(s -> s.getKey() instanceof Fluid ? cleFluide(s) : cleObjet(s))
+                .sorted()
+                .toList();
     }
 
     private static boolean produitGaranti(
@@ -242,7 +300,7 @@ public record InstantaneArbreEmi(
                     }
                     continue;
                 }
-                ids.add(copie.getId().toString());
+                ids.add(cleObjet(copie));
                 variantesCollecte.add(copie);
                 outil &=
                         item.isDamageableItem()

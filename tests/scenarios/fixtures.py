@@ -71,6 +71,7 @@ public class Emi {public static boolean actif=true,busy;public static java.util.
  public static java.util.Map<String,Integer> outils=java.util.Map.of();public static java.util.Map<String,Integer> outilsMachines(){return outils;}
  public static boolean arbreActif(){return actif;}public static boolean envoiMachineEnCours(){return busy;}
  public static java.util.Map<String,Integer> fabricationsConfirmees(){return preuves;}
+ public static java.util.Map<String,Integer> fabricationsCollecte(){return preuves;}
  public static java.util.Map<String,Integer> reservationsFabrication(){return reservations;}
  public static java.util.List<PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> creditsFabrication(){return credits;}}
 """,

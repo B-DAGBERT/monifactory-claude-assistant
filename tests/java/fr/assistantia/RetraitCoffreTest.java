@@ -127,6 +127,7 @@ public final class RetraitCoffreTest {
                 pile ->
                         switch (pile.id) {
                             case "lava_bucket" -> new RessourceCollecte("fluide|test:lava", 1000);
+                            case "half_cell" -> new RessourceCollecte("fluide|test:lava", 500);
                             case "water_bucket" -> new RessourceCollecte("fluide|test:water", 1000);
                             default -> new RessourceCollecte(pile.id, 1);
                         });
@@ -169,6 +170,32 @@ public final class RetraitCoffreTest {
                         .mapToInt(s -> s.item.getCount())
                         .sum()
                 == 2;
+    }
+
+    private static void cellules(int a, int b) throws Exception {
+        setup(0, 0);
+        var first = contenant(a == 500 ? "half_cell" : "lava_bucket", true);
+        var second = contenant(b == 500 ? "half_cell" : "lava_bucket", true);
+        var plan = planLiquide(1000, 0);
+        assert RetraitCoffre.lancer(screen, plan);
+        finish();
+        int volume = 0;
+        for (var slot : menu.slots.subList(1, 4)) {
+            volume += slot.item.getCount() * (slot.item.id.equals("half_cell") ? 500 : 1000);
+        }
+        String mesure =
+                "coffre ["
+                        + first.item.getCount()
+                        + ", "
+                        + second.item.getCount()
+                        + "] poches="
+                        + volume
+                        + "mB curseur="
+                        + menu.carried.getCount();
+        System.out.println("Cellules " + a + "/" + b + " " + mesure);
+        assert volume == 1000 && menu.carried.isEmpty() : mesure;
+        assert first.item.getCount() == (a == 500 && b == 1000 ? 1 : 0) : mesure;
+        assert second.item.getCount() == (b == 500 && a == 1000 ? 1 : 0) : mesure;
     }
 
     private static void synchronization() throws Exception {
@@ -360,6 +387,9 @@ public final class RetraitCoffreTest {
         treeSelection();
         componentBeforeMaterials();
         collecterLesContenantsEntiers();
+        cellules(500, 1000);
+        cellules(1000, 500);
+        cellules(500, 500);
         setup(1000, 0);
         assert RetraitCoffre.lancer(screen, plan(130));
         tick();

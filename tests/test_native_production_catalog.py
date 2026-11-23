@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.test_production_service import ProductionServiceFixture
+
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = {
     "fr.assistantia.InventaireJoueur": """public class InventaireJoueur {
@@ -74,6 +76,10 @@ STUBS = {
     "dev.emi.emi.api.recipe.EmiRecipeCategory": "public record EmiRecipeCategory(net.minecraft.resources.ResourceLocation getId) {}",
     "dev.emi.emi.api.recipe.EmiRecipe": """public class EmiRecipe {public String id="test:recipe";public java.util.List<dev.emi.emi.api.stack.EmiIngredient> inputs=java.util.List.of(),catalysts=java.util.List.of();public java.util.List<dev.emi.emi.api.stack.EmiStack> outputs=java.util.List.of();public net.minecraft.resources.ResourceLocation getId(){return new net.minecraft.resources.ResourceLocation(id);}public EmiRecipeCategory getCategory(){return new EmiRecipeCategory(new net.minecraft.resources.ResourceLocation("test:machine"));}public java.util.List<dev.emi.emi.api.stack.EmiIngredient> getInputs(){return inputs;}public java.util.List<dev.emi.emi.api.stack.EmiIngredient> getCatalysts(){return catalysts;}public java.util.List<dev.emi.emi.api.stack.EmiStack> getOutputs(){return outputs;}public boolean supportsRecipeTree(){return true;}public net.minecraft.world.item.crafting.ShapelessRecipe getBackingRecipe(){return new net.minecraft.world.item.crafting.ShapelessRecipe();}}""",
     "dev.emi.emi.api.recipe.EmiResolutionRecipe": "public class EmiResolutionRecipe extends EmiRecipe {public final dev.emi.emi.api.stack.EmiStack stack;public EmiResolutionRecipe(dev.emi.emi.api.stack.EmiStack s){stack=s;outputs=java.util.List.of(s);}public net.minecraft.resources.ResourceLocation getId(){return null;}}",
+    "net.minecraft.world.item.crafting.ShapedRecipe": "public class ShapedRecipe extends ShapelessRecipe {}",
+    "dev.emi.emi.recipe.EmiShapedRecipe": """public class EmiShapedRecipe extends dev.emi.emi.api.recipe.EmiRecipe {
+ public net.minecraft.world.item.crafting.ShapedRecipe getBackingRecipe(){return new net.minecraft.world.item.crafting.ShapedRecipe();}
+}""",
     "dev.emi.emi.recipe.EmiShapelessRecipe": "public class EmiShapelessRecipe extends dev.emi.emi.api.recipe.EmiRecipe {}",
     "dev.emi.emi.api.recipe.EmiRecipeManager": """public class EmiRecipeManager {public final java.util.Map<String,EmiRecipe> recipes=new java.util.HashMap<>();public java.util.List<dev.emi.emi.api.stack.EmiIngredient> workstations=java.util.List.of();public EmiRecipe getRecipe(net.minecraft.resources.ResourceLocation id){return recipes.get(id.toString());}public java.util.List<dev.emi.emi.api.stack.EmiIngredient> getWorkstations(EmiRecipeCategory c){return workstations;}}""",
     "dev.emi.emi.api.EmiApi": "public class EmiApi {public static dev.emi.emi.api.recipe.EmiRecipeManager manager=new dev.emi.emi.api.recipe.EmiRecipeManager();public static dev.emi.emi.api.recipe.EmiRecipeManager getRecipeManager(){return manager;}}",
@@ -92,7 +98,7 @@ STUBS = {
 }
 
 
-class NativeProductionCatalogTests(unittest.TestCase):
+class NativeProductionCatalogTests(ProductionServiceFixture, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         javac, java = shutil.which("javac"), shutil.which("java")
@@ -148,6 +154,35 @@ class NativeProductionCatalogTests(unittest.TestCase):
         result = subprocess.run([*self.command, name], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
+
+    def test_template_duplication_from_java_export_to_production_report(self):
+        template = "minecraft:netherite_upgrade_smithing_template"
+        for index, (recipe, seeds, expected) in enumerate(
+            (("template", 1, "complete"), ("template", 0, "partial"), ("no_gain", 1, "partial"))
+        ):
+            with self.subTest(recipe=recipe, seeds=seeds):
+                self.prepare_production_service()
+                native = json.loads(self.run_case(recipe))
+                document = native["document"]
+                self.metadata.update(native["selection"], sha256=document["sha256"])
+                self.write("catalogue_production.json", document)
+                self.write("catalogue_production_etat.json", self.metadata)
+                contents = {"minecraft:diamond": 7, "minecraft:netherrack": 1}
+                if seeds:
+                    contents[template] = seeds
+                self.inventory(0, inventaire=contents)
+                self.service.submit(self.request(n=self.now + index, item=template, quantite=2))
+                result = self.finish()
+                report = result["rapport"]
+                self.assertEqual(report["status"], expected, report)
+                if expected == "complete":
+                    self.assertEqual(report["missing"], [])
+                    self.assertEqual(report["surplus"], [])
+                    self.assertEqual([s["batches"] for s in report["steps"]], [1])
+                    self.assertEqual(report["steps"][0]["outputs"], [report["target"]])
+                    self.assertEqual(report["target"]["quantity"], 2)
+                else:
+                    self.assertTrue(any(a["resource"]["id"] == template for a in report["missing"]))
 
     def test_native_gt_exact_quantities_circuit_fluids_chance_and_limits(self):
         self.run_case("gt")

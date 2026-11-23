@@ -63,7 +63,70 @@ public final class EnvoiMachineTest {
         EnvoiMachine.lancer(screen, p, () -> done++);
     }
 
+    private record Choix(
+            List<EmiStack> getEmiStacks, long getAmount, float getChance, boolean isEmpty)
+            implements EmiIngredient {}
+
+    private static ItemStack variante(int tag) {
+        var pile = new ItemStack("test:composant", 1);
+        pile.tag = tag;
+        return pile;
+    }
+
+    private static void variantesNbt() throws Exception {
+        var a = EmiStack.of(variante(1));
+        var b = EmiStack.of(variante(2));
+        var strict = recipe(a, b);
+        verifierEnvoi(strict, List.of(), false);
+        verifierEnvoi(strict, List.of(1, 1), false);
+        verifierEnvoi(strict, List.of(1, 2), true);
+        verifierEnvoi(strict, List.of(2, 1), true);
+        var souple = recipe(new Choix(List.of(a, b), 1, 1, false));
+        verifierEnvoi(souple, List.of(1), true);
+        verifierEnvoi(souple, List.of(2), true);
+    }
+
+    private static void verifierEnvoi(EmiRecipe recette, List<Integer> poches, boolean possible)
+            throws Exception {
+        setup();
+        for (int i = 0; i < poches.size(); i++)
+            menu.slots.get(2 + i).item = variante(poches.get(i));
+        // Même écran, mais cette case n'appartient ni aux poches ni aux entrées de la machine.
+        var horsEntrees = new Slot(new Object(), 7);
+        horsEntrees.item = variante(2);
+        menu.slots.set(7, horsEntrees);
+        var plan = EnvoiMachine.preparer(screen, recette, 1);
+        assert plan.possible() == possible : poches + " : " + plan.probleme();
+        if (possible) {
+            EnvoiMachine.lancer(screen, plan, () -> done++);
+            finish();
+            assert done == 1;
+        } else {
+            String manquant = "1 × test:composant";
+            String attendus = poches.isEmpty() ? manquant + ", " + manquant : manquant;
+            assert plan.probleme().equals("À collecter : " + attendus) : plan.probleme();
+            assert done == 0 && mc.gameMode.clicks == 0;
+        }
+        for (int i = 0; i < 2; i++) {
+            var entree = menu.slots.get(i).item;
+            var source = menu.slots.get(2 + i).item;
+            if (i < poches.size()) {
+                var temoin = variante(poches.get(i));
+                var conservee = possible ? entree : source;
+                assert conservee.getCount() == 1 && ItemStack.isSameItemSameTags(conservee, temoin);
+            }
+            if (!possible || i >= poches.size()) assert entree.isEmpty();
+            if (possible || i >= poches.size()) assert source.isEmpty();
+        }
+        assert menu.getCarried().isEmpty();
+        assert horsEntrees.item.getCount() == 1 && horsEntrees.item.tag == 2;
+    }
+
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && args[0].equals("variantes-nbt")) {
+            variantesNbt();
+            return;
+        }
         setup();
         menu.slots.get(2).item = new ItemStack("tin", 64);
         var r = recipe(item("tin", 2));

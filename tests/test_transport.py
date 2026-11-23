@@ -2,7 +2,9 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +22,7 @@ assert 'features.apps=false' in sys.argv
 assert 'OPENAI_API_KEY' not in os.environ
 root=os.path.dirname(__file__)
 count=0
+held=None
 
 def emit(value):print(json.dumps(value),flush=True)
 for raw in sys.stdin:
@@ -44,6 +47,10 @@ for raw in sys.stdin:
   text=p['input'][0]['text'];tid=p['threadId'];turn='turn-'+str(ident)
   emit({'id':ident,'result':{'turn':{'id':turn}}})
   if text=='timeout':time.sleep(10);continue
+  if text=='card-timeout':continue
+  if text=='discussion-held':
+   held=(tid,turn)
+   continue
   if text=='disconnect':sys.exit(0)
   emit({'method':'item/started','params':{'threadId':tid,'turnId':turn,'item':{'id':'comment','type':'agentMessage','phase':'commentary'}}})
   emit({'method':'item/agentMessage/delta','params':{'threadId':tid,'turnId':turn,'itemId':'comment','delta':'Never speak this'}})
@@ -52,6 +59,12 @@ for raw in sys.stdin:
   emit({'method':'item/completed','params':{'threadId':tid,'turnId':turn,'item':{'id':'final','type':'agentMessage','phase':'final_answer','text':'hello'}}})
   emit({'method':'turn/completed','params':{'threadId':tid,'turn':{'id':turn,'status':'failed' if text=='failure' else 'completed','error':{'message':'quota'} if text=='failure' else None}}})
   continue
+ elif method=='thread/unsubscribe' and held:
+  tid,turn=held
+  emit({'method':'item/completed','params':{'threadId':tid,'turnId':turn,'item':{'id':'final','type':'agentMessage','text':'discussion'}}})
+  emit({'method':'turn/completed','params':{'threadId':tid,'turn':{'id':turn,'status':'completed'}}})
+  held=None
+  result={}
  else:result={}
  if ident is not None:emit({'id':ident,'result':result})
 """
@@ -180,6 +193,61 @@ class PersistentTests(unittest.TestCase):
             self.call("timeout", timeout=0.2)
         self.assertIsNone(self.client.proc)
         self.assertEqual(sum(r.get("method") == "turn/start" for r in self.requests()), 1)
+
+    def held_discussion(self, pool, spoken):
+        submitted = threading.Event()
+        request = self.client.request
+
+        def observe(method, params, **kwargs):
+            result = request(method, params, **kwargs)
+            if method == "turn/start" and params["input"][0]["text"] == "discussion-held":
+                submitted.set()
+            return result
+
+        self.enterContext(patch.object(self.client, "request", side_effect=observe))
+        discussion = pool.submit(self.call, "discussion-held", on_text=spoken.append, timeout=8)
+        self.assertTrue(submitted.wait(4))
+        return discussion
+
+    def test_expiring_item_card_preserves_concurrent_discussion_and_next_turn(self):
+        spoken = []
+        with ThreadPoolExecutor() as pool:
+            discussion = self.held_discussion(pool, spoken)
+            with self.assertRaises(TimeoutError):
+                self.call("card-timeout", ephemeral=True, timeout=0.5)
+            answer, thread = discussion.result(timeout=5)
+        self.assertEqual((answer, spoken), ("discussion", ["discussion"]))
+        self.assertEqual(self.call(session=thread), ("hello", thread))
+        self.assertEqual(self.client.starts, 1)
+        turns = [row["params"] for row in self.requests() if row.get("method") == "turn/start"]
+        self.assertEqual(
+            [t["input"][0]["text"] for t in turns], ["discussion-held", "card-timeout", "ok"]
+        )
+        self.assertNotEqual(turns[0]["threadId"], turns[1]["threadId"])
+        interrupts = [
+            row["params"] for row in self.requests() if row.get("method") == "turn/interrupt"
+        ]
+        self.assertEqual([row["threadId"] for row in interrupts], [turns[1]["threadId"]])
+
+    def test_shared_process_exit_fails_both_turns_without_replaying(self):
+        spoken = []
+        with ThreadPoolExecutor() as pool:
+            discussion = self.held_discussion(pool, spoken)
+            with self.assertRaises(RuntimeError):
+                self.call("disconnect", ephemeral=True)
+            with self.assertRaises(RuntimeError):
+                discussion.result(timeout=6)
+        self.assertEqual(spoken, [])
+        self.assertEqual(self.call()[0], "hello")
+        self.assertEqual(self.client.starts, 2)
+        self.assertEqual(
+            [
+                row["params"]["input"][0]["text"]
+                for row in self.requests()
+                if row.get("method") == "turn/start"
+            ],
+            ["discussion-held", "disconnect", "ok"],
+        )
 
     def test_ephemeral_card_thread_is_unloaded(self):
         self.call(ephemeral=True)

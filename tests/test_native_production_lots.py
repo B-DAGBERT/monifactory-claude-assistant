@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = (
     "initial",
     "collecte_differee",
+    "collecte_me_tardive",
+    "collecte_me_courte",
+    "collecte_me_total_constant",
+    "collecte_me_gain_avant",
+    "collecte_me_gain_simultane",
+    "collecte_me_case_remplacee",
     "partial_cancel",
     "manual_completion",
     "complete_move",
@@ -26,6 +32,7 @@ SCENARIOS = (
     "unattributed",
     "read_only",
     "available_label",
+    "available_variant",
     "fluids_variants",
     "duplicate_outputs",
     "bounded",
@@ -91,6 +98,13 @@ class NativeProductionLotTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("package " + name.rsplit(".", 1)[0] + ";\n" + body)
             sources.append(str(path))
+        suivi = ROOT / "mod/src/main/java/fr/assistantia/compat/emi/SuiviLotsEmi.java"
+        suivi_controle = directory / "SuiviLotsEmi.java"
+        # Garder la logique de production et avancer seulement son horloge monotone.
+        suivi_controle.write_text(
+            suivi.read_text().replace("System.nanoTime()", "ProjectionLotsEmiTest.nanoTime()")
+        )
+        sources.append(str(suivi_controle))
         sources.extend(
             str(ROOT / "mod/src/main/java/fr/assistantia" / f"{name}.java")
             for name in (
@@ -103,7 +117,6 @@ class NativeProductionLotTests(unittest.TestCase):
                 "compat/emi/ComparaisonEmi",
                 "compat/emi/ConfigurationCircuit",
                 "compat/emi/LotMachine",
-                "compat/emi/SuiviLotsEmi",
                 "compat/emi/OrigineFabrication",
                 "compat/emi/ProjectionLotsEmi",
             )

@@ -55,7 +55,9 @@ class DiscussionMenuTests(unittest.TestCase):
     def test_accepts_once_and_acknowledges_the_exact_id(self):
         self.write(self.request)
         self.app.check_mod_requests()
-        self.app.start_question.assert_called_once_with(self.request["texte"], None)
+        self.app.start_question.assert_called_once_with(
+            self.request["texte"], None, action_scope=None
+        )
         self.assertEqual(self.app.question_ack, {"n": self.n, "etat": "acceptee"})
         self.app.check_mod_requests()
         self.write(self.request)
@@ -115,7 +117,9 @@ class DiscussionMenuTests(unittest.TestCase):
         )
         self.write(self.request)
         self.app.check_mod_requests()
-        self.app.start_question.assert_called_once_with(self.request["texte"], None)
+        self.app.start_question.assert_called_once_with(
+            self.request["texte"], None, action_scope=None
+        )
         self.app.root.after.assert_called_once_with(300, self.app.check_mod_requests)
 
     def test_invalid_scope_rearms_once_without_handling_pending_requests(self):

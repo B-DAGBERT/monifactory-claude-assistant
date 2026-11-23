@@ -35,7 +35,7 @@ _WOODS = "oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|crimson|warped
 _PHYSICAL_STORAGE = re.compile(
     r"minecraft:(?:chest|trapped_chest|barrel|(?:(?:white|orange|magenta|light_blue|yellow|lime|pink|gray|light_gray|cyan|purple|blue|brown|green|red|black)_)?shulker_box)"
     r"|sophisticatedstorage:(?:(?:copper|iron|gold|diamond|netherite)_)?(?:chest|barrel|limited_[1-4]_barrel)"
-    rf"|functionalstorage:(?:(?:{_WOODS})_[124]|(?:framed_)?(?:simple_)?compacting_drawer)"
+    rf"|functionalstorage:(?:(?:{_WOODS})_[124]|(?:framed_)?(?:simple_)?compacting_drawer|compacting_framed_drawer)"
     rf"|storagedrawers:(?:(?:{_WOODS})_(?:full|half)_drawers_[124]|comp_drawers_3)"
 )
 
@@ -561,6 +561,8 @@ class _Builder:
             seen.add(normalized["cle"])
             coords = tuple(normalized[key] for key in ("x", "y", "z"))
             value = {"block": normalized["bloc"]}
+            if "jumeau" in normalized:
+                value["jumeau"] = normalized["jumeau"]
             if "o" in block:
                 value["items"] = _counts(block["o"], pairs=True)
             if "m" in block:

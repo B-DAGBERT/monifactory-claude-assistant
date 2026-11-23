@@ -39,9 +39,10 @@ public final class CoffresArbreEmi {
     private static InstantaneArbreEmi dernierArbre;
 
     private static void appliquer(InstantaneArbreEmi vue) {
-        RechercheEmi.recalculer(
-                new MemoireCollecte(vue.collecte(), vue.lots()),
-                vue::accepte,
+        var suivi = new MemoireCollecte(vue.collecte(), vue.lots());
+        RechercheEmi.recalculerArbre(
+                suivi,
+                vue.objets(suivi),
                 vue::fluide,
                 dernierArbre != null && vue.cible().equals(dernierArbre.cible()));
         dernierArbre = vue;
@@ -401,8 +402,8 @@ public final class CoffresArbreEmi {
             var vue = InstantaneArbreEmi.lire(tree);
             if (ArbreEmi.actif() == null) RechercheEmi.arreter();
             if (!ArbreEmi.activer()) return;
-            RechercheEmi.basculer(
-                    ID, new MemoireCollecte(vue.collecte(), vue.lots()), vue::accepte, vue::fluide);
+            var suivi = new MemoireCollecte(vue.collecte(), vue.lots());
+            RechercheEmi.basculerArbre(ID, suivi, vue.objets(suivi), vue::fluide);
             dernierArbre = vue;
         } catch (ReflectiveOperationException | RuntimeException e) {
             signaler(e);

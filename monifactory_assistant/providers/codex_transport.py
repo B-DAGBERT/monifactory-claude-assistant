@@ -402,7 +402,10 @@ class PersistentCodex:
                     )
                 except (RuntimeError, TimeoutError):
                     pass
-            self.close()  # never steer a possibly still-running turn on the next question
+            # A card owns a fresh thread that is unsubscribed below and never reused.
+            # Closing the shared service here would interrupt an independent discussion.
+            if not ephemeral:
+                self.close()  # a saved conversation could otherwise steer its abandoned turn
             raise
         finally:
             metric["total_s"] = round(time.monotonic() - started, 3)

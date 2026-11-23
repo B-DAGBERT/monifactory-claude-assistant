@@ -13,6 +13,7 @@ from monifactory_assistant.application.game import GameController
 from monifactory_assistant.application.interface import InterfaceController
 from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.settings import SETTINGS
+from tests.test_world_routing import SESSION_A, WORLD_A, dump, receipt, setup_bridge, state
 
 
 class Fixture(ConversationController, GameController, InterfaceController):
@@ -42,6 +43,7 @@ REMOVED_ACTIONS = (
 class AIActionGuardTests(unittest.TestCase):
     def setUp(self):
         self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(patch("time.time", return_value=1_800_000_000))
         # An old project save stays on disk: no action may read, rewrite or delete it.
         self.path = self.directory / "plan_ia.json"
         self.path.write_text(
@@ -63,7 +65,11 @@ class AIActionGuardTests(unittest.TestCase):
         app.game = {"x": 20, "y": 64, "z": 30, "dimension": "minecraft:overworld"}
         app.storage = Storage([])
         app.settings = {key: default for key, (_, _, default) in SETTINGS.items()}
-        app.bridge = SimpleNamespace(isolated=False, scope=None)
+        app.bridge = setup_bridge(self.directory, active=False)
+        self.addCleanup(app.bridge.close_publications)
+        receipt(app.bridge, WORLD_A, SESSION_A)
+        dump(app.bridge.dir / "etat.json", state(WORLD_A, SESSION_A) | app.game)
+        app.question_action_scope = app.world_action_scope()
         app.history = []
         app.root = SimpleNamespace(after=Mock())
         app.refresh, app.show_overlay, app.journal = Mock(), Mock(), Mock()
@@ -78,6 +84,22 @@ class AIActionGuardTests(unittest.TestCase):
                 self.directory / "reglages.json",
             )
         )
+
+    def test_recovered_settings_keep_typed_backup_after_player_changes_preference(self):
+        from monifactory_assistant.persistence import load_json
+
+        path = self.directory / "reglages.json"
+        backup = path.with_suffix(".json.bak")
+        path.write_text("[]")
+        backup.write_text('{"panneau":false,"progression":false}')
+        recovered = load_json(path, {})
+        self.app.settings.update(recovered)
+        self.app.set_setting("panneau", True)
+        self.assertTrue(json.loads(path.read_text())["panneau"])
+        self.assertFalse(json.loads(path.read_text())["progression"])
+        self.assertEqual(json.loads(backup.read_text()), recovered)
+        path.write_text("{truncated")
+        self.assertEqual(load_json(path, strict=True), recovered)
 
     def files(self):
         return {p.name: p.read_bytes() for p in self.directory.iterdir() if p.is_file()}

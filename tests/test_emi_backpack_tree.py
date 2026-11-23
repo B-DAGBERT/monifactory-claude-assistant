@@ -12,6 +12,7 @@ from tests.test_backpack_inventory import STUBS as BACKPACK_STUBS
 ROOT = Path(__file__).resolve().parents[1]
 STUBS = {
     **BACKPACK_STUBS,
+    "net.minecraft.world.item.Item": "public class Item {public boolean canBeDepleted(){return false;}}",
     "net.minecraft.world.item.ItemStack": BACKPACK_STUBS[
         "net.minecraft.world.item.ItemStack"
     ].replace(
@@ -117,19 +118,23 @@ public class Comparison {public static final Comparison DEFAULT_COMPARISON=new C
     "dev.emi.emi.api.stack.EmiStack": """
 import net.minecraft.world.item.ItemStack;
 public class EmiStack implements EmiIngredient {private final ItemStack item;private final Object key;private long n;
+ private Comparison mode=Comparison.DEFAULT_COMPARISON;
  public EmiStack(ItemStack s){item=s.copy();key=s.id;n=s.getCount();}public static EmiStack of(ItemStack s){return new EmiStack(s);}
  private EmiStack(net.minecraft.world.level.material.Fluid fluid,long n){item=ItemStack.EMPTY;key=fluid;this.n=n;}
  public static EmiStack of(net.minecraft.world.level.material.Fluid fluid,net.minecraft.nbt.CompoundTag tag,long n){return new EmiStack(fluid,n);}
  public Object getKey(){return key;}public EmiStack getRemainder(){return of(ItemStack.EMPTY);}public boolean isEmpty(){return n==0;}
  public float getChance(){return 1;}
- public EmiStack copy(){return key instanceof net.minecraft.world.level.material.Fluid f?new EmiStack(f,n):new EmiStack(item).setAmount(n);}public long getAmount(){return n;}
+ public EmiStack copy(){var s=key instanceof net.minecraft.world.level.material.Fluid f?new EmiStack(f,n):new EmiStack(item).setAmount(n);s.mode=mode;return s;}public long getAmount(){return n;}
  public java.util.List<EmiStack> getEmiStacks(){return java.util.List.of(this);}public net.minecraft.nbt.CompoundTag getNbt(){return item.getTag();}
  public EmiStack setAmount(long value){n=value;return this;}
- public EmiStack comparison(java.util.function.Function<Comparison,Comparison> c){c.apply(Comparison.DEFAULT_COMPARISON);return this;}
+ public EmiStack comparison(java.util.function.Function<Comparison,Comparison> c){mode=c.apply(mode);return this;}
  public net.minecraft.resources.ResourceLocation getId(){return new net.minecraft.resources.ResourceLocation(key instanceof net.minecraft.world.level.material.Fluid f?f.id():item.id);}
  public ItemStack getItemStack(){var s=item.copy();s.setCount((int)n);return s;}
- public boolean equals(Object o){return o instanceof EmiStack s&&key.equals(s.key)&&java.util.Objects.equals(item.getTag(),s.item.getTag());}
- public int hashCode(){return java.util.Objects.hash(key,item.getTag());}}
+ public boolean isEqual(EmiStack s){return equals(s);}
+ public boolean equals(Object o){return o instanceof EmiStack s&&key.equals(s.key)
+  &&(key.equals("test:composant")&&mode==Comparison.DEFAULT_COMPARISON&&s.mode==Comparison.DEFAULT_COMPARISON
+     ||java.util.Objects.equals(item.getTag(),s.item.getTag()));}
+ public int hashCode(){return key.hashCode();}}
 """,
     "dev.emi.emi.api.recipe.EmiPlayerInventory": """
 import dev.emi.emi.api.stack.EmiStack;
@@ -166,6 +171,9 @@ def compiler_contrats(directory):
         raise unittest.SkipTest("JDK 17 required")
     files = []
     for name, text in STUBS.items():
+        # La doublure reste partagée avec le banc de l'onglet Recette.
+        if name == "fr.assistantia.compat.emi.ComparaisonEmi":
+            continue
         package, _ = name.rsplit(".", 1)
         path = Path(directory) / name.replace(".", "/")
         path = path.with_suffix(".java")
@@ -184,6 +192,7 @@ def compiler_contrats(directory):
             "mod/src/main/java/fr/assistantia/MemoireCollecte.java",
             "mod/src/main/java/fr/assistantia/PlanArbre.java",
             "mod/src/main/java/fr/assistantia/compat/emi/InstantaneArbreEmi.java",
+            "mod/src/main/java/fr/assistantia/compat/emi/ComparaisonEmi.java",
             "mod/src/main/java/fr/assistantia/compat/emi/PlisFabricationEmi.java",
             "mod/src/main/java/fr/assistantia/compat/emi/InventaireArbreEmi.java",
             "mod/src/main/java/fr/assistantia/compat/emi/StockFabricationEmi.java",
@@ -204,6 +213,42 @@ def compiler_contrats(directory):
 
 
 class EmiBackpackTreeTests(unittest.TestCase):
+    def test_variantes_nbt_dans_emi_et_les_entrees_du_terminal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            java = compiler_contrats(directory)
+            result = subprocess.run(
+                [
+                    java,
+                    "-ea",
+                    "-cp",
+                    directory,
+                    "fr.assistantia.compat.emi.ParcoursStockTest",
+                    "variantes-nbt",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_me_preserves_inputs_committed_to_one_operation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            java = compiler_contrats(directory)
+            result = subprocess.run(
+                [
+                    java,
+                    "-ea",
+                    "-cp",
+                    directory,
+                    "fr.assistantia.compat.emi.ParcoursStockTest",
+                    "entrees-engagees",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_same_backpack_changes_emi_ae2_and_machine_plans_when_toggled(self):
         with tempfile.TemporaryDirectory() as directory:
             java = compiler_contrats(directory)

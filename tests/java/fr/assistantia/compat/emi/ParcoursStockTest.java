@@ -35,7 +35,48 @@ public final class ParcoursStockTest {
                                     null,
                                     List.of())));
 
+    static void entreesEngagees() {
+        var canne = EmiStack.of(new ItemStack(LINGOT, 1));
+        var entree = new PlanRetrait.Stock<>(canne, 1, true);
+        var reserve = new PlanRetrait.Stock<>(canne, 2, false);
+        var stock =
+                new StockFabricationEmi(
+                        List.of(), List.of(), List.of(reserve), List.of(), List.of(), List.of());
+        var operation =
+                new PlanMachines.Noeud<EmiStack, String>(
+                        s -> false, 1, 1, false, "bain", ARBRE.enfants());
+        var autre =
+                new PlanMachines.Noeud<EmiStack, String>(
+                        s -> false, 1, 1, false, "presse", ARBRE.enfants());
+        var deux =
+                new PlanMachines.Noeud<EmiStack, String>(
+                        s -> false, 1, 1, false, "assemblage", List.of(autre, operation));
+        var bain = java.util.Map.of("bain", List.of(entree));
+        assert stock.retraitsReseau(operation, 1, bain, java.util.Set.of()).isEmpty()
+                : "AS-008 : la canne en entrée laisse la réserve en cellule";
+        assert stock.retraitsReseau(operation, 2, bain, java.util.Set.of())
+                .equals(List.of(new PlanRetrait.Prise(0, 1)));
+        assert stock.retraitsReseau(deux, 1, bain, java.util.Set.of())
+                .equals(List.of(new PlanRetrait.Prise(0, 1)));
+        assert stock.retraitsReseau(autre, 1, bain, java.util.Set.of())
+                .equals(List.of(new PlanRetrait.Prise(0, 1)));
+        assert stock.retraitsReseau(deux, 1, java.util.Map.of(), java.util.Set.of("bain"))
+                        .equals(List.of(new PlanRetrait.Prise(0, 1)))
+                : "La presse reste accessible si le bain est illisible";
+        var deuxBains =
+                new PlanMachines.Noeud<EmiStack, String>(
+                        s -> false, 1, 1, false, "assemblage", List.of(operation, operation));
+        assert stock.retraitsReseau(deuxBains, 1, bain, java.util.Set.of())
+                .equals(List.of(new PlanRetrait.Prise(0, 1)));
+        assert stock.retraitsReseau(operation, 1).equals(List.of(new PlanRetrait.Prise(0, 1)))
+                : "Le bain vidé rouvre le besoin";
+    }
+
     public static void main(String[] args) throws ReflectiveOperationException {
+        if (args.length == 1 && args[0].equals("entrees-engagees")) {
+            entreesEngagees();
+            return;
+        }
         var client = Minecraft.getInstance();
         client.player = new Player();
         client.level = new Object();
@@ -44,6 +85,10 @@ public final class ParcoursStockTest {
         CoffresArbreEmi.arbre = arbreNatif;
         var stockTerminal = TerminalMe.class.getDeclaredField("stock");
         stockTerminal.setAccessible(true);
+        if (args.length == 1 && args[0].equals("variantes-nbt")) {
+            variantesNbt(stockTerminal);
+            return;
+        }
         if (args.length == 1 && args[0].equals("basculer-sac")) {
             verifierBasculesSac(stockTerminal);
             return;
@@ -122,6 +167,114 @@ public final class ParcoursStockTest {
                     arbre, plaquesARetirer, lingotsARetirer, aFabriquer, physiques);
         }
         verifierPrioriteMachine();
+    }
+
+    private static ItemStack variante(int tag) {
+        var pile = new ItemStack("test:composant", 1);
+        var nbt = new net.minecraft.nbt.CompoundTag();
+        nbt.putInt("variante", tag);
+        pile.setTag(nbt);
+        return pile;
+    }
+
+    private static void variantesNbt(java.lang.reflect.Field terminal)
+            throws ReflectiveOperationException {
+        var a = new PlisFabricationEmiTest.Node("test:composant", 1);
+        var b = new PlisFabricationEmiTest.Node("test:composant", 1);
+        var premiere = ComparaisonEmi.pourInventaire(EmiStack.of(variante(1)));
+        var seconde = ComparaisonEmi.pourInventaire(EmiStack.of(variante(2)));
+        a.ingredient = premiere;
+        b.ingredient = seconde;
+        var strict =
+                new PlisFabricationEmiTest.Tree(
+                        new PlisFabricationEmiTest.Node("test:produit", 1, a, b));
+        var zero = List.<PlanRetrait.Prise>of();
+        var un = List.of(new PlanRetrait.Prise(0, 1));
+        var deux = List.of(new PlanRetrait.Prise(0, 1), new PlanRetrait.Prise(1, 1));
+        verifierVariantes(strict, terminal, List.of(), List.of(1, 1), zero);
+        verifierVariantes(strict, terminal, List.of(1, 1), List.of(0, 1), un);
+        verifierVariantes(strict, terminal, List.of(1, 2), List.of(0, 0), deux);
+        verifierVariantes(strict, terminal, List.of(2, 1), List.of(0, 0), deux);
+        var choix = new PlisFabricationEmiTest.Node("test:composant", 1);
+        choix.ingredient = () -> List.of(premiere, seconde);
+        var souple =
+                new PlisFabricationEmiTest.Tree(
+                        new PlisFabricationEmiTest.Node("test:produit", 1, choix));
+        verifierVariantes(souple, terminal, List.of(1), List.of(0), un);
+        verifierVariantes(souple, terminal, List.of(2), List.of(0), un);
+        terminal.set(null, List.of());
+        for (var tags : List.of(List.of(1, 1), List.of(1, 2), List.of(2, 1))) {
+            var poches = tags.stream().map(ParcoursStockTest::variante).toList();
+            InventaireJoueur.piles = poches;
+            var entreesHandler = new ArrayList<>(poches.stream().map(EmiStack::of).toList());
+            entreesHandler.add(EmiStack.of(new ItemStack("test:case_handler", 3)));
+            var natif = new EmiPlayerInventory(entreesHandler);
+            assert natif.inventory.size() == 2 : "le handler natif réunit les deux composants";
+            var affiche = InventaireArbreEmi.completer(natif);
+            var inventaire = InventaireArbreEmi.physiques(affiche);
+            var instantane = InstantaneArbreEmi.lire(strict);
+            var absents = new ArrayList<Integer>();
+            PlanMachines.observer(
+                    instantane.machines(),
+                    instantane.lots(),
+                    inventaire,
+                    (branche, etat) -> {
+                        if (branche != instantane.machines()) absents.add(etat.manque());
+                    });
+            var attendus = tags.equals(List.of(1, 1)) ? List.of(0, 1) : List.of(0, 0);
+            assert absents.equals(attendus)
+                    : "poches " + tags + " manques " + absents + " attendus " + attendus;
+            assert quantite(affiche, "test:case_handler") == 3;
+            assert natif.inventory.size() == 2 && quantite(natif, "test:composant") == 2;
+            if (!tags.get(0).equals(tags.get(1))) {
+                entreesHandler.add(EmiStack.of(variante(tags.get(0))));
+                var avecSurplus =
+                        InventaireArbreEmi.completer(new EmiPlayerInventory(entreesHandler));
+                assert avecSurplus.inventory.get(premiere).getAmount() == 1;
+                assert avecSurplus.inventory.get(seconde).getAmount() == 1;
+                assert quantite(avecSurplus, "test:case_handler") == 3;
+                var restreint = new EmiPlayerInventory(List.of(EmiStack.of(variante(1))));
+                assert InventaireArbreEmi.completer(restreint) == restreint;
+            }
+        }
+    }
+
+    private static void verifierVariantes(
+            PlisFabricationEmiTest.Tree arbre,
+            java.lang.reflect.Field terminal,
+            List<Integer> tags,
+            List<Integer> manques,
+            List<PlanRetrait.Prise> prises)
+            throws ReflectiveOperationException {
+        CoffresArbreEmi.arbre = arbre;
+        // AE2 regroupe deux exemplaires de la même variante dans une seule entrée.
+        var quantites = new java.util.LinkedHashMap<Integer, Integer>();
+        tags.forEach(t -> quantites.merge(t, 1, Integer::sum));
+        var entrees =
+                quantites.entrySet().stream()
+                        .map(
+                                e ->
+                                        new PlanRetrait.Stock<>(
+                                                variante(e.getKey()), e.getValue(), false))
+                        .toList();
+        terminal.set(null, entrees);
+        var instantane = InstantaneArbreEmi.lire(arbre);
+        var natif = EmiPlayerInventory.of(Minecraft.getInstance().player);
+        var vue = InventaireArbreEmi.physiques(InventaireArbreEmi.completer(natif));
+        var absents = new ArrayList<Integer>();
+        PlanMachines.observer(
+                instantane.machines(),
+                instantane.lots(),
+                vue,
+                (branche, etat) -> {
+                    if (branche != instantane.machines()) absents.add(etat.manque());
+                });
+        assert absents.equals(manques) : "EMI " + tags + " : manques par branche " + absents;
+        var poches = InventaireArbreEmi.physiques(InventaireArbreEmi.personnel());
+        assert poches.isEmpty() && natif.inventory.isEmpty();
+        var reseau = StockFabricationEmi.courant(poches, entrees);
+        var retrait = reseau.retraitsReseau(instantane.machines(), instantane.lots());
+        assert retrait.equals(prises) : "ME " + tags + " : indices et quantités " + retrait;
     }
 
     private static void verifierBasculesSac(java.lang.reflect.Field terminal)

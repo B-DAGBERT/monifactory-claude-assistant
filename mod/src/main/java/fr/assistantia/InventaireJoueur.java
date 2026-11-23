@@ -55,6 +55,14 @@ public final class InventaireJoueur {
         return pochesDisponibles() ? base : List.of();
     }
 
+    /** Case native au même relevé que piles(), y compris si le menu a déjà reçu un autre paquet. */
+    public static ItemStack caseRelevee(int index) {
+        if (index < 0 || index >= cases.length - 1 || cases[index] == null) return ItemStack.EMPTY;
+        int rang = 0;
+        for (int i = 0; i < index; i++) if (cases[i] != null) rang++;
+        return base.get(rang);
+    }
+
     public static boolean pochesDisponibles() {
         return connexionCourante();
     }

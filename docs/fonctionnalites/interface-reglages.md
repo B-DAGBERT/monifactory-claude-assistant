@@ -13,10 +13,14 @@
 - Échap revient au bon écran. Défilement, clic et relâchement restent dans le panneau qui les possède. Un clic lié à une ligne périmée ne déclenche pas l’action de la nouvelle ligne.
 - Les réglages IA s’enregistrent contre la révision affichée. Conserver les autres clés et les préférences du fournisseur, y compris lors d’une reprise depuis la sauvegarde.
 
+Quand `assistant.local.json` est illisible, le panneau peut modifier la configuration récupérée depuis son `.bak`. Il vérifie les deux fichiers avant d’appliquer la modification. Une édition externe impose de recharger les réglages. Pour les préférences de jeu, seule une version dictionnaire de `reglages.json` peut remplacer la copie de secours. Les tests `tests.test_ai_settings` et `tests.test_ai_action_guard` rejouent ces récupérations.
+
+Le panneau de recette se place sous la fiche Jade lorsque leurs rectangles se croisent dans l’image du jeu. En visant le ciel, il reprend sa place sous le compteur de FPS.
+
 ## Tests à lancer
 
 ```sh
-python -m unittest tests.test_dashboard_layout tests.test_ai_settings_menu tests.test_ai_settings -v
+python -m unittest tests.test_hud_panel tests.test_dashboard_layout tests.test_ai_settings_menu tests.test_ai_settings -v
 ```
 
 En jeu, vérifier à petite résolution les menus imbriqués, Échap, les doubles clics et les zones partagées avec EMI. [Réglages en jeu](../utilisation.md#réglages)

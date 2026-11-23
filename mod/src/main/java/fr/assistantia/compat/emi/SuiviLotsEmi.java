@@ -2,6 +2,7 @@ package fr.assistantia.compat.emi;
 
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiStack;
+import fr.assistantia.InventaireJoueur;
 import fr.assistantia.LotFabrication;
 import fr.assistantia.PlanMachines;
 import fr.assistantia.PlanRetrait;
@@ -17,6 +18,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -309,13 +311,27 @@ final class SuiviLotsEmi {
 
     private record Collecte(ItemStack variante, LotMachine lot) {}
 
-    private record CollecteDifferee(PlanRetrait.Stock<EmiStack> gain, long echeance) {}
+    record DepotMe(Inventory poches, int index, int avant) {}
 
-    // Après Échap, le dépôt d'un terminal peut devenir visible seulement à sa réouverture.
+    @FunctionalInterface
+    interface ReceptionCollecte extends BiConsumer<ItemStack, Integer> {
+        void accepter(ItemStack pile, int quantite, DepotMe depot);
+
+        @Override
+        default void accept(ItemStack pile, Integer quantite) {
+            accepter(pile, quantite, null);
+        }
+    }
+
+    private record CollecteDifferee(
+            PlanRetrait.Stock<EmiStack> gain, long echeance, DepotMe depot) {}
+
+    // Borne du rapprochement pour les collectes sans case identifiée et pour la vue Production.
+    // Une confirmation ME reçue après Échap reste identifiable au-delà de cette fenêtre.
     private static final long ATTENTE_GAIN_COLLECTE = 120_000_000_000L;
 
     /** Le bouton apporte une acquisition, sans preuve de la machine qui l'a produite. */
-    BiConsumer<ItemStack, Integer> preparerCollecte(List<ItemStack> variantes) {
+    ReceptionCollecte preparerCollecte(List<ItemStack> variantes) {
         List<Collecte> suivies = new ArrayList<>();
         for (var pile : variantes) {
             var objet = EmiStack.of(pile);
@@ -323,11 +339,11 @@ final class SuiviLotsEmi {
             if (candidats.size() == 1 && !candidats.get(0).manuel())
                 suivies.add(new Collecte(pile.copy(), candidats.get(0)));
         }
-        return (pile, quantite) -> {
+        return (pile, quantite, depot) -> {
             if (quantite <= 0) return;
             for (var collecte : suivies)
                 if (ItemStack.isSameItemSameTags(collecte.variante(), pile)) {
-                    recevoirCollecte(collecte.lot(), EmiStack.of(pile), quantite);
+                    recevoirCollecte(collecte.lot(), EmiStack.of(pile), quantite, depot);
                     return;
                 }
         };
@@ -337,7 +353,7 @@ final class SuiviLotsEmi {
         return lot.suivi().restants().stream().anyMatch(r -> ComparaisonEmi.meme(r.objet(), objet));
     }
 
-    private void recevoirCollecte(LotMachine lot, EmiStack objet, int quantite) {
+    private void recevoirCollecte(LotMachine lot, EmiStack objet, int quantite, DepotMe depot) {
         if (!lots.contains(lot) || lots.stream().anyMatch(l -> l != lot && attend(l, objet)))
             return;
         var gain = new PlanRetrait.Stock<>(objet, quantite, true);
@@ -347,12 +363,13 @@ final class SuiviLotsEmi {
         if (recu <= 0) return;
         // Tout le retrait provenait du stockage, y compris un éventuel surplus du lot.
         collectesDifferees.add(
-                new CollecteDifferee(gain, System.nanoTime() + ATTENTE_GAIN_COLLECTE));
+                new CollecteDifferee(gain, System.nanoTime() + ATTENTE_GAIN_COLLECTE, depot));
         modifie();
     }
 
     /** Le paquet d'un menu fermé peut confirmer le dépôt avant le relevé des poches. */
-    private void exclureCollectes(List<PlanRetrait.Stock<EmiStack>> personnels) {
+    private void exclureCollectes(
+            List<PlanRetrait.Stock<EmiStack>> personnels, Inventory pochesNatives) {
         var avant =
                 inventaireAssimile == null
                         ? List.<PlanRetrait.Stock<EmiStack>>of()
@@ -361,17 +378,43 @@ final class SuiviLotsEmi {
             var collecte = it.next();
             var gain = collecte.gain();
             var objet = gain.objet();
+            var depot = collecte.depot();
+            int visible = gain.quantite();
+            if (depot != null) {
+                if (depot.poches() != pochesNatives) {
+                    it.remove();
+                    continue;
+                }
+                var caseActuelle = InventaireJoueur.caseRelevee(depot.index());
+                if (caseActuelle.getCount() < depot.avant()
+                        || !caseActuelle.isEmpty()
+                                && !ItemStack.isSameItemSameTags(
+                                        caseActuelle, objet.getItemStack())) {
+                    it.remove();
+                    continue;
+                }
+                visible = Math.min(visible, caseActuelle.getCount() - depot.avant());
+                if (visible == 0) continue;
+            }
             long delta = quantiteExacte(personnels, objet) - quantiteExacte(avant, objet);
             long deja = quantiteExacte(gainsExclus, objet) + quantiteExacte(craftsDifferes, objet);
-            int n = (int) Math.min(gain.quantite(), Math.max(0L, delta - deja));
-            if (n <= 0) continue;
-            gainsExclus.add(new PlanRetrait.Stock<>(objet, n, true));
-            if (n == gain.quantite()) it.remove();
+            int n = (int) Math.min(visible, Math.max(0L, delta - deja));
+            if (n > 0) gainsExclus.add(new PlanRetrait.Stock<>(objet, n, true));
+            // La case prouve le dépôt même quand le départ d'un autre objet masque son gain net.
+            int rapproche = depot == null ? n : visible;
+            if (rapproche == 0) continue;
+            if (rapproche == gain.quantite()) it.remove();
             else
                 it.set(
                         new CollecteDifferee(
-                                new PlanRetrait.Stock<>(objet, gain.quantite() - n, true),
-                                collecte.echeance()));
+                                new PlanRetrait.Stock<>(objet, gain.quantite() - rapproche, true),
+                                collecte.echeance(),
+                                depot == null
+                                        ? null
+                                        : new DepotMe(
+                                                depot.poches(),
+                                                depot.index(),
+                                                depot.avant() + rapproche)));
         }
     }
 
@@ -401,7 +444,7 @@ final class SuiviLotsEmi {
         var player = Minecraft.getInstance().player;
         if (player == null) return;
         long maintenant = System.nanoTime();
-        collectesDifferees.removeIf(c -> maintenant - c.echeance() >= 0);
+        collectesDifferees.removeIf(c -> c.depot() == null && maintenant - c.echeance() >= 0);
         craftsDifferes.addAll(objets(crafts));
         boolean complet = inventaireDisponible.getAsBoolean();
         if (!complet && !crafts.isEmpty()) compacter(craftsDifferes);
@@ -418,7 +461,7 @@ final class SuiviLotsEmi {
                 receptionManuelle.soustraire(
                         objets(OrigineFabrication.retraitsAttendus(player)), craftsDifferes);
         var personnels = inventaire.get();
-        exclureCollectes(personnels);
+        exclureCollectes(personnels, player.getInventory());
         var nouveaux =
                 receptionManuelle.actualiser(
                         personnels, gainsExclus, attendusAutomatiques, craftsDifferes);
@@ -550,7 +593,9 @@ final class SuiviLotsEmi {
         for (var lot : lots) {
             boolean disponible = false;
             for (var attendu : lot.suivi().restants()) {
-                String id = attendu.objet().getId().toString();
+                if (dansCoffres.isEmpty()) break;
+                String id =
+                        fr.assistantia.RechercheEmi.objetCollecte(attendu.objet().getItemStack());
                 int n = Math.min(attendu.quantite(), dansCoffres.getOrDefault(id, 0));
                 disponible |= n > 0;
                 dansCoffres.put(id, Math.max(0, dansCoffres.getOrDefault(id, 0) - n));

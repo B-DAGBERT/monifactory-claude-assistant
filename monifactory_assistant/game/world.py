@@ -9,7 +9,12 @@ from threading import Lock, Thread
 from time import monotonic
 
 from monifactory_assistant.game.snapshots import file_stamp
-from monifactory_assistant.game.storage import Storage, distinct_containers
+from monifactory_assistant.game.storage import (
+    SHARED_CHESTS,
+    Storage,
+    chest_twin,
+    distinct_containers,
+)
 from monifactory_assistant.game.world_scope import scope_file, scope_folder
 from monifactory_assistant.paths import WORLD_FILE
 from monifactory_assistant.persistence import atomic_json, load_json
@@ -31,6 +36,16 @@ class SaveResult(Enum):
     SAVED = auto()
     FAILED = auto()
     PENDING = auto()  # Écriture de reprise déjà en cours.
+
+
+def guide_in_dimension(guide, dimension):
+    return (
+        bool(dimension)
+        and guide is not None
+        and guide.get("dimension") == dimension
+        and guide.get("x") is not None
+        and guide.get("z") is not None
+    )
 
 
 def block_name(block_id):
@@ -88,7 +103,7 @@ def _block_observation(block, dimension, zone, date):
         if n:
             counts.append({"item": item, "n": int(n)})
     key = f"{dimension}|{x}|{y}|{z}"
-    return {
+    observation = {
         "cle": key,
         "bloc": block_id,
         "nom": block_name(block_id),
@@ -101,6 +116,11 @@ def _block_observation(block, dimension, zone, date):
         "objets": counts,
         "etat": state,
     }
+    if block_id in SHARED_CHESTS and "jumeau" in block:
+        observation["jumeau"] = block["jumeau"]
+        if chest_twin(observation) is None:
+            return None
+    return observation
 
 
 def _visible_state(state):

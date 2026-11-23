@@ -105,6 +105,46 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual((self.root / name).read_text(), '{"keep": true}')
         self.assertEqual(self.config["model_plan"], "legacy-plan")
 
+    def test_edit_after_recovery_preserves_config_and_detects_conflicts(self):
+        from monifactory_assistant import config
+
+        backup = self.path.with_name(self.path.name + ".bak")
+        saved = {
+            **self.local,
+            "provider": "claude",
+            "providers": {"claude": {"model_question": "original"}},
+        }
+        backup.write_text(json.dumps(saved))
+        self.path.write_text("{truncated")
+        with patch.object(config, "HERE", self.root):
+
+            def restart():
+                self.settings = AISettings(self.root, config.load_config(), clock=lambda: self.now)
+
+            restart()
+            self.assertEqual(self.settings.view(self.app)["moteur"], "claude")
+            self.assertTrue(
+                self.settings.view(self.app)["modifiable"], self.settings.view(self.app)["message"]
+            )
+            self.values = dict(self.settings.values(), model_question="changed")
+            raw_backup = backup.read_bytes()
+            backup.write_text(json.dumps({**saved, "external": True}))
+            self.assertEqual(self.submit()["etat"], "refusee")
+            self.assertEqual(self.path.read_text(), "{truncated")
+            backup.write_bytes(raw_backup)
+            self.path.write_text('{"external":true}')
+            self.assertEqual(self.submit()["etat"], "refusee")
+            self.path.write_text("{truncated")
+            restart()
+            self.assertEqual(self.submit()["etat"], "appliquee")
+            self.assertEqual(backup.read_bytes(), raw_backup)
+            restart()
+            self.assertEqual(self.settings.values(), self.values)
+            self.assertTrue(self.settings.view(self.app)["modifiable"])
+            self.assertEqual(self.settings.config["private"], saved["private"])
+            self.assertEqual(self.settings.config["auto_update"], saved["auto_update"])
+            self.assertEqual(self.settings.config["minecraft_dir"], self.legacy["minecraft_dir"])
+
     def test_disk_commit_happens_before_memory_publication(self):
         old = copy.deepcopy(self.config)
         replace = os.replace

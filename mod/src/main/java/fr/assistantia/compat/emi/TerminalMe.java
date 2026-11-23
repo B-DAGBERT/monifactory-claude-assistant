@@ -2,6 +2,7 @@ package fr.assistantia.compat.emi;
 
 import com.mojang.logging.LogUtils;
 import dev.emi.emi.api.stack.EmiStack;
+import dev.emi.emi.api.recipe.EmiRecipe;
 import fr.assistantia.CoffreTampon;
 import fr.assistantia.DispositionCoffre;
 import fr.assistantia.DispositionCoffre.Disposition;
@@ -15,10 +16,11 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.BiConsumer;
+import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -43,7 +45,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * terminal, réservé auprès d'EMI, et dont l'appui comme le relâchement ne vont jamais au terminal.
  */
 public final class TerminalMe {
-    private record Entree(long serial, Object cle, ItemStack pile, int quantite) {}
+    private record Entree(long serial, Object cle, ItemStack pile, long quantite) {}
 
     private record Lot(long serial, ItemStack pile, int quantite) {}
 
@@ -77,10 +79,15 @@ public final class TerminalMe {
             long lots,
             List<PlanRetrait.Stock<ItemStack>> credits,
             List<PlanRetrait.Stock<EmiStack>> outils,
+            EntreesTerminalMe.Releve postes,
+            Set<EmiRecipe> incertaines,
             List<Lot> retraits) {}
 
     private record Recherche(
-            InstantaneArbreEmi arbre, Map<Object, List<EmiStack>> variantes, Ingredient filtre) {}
+            InstantaneArbreEmi arbre,
+            Map<Object, List<EmiStack>> variantes,
+            Ingredient filtre,
+            EntreesTerminalMe observateur) {}
 
     private static final String NOM = "Réseau ME", RETRAIT = "Retrait… ";
     private static final String PRENDRE = "Prendre", TOUT = "Tout", ARRETER = "Arrêter";
@@ -94,6 +101,10 @@ public final class TerminalMe {
     private static ItemStack choisi = ItemStack.EMPTY;
     private static int page;
     private static long cleDisposition, placeLe;
+    private static EntreesTerminalMe.Releve postes = EntreesTerminalMe.VIDE;
+    private static boolean priseVerifiee;
+    private static long demandePostes;
+    private static boolean clicEnAttente;
     private static Vue vue;
     private static Recherche recherche;
     private static Class<?> indexIndisponible;
@@ -102,7 +113,7 @@ public final class TerminalMe {
     private static InstantaneArbreEmi arbre;
     private static Object connexion, joueur, niveau;
     private static List<Lot> retraits = List.of();
-    private static BiConsumer<ItemStack, Integer> reception;
+    private static SuiviLotsEmi.ReceptionCollecte reception;
     private static int index, reste, attendus, avant, recus, depotAvant;
     private static Slot destination;
     private static ItemStack depotServeur;
@@ -183,7 +194,10 @@ public final class TerminalMe {
 
     private static List<PlanRetrait.Stock<ItemStack>> stocks(List<Entree> entrees) {
         return entrees.stream()
-                .map(e -> new PlanRetrait.Stock<>(e.pile(), e.quantite(), false))
+                .map(
+                        e ->
+                                new PlanRetrait.Stock<>(
+                                        e.pile(), (int) Math.min(1_000_000L, e.quantite()), false))
                 .toList();
     }
 
@@ -211,7 +225,8 @@ public final class TerminalMe {
                         .filter(Item.class::isInstance)
                         .map(Item.class::cast)
                         .toArray(Item[]::new);
-        recherche = new Recherche(arbre, variantes, Ingredient.of(items));
+        recherche =
+                new Recherche(arbre, variantes, Ingredient.of(items), new EntreesTerminalMe(arbre));
         return recherche;
     }
 
@@ -253,7 +268,7 @@ public final class TerminalMe {
             var pile = (ItemStack) ACCES.pile().invoke(cle);
             var emi = ComparaisonEmi.pourInventaire(EmiStack.of(pile));
             if (choix.stream().anyMatch(v -> ComparaisonEmi.meme(emi, v)))
-                result.add(new Entree(serial, cle, pile, (int) Math.min(1_000_000L, n)));
+                result.add(new Entree(serial, cle, pile, n));
         }
         result.sort(java.util.Comparator.comparingLong(Entree::serial));
         return List.copyOf(result);
@@ -261,6 +276,47 @@ public final class TerminalMe {
 
     private static Object arbreCourant() throws ReflectiveOperationException {
         return fr.assistantia.ArbreEmi.consulte();
+    }
+
+    private static void observer(boolean clic, Runnable suite) throws ReflectiveOperationException {
+        // Le rappel de la prochaine prise relit le stock après la confirmation du déplacement.
+        if (!clic && (clicEnAttente || occupe())) return;
+        var menu = courant();
+        var arbre = menu == null ? null : arbreCourant();
+        var screen = affiche;
+        long demande = ++demandePostes;
+        if (arbre == null || screen == null || menu != screen.getMenu()) {
+            postes = EntreesTerminalMe.VIDE;
+            actualiser(false);
+            return;
+        }
+        var instantane = InstantaneArbreEmi.lire(arbre);
+        clicEnAttente = clic;
+        var observateur = recherche(instantane).observateur();
+        var quantites = new HashMap<Object, Long>();
+        if (!observateur.recettes().isEmpty())
+            for (var entree : lire(menu, instantane, clic))
+                quantites.put(entree.cle(), entree.quantite());
+        observateur.lire(
+                menu,
+                instantane,
+                quantites,
+                observation -> {
+                    if (demande != demandePostes) return;
+                    clicEnAttente = false;
+                    try {
+                        if (affiche != screen
+                                || courant() != menu
+                                || arbreCourant() != arbre
+                                || InstantaneArbreEmi.lire(arbre) != instantane) return;
+                        postes = observation;
+                        if (suite != null) suite.run();
+                        else actualiser(false);
+                    } catch (ReflectiveOperationException | RuntimeException ex) {
+                        vue = null;
+                        signaler(ex);
+                    }
+                });
     }
 
     private static void actualiser(boolean complet) throws ReflectiveOperationException {
@@ -281,6 +337,7 @@ public final class TerminalMe {
         var outils = MachinesEmi.outilsInstalles();
         boolean stockIdentique =
                 vue != null && vue.menu() == actif && memeStock(vue.stock(), stock);
+        var incertaines = postes.inconnus();
         if (!complet
                 && stockIdentique
                 && vue.menu() == actif
@@ -290,15 +347,30 @@ public final class TerminalMe {
                 && vue.menuRevision() == actif.getStateId()
                 && vue.lots() == lots
                 && vue.credits().equals(credits)
-                && vue.outils().equals(outils)) return;
+                && vue.outils().equals(outils)
+                && vue.postes().equals(postes)
+                && vue.incertaines().equals(incertaines)) return;
         var stockCalcul = stockIdentique ? vue.stockCalcul() : stocks(stock);
         var couverture =
                 StockFabricationEmi.courant(
                         InventaireArbreEmi.physiques(InventaireArbreEmi.personnel()), stockCalcul);
         var retraits = new ArrayList<Lot>();
-        for (var prise : couverture.retraitsReseau(instantane.machines(), instantane.lots())) {
-            var entree = stock.get(prise.index());
-            retraits.add(new Lot(entree.serial(), entree.pile(), prise.quantite()));
+        var prises =
+                couverture.retraitsReseau(
+                        instantane.machines(), instantane.lots(), postes.entrees(), incertaines);
+        int[] quantites = new int[stock.size()];
+        var indices = new java.util.TreeSet<Integer>();
+        for (var prise : prises) {
+            indices.add(prise.index());
+            quantites[prise.index()] = prise.quantite();
+        }
+        // Garder visible une ligne ramenée à zéro, avec ses vrais boutons désactivés.
+        if (!postes.entrees().isEmpty() || !incertaines.isEmpty())
+            for (var prise : couverture.retraitsReseau(instantane.machines(), instantane.lots()))
+                indices.add(prise.index());
+        for (int i : indices) {
+            var entree = stock.get(i);
+            retraits.add(new Lot(entree.serial(), entree.pile(), quantites[i]));
         }
         vue =
                 new Vue(
@@ -312,6 +384,8 @@ public final class TerminalMe {
                         lots,
                         credits,
                         outils,
+                        postes,
+                        Set.copyOf(incertaines),
                         List.copyOf(retraits));
         InventaireArbreEmi.invalider();
     }
@@ -319,6 +393,9 @@ public final class TerminalMe {
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post event) {
         boolean terminal = ACCES != null && ACCES.ecran().isInstance(event.getScreen());
+        demandePostes++;
+        clicEnAttente = false;
+        postes = EntreesTerminalMe.VIDE;
         affiche = terminal ? (AbstractContainerScreen<?>) event.getScreen() : null;
         disposition = null;
         objets = List.of();
@@ -386,7 +463,12 @@ public final class TerminalMe {
         // Le choix de Prendre survit au retrait de Tout, qui ne montre que ses propres lots.
         if (!occupe()
                 && objets.stream().noneMatch(l -> ItemStack.isSameItemSameTags(l.pile(), choisi)))
-            choisi = objets.get(0).pile();
+            choisi =
+                    objets.stream()
+                            .filter(l -> l.quantite() > 0)
+                            .findFirst()
+                            .orElse(objets.get(0))
+                            .pile();
         long cle = (objets.size() * 31L + affiche.width) * 31L + affiche.height;
         long maintenant = System.currentTimeMillis();
         if (disposition == null || cle != cleDisposition || maintenant - placeLe >= 1000) {
@@ -401,6 +483,7 @@ public final class TerminalMe {
                                     font,
                                     List.of(
                                             NOM,
+                                            "Poste à vérifier",
                                             aPrendre(999_999),
                                             RETRAIT + Theme.nombre(999_999)),
                                     List.of(PRENDRE),
@@ -423,7 +506,11 @@ public final class TerminalMe {
         boolean occupe = occupe();
         PanneauAssistant.fond(g, d.cadre());
         long total = restantTotal();
-        String detail = occupe ? RETRAIT + Theme.nombre(total) : aPrendre(total);
+        boolean incertain = !occupe && vue != null && !vue.incertaines().isEmpty();
+        String detail =
+                incertain
+                        ? "Poste à vérifier"
+                        : occupe ? RETRAIT + Theme.nombre(total) : aPrendre(total);
         PanneauAssistant.titre(g, font, d.titre(), NOM, detail);
         List<Component> infobulle = null;
         if (d.titre().contient(mx, my))
@@ -433,7 +520,10 @@ public final class TerminalMe {
                                     NOM
                                             + " · "
                                             + (occupe ? RETRAIT + total : total + " à prendre")),
-                            gris("Objets de l’arbre EMI à retirer du réseau AE2"),
+                            gris(
+                                    incertain
+                                            ? "Destination du bus ou entrées machine non vérifiables."
+                                            : "Objets de l’arbre EMI à retirer du réseau AE2"),
                             gris(
                                     occupe
                                             ? "Un clic hors du panneau arrête aussi le retrait"
@@ -529,13 +619,13 @@ public final class TerminalMe {
         if (d.tout().contient(mx, my)) {
             PanneauAssistant.son();
             if (occupe()) terminer("Retrait ME arrêté.");
-            else lancer(affiche, null);
+            else verifierClic(affiche, null);
         } else if (d.pages() && d.precedent().contient(mx, my)) tourner(-1);
         else if (d.pages() && d.suivant().contient(mx, my)) tourner(1);
         else if (occupe()) return;
         else if (d.prendre().contient(mx, my)) {
             PanneauAssistant.son();
-            lancer(affiche, choisi.copy());
+            verifierClic(affiche, choisi.copy());
         } else
             for (int rang = 0; rang < d.parPage(); rang++) {
                 int n = page * d.parPage() + rang;
@@ -561,6 +651,16 @@ public final class TerminalMe {
      * Le clic relit le terminal et l'arbre : il retire ce qui manque à cet instant, jamais le plan
      * de l'image précédente. {@code selection} : un seul objet (Prendre), sinon tout (Tout).
      */
+    private static void verifierClic(AbstractContainerScreen<?> screen, ItemStack selection) {
+        if (occupe() || clicEnAttente) return;
+        try {
+            observer(true, () -> lancer(screen, selection));
+        } catch (ReflectiveOperationException | RuntimeException ex) {
+            clicEnAttente = false;
+            signaler(ex);
+        }
+    }
+
     private static void lancer(AbstractContainerScreen<?> screen, ItemStack selection) {
         var mc = Minecraft.getInstance();
         if (occupe()
@@ -580,6 +680,7 @@ public final class TerminalMe {
                     vue == null
                             ? List.<Lot>of()
                             : vue.retraits().stream()
+                                    .filter(l -> l.quantite() > 0)
                                     .filter(
                                             l ->
                                                     selection == null
@@ -587,7 +688,10 @@ public final class TerminalMe {
                                                                     l.pile(), selection))
                                     .toList();
             if (lots.isEmpty()) {
-                message("Rien à prendre dans le réseau ME pour l’arbre EMI.");
+                message(
+                        vue != null && !vue.incertaines().isEmpty()
+                                ? "Entrées machine non vérifiables. Vérifie le poste avant un retrait manuel dans AE2."
+                                : "Rien à prendre dans le réseau ME pour l’arbre EMI.");
                 return;
             }
             reception =
@@ -616,7 +720,7 @@ public final class TerminalMe {
         if (event.phase != TickEvent.Phase.END || ACCES == null) return;
         try {
             if (occupe()) avancer();
-            if (++ticks % 10 == 0 || vue != null && vue.menu() != courant()) actualiser(false);
+            if (++ticks % 10 == 0 || vue != null && vue.menu() != courant()) observer(false, null);
         } catch (ReflectiveOperationException | RuntimeException ex) {
             signaler(ex);
             if (occupe()) terminer("Retrait ME interrompu.");
@@ -665,10 +769,15 @@ public final class TerminalMe {
                 }
                 recus += gain;
                 avant = 0;
+                var depotFerme =
+                        ferme && depotServeur != null
+                                ? new SuiviLotsEmi.DepotMe(
+                                        inventaire, destination.getContainerSlot(), depotAvant)
+                                : null;
                 destination = null;
                 if (reception != null) {
                     try {
-                        reception.accept(pile.copy(), gain);
+                        reception.accepter(pile.copy(), gain, depotFerme);
                     } catch (RuntimeException ex) {
                         System.getLogger(TerminalMe.class.getName())
                                 .log(
@@ -746,7 +855,7 @@ public final class TerminalMe {
             return;
         }
         echeance = System.nanoTime() + 3_000_000_000L;
-        if (avant > 0 && (reste == 0 || avant == place || deposerPile)) {
+        if (avant > 0 && (reste == 0 || avant == place || deposerPile || posteARevalider())) {
             destination = cible;
             depotAvant = cible.getItem().getCount();
             // Pas de prédiction locale : attendre que le serveur confirme la case et le curseur.
@@ -766,12 +875,13 @@ public final class TerminalMe {
             terminer("Retrait ME arrêté : terminal hors tension.");
             return;
         }
+        if (!verifierPrise(lot)) return;
         if (cibleDirecte != null) {
             destination = cibleDirecte;
             depotAvant = 0;
             direct = true;
             attendus = taillePile;
-            ACCES.retirer().invoke(menu, lot.serial(), ACCES.pileDirecte());
+            retirer(lot, ACCES.pileDirecte());
             return;
         }
         int volume = volumeRetrait(reste, taillePile, place, avant);
@@ -780,7 +890,76 @@ public final class TerminalMe {
         else if (volume > 1 && ACCES.demiPile() != null) action = ACCES.demiPile();
         else volume = 1;
         attendus = volume;
-        ACCES.retirer().invoke(menu, lot.serial(), action);
+        retirer(lot, action);
+    }
+
+    private static void retirer(Lot lot, Object action) throws ReflectiveOperationException {
+        if (!posteARevalider() || Minecraft.getInstance().getSingleplayerServer() == null) {
+            ACCES.retirer().invoke(menu, lot.serial(), action);
+            return;
+        }
+        var retrait = retraits;
+        var cle =
+                vue.stock().stream()
+                        .filter(e -> e.serial() == lot.serial())
+                        .findFirst()
+                        .orElseThrow()
+                        .cle();
+        int poche = direct ? destination.getContainerSlot() : -1;
+        recherche
+                .observateur()
+                .retirer(
+                        menu,
+                        arbre,
+                        lot.serial(),
+                        cle,
+                        lot.pile().copy(),
+                        poche,
+                        action,
+                        ACCES.retirer(),
+                        reessayer -> {
+                            if (retrait != retraits || !occupe() || lot != retrait.get(index))
+                                return;
+                            destination = null;
+                            direct = false;
+                            attendus = 0;
+                            if (!reessayer)
+                                terminer("Retrait ME interrompu : poste ou terminal indisponible.");
+                        });
+    }
+
+    private static boolean posteARevalider() {
+        return recherche != null && !recherche.observateur().recettes().isEmpty();
+    }
+
+    private static boolean verifierPrise(Lot lot) throws ReflectiveOperationException {
+        if (priseVerifiee || !posteARevalider()) return true;
+        if (clicEnAttente) return false;
+        var retrait = retraits;
+        observer(
+                true,
+                () -> {
+                    try {
+                        if (!occupe() || retrait != retraits || lot != retraits.get(index)) return;
+                        actualiser(true);
+                        int quota =
+                                vue == null
+                                        ? 0
+                                        : vue.retraits().stream()
+                                                .filter(l -> l.serial() == lot.serial())
+                                                .mapToInt(Lot::quantite)
+                                                .sum();
+                        reste = Math.min(reste, quota);
+                        priseVerifiee = true;
+                        if (reste > 0) avancer();
+                    } catch (ReflectiveOperationException | RuntimeException ex) {
+                        signaler(ex);
+                        terminer("Retrait ME interrompu.");
+                    } finally {
+                        priseVerifiee = false;
+                    }
+                });
+        return false;
     }
 
     private static int volumeRetrait(int reste, int taillePile, int place, int curseur) {
@@ -838,7 +1017,6 @@ public final class TerminalMe {
         depotServeur = null;
         reception = null;
         retraits = List.of();
-        vue = null;
         ticks = 0;
         try { // Relevé refait tout de suite : le panneau passe au reste sans disparaître.
             actualiser(true);

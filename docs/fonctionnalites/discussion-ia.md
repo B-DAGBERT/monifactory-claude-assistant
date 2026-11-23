@@ -36,11 +36,15 @@ La provenance du rappel reste en mémoire. Les messages restaurés depuis la vue
 
 Si l’écriture d’invalidation échoue, le worker réessaie. Si l’assistant s’arrête avant qu’une écriture réussisse, l’ancien identifiant peut rester dans le fichier principal et être repris au redémarrage dans la même portée vérifiée.
 
+Une fiche Codex utilise un fil éphémère. Si elle expire après son envoi, le transport interrompt son tour et désabonne ce fil. Une Discussion en cours sur le même processus peut terminer sa réponse. Si le processus lui-même s’arrête, les deux appels signalent l’interruption. Le test `tests.test_transport` exerce ces deux cas sur un processus local simulé.
+
 ## Lecture du contexte d’une question
 
 Le contrôleur enregistre la portée à l’admission. Le worker attend la transcription éventuelle, valide cette portée et lit les observations à mesure qu’il compose les sections. La sélection locale par nom ou identifiant d’objet s’appuie sur l’index des recettes. La branche EMI sélectionnée intervient dans la discussion via le résultat courant de Production, lorsqu’il est demandé.
 
-Les lectures successives peuvent provenir de relevés distincts. Le pont et le service Production gardent leurs validations de portée et de preuve avant l’envoi et à la livraison. Une action de Discussion suit la validation du contrôleur avec l’état disponible au moment de son exécution.
+Les lectures successives peuvent provenir de relevés distincts. Le pont et le service Production gardent leurs validations de portée et de preuve avant l’envoi et à la livraison. Pour une question envoyée depuis Minecraft, le clic porte le monde, la connexion et la dimension Forge, y compris en mode historique. L’assistant refuse une demande dont la portée ne correspond plus à l’identité courante lorsqu’il la dépile. Une ancienne demande historique sans portée conserve la Discussion texte et ne peut déclencher d’action en jeu. Les questions posées dans la fenêtre locale prennent leur portée à l’admission.
+
+Un changement ou une perte d’identité pendant l’attente écarte les actions de la réponse. Si elle est déjà en file, son texte reste visible dans l’historique. Pour mémoriser un lieu, le contrôleur relit `etat.json` au moment de l’action, vérifie que ses coordonnées appartiennent à la même portée Forge et confirme que cette portée est toujours active avant d’écrire.
 
 Pour une explication Production, le worker atteste la preuve avant l’envoi, puis à la fin de la réponse avec `delivery_verdict`. L’attente de la boîte et celle de la réponse du mod sont chacune bornées à 2 s pour cette dernière attestation. Un refus natif révoque le résultat encore lié. Si un autre consommateur tient la boîte et empêche l’attestation, le calcul reste disponible et Tk refuse la réponse.
 
@@ -69,6 +73,8 @@ python -m unittest tests.test_stats_publication tests.test_bridge_world_scope -v
 ```
 
 En jeu, essayer une question texte, un doublon de clic et le retour depuis une fenêtre ouverte par Discussion. Un parcours automatisé avec CLI simulé n’atteste pas un échange réel. [Usage en jeu](../utilisation.md#discussion-dans-minecraft)
+
+Dans `test_question_lifecycle`, `tests.test_question_lifecycle` rejoue « Retiens ma mine » sur les deux canaux de demande et dans les deux modes, avec une bascule avant dépilage ou après admission. Il vérifie le contenu du fichier des lieux et le nombre d’écritures lorsque Forge et KubeJS publient à des moments différents.
 
 `test_production_service` exerce les deux files audio avec des barrières de test et des sorties sonores simulées. Le test `test_revoked_production_voice_and_provider_recall_across_worlds` retire le reçu pendant la synthèse dans A, passe dans B et démarre une nouvelle conversation. Il contrôle les phrases jouées et les prompts reçus par un CLI Claude simulé, y compris le rappel après renouvellement dans B.
 

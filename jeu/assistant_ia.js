@@ -9,7 +9,7 @@
 //   redéclaration à chaque appel. Mettre ce code dans une fonction normale.
 
 const DOSSIER = 'kubejs/assistant/'
-const VERSION_SCRIPT = 17  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
+const VERSION_SCRIPT = 18  // à augmenter à chaque modification : l'assistant demande F3 + T si le jeu a une autre version
 const VERSION_RECETTES = 3 // parties liées au manifeste publié après leur écriture
 const RECETTES_PAR_TICK = 400
 const RECETTES_PAR_FICHIER = 15000
@@ -90,7 +90,11 @@ function isolationDemandee() {
 
 function contexteCourant() {
   if (!isolationDemandee()) return { monde: '', session: '', dimension: '' }
-  if (IdentiteMonde == null || MemoireMonde == null || Client.level == null || Client.player == null) return null
+  return MemoireMonde == null ? null : identiteForgeCourante()
+}
+
+function identiteForgeCourante() {
+  if (IdentiteMonde == null || Client.level == null || Client.player == null) return null
   const monde = str(IdentiteMonde.monde()), session = str(IdentiteMonde.session())
   // Lu à chaque tick : seul un identifiant nouveau est revalidé
   if (monde !== mondeVerifie || session !== sessionVerifiee) {
@@ -106,11 +110,12 @@ function memeContexte(a, b) {
     : a.monde === b.monde && a.session === b.session && a.dimension === b.dimension
 }
 
-function annoterTrame(data) {
-  if (contexte != null && contexte.monde) {
-    data.monde_actif = contexte.monde
-    data.session_monde = contexte.session
-    data.dimension_monde = contexte.dimension
+function annoterTrame(data, origine) {
+  origine = origine || contexte
+  if (origine != null && origine.monde) {
+    data.monde_actif = origine.monde
+    data.session_monde = origine.session
+    data.dimension_monde = origine.dimension
   }
   return data
 }
@@ -366,7 +371,7 @@ function ecrireEtat() {
     quetes_total: quetes == null ? -1 : quetes.total,
     recettes: etatRecettes,
     erreurs: erreurs
-  })
+  }, contexte && contexte.monde ? contexte : identiteForgeCourante())
   // Rien de changé : seulement confirmé toutes les 2 s
   const signature = JSON.stringify(etat)
   const maintenant = Date.now()

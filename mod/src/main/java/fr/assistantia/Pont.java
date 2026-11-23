@@ -56,7 +56,10 @@ public final class Pont {
 
     /** Identité de la connexion et de la dimension, jamais déduite d'une ancienne vue. */
     public static String cleContexte() {
-        if (!IdentiteMonde.isolation()) return "legacy";
+        return IdentiteMonde.isolation() ? contexteForge() : "legacy";
+    }
+
+    private static String contexteForge() {
         String monde = IdentiteMonde.monde(), session = IdentiteMonde.session();
         var niveau = Minecraft.getInstance().level;
         if (monde.isEmpty() || session.isEmpty() || niveau == null) return "";
@@ -73,7 +76,10 @@ public final class Pont {
     /** Une réponse d'une ancienne connexion ne peut pas redevenir active par son seul mtime. */
     public static boolean contexteValide(JsonObject objet) {
         if (!IdentiteMonde.isolation()) return true;
-        String contexte = cleContexte();
+        return correspondAuContexte(objet, contexteForge());
+    }
+
+    private static boolean correspondAuContexte(JsonObject objet, String contexte) {
         return !contexte.isEmpty()
                 && contexte.equals(
                         chaine(objet, "monde_actif")
@@ -86,10 +92,15 @@ public final class Pont {
     /** Annote à la création ; une demande déjà annotée ne change jamais de propriétaire. */
     public static boolean annoterContexte(JsonObject objet) {
         if (!IdentiteMonde.isolation()) return true;
+        return annoterContexte(objet, contexteForge(), false);
+    }
+
+    private static boolean annoterContexte(
+            JsonObject objet, String contexte, boolean autoriserSansIdentite) {
         if (objet.has("monde_actif") || objet.has("session_monde") || objet.has("dimension_monde"))
-            return contexteValide(objet);
-        String contexte = cleContexte();
-        if (contexte.isEmpty()) return false;
+            return correspondAuContexte(objet, contexte);
+        // Une demande déjà envoyée sans identité ne peut pas en recevoir une à la relance.
+        if (contexte.isEmpty() || objet.has("requete")) return autoriserSansIdentite;
         String[] valeurs = contexte.split("\\|", -1);
         objet.addProperty("monde_actif", valeurs[0]);
         objet.addProperty("session_monde", valeurs[1]);
@@ -415,17 +426,25 @@ public final class Pont {
 
     /** Transmet une demande et indique si son écriture atomique a réussi. */
     public static synchronized boolean envoyer(JsonObject demande) {
-        if (!annoterContexte(demande)) return false;
+        String type = texte(demande, "type");
+        boolean question = "question".equals(type);
+        if (question) {
+            // Discussion garde l'identité du clic même sans isolation des fichiers.
+            if (!annoterContexte(demande, contexteForge(), !IdentiteMonde.isolation()))
+                return false;
+        } else if (!annoterContexte(demande)) return false;
         if (!demande.has("requete")) {
             dernierEnvoi = Math.max(System.currentTimeMillis(), dernierEnvoi + 1);
             demande.addProperty("n", dernierEnvoi);
             demande.addProperty("requete", java.util.UUID.randomUUID().toString());
             // La dimension du clic : l'assistant refuse l'action si le joueur en a changé depuis.
             // Production porte déjà son propre contexte (monde, connexion, dimension).
-            String type = texte(demande, "type");
             if (!"reglage".equals(type) && !"production_v2".equals(type))
                 demande.addProperty(
-                        "dimension_envoi", texte(partie("ecran"), "dimension_actuelle"));
+                        "dimension_envoi",
+                        question
+                                ? texte(demande, "dimension_monde")
+                                : texte(partie("ecran"), "dimension_actuelle"));
         }
         JsonObject ecran = partie("ecran");
         if (ecran.has("demandes")

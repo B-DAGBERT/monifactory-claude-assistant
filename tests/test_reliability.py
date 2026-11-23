@@ -384,6 +384,6 @@ class RecoveryAndDiagnosticsTests(unittest.TestCase):
             app.busy = False
             app.refresh, app.start_question, app.on_voice = Mock(), Mock(), Mock()
             app.check_mod_requests()
-            app.start_question.assert_called_once_with("Q", None)
+            app.start_question.assert_called_once_with("Q", None, action_scope=None)
             app.on_voice.assert_not_called()
             self.assertEqual(app.question_ack, {"n": 1000000, "etat": "acceptee"})

@@ -345,6 +345,12 @@ public final class Filons {
         if (IdentiteMonde.isolation() && Pont.cleContexte().isEmpty()) return "";
         String origine = GregTechFilons.monde();
         if (origine.isEmpty()) return "";
+        if (mc.getSingleplayerServer() != null) {
+            // Deux copies solo peuvent ouvrir le même journal GT avec le même compte.
+            String sauvegarde = IdentiteMonde.monde();
+            if (sauvegarde.isEmpty()) return "";
+            origine = sauvegarde + "\0" + origine;
+        }
         try {
             return HexFormat.of()
                     .formatHex(

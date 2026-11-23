@@ -10,8 +10,9 @@
 
 - Grouper par identifiant de type. Les tiers et les emplacements restent distincts. Une machine unique s’affiche directement. Appliquer recherche et filtre avant de construire les groupes.
 - Une observation fraîche du serveur et un relevé ancien ont des statuts différents. Si la liaison cesse, conserver les derniers relevés et indiquer leur âge. Leur présence ne confirme pas l’état actuel de la machine.
-- Les coffres mémorisés servent d’indice. Un coffre double représente un seul stock physique. Respecter les exclusions, la dimension et le monde actif.
+- Les coffres mémorisés servent d’indice. Le scanner serveur transmet une liste `jumeau` vide pour un coffre simple et la position X/Z de l’autre moitié pour un coffre double. Deux coffres simples adjacents gardent chacun leur stock. Un coffre double représente un seul stock physique. Les anciens relevés sans cette indication restent lisibles avec la règle historique. Si le chunk de l’autre moitié est déchargé, le premier chunk a une couverture incomplète et le dernier contenu reste daté de sa précédente observation. Respecter les exclusions, la dimension et le monde actif.
 - L’interface est en lecture seule. Le résumé provient des données du pont. Garder le dernier relevé valide si une lecture échoue et retrier la liste seulement si le relevé ou le filtre change.
+- Le scanner transmet les tiroirs Functional Storage en bois et encadrés, y compris les compactants. Il contrôle les droits FTB Chunks avant la lecture et exclut les contrôleurs et extensions qui exposent d’autres stocks.
 - **Y → Réglages → Drawers pleins** marque les tiroirs Functional Storage proches dont toutes les cases de stockage ont atteint leur capacité réelle. Le repère est rouge, ou orange si le Void Upgrade est actif. [Calcul de capacité](../../mod/src/main/java/fr/assistantia/compat/storage/CapaciteDrawers.java)
 
 ## Fraîcheur des observations

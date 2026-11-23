@@ -92,11 +92,43 @@ public final class ProductionCatalogueTest {
     public static void main(String[] args) throws Exception {
         switch (args[0]) {
             case "gt" -> gt();
+            case "template", "no_gain" -> template(args[0].equals("template") ? 2 : 1);
             case "tree" -> tree();
             case "service" -> service();
             case "publish" -> publish(Path.of(args[1]));
             default -> throw new AssertionError();
         }
+    }
+
+    private static void template(int output) throws Exception {
+        String template = "minecraft:netherite_upgrade_smithing_template";
+        var recipe = new dev.emi.emi.recipe.EmiShapedRecipe();
+        recipe.id = template;
+        var diamond = stack("minecraft:diamond", 1);
+        recipe.inputs =
+                List.of(
+                        diamond,
+                        stack(template, 1),
+                        diamond,
+                        diamond,
+                        stack("minecraft:netherrack", 1),
+                        diamond,
+                        diamond,
+                        diamond,
+                        diamond);
+        recipe.outputs = List.of(stack(template, output));
+        EmiApi.manager.recipes.put(recipe.id, recipe);
+        Node goal = new Node(stack(template, 1), recipe);
+        goal.amount = output;
+        Tree tree = new Tree(goal);
+        tree.batches = 2 / output;
+        ArbreEmi.tree = tree;
+        var capture = CatalogueEmi.capturer();
+        check(capture.avancer(), "template exported");
+        var result = new JsonObject();
+        result.add("selection", capture.selection());
+        result.add("document", PublicationCatalogue.enveloppe("emi/test", capture.catalogue(1)));
+        System.out.println(result);
     }
 
     private static void gt() throws Exception {

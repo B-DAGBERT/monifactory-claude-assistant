@@ -88,6 +88,29 @@ public class BridgeWorldScopeTest {
    assert Files.readString(root.resolve("inventaire_details.txt")).equals("ancien"+FIN+"fer x2"+FIN);
    assert !Files.exists(root.resolve("mondes"));return;
   }
+  if(args[0].equals("discussion")){
+   for(boolean isolated:List.of(false,true)){
+    context(a,s1,dim);IdentiteMonde.isole=isolated;
+    var v=view("A");
+    v.getAsJsonObject("ecran").addProperty("dimension_actuelle","minecraft:the_nether");
+    publish(v,time++);
+    var request=json("{\"type\":\"question\",\"texte\":\"Retiens ma mine\"}");
+    assert Pont.envoyer(request);
+    Path queued;
+    try(var files=Files.list(root.resolve("demandes"))){
+     queued=files.filter(path->path.toString().endsWith(request.get("requete").getAsString()+".json")).findFirst().orElseThrow();
+    }
+    var written=json(Files.readString(queued));
+    assert written.has("monde_actif")&&written.get("monde_actif").getAsString().equals(a);
+    assert written.get("session_monde").getAsString().equals(s1);
+    assert written.get("dimension_monde").getAsString().equals(dim);
+    assert written.get("dimension_envoi").getAsString().equals(dim);
+    context(b,s2,dim);IdentiteMonde.isole=isolated;
+    assert !Pont.envoyer(request):"A must never be restamped or retried in B";
+    assert json(Files.readString(queued)).equals(written);
+   }
+   return;
+  }
   if(args[0].equals("publication")){
    // Handed to the writer thread at once; a failed replacement is retried, never dropped.
    Path legacy=root.resolve("inventaire_details.txt");
@@ -249,6 +272,9 @@ class BridgeWorldScopeTests(unittest.TestCase):
 
     def test_legacy_mode_preserves_existing_channels(self):
         self.run_case("legacy")
+
+    def test_question_click_uses_native_scope_in_both_modes(self):
+        self.run_case("discussion")
 
     def test_world_reconnect_dimension_and_late_view_with_equal_mtime(self):
         self.run_case("transition")

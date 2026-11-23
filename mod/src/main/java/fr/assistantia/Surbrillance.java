@@ -43,7 +43,7 @@ public final class Surbrillance {
             int y = ecran.getGuiTop() + slot.y;
             if (coffre
                     ? AideCoffre.aPrendre(slot)
-                    : emi ? RechercheEmi.cherche(id.toString()) : Pont.cherche(id.toString())) {
+                    : emi ? RechercheEmi.cherche(slot.getItem()) : Pont.cherche(id.toString())) {
                 g.fill(x, y, x + 16, y + 16, alpha | CYAN);
                 g.renderOutline(x - 1, y - 1, 18, 18, Theme.CYAN);
             }

@@ -139,8 +139,8 @@ class ProductionReportLinesTests(unittest.TestCase):
         self.assertEqual(result.to_dict(), before)
 
 
-class ProductionServiceTests(unittest.TestCase):
-    def setUp(self):
+class ProductionServiceFixture:
+    def prepare_production_service(self):
         directory = self.enterContext(tempfile.TemporaryDirectory())
         self.root = Path(directory)
         self.data = self.root / "game" / "kubejs" / "assistant"
@@ -246,6 +246,11 @@ class ProductionServiceTests(unittest.TestCase):
         self.executor.run()
         self.service.poll(self.app)
         return self.service.view()["resultat"]
+
+
+class ProductionServiceTests(ProductionServiceFixture, unittest.TestCase):
+    def setUp(self):
+        self.prepare_production_service()
 
     def prepare_report_snapshots(self):
         self.now = 1_790_000_000_000

@@ -212,6 +212,163 @@ class AutomaticUpdateTests(unittest.TestCase):
             self.assertEqual(self.updater.check()["state"], "failed")
         self.assert_unchanged()
 
+    def test_branch_switched_after_install_recovers_main_pair_offline(self):
+        deploy = self.updater.deploy
+        receipt = self.updater.receipt.read_bytes()
+
+        def switch_after_install(stage, before, target):
+            backup = deploy(stage, before, target)
+            self.assertEqual(
+                (self.jar.read_text(), self.script.read_text()), ("new jar", "new script")
+            )
+            self.git("switch", "-c", "work", cwd=self.client)
+            return backup
+
+        with patch.object(self.updater, "deploy", side_effect=switch_after_install):
+            status = self.updater.check()
+        self.assertEqual(self.git("rev-parse", "work", cwd=self.client), self.old, status)
+        self.assertEqual(self.git("branch", "--show-current", cwd=self.client), "work")
+        self.assertEqual(status["state"], "repair_pending")
+        self.assertTrue(setup.pending_path(self.client).exists())
+        self.remote.rename(self.remote.with_name("offline.git"))
+        self.git("switch", "main", cwd=self.client)
+        restarted = Harness(self.client, self.instance, game_running=lambda: False)
+        self.assertEqual(restarted.check()["state"], "offline")
+        self.assert_unchanged()
+        self.assertEqual(restarted.receipt.read_bytes(), receipt)
+        self.assertTrue(restarted.installed(restarted.payload(self.old)))
+        self.assertFalse(setup.pending_path(self.client).exists())
+
+    def interrupt_switch(self):
+        self.git("switch", "-c", "work")
+        (self.source / "app.py").write_text("development")
+        self.git("commit", "-am", "Working branch")
+        work = self.git("rev-parse", "HEAD")
+        self.git("fetch", str(self.source), "work:work", cwd=self.client)
+        git = self.updater.git
+
+        def switch_while_locked(*args, **kwargs):
+            result = git(*args, **kwargs)
+            if args[0] == "merge":
+                with self.assertRaises(subprocess.CalledProcessError):
+                    git("switch", "work")
+            return result
+
+        with patch.object(self.updater, "git", side_effect=switch_while_locked):
+            status = self.updater.check()
+        if status["state"] == "updated":
+            # Some Git backends reject the switch before touching the index.
+            self.assertEqual(git("rev-parse", "work"), work)
+            self.assertEqual(git("status", "--porcelain"), "")
+            return None
+        self.assertEqual(status["state"], "repair_pending")
+        self.assertEqual(git("branch", "--show-current"), "main")
+        self.assertEqual(git("rev-parse", "HEAD"), self.old)
+        self.assertEqual(git("write-tree"), git("rev-parse", "work^{tree}"))
+        self.assertEqual((self.client / "app.py").read_text(), "development")
+        self.assertEqual((self.jar.read_text(), self.script.read_text()), ("new jar", "new script"))
+        self.assertTrue(setup.pending_path(self.client).exists())
+        self.assertTrue(self.updater.checkout_journal.exists())
+        self.remote.rename(self.remote.with_name("offline.git"))
+        return work
+
+    def test_refused_switch_completes_release_offline(self):
+        work = self.interrupt_switch()
+        if work is None:
+            return
+        restarted = Harness(self.client, self.instance, game_running=lambda: False)
+        for _ in range(2):
+            self.assertEqual(restarted.check()["state"], "offline")
+            self.assertEqual(restarted.git("rev-parse", "work"), work)
+            self.assertEqual(restarted.git("rev-parse", "HEAD"), self.target)
+            self.assertEqual(restarted.git("status", "--porcelain"), "")
+            self.assertTrue(restarted.installed(restarted.payload(self.target)))
+            self.assertEqual(
+                (self.jar.read_text(), self.script.read_text()), ("new jar", "new script")
+            )
+            self.assertFalse(restarted.checkout_journal.exists())
+            self.assertFalse(setup.pending_path(self.client).exists())
+
+    def test_refused_switch_preserves_player_files(self):
+        work = self.interrupt_switch()
+        if work is None:
+            return
+        app = self.client / "app.py"
+        note = self.client / "player-note.txt"
+        app.write_text("development plus uncommitted player edit")
+        note.write_text("an untracked player note")
+        restarted = Harness(self.client, self.instance, game_running=lambda: False)
+        self.assertEqual(restarted.check()["state"], "repair_pending")
+        self.assertEqual(restarted.git("rev-parse", "work"), work)
+        self.assertEqual(restarted.git("show", ":app.py"), "development")
+        self.assertEqual(app.read_text(), "development plus uncommitted player edit")
+        self.assertEqual(note.read_text(), "an untracked player note")
+        # Remove only the conflicting edit. An unrelated note must not block recovery.
+        app.write_text("development")
+        self.assertEqual(restarted.check()["state"], "local_changes")
+        self.assertEqual(restarted.git("rev-parse", "HEAD"), self.target)
+        self.assertEqual(restarted.git("status", "--porcelain"), "?? player-note.txt")
+        self.assertEqual(restarted.git("rev-parse", "work"), work)
+        self.assertEqual(note.read_text(), "an untracked player note")
+        self.assertTrue(restarted.installed(restarted.payload(self.target)))
+
+    def test_offline_recovery_after_checkout_before_reference_commit(self):
+        class PowerLoss(BaseException):
+            pass
+
+        git = self.updater.git
+
+        def disconnect(*args, **kwargs):
+            result = git(*args, **kwargs)
+            if args[0] == "merge":
+                raise PowerLoss()
+            return result
+
+        with (
+            patch.object(self.updater, "git", side_effect=disconnect),
+            self.assertRaises(PowerLoss),
+        ):
+            self.updater.check()
+        self.assertEqual(self.git("rev-parse", "main", cwd=self.client), self.old)
+        self.assertTrue(setup.pending_path(self.client).exists())
+        self.remote.rename(self.remote.with_name("offline.git"))
+        self.assertEqual(self.updater.check()["state"], "offline")
+        self.assertEqual(self.git("rev-parse", "main", cwd=self.client), self.target)
+        self.assertEqual(self.git("status", "--porcelain", cwd=self.client), "")
+        self.assertFalse((self.client / ".git/SQUASH_MSG").exists())
+        self.assertTrue(self.updater.installed(self.updater.payload(self.target)))
+
+    def test_python_only_ref_commit_recovers_offline_without_reinstalling(self):
+        self.updater.check()
+        before = self.target
+        receipt = self.updater.receipt.read_bytes()
+        self.publish(python_only=True)
+        git = self.updater.git
+
+        class PowerLoss(BaseException):
+            pass
+
+        def disconnect(*args, **kwargs):
+            result = git(*args, **kwargs)
+            if args[0] == "merge":
+                raise PowerLoss()
+            return result
+
+        with (
+            patch.object(self.updater, "git", side_effect=disconnect),
+            self.assertRaises(PowerLoss),
+        ):
+            self.updater.check()
+        self.assertEqual(self.git("rev-parse", "main", cwd=self.client), before)
+        self.assertFalse(setup.pending_path(self.client).exists())
+        self.remote.rename(self.remote.with_name("offline.git"))
+        self.assertEqual(self.updater.check()["state"], "offline")
+        self.assertEqual(self.git("rev-parse", "main", cwd=self.client), self.target)
+        self.assertEqual(self.git("status", "--porcelain", cwd=self.client), "")
+        self.assertTrue(self.updater.installed(self.updater.payload(self.target)))
+        self.assertEqual(self.updater.receipt.read_bytes(), receipt)
+        self.assertFalse(self.updater.checkout_journal.exists())
+
     def test_resume_before_git_merge_rolls_back_even_offline(self):
         class Interruption(BaseException):
             pass

@@ -222,6 +222,7 @@ Date.now = () => horloge;
 var sansMod = SANS_MOD, publies = [], ecritures = [], transmis = [], erreursConsole = [];
 var empreinte = 'Q1', progresEmpreinte = 'P1', recuMs = 0, erreurServeur = '';
 var perduQuetes = false, erreurMemoire = '';
+var identiteForge = {isolation: () => false, monde: () => '', session: () => ''};
 var appels = {chapitres: 0}, termine = {A: true}, progres = 3;
 var runTick = null, recevoir = null, memoires = [];
 var memoireStub = {lire: () => null, ecrire: () => {}};
@@ -253,7 +254,7 @@ var QuestFileStub = {exists: () => true, INSTANCE: fichierQuetes};
 var Java = {loadClass: function (name) {
   if (name === 'fr.assistantia.EchangesKubeJS') { if (sansMod) throw Error('absent'); return EchangesStub; }
   if (name === 'dev.ftb.mods.ftbquests.client.ClientQuestFile') return QuestFileStub;
-  if (name === 'fr.assistantia.IdentiteMonde') return {isolation: () => false, monde: () => '', session: () => ''};
+  if (name === 'fr.assistantia.IdentiteMonde') return identiteForge;
   if (name === 'fr.assistantia.MemoireMondeKubeJS') return memoireStub;
   if (name.indexOf('dev.emi') === 0) throw Error('no EMI');
   return function () {};
@@ -349,6 +350,30 @@ class KubeJSChangeOnlyTests(unittest.TestCase):
         self.assertEqual(r["deplacement"], 3)
         self.assertEqual(r["x"], 10)
         self.assertEqual(r["racine"], 0, "with the mod, the game thread never writes etat.json")
+
+    def test_legacy_position_carries_the_forge_identity_of_the_sample(self):
+        r = run_script(
+            self,
+            r"""
+        identiteForge.monde = () => 'm1_' + 'a'.repeat(64);
+        identiteForge.session = () => '1'.repeat(32);
+        position.x = 12;
+        tick(20);
+        r.a = dernier(publies, 'etat.json');
+        // A different connection must trigger publication even with the same position.
+        identiteForge.monde = () => 'm1_' + 'b'.repeat(64);
+        identiteForge.session = () => '2'.repeat(32);
+        tick(20);
+        r.b = dernier(publies, 'etat.json');
+        r.quetes = dernier(publies, 'quetes.json');
+        """,
+        )
+        for frame, world, session in (("a", "a", "1"), ("b", "b", "2")):
+            self.assertEqual(r[frame].get("monde_actif"), "m1_" + world * 64)
+            self.assertEqual(r[frame]["session_monde"], session * 32)
+            self.assertEqual(r[frame]["dimension_monde"], "minecraft:overworld")
+            self.assertEqual(r[frame]["x"], 12)
+        self.assertNotIn("monde_actif", r["quetes"])
 
     def test_quests_are_rewritten_only_when_they_change(self):
         r = run_script(

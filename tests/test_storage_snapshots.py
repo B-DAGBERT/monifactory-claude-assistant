@@ -12,8 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from monifactory_assistant.game.emi_search import RecipeChestSearch, recipe_chest_view
-from monifactory_assistant.game.storage import Storage, StorageMonitor
+from monifactory_assistant.game.emi_search import RecipeChestSearch, chest_search, recipe_chest_view
+from monifactory_assistant.game.storage import Storage, StorageMonitor, known_chests
 from monifactory_assistant.game.world import World
 
 
@@ -317,6 +317,127 @@ class StorageSnapshotTests(unittest.TestCase):
         )
         return json.loads(result.stdout)
 
+    def scan_chest_frames(self):
+        return self.run_server_script(
+            """
+        var Platform = {isLoaded: () => false};
+        var Java = {loadClass: () => function () {}};
+        var NetworkEvents = {dataReceived: function () {}};
+        var ServerEvents = {tick: function () {}};
+        """,
+            """
+        var stage = 0;
+        var blocks = {};
+        function place(x, id, count, type) {
+            return blocks[x] = {
+                x: x, y: 64, z: 0, pos: x, id: id,
+                properties: new Map([['type', type], ['facing', 'north']]),
+                entityData: {getString: () => '', contains: () => false},
+                inventory: {getSlots: () => 1, getStackInSlot: () => ({
+                    isEmpty: () => false, id: 'minecraft:iron_ingot', getCount: () => count
+                })}
+            };
+        }
+        place(0, 'minecraft:chest', 32, 'single');
+        place(1, 'minecraft:chest', 32, 'single');
+        ['oak_1', 'framed_1', 'framed_2', 'framed_4', 'framed_simple_compacting_drawer',
+         'compacting_framed_drawer', 'framed_storage_controller',
+         'framed_controller_extension'].forEach((id, i) => place(i+3, 'functionalstorage:'+id, 20));
+        const left = place(15, 'minecraft:chest', 32, 'left');
+        const right = place(16, 'minecraft:chest', 32, 'right');
+        left.east = right; right.west = left;
+        const frames = [];
+        const level = {
+            dimension: 'test:world', isLoaded: x => !(x === 16 && stage === 1),
+            getChunkSource: () => ({getChunkNow: (cx, cz) => {
+                if (cz !== 0 || cx !== 0 && cx !== 1 || cx === 1 && stage === 1) return null;
+                return {getBlockEntitiesPos: () => Object.keys(blocks).map(Number).filter(
+                    x => Math.floor(x / 16) === cx && (stage < 3 || x < 15)
+                )};
+            }}), getBlock: x => blocks[x]
+        };
+        for (stage = 0; stage < 4; stage++) {
+            scannerPour({getName: () => ({getString: () => 'test'}), getX: () => 15,
+                getZ: () => 0, level: level, sendData: (_, data) => frames.push(JSON.parse(data.p0))
+            }, []);
+        }
+        console.log(JSON.stringify(frames));
+        """,
+        )
+
+    def test_server_chest_identity_reaches_world_and_known_chests(self):
+        frame = self.scan_chest_frames()[0]
+        world = World(enabled=False)
+        self.assertTrue(world.update(frame))
+        rows = [r for r in world.containers() if r["bloc"] == "minecraft:chest"]
+        self.assertEqual(sum(r["objets"][0]["n"] for r in rows), 96)
+        exported = {r["x"]: r for r in known_chests(world.blocks.values())["conteneurs"]}
+        for x in (0, 1):
+            self.assertEqual(exported[x]["objets"], [{"item": "minecraft:iron_ingot", "n": 32}])
+            self.assertEqual(exported[x]["jumeau"], [])
+        for x in (15, 16):
+            self.assertEqual(exported[x]["jumeau"], [31 - x, 0])
+        self.assertEqual(sum(bool(exported[x]["objets"]) for x in (15, 16)), 1)
+        result = chest_search(
+            {
+                "actif": True,
+                "n": 1,
+                "fin": 200,
+                "monde": "test",
+                "dimension": "test:world",
+                "objets": ["minecraft:iron_ingot"],
+            },
+            world.merged(Storage([])).raw,
+            {"dimension": "test:world"},
+            100,
+        )
+        hits = {r["x"]: r for r in result["coffres"]}
+        self.assertNotEqual(hits[0]["stock"], hits[1]["stock"])
+        self.assertEqual(hits[0]["n"] + hits[1]["n"], 64)
+        self.assertEqual(hits[15]["stock"], hits[16]["stock"])
+
+        # Un ancien scanner transmet les inventaires sans type de coffre.
+        for row in frame["blocs"]:
+            row.pop("jumeau", None)
+        self.assertTrue(world.update({**frame, "t": frame["t"] + 1000}))
+        old = [r for r in world.containers() if r["bloc"] == "minecraft:chest"]
+        self.assertEqual(sum(r["objets"][0]["n"] for r in old), 64)
+
+    def test_unloaded_twin_keeps_previous_observation_until_confirmed_removal(self):
+        world = World(enabled=False)
+        for step, frame in enumerate(self.scan_chest_frames()):
+            self.assertTrue(world.update({**frame, "t": 1000 + step}))
+            for x in (15, 16):
+                row = world.blocks[f"test:world|{x}|64|0"]
+                with self.subTest(step=step, x=x):
+                    self.assertEqual(bool(row.get("absent")), step == 3)
+                    self.assertEqual(row["t"], 1000 if step == 1 else 1000 + step)
+                    self.assertEqual(
+                        row["objets"],
+                        [] if step == 3 else [{"item": "minecraft:iron_ingot", "n": 32}],
+                    )
+            self.assertEqual([0, 0] in frame["chunks_complets"], step != 1)
+
+    def test_server_reports_physical_framed_drawers(self):
+        frame = self.scan_chest_frames()[0]
+        drawers = {
+            r["b"]: r["o"] for r in frame["blocs"] if r["b"].startswith("functionalstorage:")
+        }
+        self.assertEqual(
+            drawers,
+            {
+                "functionalstorage:" + name: [["minecraft:iron_ingot", 20]]
+                for name in (
+                    "oak_1",
+                    "framed_1",
+                    "framed_2",
+                    "framed_4",
+                    "framed_simple_compacting_drawer",
+                    "compacting_framed_drawer",
+                )
+            },
+        )
+
     def test_server_spreads_simultaneous_players_and_ignores_disconnected_or_expired_players(self):
         result = self.run_server_script(
             """
@@ -509,7 +630,10 @@ class StorageSnapshotTests(unittest.TestCase):
                 frame = result["trames"][player]
                 self.assertEqual({entry["p"][0] for entry in frame["blocs"]}, allowed)
                 self.assertEqual(set(result["lectures"][player]), allowed)
-                self.assertEqual(frame["chunks_complets"], [[0, 0], [1, 0]])
+                self.assertEqual(
+                    frame["chunks_complets"],
+                    [[1, 0]] if player == "voisin_decharge" else [[0, 0], [1, 0]],
+                )
         self.assertTrue({1, 16, 18}.isdisjoint(result["recuperations"]["externe"]))
         self.assertEqual(result["recuperations"]["ftb_erreur"], [])
 

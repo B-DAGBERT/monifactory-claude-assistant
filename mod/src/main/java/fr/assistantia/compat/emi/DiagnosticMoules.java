@@ -103,7 +103,10 @@ final class DiagnosticMoules {
             PlanMachines.Noeud<EmiStack, EmiRecipe> noeud,
             EmiRecipe usage,
             List<Moule> moules) {
-        var ids = collecte.variantes();
+        var ids =
+                collecte.variantes().stream()
+                        .map(fr.assistantia.RessourceCollecte::idObjet)
+                        .collect(java.util.stream.Collectors.toSet());
         if (ids.stream().anyMatch(DiagnosticMoules::estMoule))
             moules.add(new Moule(noeud, ids, usage));
         for (int i = 0; i < collecte.enfants().size(); i++)

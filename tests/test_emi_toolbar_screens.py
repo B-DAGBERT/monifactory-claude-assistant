@@ -82,10 +82,10 @@ public class ScreenEvent {
  public BoutonTheme choisi(boolean c){return this;}public BoutonTheme zone(int x,int y,int l){this.x=x;this.y=y;w=l;return this;}}""",
     "fr.assistantia.MemoireCollecte": "public class MemoireCollecte {public MemoireCollecte(Object collecte,Object lots){}}",
     "fr.assistantia.RechercheEmi": """public class RechercheEmi {
- public static void recalculer(MemoireCollecte m,java.util.function.Predicate<Object> a,
+ public static void recalculerArbre(MemoireCollecte m,java.util.function.Function<Object,String> a,
   java.util.function.Function<Object,Object> f,boolean meme){}
  public static boolean selectionnee(String id){return false;}public static void arreter(){}
- public static void basculer(String id,MemoireCollecte m,java.util.function.Predicate<Object> a,
+ public static void basculerArbre(String id,MemoireCollecte m,java.util.function.Function<Object,String> a,
   java.util.function.Function<Object,Object> f){}
  public static boolean actif(){return false;}
  public static RetraitCoffre.Plan retrait(Object menu,Object position){return null;}}""",
@@ -121,7 +121,7 @@ public class ScreenEvent {
  public static InstantaneArbreEmi lire(Object arbre) throws ReflectiveOperationException {return new InstantaneArbreEmi();}
  public static void invalider(){}
  public Object collecte(){return null;}public Object lots(){return null;}public Object cible(){return "";}
- public boolean accepte(Object o){return false;}public Object fluide(Object o){return null;}
+ public java.util.function.Function<Object,String> objets(fr.assistantia.MemoireCollecte m){return o->"";}public Object fluide(Object o){return null;}
  public boolean memeCollecte(InstantaneArbreEmi autre){return false;}}""",
     "fr.assistantia.compat.emi.EnvoiMachine": "public class EnvoiMachine {public static boolean occupe(){return false;}}",
     "fr.assistantia.compat.emi.MachinesEmi": "public class MachinesEmi {public static boolean dernierTermine(){return false;}}",

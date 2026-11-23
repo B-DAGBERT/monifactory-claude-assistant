@@ -14,7 +14,7 @@ const PRESENCE_MAX = 600         // ticks sans signe de vie du client
 const TAILLE_PARTIE = 20000       // 3 octets max par unité UTF-16 dans une chaîne NBT
 const TAILLE_MAX = 600000         // plafond en octets pour le contenu UTF modifié du relevé
 const CASES_MAX = 200             // cases lues au plus par inventaire
-const IGNORES = /pipe|cable|wire|conduit|frame|_sign|banner|bed$|skull|head$/
+const IGNORES = /pipe|cable|wire|conduit|(?:^|[:_])frame(?:_|$)|_sign|banner|bed$|skull|head$/
 
 // Ces capacités exposent un stock personnel ou le stock d'autres blocs à distance.
 const STOCKS_LIES = /^(?:lootr:|enderchests:|minecraft:ender_chest$|sophisticatedstorage:(?:controller$|.*storage_connector$)|functionalstorage:(?:framed_)?(?:storage_controller|controller_extension)$)/
@@ -126,7 +126,8 @@ function verrouilleOuButin(bloc) {
   return str(verrou) !== '' || butin == true
 }
 
-function stockageLisible(bloc, id, level, autorise) {
+function stockageLisible(bloc, info, level, couverture, autorise) {
+  const id = info.b
   if (STOCKS_LIES.test(id)) return false
   const vanilla = id.startsWith('minecraft:')
   if (vanilla && verrouilleOuButin(bloc)) return false
@@ -134,7 +135,10 @@ function stockageLisible(bloc, id, level, autorise) {
 
   const proprietes = bloc.properties
   const type = str(proprietes.get('type'))
-  if (type === 'single') return true
+  if (type === 'single') {
+    info.jumeau = []
+    return true
+  }
   if (type !== 'left' && type !== 'right') return false
   const directions = ['north', 'east', 'south', 'west']
   const facing = directions.indexOf(str(proprietes.get('facing')))
@@ -142,8 +146,15 @@ function stockageLisible(bloc, id, level, autorise) {
   const autre = bloc[directions[(facing + (type === 'left' ? 1 : 3)) % 4]]
   const pos = autre.pos
   const charge = typeof level.isLoaded == 'function' ? level.isLoaded(pos) : level.m_46749_(pos)
-  return charge == true && autorise(pos) && str(autre.id) === id
-    && (!vanilla || !verrouilleOuButin(autre))
+  if (charge != true) {
+    couverture.complet = false
+    return false
+  }
+  if (!autorise(pos) || str(autre.id) !== id || (vanilla && verrouilleOuButin(autre))) return false
+  if (str(autre.properties.get('facing')) !== directions[facing]
+      || str(autre.properties.get('type')) !== (type === 'left' ? 'right' : 'left')) return false
+  info.jumeau = [Number(autre.x), Number(autre.z)]
+  return true
 }
 
 // ---------- Ce qu'il y a dans un chunk ----------
@@ -215,8 +226,9 @@ function decrireBloc(level, pos, couverture, autorise) {
   if (!autorise(pos)) return null
   const bloc = level.getBlock(pos)
   const id = str(bloc.id)
-  if (IGNORES.test(id) || !stockageLisible(bloc, id, level, autorise)) return null
+  if (IGNORES.test(id)) return null
   const info = { p: [Number(bloc.x), Number(bloc.y), Number(bloc.z)], b: id }
+  if (!stockageLisible(bloc, info, level, couverture, autorise)) return null
   let mm = null
   try { mm = bloc.entity.metaMachine } catch (e) { /* pas une machine GregTech */ }
   if (mm != null) {

@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -114,12 +115,17 @@ def notice():
     return read_json(ROOT / ".runtime/update-status.json").get("message", "")
 
 
+class BranchChanged(RuntimeError):
+    """The installation journal must be resolved against the original main branch."""
+
+
 class AutoUpdater:
     def __init__(self, root, instance, *, game_running=minecraft_running):
         self.root, self.instance = Path(root), Path(instance)
         self.game_running = game_running
         self.runtime = self.root / ".runtime"
         self.receipt = self.runtime / "installed-update.json"
+        self.checkout_journal = self.runtime / "main-pending.json"
         self.git_bin = next(
             (p for p in ("/opt/homebrew/bin/git", "/usr/local/bin/git") if Path(p).is_file()),
             shutil.which("git"),
@@ -259,15 +265,130 @@ class AutoUpdater:
             revisions=(before, target),
         )
 
+    def require_main(self):
+        if self.git("branch", "--show-current") != "main":
+            raise BranchChanged(
+                "Reviens sur main puis relance l’assistant pour reprendre la mise à jour."
+            )
+
+    def verify_checkout(self, target):
+        # A competing switch can update files and the index before Git refuses its
+        # HEAD change. Verify both against the release before reporting completion.
+        self.git("diff", "--quiet", target, "--")
+        self.git("diff", "--cached", "--quiet", target, "--")
+
+    def resume_index(self, before, target):
+        # A refused switch may already have populated the index with another branch.
+        # Use immutable trees. The two-tree checkout refuses to overwrite edits or
+        # obstructing untracked files and never moves that branch's reference.
+        index = self.git("write-tree")
+        if index == self.git("rev-parse", f"{target}^{{tree}}"):
+            return
+        branches = self.git("for-each-ref", "--format=%(tree)", "refs/heads/").splitlines()
+        if index not in branches or index == self.git("rev-parse", f"{before}^{{tree}}"):
+            raise RuntimeError("L’index interrompu ne correspond pas à une autre branche locale.")
+        self.git("read-tree", "-m", "-u", index, target)
+
+    def advance_main(self, before, target, *, checkout=True):
+        # Git locks main and its symbolic HEAD during prepare. The explicit old value
+        # protects the branch tip even if another process committed during installation.
+        self.require_main()
+        with subprocess.Popen(
+            [self.git_bin, "update-ref", "--stdin"],
+            cwd=self.root,
+            text=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as transaction:
+            try:
+                transaction.stdin.write(
+                    f"start\nupdate refs/heads/main {target} {before}\nprepare\n"
+                )
+                transaction.stdin.flush()
+                # A local reference-transaction hook can block during prepare. Keep
+                # the launcher's deadline even while waiting for Git's protocol reply.
+                watchdog = threading.Timer(30, transaction.kill)
+                watchdog.start()
+                try:
+                    started = transaction.stdout.readline().strip()
+                    prepared = transaction.stdout.readline().strip()
+                finally:
+                    watchdog.cancel()
+                if started != "start: ok" or prepared != "prepare: ok":
+                    raise RuntimeError("Git ne peut pas verrouiller main à la révision attendue.")
+                self.require_main()
+                squash_message = self.root / self.git("rev-parse", "--git-path", "SQUASH_MSG")
+                if checkout:
+                    if self.git("status", "--porcelain") or squash_message.exists():
+                        raise RuntimeError("Le dépôt a été modifié avant l’avancement de main.")
+                    if before != target:
+                        atomic_json(self.checkout_journal, dict(before=before, target=target))
+                        # Keep the native fast-forward checkout and its ignored-file
+                        # protection. Only the prepared transaction can advance main.
+                        self.git(
+                            "merge",
+                            "--no-overwrite-ignore",
+                            "--ff-only",
+                            "--squash",
+                            target,
+                            timeout=30,
+                        )
+                else:
+                    self.resume_index(before, target)
+                self.verify_checkout(target)
+                squash_message.unlink(missing_ok=True)
+                output, error = transaction.communicate("commit\n", timeout=30)
+                if transaction.returncode or output.strip() != "commit: ok":
+                    raise RuntimeError(
+                        "Git n’a pas confirmé l’avancement de main. " + error.strip()
+                    )
+            finally:
+                if transaction.poll() is None:
+                    # Closing stdin without commit aborts the prepared reference transaction.
+                    transaction.communicate(timeout=30)
+
+        self.require_main()
+        self.verify_checkout(target)
+        self.checkout_journal.unlink(missing_ok=True)
+
+    def recover_checkout(self):
+        if not self.checkout_journal.exists():
+            return
+        if not self.git_bin or not (self.root / ".git").exists():
+            raise RuntimeError("Git est nécessaire pour reprendre la mise à jour interrompue.")
+        self.require_main()
+        journal = read_json(self.checkout_journal)
+        before, target = journal.get("before"), journal.get("target")
+        for revision in (before, target):
+            if not isinstance(revision, str) or not re.fullmatch(
+                r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision
+            ):
+                raise RuntimeError("Révision de reprise Git illisible.")
+        self.git("merge-base", "--is-ancestor", before, target)
+        current = self.git("rev-parse", "HEAD")
+        if current == before and self.git("status", "--porcelain"):
+            self.advance_main(before, target, checkout=False)
+        elif current == target:
+            self.verify_checkout(target)
+            self.checkout_journal.unlink()
+        elif current == before:
+            self.checkout_journal.unlink()
+        else:
+            raise RuntimeError("main ne correspond plus à la mise à jour interrompue.")
+
     def recover(self):
         from monifactory_assistant.commands.setup import pending_path, recover_install
 
+        self.recover_checkout()
         if not pending_path(self.root).exists():
             return False
         revision = None
         if self.git_bin and (self.root / ".git").exists():
+            if read_json(pending_path(self.root)).get("target"):
+                self.require_main()
             revision = self.git("rev-parse", "HEAD")
-            if self.git("status", "--porcelain"):
+            if self.git("status", "--porcelain", "--untracked-files=no"):
                 raise RuntimeError(
                     "Le dépôt a changé pendant l’installation. La reprise est suspendue."
                 )
@@ -286,10 +407,17 @@ class AutoUpdater:
         try:
             self.recover()
             return self._check() if update else self.status("disabled")
+        except BranchChanged as error:
+            return self.status(
+                "repair_pending"
+                if pending_path(self.root).exists() or self.checkout_journal.exists()
+                else "local_changes",
+                str(error),
+            )
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
             with (self.runtime / "update.log").open("a", encoding="utf-8") as log:
                 traceback.print_exc(file=log)
-            if pending_path(self.root).exists():
+            if pending_path(self.root).exists() or self.checkout_journal.exists():
                 return self.status(
                     "repair_pending",
                     "Installation à reprendre · ferme Minecraft et relance l’assistant. Voir .runtime/update.log.",
@@ -385,9 +513,11 @@ class AutoUpdater:
                     "Mise à jour reportée : le JAR ou le script a changé pendant la préparation.",
                 )
             try:
-                self.git("merge", "--no-overwrite-ignore", "--ff-only", target, timeout=30)
-            except (OSError, subprocess.SubprocessError):
-                if backup is not None:
+                self.advance_main(before, target)
+            except (OSError, RuntimeError, subprocess.SubprocessError):
+                # Leave the interrupted checkout for the next launch once a competing
+                # Git operation has touched the index. Clean failures can roll back now.
+                if not self.checkout_journal.exists() or not self.git("status", "--porcelain"):
                     self.recover()
                 raise
             if backup is not None:

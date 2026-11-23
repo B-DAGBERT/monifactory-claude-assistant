@@ -1,11 +1,16 @@
 """The view written for the mod: no project or objective data, guidance and reply kept."""
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from monifactory_assistant.application.game import GameController
 from monifactory_assistant.game.storage import Storage
+from monifactory_assistant.game.world import World
+from monifactory_assistant.game.world_scope import WorldScope
 from monifactory_assistant.settings import SETTINGS
 from monifactory_assistant.ui.views import build_mod_view
 
@@ -71,7 +76,7 @@ class ModViewTests(unittest.TestCase):
         self.assertIn("panneau", keys)
 
     def test_requested_guidance_still_draws_its_beam(self):
-        guide = {"label": "Base", "x": 1, "y": 64, "z": 2}
+        guide = {"label": "Base", "x": 1, "y": 64, "z": 2, "dimension": "minecraft:overworld"}
         view = build_mod_view(app(guide=guide), have={}, now=NOW)
         beam = {
             "x": 1,
@@ -92,6 +97,67 @@ class ModViewTests(unittest.TestCase):
         self.assertEqual(
             build_mod_view(app(guide={**guide, "x": None}), have={}, now=NOW)["guidage"], []
         )
+
+    def test_guidance_from_saved_place_survives_dimension_change_and_arrives_once(self):
+        overworld, nether = "minecraft:overworld", "minecraft:the_nether"
+        controller = GameController()
+        controller.__dict__.update(vars(app()))
+        controller.active_world_scope = WorldScope("A", "connection", overworld)
+        controller.world = World(enabled=False)
+        path = Path(self.enterContext(tempfile.TemporaryDirectory())) / "lieux.json"
+        controller.load_places(path)
+        controller.bridge.dir = path.parent
+        controller.journal = Mock()
+        controller.game.update(x=10, y=64, z=20, dimension=nether)
+        controller.action_memoriser_lieu({"nom": "Mine"})
+        controller.load_places(path)
+        controller.game["dimension"] = overworld
+        controller.action_guider({"nom": "Mine"})
+        controller.check_quests = Mock()
+        controller.notify = Mock()
+        controller.publish_known_chests = Mock()
+        controller.veins_read = float("inf")
+        controller.storage_monitor = Mock()
+        controller.storage_monitor.refresh.return_value = controller.storage
+        controller.storage_export_key = controller.storage.export_key()
+        with self.subTest(stage="Overworld, mêmes X/Z"):
+            view = build_mod_view(controller, have={}, now=NOW)
+            self.assertEqual(view["guidage"], [])
+            self.assertIsNone(view["hud"]["direction"])
+        controller.check_game(controller.game)
+        with self.subTest(stage="arrivée dans la mauvaise dimension"):
+            controller.notify.assert_not_called()
+            self.assertIsNotNone(controller.guide)
+        controller.apply_world_scope(WorldScope("A", "connection", nether))
+        controller.game = {"x": 50, "y": 64, "z": 20, "dimension": nether}
+        view = build_mod_view(controller, have={}, now=NOW)
+        self.assertEqual(
+            view["guidage"],
+            [{"label": "Mine", "x": 10, "y": 64, "z": 20, "dimension": nether, "couleur": "bleu"}],
+        )
+        controller.game["x"] = 10
+        controller.veins_read = float("inf")
+        controller.storage_monitor = Mock()
+        controller.storage_monitor.refresh.return_value = controller.storage
+        controller.storage_export_key = controller.storage.export_key()
+        controller.check_game(controller.game)
+        controller.check_game(controller.game)
+        controller.notify.assert_called_once_with("Tu es arrivé : Mine.", 8, speak=True)
+        self.assertIsNone(controller.guide)
+
+    def test_coordinate_guidance_binds_to_requested_dimension_or_current_dimension(self):
+        controller = GameController()
+        controller.places = {}
+        controller.game = {"dimension": "minecraft:overworld"}
+        coords = {"x": 4, "z": 12}
+        controller.action_guider(coords)
+        self.assertEqual(controller.guide["dimension"], "minecraft:overworld")
+        controller.action_guider({**coords, "dimension": "minecraft:the_end"})
+        self.assertEqual(controller.guide["dimension"], "minecraft:the_end")
+        controller.world = World(enabled=False)
+        controller.active_world_scope = WorldScope("A", "first", "minecraft:overworld")
+        controller.apply_world_scope(WorldScope("A", "second", "minecraft:overworld"))
+        self.assertIsNone(controller.guide)
 
     def test_reply_bubble_does_not_depend_on_the_panel_setting(self):
         for shown in (True, False):

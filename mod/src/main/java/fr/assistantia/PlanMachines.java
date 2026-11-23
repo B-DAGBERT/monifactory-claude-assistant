@@ -3,6 +3,8 @@ package fr.assistantia;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
@@ -36,7 +38,7 @@ public final class PlanMachines {
 
     public static <T, R> List<Operation<R>> calculer(
             Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock) {
-        return calculer(root, batches, stock, null, null);
+        return calculer(root, batches, stock, null, null, Map.of(), Set.of());
     }
 
     public static <T, R> void observer(
@@ -44,14 +46,23 @@ public final class PlanMachines {
             long batches,
             List<PlanRetrait.Stock<T>> stock,
             BiConsumer<Noeud<T, R>, EtatBesoin> observation) {
-        calculer(root, batches, stock, null, observation);
+        calculer(root, batches, stock, null, observation, Map.of(), Set.of());
     }
 
     /** Parts allouées aux besoins de l'arbre depuis une source extérieure à l'inventaire. */
     public static <T, R> List<PlanRetrait.Prise> retraits(
             Noeud<T, R> root, long batches, List<PlanRetrait.Stock<T>> stock) {
+        return retraits(root, batches, stock, Map.of(), Set.of());
+    }
+
+    public static <T, R> List<PlanRetrait.Prise> retraits(
+            Noeud<T, R> root,
+            long batches,
+            List<PlanRetrait.Stock<T>> stock,
+            Map<R, List<PlanRetrait.Stock<T>>> entrees,
+            Set<R> postesInconnus) {
         int[] prises = new int[stock.size()];
-        calculer(root, batches, stock, prises, null);
+        calculer(root, batches, stock, prises, null, entrees, postesInconnus);
         var resultat = new ArrayList<PlanRetrait.Prise>();
         for (int i = 0; i < prises.length; i++)
             if (prises[i] > 0) resultat.add(new PlanRetrait.Prise(i, prises[i]));
@@ -63,7 +74,11 @@ public final class PlanMachines {
             long batches,
             List<PlanRetrait.Stock<T>> stock,
             int[] prises,
-            BiConsumer<Noeud<T, R>, EtatBesoin> observation) {
+            BiConsumer<Noeud<T, R>, EtatBesoin> observation,
+            Map<R, List<PlanRetrait.Stock<T>>> entrees,
+            Set<R> postesInconnus) {
+        var engagees = new LinkedHashMap<R, List<PlanRetrait.Stock<T>>>();
+        entrees.forEach((r, piles) -> engagees.put(r, new ArrayList<>(piles)));
         var reserve = new ArrayList<>(stock);
         int[] outilsPris = prises == null ? null : new int[stock.size()];
         var operations = new LinkedHashMap<R, Integer>();
@@ -143,11 +158,31 @@ public final class PlanMachines {
                             (a, b) -> Math.min(1_000_000, a + b));
                 if (d.node().recette() != null)
                     operations.merge(d.node().recette(), fois, Integer::sum);
-                for (var enfant : d.node().enfants())
+                if (d.node().recette() != null && postesInconnus.contains(d.node().recette()))
+                    continue;
+                var enfants = d.node().enfants();
+                var enMachine = engagees.get(d.node().recette());
+                List<Integer> fournis = List.of();
+                if (enMachine != null) {
+                    var besoinsEnMachine =
+                            enfants.stream()
+                                    .map(
+                                            e ->
+                                                    new PlanRetrait.Besoin<>(
+                                                            e.accepte(),
+                                                            e.reutilisable()
+                                                                    ? 0
+                                                                    : produit(e.quantite(), fois)))
+                                    .toList();
+                    fournis = PlanRetrait.reserver(enMachine, besoinsEnMachine, 0, null).fournis();
+                }
+                for (int j = 0; j < enfants.size(); j++) {
+                    var enfant = enfants.get(j);
+                    int quantite = produit(enfant.quantite(), enfant.reutilisable() ? 1 : fois);
                     suite.add(
                             new Demande<>(
-                                    enfant,
-                                    produit(enfant.quantite(), enfant.reutilisable() ? 1 : fois)));
+                                    enfant, quantite - (fournis.isEmpty() ? 0 : fournis.get(j))));
+                }
             }
             niveau = suite;
         }

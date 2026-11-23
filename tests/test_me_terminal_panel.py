@@ -1,6 +1,7 @@
 """Terminal AE2 : même panneau que la Collecte, utilisable d'un simple clic."""
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -72,8 +73,8 @@ class MeTerminalPanelTests(unittest.TestCase):
         self.assertIn(
             "couverture.retraitsReseau(instantane.machines(), instantane.lots())", actualiser
         )
-        self.assertIn("stock.get(prise.index())", actualiser)
-        self.assertIn("new Lot(entree.serial(), entree.pile(), prise.quantite())", actualiser)
+        self.assertIn("stock.get(i)", actualiser)
+        self.assertIn("new Lot(entree.serial(), entree.pile(), quantites[i])", actualiser)
         lecture = corps(self.terminal, "private static List<Entree> lire(")
         self.assertIn("entrees(repo, recherche.filtre(), complet)", lecture)
         self.assertIn("ComparaisonEmi.meme(emi, v)", lecture)
@@ -99,17 +100,33 @@ class MeTerminalPanelTests(unittest.TestCase):
         fixture = (ROOT / "tests/java/fr/assistantia/RetraitTerminalMeTest.java").read_text(
             encoding="utf-8"
         )
+        # Utiliser la quantité de production avant toute projection en entier pour le plan.
+        quantite = re.search(r"new Entree\(serial, cle, pile, (.+)\)\);", self.terminal).group(1)
+        fixture = fixture.replace(
+            "/* STOCK_NATIF */ actif.stock", re.sub(r"\bn\b", "actif.stock", quantite)
+        )
         debut = self.terminal.index("private static AbstractContainerMenu menu;")
         fin = self.terminal.index("private static boolean erreur;", debut)
         champs = (
             corps(self.terminal, "private record Lot(")
             + corps(self.terminal, "private record Acces(")
+            + corps(self.terminal, "private record Vue(")
+            + corps(self.terminal, "private record Entree(")
             + self.terminal[debut:fin]
         )
         traitement = "\n".join(
             corps(self.terminal, signature)
             for signature in (
                 "private static void avancer(",
+                "private static boolean posteARevalider(",
+                "private static boolean verifierPrise(",
+                "private static void verifierClic(",
+                "private static void lancer(",
+                "private static void observer(",
+                "private static void actualiser(",
+                "private static boolean memeStock(",
+                "private static void retirer(Lot",
+                "private static List<PlanRetrait.Stock<ItemStack>> stocks(",
                 "private static int volumeRetrait(",
                 "private static Slot destinationFermee(",
                 "public static void confirmer(Object lien, int conteneur, int",
@@ -118,10 +135,27 @@ class MeTerminalPanelTests(unittest.TestCase):
                 "private static void terminer(",
             )
         )
-        fixture = fixture.replace("// EXTRACTION_CHAMPS", champs).replace(
-            "// EXTRACTION_TRAITEMENT",
-            traitement.replace("TerminalMe.class", "RetraitTerminalMeTest.class"),
+        suivi = source("compat/emi/SuiviLotsEmi")
+        preuve = "\n".join(
+            corps(suivi, signature)
+            for signature in ("record DepotMe(", "interface ReceptionCollecte ")
         )
+        fixture = (
+            fixture.replace("// EXTRACTION_CHAMPS", champs)
+            .replace("// EXTRACTION_PREUVE", preuve)
+            .replace(
+                "// EXTRACTION_TRAITEMENT",
+                traitement.replace("TerminalMe.class", "RetraitTerminalMeTest.class"),
+            )
+        )
+        entrees = source("compat/emi/EntreesTerminalMe")
+        for marque, signature in (
+            ("MOUVEMENTS", "private static final class Mouvements"),
+            ("IDENTITE_MESURE", "boolean identique(Mesure"),
+            ("OBSERVER_SERVEUR", "private Mesure observer("),
+            ("RETIRER_SERVEUR", "void retirer("),
+        ):
+            fixture = fixture.replace("// EXTRACTION_" + marque, corps(entrees, signature))
         with tempfile.TemporaryDirectory() as dossier:
             chemin = Path(dossier) / "RetraitTerminalMeTest.java"
             chemin.write_text(fixture, encoding="utf-8")
@@ -140,6 +174,13 @@ class MeTerminalPanelTests(unittest.TestCase):
                 "reception",
                 "fermeture",
                 "paquets-fermes",
+                "livraison-inconnue",
+                "livraison-verifiee",
+                "retrait-identifie",
+                "reappro",
+                "reappro-verifie",
+                "mesure",
+                "plafond",
             ):
                 with self.subTest(scenario=scenario):
                     resultat = subprocess.run(

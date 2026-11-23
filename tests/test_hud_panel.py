@@ -10,6 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 STUBS = {
+    "net.minecraft.client.renderer.Rect2i": """
+public record Rect2i(int getX,int getY,int getWidth,int getHeight) {}
+""",
+    "net.minecraftforge.client.event.RenderGuiEvent": """
+public class RenderGuiEvent {public record Window(int getGuiScaledWidth){}
+public record Post(net.minecraft.client.gui.GuiGraphics getGuiGraphics, Window getWindow){}}
+""",
     "net.minecraft.client.Minecraft": """
 public class Minecraft {private static final Minecraft INSTANCE=new Minecraft();
  public static Minecraft getInstance(){return INSTANCE;}
@@ -103,7 +110,8 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.item.ItemStack;
 public class HudPanelTest {
  static net.minecraftforge.client.gui.overlay.IGuiOverlay overlay;
- static List<String> render(int w,int h){var g=new GuiGraphics();com.mojang.blaze3d.vertex.PoseStack.POSES.clear();overlay.render(null,g,0,w,h);assert g.pose().depth==0:"unbalanced pose";return g.calls;}
+ static net.minecraft.client.renderer.Rect2i jade;
+ static List<String> render(int w,int h){var g=new GuiGraphics();com.mojang.blaze3d.vertex.PoseStack.POSES.clear();overlay.render(null,g,0,w,h);if(jade!=null)Hud.ficheDessinee(jade);Hud.finirImage(new net.minecraftforge.client.event.RenderGuiEvent.Post(g,new net.minecraftforge.client.event.RenderGuiEvent.Window(w)));assert g.pose().depth==0:"unbalanced pose";return g.calls;}
  static List<String> render(){return render(640,360);}
  static List<String> starting(List<String> calls,String prefix){return calls.stream().filter(c->c.startsWith(prefix)).toList();}
  /** Width of the first panel background (Theme.FOND fill at the origin of the scaled panel). */
@@ -141,6 +149,13 @@ public class HudPanelTest {
   assert pose[2]>=0.75F&&pose[2]<=1F:"panel scale "+pose[2];
   largeur=panel(calls);assert largeur*pose[2]<=320*0.42F+1:"panel width "+largeur;
   inside(starting(calls,"text "+gold+" "),largeur);inside(starting(calls,"text "+grey+" "),largeur);
+  jade=new net.minecraft.client.renderer.Rect2i(105,1,140,27);
+  render(320,240);assert com.mojang.blaze3d.vertex.PoseStack.POSES.get(0)[1]==28+Theme.ECART:"panel below Jade";
+  jade=new net.minecraft.client.renderer.Rect2i(210,1,80,27);
+  render(320,240);assert com.mojang.blaze3d.vertex.PoseStack.POSES.get(0)[1]==15:"no overlap horizontally";
+  jade=new net.minecraft.client.renderer.Rect2i(5,110,100,20);
+  render(320,240);assert com.mojang.blaze3d.vertex.PoseStack.POSES.get(0)[1]==15:"no overlap vertically";
+  jade=null;render(320,240);assert com.mojang.blaze3d.vertex.PoseStack.POSES.get(0)[1]==15:"sky clears the reservation";
   // Player request: every ready step, not only the next one, listed under the current step.
   String green=Integer.toHexString(Theme.VERT);
   Hud.source(()->new Hud.Etape(new ItemStack("gtceu:lv_bender"),titre,detail,List.of("2. 8 x Iron Plate - Basic Bender"," ","3. 4 x Bronze Ingot - Alloy Smelter")));

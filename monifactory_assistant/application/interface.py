@@ -16,6 +16,7 @@ from monifactory_assistant.platform.capture import (
     take_screenshot,
     user32,
 )
+from monifactory_assistant.production.acquisition import active_scope
 from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import BG, FG, FG_DIM, SETTINGS, SETTINGS_FILE
 from monifactory_assistant.ui.views import build_mod_view
@@ -91,7 +92,7 @@ class InterfaceController:
         if key not in SETTINGS:
             return
         values = dict(self.settings, **{key: bool(value)})
-        atomic_json(SETTINGS_FILE, values)
+        atomic_json(SETTINGS_FILE, values, backup_kind=dict)
         self.settings = values
         if key == "voix" and not value:
             self.speaker.stop()
@@ -234,7 +235,12 @@ class InterfaceController:
         # Un bouton d'un ancien mod (projets, objectifs, étapes) n'a plus d'effet : le dire.
         reason = unsupported_request(request)
         dimension = request.get("dimension_envoi")
-        if not reason and dimension and dimension != (self.game or {}).get("dimension"):
+        if (
+            not reason
+            and request.get("type") != "question"
+            and dimension
+            and dimension != (self.game or {}).get("dimension")
+        ):
             reason = "Le monde ou la dimension a changé ; renouvelle ton action."
         if reason:
             result = {"etat": "refusee", "message": reason}
@@ -245,12 +251,14 @@ class InterfaceController:
             if production is None:
                 return {"etat": "refusee", "message": "Service Production indisponible."}
             return production.submit(request)
-        self.handle_mod_request(request)
+        reason = self.handle_mod_request(request)
         result = {"etat": "traitee", "message": "Demande prise en compte."}
         if request.get("type") == "question":
             result["question"] = dict(self.question_ack)
             if self.question_ack.get("etat") != "acceptee":
-                result.update(etat="refusee", message="Demande refusée : l’assistant est occupé.")
+                result.update(
+                    etat="refusee", message=reason or "Demande refusée : l’assistant est occupé."
+                )
         return result
 
     def handle_mod_request(self, request):
@@ -261,15 +269,22 @@ class InterfaceController:
         kind = request.get("type")
         # Les demandes d'un ancien mod (projet, objectif, étape) sont ignorées sans erreur.
         if kind == "question" and request.get("texte"):
-            accepted = False
+            self.question_ack = {"n": request.get("n"), "etat": "refusee"}
+            scope = None
+            if any(
+                field in request for field in ("monde_actif", "session_monde", "dimension_monde")
+            ):
+                scope = active_scope(self.bridge)
+                if scope is None or not scope.accepts(request):
+                    return "Demande d’une autre connexion ou dimension."
+            elif request.get("dimension_envoi") and request["dimension_envoi"] != (
+                self.game or {}
+            ).get("dimension"):
+                return "Le monde ou la dimension a changé ; renouvelle ton action."
             if self.busy:
                 self.notify("Patience, je réfléchis encore…", 4)
-            else:
-                accepted = self.start_question(str(request["texte"]), None)
-            self.question_ack = {
-                "n": request.get("n"),
-                "etat": "acceptee" if accepted else "refusee",
-            }
+            elif self.start_question(str(request["texte"]), None, action_scope=scope):
+                self.question_ack["etat"] = "acceptee"
         elif kind == "info" and request.get("item"):
             self.show_info(request)
         elif kind == "reglage":

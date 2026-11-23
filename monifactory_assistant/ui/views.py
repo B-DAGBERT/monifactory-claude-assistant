@@ -8,7 +8,12 @@ from collections import defaultdict
 
 import monifactory_assistant.providers as ai_provider
 from monifactory_assistant.game.emi_search import recipe_chest_view
-from monifactory_assistant.game.world import block_name, machine_color, machine_status
+from monifactory_assistant.game.world import (
+    block_name,
+    guide_in_dimension,
+    machine_color,
+    machine_status,
+)
 from monifactory_assistant.paths import ROOT as HERE
 from monifactory_assistant.settings import SETTINGS
 
@@ -92,14 +97,14 @@ def build_mod_view(app, *, have, now, emi_search=None):
         hud["recherche"] = search.pop("resume")
     # La destination demandée (« guide-moi à la base ») : faisceau dans le monde.
     guide = app.guide
-    if state and guide and guide.get("x") is not None and guide.get("z") is not None:
+    if guide_in_dimension(guide, dimension):
         target = {
             "x": guide["x"],
             "y": guide.get("y"),
             "z": guide["z"],
             "couleur": "bleu",
             "label": guide["label"],
-            "dimension": guide.get("dimension") or dimension,
+            "dimension": dimension,
         }
         beams.append(target)
         hud["direction"] = target

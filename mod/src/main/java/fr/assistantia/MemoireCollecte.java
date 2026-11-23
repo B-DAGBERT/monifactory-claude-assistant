@@ -15,6 +15,46 @@ public final class MemoireCollecte {
         }
     }
 
+    // Une pile peut satisfaire plusieurs comparaisons EMI. Elle conserve une seule quantité
+    // physique, que PlanRetrait répartit entre les branches éligibles.
+    private final Map<String, Set<String>> groupesParVariante = new LinkedHashMap<>();
+    private final Map<Set<String>, String> groupes = new LinkedHashMap<>();
+    private final Map<String, Set<String>> variantesParObjet = new LinkedHashMap<>();
+
+    public String groupe(Set<String> variantes) {
+        if (variantes.isEmpty()) return "";
+        String premiere = variantes.iterator().next();
+        if (variantes.size() == 1) return premiere;
+        String connu = groupes.get(variantes);
+        if (connu != null) return connu;
+        var cle = new StringBuilder(RessourceCollecte.idObjet(premiere)).append("|&");
+        variantes.stream().sorted().forEach(v -> cle.append(v.length()).append(':').append(v));
+        String groupe = cle.toString();
+        groupes.put(Set.copyOf(variantes), groupe);
+        for (String v : variantes)
+            groupesParVariante.computeIfAbsent(v, k -> new LinkedHashSet<>()).add(groupe);
+        return groupe;
+    }
+
+    Set<String> pilesAcceptees(Set<String> variantes) {
+        if (groupesParVariante.isEmpty()) return variantes;
+        Set<String> piles = new LinkedHashSet<>(variantes);
+        for (String v : variantes) piles.addAll(groupesParVariante.getOrDefault(v, Set.of()));
+        return piles;
+    }
+
+    boolean accepte(Set<String> variantes, String pile) {
+        if (variantes.contains(pile)) return true;
+        if (groupesParVariante.isEmpty()) return false;
+        for (String v : variantes)
+            if (groupesParVariante.getOrDefault(v, Set.of()).contains(pile)) return true;
+        return false;
+    }
+
+    Set<String> variantesObjet(String id) {
+        return variantesParObjet.getOrDefault(id, Set.of());
+    }
+
     private ArbreCollecte.Noeud arbre;
     private long lots, version;
     private final List<Ingredient> ingredients;
@@ -31,22 +71,35 @@ public final class MemoireCollecte {
     /** Recalcul d'un arbre modifié : conserver les acquisitions encore pertinentes. */
     public void reprendre(MemoireCollecte ancienne) {
         if (ancienne == null) return;
-        ancienne.observes.forEach(
-                (id, n) -> {
-                    if (tous.contains(id)) observes.put(id, n);
+        var correspondances = new LinkedHashMap<String, String>();
+        for (String cle : tous) correspondances.put(cle, cle);
+        ancienne.groupes.forEach(
+                (variantes, ancienneCle) -> {
+                    var restantes = new LinkedHashSet<>(variantes);
+                    restantes.retainAll(tous);
+                    if (!restantes.isEmpty()) correspondances.put(ancienneCle, groupe(restantes));
                 });
-        ancienne.prouves.forEach(
-                (id, n) -> {
-                    if (tous.contains(id)) prouves.put(id, n);
-                });
+        reprendre(ancienne.observes, observes, correspondances);
+        reprendre(ancienne.prouves, prouves, correspondances);
         dernierInventaire = null;
+    }
+
+    private static void reprendre(
+            Map<String, Integer> source,
+            Map<String, Integer> cible,
+            Map<String, String> correspondances) {
+        source.forEach(
+                (id, n) -> {
+                    String cle = correspondances.get(id);
+                    if (cle != null) cible.merge(cle, n, (a, b) -> Math.min(1_000_000, a + b));
+                });
     }
 
     public void reserver(Map<String, Integer> quantites) {
         Map<String, Integer> nouvelles = new LinkedHashMap<>();
         quantites.forEach(
                 (id, n) -> {
-                    if (tous.contains(id) && n > 0) nouvelles.put(id, Math.min(n, 1_000_000));
+                    if (accepte(tous, id) && n > 0) nouvelles.put(id, Math.min(n, 1_000_000));
                 });
         if (!reserves.equals(nouvelles)) {
             reserves = Map.copyOf(nouvelles);
@@ -59,7 +112,7 @@ public final class MemoireCollecte {
         var nouveaux = new LinkedHashMap<String, Integer>();
         quantites.forEach(
                 (id, n) -> {
-                    if (tous.contains(id) && n > 0) nouveaux.put(id, Math.min(n, 1_000_000));
+                    if (accepte(tous, id) && n > 0) nouveaux.put(id, Math.min(n, 1_000_000));
                 });
         if (!outilsMachines.equals(nouveaux)) {
             outilsMachines = Map.copyOf(nouveaux);
@@ -99,7 +152,10 @@ public final class MemoireCollecte {
             ArbreCollecte.Noeud node, Map<String, Integer> credits, Set<Set<String>> visites) {
         for (var child : node.enfants()) deduireReservations(child, credits, visites);
         if (node.variantes().isEmpty() || !visites.add(node.variantes())) return;
-        long n = node.variantes().stream().mapToLong(id -> reserves.getOrDefault(id, 0)).sum();
+        long n =
+                pilesAcceptees(node.variantes()).stream()
+                        .mapToLong(id -> reserves.getOrDefault(id, 0))
+                        .sum();
         long production = Math.max(1, node.production());
         long fois = (n + production - 1) / production;
         // Les matières déjà envoyées ne peuvent pas aussi servir à une autre branche.
@@ -138,6 +194,11 @@ public final class MemoireCollecte {
         Set<String> ids = new LinkedHashSet<>();
         for (Ingredient i : ingredients) ids.addAll(i.variantes());
         tous = Set.copyOf(ids);
+        for (String cle : tous)
+            if (!RessourceCollecte.estFluide(cle))
+                variantesParObjet
+                        .computeIfAbsent(RessourceCollecte.idObjet(cle), k -> new LinkedHashSet<>())
+                        .add(cle);
         restants = tous;
     }
 
@@ -209,7 +270,11 @@ public final class MemoireCollecte {
                 arbre == null
                         ? PlanRetrait.calculer(stocks, besoins, finPrioritaire).prises()
                         : PlanArbre.calculer(
-                                        arbre, lots, stocks, ids -> ids::contains, finPrioritaire)
+                                        arbre,
+                                        lots,
+                                        stocks,
+                                        ids -> pilesAcceptees(ids)::contains,
+                                        finPrioritaire)
                                 .prises();
         // Allocation physique unique : la part du lot attendu utilise seulement ce qui
         // n'a pas déjà été retenu pour les branches encore à fabriquer.
@@ -264,7 +329,8 @@ public final class MemoireCollecte {
     }
 
     private Set<String> manquantsArbre(List<PlanRetrait.Stock<String>> stocks) {
-        var allocation = PlanArbre.calculer(arbre, lots, stocks, ids -> ids::contains);
+        var allocation =
+                PlanArbre.calculer(arbre, lots, stocks, ids -> pilesAcceptees(ids)::contains);
         Set<String> manquants = new LinkedHashSet<>();
         for (var ingredient : allocation.manquants()) manquants.addAll(ingredient.variantes());
         return avecFabrications(manquants);
@@ -291,7 +357,8 @@ public final class MemoireCollecte {
         for (var child : node.enfants()) convertir(child, actuel, visites, credites, preuves);
         if (node.variantes().isEmpty() || !visites.add(node.variantes())) return;
         int arrive =
-                node.variantes().stream()
+                pilesAcceptees(node.variantes()).stream()
+                        .filter(id -> !credites.contains(id))
                         .mapToInt(
                                 id ->
                                         Math.max(
@@ -306,7 +373,8 @@ public final class MemoireCollecte {
             if (!child.reutilisable()) consommerHistorique(child, fois, actuel, 0, observes);
         // Rendre ce résultat disponible avant de visiter son parent : une chaîne peut être
         // entièrement fabriquée entre deux relevés, sans garder ses intermédiaires.
-        for (String id : node.variantes()) if (credites.add(id)) crediter(id, actuel, preuves);
+        for (String id : pilesAcceptees(node.variantes()))
+            if (credites.add(id)) crediter(id, actuel, preuves);
     }
 
     private void crediter(String id, Map<String, Integer> actuel, Map<String, Integer> preuves) {
@@ -334,7 +402,7 @@ public final class MemoireCollecte {
                                 1_000_000L,
                                 Math.min(1_000_000L, node.quantite()) * Math.min(1_000_000L, fois));
         int reste = besoin;
-        for (String id : node.variantes()) {
+        for (String id : pilesAcceptees(node.variantes())) {
             int ancien = credits.getOrDefault(id, 0), reel = actuel.getOrDefault(id, 0);
             int retire = Math.min(reste, Math.max(0, ancien - reel));
             credits.put(id, ancien - retire);
@@ -368,7 +436,8 @@ public final class MemoireCollecte {
         dernierInventaire = Map.copyOf(inventaire);
         version++;
         // Le crédit est un stock encore utile, pas la somme de toutes les formes d'un matériau.
-        for (String id : tous) if (!credites.contains(id)) crediter(id, inventaire, preuves);
+        for (String id : pilesAcceptees(tous))
+            if (!credites.contains(id)) crediter(id, inventaire, preuves);
         List<PlanRetrait.Stock<String>> stocks = stocksPlanifies();
         if (arbre != null) {
             restants = manquantsArbre(stocks);

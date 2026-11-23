@@ -184,9 +184,8 @@ public final class RetraitCoffre {
                     selection,
             java.util.function.Function<ItemStack, RessourceCollecte> ressource) {
         var joueur = Minecraft.getInstance().player;
-        List<Slot> slots = new ArrayList<>();
-        List<RessourceCollecte> unites = new ArrayList<>();
-        List<PlanRetrait.Stock<String>> stocks = new ArrayList<>();
+        record Source(Slot slot, RessourceCollecte unite) {}
+        List<Source> sources = new ArrayList<>();
         if (joueur != null && estCoffre(m))
             for (Slot slot : m.slots) {
                 if (!slot.isActive()
@@ -196,19 +195,29 @@ public final class RetraitCoffre {
                 var objet = slot.getItem();
                 var unite = ressource.apply(objet);
                 if (unite == null) continue;
-                slots.add(slot);
-                unites.add(unite);
-                stocks.add(
-                        new PlanRetrait.Stock<>(
-                                unite.id(), unite.quantite(objet.getCount()), false));
+                sources.add(new Source(slot, unite));
             }
+        // À volume requis égal, les contenants les plus pleins couvrent le besoin en moins de
+        // prises.
+        // Le tri stable conserve l’ordre du menu pour les objets et les volumes égaux.
+        sources.sort(
+                java.util.Comparator.comparingInt((Source s) -> s.unite().parObjet()).reversed());
+        var stocks =
+                sources.stream()
+                        .map(
+                                s ->
+                                        new PlanRetrait.Stock<>(
+                                                s.unite().id(),
+                                                s.unite().quantite(s.slot().getItem().getCount()),
+                                                false))
+                        .toList();
         List<Lot> lots = new ArrayList<>();
         for (var prise : selection.apply(stocks)) {
-            Slot slot = slots.get(prise.index());
+            var source = sources.get(prise.index());
+            Slot slot = source.slot();
             int n =
                     Math.min(
-                            unites.get(prise.index()).contenants(prise.quantite()),
-                            slot.getItem().getCount());
+                            source.unite().contenants(prise.quantite()), slot.getItem().getCount());
             if (n > 0) lots.add(new Lot(slot, slot.getItem().copy(), n));
         }
         return new Plan(List.copyOf(lots), 0);

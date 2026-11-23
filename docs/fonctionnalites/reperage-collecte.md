@@ -21,10 +21,16 @@
   Un tampon garde son retrait direct quand il est ouvert. Les coffres ordinaires ne proposent
   que le complément. Arrêter le repérage retire les contours et le panneau.
 - Une quantité mémorisée peut indiquer où regarder. À l’ouverture et au clic, l’allocation
-  est bornée par les vraies cases accessibles et la variante requise.
+  est bornée par les vraies cases accessibles et la variante requise. Deux branches qui
+  distinguent les NBT A et B réservent chacune leur variante. Une branche qui accepte les
+  deux garde ce choix. Le relevé d’un coffre fermé indique un lieu par identifiant d’objet.
+  Les poches, les tampons et les cases du coffre ouvert sont comparés selon les règles EMI
+  de chaque branche. Les preuves différées de craft ou de retrait conservent la variante
+  réellement reçue, même si le joueur l’a déjà consommée au relevé suivant.
 - Dans un coffre ouvert, **Collecte** lit les mB des seaux, cellules et fûts compatibles Forge.
   Déduire le liquide porté et les tampons relevés. Retirer le minimum de contenants entiers
-  et garder le surplus, les contenants vides et les autres liquides. Un relevé ordinaire fermé
+  en donnant la priorité aux cases dont le volume par contenant est le plus élevé. À volume
+  égal, conserver l’ordre des cases. Garder le surplus, les contenants vides et les autres liquides. Un relevé ordinaire fermé
   ne garantit aucun volume.
 - Préserver les acquisitions de la cible en cours et la déduction des composants transformés.
   Un changement de cible doit invalider une réponse ou un retrait devenu périmé.
@@ -40,9 +46,12 @@ Depuis la racine du dépôt, dans l’environnement de développement avec JDK 1
 
 ```sh
 python -m unittest tests.test_chest_transfers tests.scenarios.test_basique
+python -m unittest discover -s tests -p test_collecte_variantes.py -v
 python -m unittest tests.test_emi_search tests.test_emi_view_refresh tests.test_storage_snapshots
 python -m monifactory_assistant.commands.scenarios parcours-stock
 ```
 
 Le parcours de base couvre le seau partiel et le composant rangé dans le tampon. Pour vérifier
 les menus natifs, suivre la [recette en jeu](../recette-fabrication.md#collecte-et-établi).
+
+Le test de transfert de coffre rejoue 500/1 000, 1 000/500 et 500/500 mB pour un besoin de 1 000 mB. Après **Tout**, il contrôle les cases sources, le volume dans les poches et le curseur.

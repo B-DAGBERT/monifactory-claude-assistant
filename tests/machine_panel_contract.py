@@ -53,6 +53,7 @@ def compiler_panneau(dossier, doublure_suivi):
 
     static void preparer() { actualiserInterface(); }
     private static void retenirEntrees(GregTechMachines.Interface ui) {}
+    private static void retenirPoste(GregTechMachines.Interface ui, EmiRecipe recette) {}
     private static void envoyee(EmiRecipe r, int n, int demande, BlockPos pos, Screen parent) {
         lots.ajouter(r, n, pos);
     }
@@ -100,6 +101,9 @@ public class InventaireJoueur {
     public static boolean synchro = true;
     public static boolean synchronise() { return synchro; }
     public static long revisionFabrication() { return 0; }
+    public static net.minecraft.world.item.ItemStack caseRelevee(int index) {
+        return net.minecraft.client.Minecraft.getInstance().player.getInventory().getItem(index);
+    }
 }
 """,
         "net.minecraftforge.client.event.ScreenEvent": """

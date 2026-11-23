@@ -115,6 +115,33 @@ public final class MachinesEmi {
 
     private record EntreesConnues(Object machine, List<PlanRetrait.Stock<EmiStack>> objets) {}
 
+    private record PosteVisite(Object machine, EmiRecipe recette, InstantaneArbreEmi arbre) {}
+
+    private static final Map<BlockPos, PosteVisite> affectations = new java.util.LinkedHashMap<>();
+
+    static Map<BlockPos, EmiRecipe> postesVisites(InstantaneArbreEmi courant) {
+        var mc = Minecraft.getInstance();
+        var postes = new java.util.HashMap<BlockPos, EmiRecipe>();
+        affectations
+                .entrySet()
+                .removeIf(
+                        e ->
+                                e.getValue().arbre() != courant
+                                        || !mc.level.hasChunkAt(e.getKey())
+                                        || GregTechMachines.machine(
+                                                        mc.level.getBlockEntity(e.getKey()))
+                                                != e.getValue().machine());
+        affectations.forEach((pos, poste) -> postes.put(pos, poste.recette()));
+        return Map.copyOf(postes);
+    }
+
+    private static void retenirPoste(GregTechMachines.Interface ui, EmiRecipe recette) {
+        if (affectations.size() >= 64 && !affectations.containsKey(ui.position()))
+            affectations.remove(affectations.keySet().iterator().next());
+        affectations.put(
+                ui.position().immutable(), new PosteVisite(ui.machine(), recette, instantane));
+    }
+
     private static final java.util.Map<BlockPos, EntreesConnues> entreesConnues =
             new java.util.LinkedHashMap<>();
     private static long entreesVersion, outilsVersion = -1;
@@ -385,7 +412,7 @@ public final class MachinesEmi {
         lots.recevoir(receptions);
     }
 
-    static java.util.function.BiConsumer<ItemStack, Integer> receptionCollecte(
+    static SuiviLotsEmi.ReceptionCollecte receptionCollecte(
             AbstractContainerScreen<?> screen, List<ItemStack> objets) {
         var mc = Minecraft.getInstance();
         var niveau = mc.level;
@@ -393,10 +420,10 @@ public final class MachinesEmi {
         var lien = mc.getConnection();
         var courant = actif();
         if (joueur == null || niveau == null || courant == null || courant != arbre)
-            return (pile, quantite) -> {};
+            return (pile, quantite, depot) -> {};
         long revision = InstantaneArbreEmi.revisionStructureProduction();
         var reception = lots.preparerCollecte(objets);
-        return (pile, quantite) -> {
+        return (pile, quantite, depot) -> {
             if (mc.player == joueur
                     && mc.level == niveau
                     && mc.getConnection() == lien
@@ -404,7 +431,7 @@ public final class MachinesEmi {
                             || joueur.containerMenu == joueur.inventoryMenu)
                     && actif() == courant
                     && revision == InstantaneArbreEmi.revisionStructureProduction())
-                reception.accept(pile, quantite);
+                reception.accepter(pile, quantite, depot);
         };
     }
 
@@ -753,6 +780,27 @@ public final class MachinesEmi {
         return java.util.Map.copyOf(outils);
     }
 
+    public static Map<String, Integer> outilsCollecte() {
+        return quantitesCollecte(outilsMachines());
+    }
+
+    public static Map<String, Integer> reservationsCollecte() {
+        return quantitesCollecte(reservationsArbre());
+    }
+
+    private static Map<String, Integer> quantitesCollecte(
+            List<PlanRetrait.Stock<EmiStack>> stocks) {
+        if (stocks.isEmpty()) return Map.of();
+        var quantites = new java.util.HashMap<String, Integer>();
+        for (var stock : stocks) {
+            String cle = fr.assistantia.RechercheEmi.objetCollecte(stock.objet().getItemStack());
+            if (!cle.isEmpty())
+                quantites.merge(
+                        cle, stock.quantite(), (a, b) -> (int) Math.min(1_000_000L, (long) a + b));
+        }
+        return Map.copyOf(quantites);
+    }
+
     /** Réservations temporaires, distinctes de l'avancement réel et des acquisitions du scan. */
     public static java.util.Map<String, Integer> reservationsObjets() {
         var mc = Minecraft.getInstance();
@@ -774,7 +822,7 @@ public final class MachinesEmi {
         return java.util.Map.copyOf(result);
     }
 
-    private static boolean estGT(EmiRecipe recette) {
+    static boolean estGT(EmiRecipe recette) {
         return recette.getClass()
                 .getName()
                 .equals("com.gregtechceu.gtceu.integration.emi.recipe.GTEmiRecipe");
@@ -844,6 +892,7 @@ public final class MachinesEmi {
         String dim = mc.level == null ? "" : mc.level.dimension().location().toString();
         boolean contexteChange = connexion != mc.getConnection() || !dim.equals(dimension);
         if (current != arbre || contexteChange) {
+            affectations.clear();
             recetteSac = null;
             arbreSac = null;
             OrdonnancementEmi.invalider();
@@ -1123,6 +1172,7 @@ public final class MachinesEmi {
                 plan = null;
                 return;
             }
+            retenirPoste(ui, selected.recette());
             plan =
                     selected.fois() == 0
                             ? null

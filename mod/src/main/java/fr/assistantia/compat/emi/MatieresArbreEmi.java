@@ -40,7 +40,8 @@ public final class MatieresArbreEmi {
         if (noeud == null || profondeur > 128 || ids.size() > 4096) return;
         if (noeud.enfants().isEmpty()) {
             if (!noeud.reutilisable())
-                for (var id : noeud.variantes()) if (!RessourceCollecte.estFluide(id)) ids.add(id);
+                for (var id : noeud.variantes())
+                    if (!RessourceCollecte.estFluide(id)) ids.add(RessourceCollecte.idObjet(id));
             return;
         }
         for (var enfant : noeud.enfants()) visiter(enfant, ids, profondeur + 1);

@@ -19,6 +19,7 @@ from monifactory_assistant.game.world import (
     DATES_PUBLISH_INTERVAL_MS,
     SaveResult,
     World,
+    guide_in_dimension,
     machine_status,
     observation_date,
 )
@@ -69,7 +70,14 @@ class GameController:
             except Exception:
                 log(traceback.format_exc())
         self.game = self.previous_state = None
-        self.guide = self.search = self.info = None
+        if (
+            scope is None
+            or previous is None
+            or previous.world != scope.world
+            or previous.session != scope.session
+        ):
+            self.guide = None
+        self.search = self.info = None
         self.message, self.message_until = "", 0
         self.question_ack = {}
         self.mod_request_n = None
@@ -184,6 +192,13 @@ class GameController:
             if self.game and (not state or self.game.get("dimension") != state.get("dimension")):
                 self.world.invalidate_live()
             self.game = state
+            if (
+                getattr(self, "question_action_scope", None) is not None
+                and self.busy
+                and self.world_action_scope() != self.question_action_scope
+            ):
+                # Un retour dans la dimension de départ ne réautorise pas le tour en attente.
+                self.question_action_scope = None
             self.check_recipes()
             if state:
                 self.check_game(state)
@@ -253,9 +268,7 @@ class GameController:
         self.storage = storage
 
         if (
-            self.guide
-            and self.guide.get("x") is not None
-            and self.guide.get("z") is not None
+            guide_in_dimension(self.guide, state.get("dimension"))
             and math.dist((self.guide["x"], self.guide["z"]), (state["x"], state["z"])) < 3
         ):
             self.notify(f"Tu es arrivé : {self.guide['label']}.", 8, speak=True)
@@ -546,15 +559,17 @@ class GameController:
         self.forgotten_keys |= set(keys)
         self.send_command("oublier_coffres", cles=keys)
 
-    def action_memoriser_lieu(self, action):
-        if not self.game:
+    def action_memoriser_lieu(self, action, *, position=None):
+        if position is None:
+            position = self.game
+        if not position:
             return
         name = str(action.get("nom") or "lieu")
         self.places[name] = {
-            "x": int(self.game["x"]),
-            "y": int(self.game["y"]),
-            "z": int(self.game["z"]),
-            "dimension": self.game["dimension"],
+            "x": int(position["x"]),
+            "y": int(position["y"]),
+            "z": int(position["z"]),
+            "dimension": position["dimension"],
         }
         self.save_places()
         self.journal(
@@ -568,12 +583,14 @@ class GameController:
 
     def action_guider(self, action):
         place = self.places.get(str(action.get("nom")))
+        dimension = (self.game or {}).get("dimension")
         if place:
             self.guide = {
                 "label": str(action["nom"]),
                 "x": place["x"],
                 "y": place["y"],
                 "z": place["z"],
+                "dimension": place.get("dimension") or dimension,
             }
         elif action.get("x") is not None or action.get("y") is not None:
             self.guide = {
@@ -581,6 +598,7 @@ class GameController:
                 "x": action.get("x"),
                 "y": action.get("y"),
                 "z": action.get("z"),
+                "dimension": action.get("dimension") or dimension,
             }
 
     def action_arreter_guidage(self, _action):
