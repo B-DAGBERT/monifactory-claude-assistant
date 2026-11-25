@@ -54,6 +54,14 @@ class MeTerminalPanelTests(unittest.TestCase):
         zone = corps(self.terminal, "static void zoneEmi(")
         self.assertIn("d.cadre()", zone)
 
+    def test_ligne_me_affiche_le_stock_et_explique_un_retrait_suspendu(self):
+        rendu = corps(self.terminal, "public static void rendu(ScreenEvent.Render.Post")
+        self.assertIn("vue.stock(lot.serial())", rendu)
+        self.assertIn("vue.aVerifier().contains(lot.serial())", rendu)
+        self.assertIn('"?"', rendu)
+        self.assertIn(" en stock dans le réseau ME", rendu)
+        self.assertIn("Retrait manuel dans le terminal AE2", rendu)
+
     def test_click_reads_the_terminal_again_and_can_take_one_item(self):
         lancer = corps(self.terminal, "private static void lancer(")
         self.assertIn("actualiser(true);", lancer)
@@ -74,7 +82,9 @@ class MeTerminalPanelTests(unittest.TestCase):
             "couverture.retraitsReseau(instantane.machines(), instantane.lots())", actualiser
         )
         self.assertIn("stock.get(i)", actualiser)
-        self.assertIn("new Lot(entree.serial(), entree.pile(), quantites[i])", actualiser)
+        self.assertIn(
+            "new Lot(entree.serial(), entree.cle(), entree.pile(), quantites[i])", actualiser
+        )
         lecture = corps(self.terminal, "private static List<Entree> lire(")
         self.assertIn("entrees(repo, recherche.filtre(), complet)", lecture)
         self.assertIn("ComparaisonEmi.meme(emi, v)", lecture)
@@ -149,6 +159,10 @@ class MeTerminalPanelTests(unittest.TestCase):
             )
         )
         entrees = source("compat/emi/EntreesTerminalMe")
+        fixture = fixture.replace(
+            "// EXTRACTION_LIRE_SERVEUR",
+            corps(entrees, "void lire(").replace("void lire(", "void lireNatif(", 1),
+        )
         for marque, signature in (
             ("MOUVEMENTS", "private static final class Mouvements"),
             ("IDENTITE_MESURE", "boolean identique(Mesure"),
@@ -181,6 +195,18 @@ class MeTerminalPanelTests(unittest.TestCase):
                 "reappro-verifie",
                 "mesure",
                 "plafond",
+                "tout-piles-poste",
+                "prendre-pile-entamee",
+                "prendre-pile-distante",
+                "refus-partiel-solde",
+                "reponses-distantes",
+                "arret-distant",
+                "echap-distant",
+                "refus-distant",
+                "refus-total-distant",
+                "place-distante",
+                "prendre-redstone-distante",
+                "tout-redstone-distante",
             ):
                 with self.subTest(scenario=scenario):
                     resultat = subprocess.run(

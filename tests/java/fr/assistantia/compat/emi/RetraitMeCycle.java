@@ -114,9 +114,13 @@ final class RetraitMeCycle {
         return false;
     }
 
-    // This full-machine fixture has no external AE2 destination.
-    private static void retirer(Lot lot, Object action) throws ReflectiveOperationException {
-        ACCES.retirer().invoke(menu, lot.serial(), action);
+    // Ce cycle simule le client connecté à un serveur distant.
+    private static void retirer(Lot lot, Object action, int repetitions)
+            throws ReflectiveOperationException {
+        // Ce terminal livre une réponse de curseur agrégée. Le contrat de retrait dédié
+        // exerce aussi les réponses intermédiaires de plusieurs paquets AE2 successifs.
+        soldeDistant = repetitions > 1;
+        ACCES.retirer().invoke(menu, lot.serial(), (int) action * repetitions);
     }
 
     private static void actualiser(boolean complet) throws ReflectiveOperationException {
@@ -130,7 +134,7 @@ final class RetraitMeCycle {
         var couverture = StockFabricationEmi.courant(personnel.get(), reseau);
         var lots =
                 couverture.retraitsReseau(arbre.machines(), arbre.lots()).stream()
-                        .map(p -> new Lot(1, terminal.variante, p.quantite()))
+                        .map(p -> new Lot(1, terminal.variante, terminal.variante, p.quantite()))
                         .toList();
         vue = new Vue(arbre, lots);
     }

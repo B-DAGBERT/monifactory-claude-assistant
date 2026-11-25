@@ -162,7 +162,8 @@ public final class RetraitTerminalMeTest {
         final List<Slot> slots = new ArrayList<>();
         ItemStack carried = ItemStack.EMPTY;
         boolean powered = true;
-        int stock, extractions;
+        long stock;
+        int extractions;
 
         ItemStack getCarried() {
             return carried;
@@ -180,6 +181,8 @@ public final class RetraitTerminalMeTest {
             verifier(serial == 7, "entrée ME du lot");
             MC.getConnection().actions.add(action);
             if (surServeur) appliquer(action);
+            else if (!MC.solo && action == Action.PICKUP_SINGLE)
+                MC.getConnection().paquets.add(() -> appliquer(action));
             else MC.getConnection().ajouter(() -> appliquer(action));
         }
 
@@ -199,7 +202,7 @@ public final class RetraitTerminalMeTest {
                     if (libre == -1) libre = poche.getFreeSlot();
                     if (libre == -1) return;
                     int present = poche.getItem(libre).getCount();
-                    int pris = Math.min(stock, max - present);
+                    int pris = (int) Math.min(stock, max - present);
                     stock -= pris;
                     poche.setItem(libre, new ItemStack(pile.id, present + pris, max));
                 }
@@ -210,7 +213,7 @@ public final class RetraitTerminalMeTest {
                         carried = new ItemStack(pile.id, carried.getCount() - rendu, max);
                         return;
                     }
-                    int disponible = Math.min(stock, max);
+                    int disponible = (int) Math.min(stock, max);
                     int pris =
                             action == Action.PICKUP_OR_SET_DOWN ? disponible : (disponible + 1) / 2;
                     stock -= pris;
@@ -252,6 +255,7 @@ public final class RetraitTerminalMeTest {
         private final Object transport = new Object();
         final ArrayDeque<Runnable> paquets = new ArrayDeque<>();
         final List<Action> actions = new ArrayList<>();
+        final List<Integer> lotsServeur = new ArrayList<>();
         int depots;
 
         Connection(AbstractContainerMenu actif) {
@@ -273,7 +277,8 @@ public final class RetraitTerminalMeTest {
 
         void send(ServerboundContainerClickPacket paquet) {
             depots++;
-            ajouter(
+            verifier(!MC.solo || paquets.isEmpty(), "le serveur intégré a terminé son lot");
+            paquets.add(
                     () -> {
                         verifier(
                                 paquet.containerId() == actif.containerId
@@ -289,8 +294,10 @@ public final class RetraitTerminalMeTest {
                         var curseur = actif.carried;
                         int volume = curseur.getCount() + cible.getItem().getCount();
                         verifier(
-                                paquet.curseur().getCount() == curseur.getCount()
-                                        && volume <= cible.getMaxStackSize(curseur),
+                                volume <= cible.getMaxStackSize(curseur)
+                                        && (!MC.solo
+                                                || paquet.curseur().getCount()
+                                                        == curseur.getCount()),
                                 "aucun dépassement de la capacité de la case");
                         cible.container.setItem(
                                 cible.getContainerSlot(),
@@ -301,28 +308,40 @@ public final class RetraitTerminalMeTest {
     }
 
     private static boolean surServeur;
+    private static boolean releveEnCours;
 
     private static final class Serveur {
         void execute(Runnable tache) {
+            if (releveEnCours) {
+                tache.run();
+                return;
+            }
             MC.connection.ajouter(
                     () -> {
+                        var connexion = MC.connection;
+                        int avant = connexion.actions.size();
                         surServeur = true;
                         try {
                             tache.run();
                         } finally {
                             surServeur = false;
+                            int interactions = connexion.actions.size() - avant;
+                            if (interactions > 0) connexion.lotsServeur.add(interactions);
                         }
                     });
         }
     }
 
     private static final class Minecraft {
+        boolean solo = true;
+
         Serveur getSingleplayerServer() {
-            return new Serveur();
+            return solo ? new Serveur() : null;
         }
 
         void execute(Runnable tache) {
-            tache.run();
+            if (releveEnCours) reponseServeur = tache;
+            else tache.run();
         }
 
         Player player;
@@ -411,14 +430,14 @@ public final class RetraitTerminalMeTest {
         static final Releve VIDE = new Releve(Map.of(), Set.of(), Set.of());
 
         List<EmiRecipe> recettes() {
-            return testerPoste ? List.of(BAIN) : List.of();
+            return recettes;
         }
 
         private Mesure derniere;
         private final Mouvements mouvements = new Mouvements();
         private WeakReference<AbstractContainerMenu> terminal = new WeakReference<>(null);
         private final WeakReference<Object> reseau = new WeakReference<>(MC);
-        private List<EmiRecipe> recettes = List.of(BAIN);
+        private final List<EmiRecipe> recettes = testerPoste ? List.of(BAIN) : List.of();
 
         private record Contexte(Object visites, Object reserves) {
             static Contexte du(AbstractContainerMenu menu, InstantaneArbreEmi arbre) {
@@ -432,11 +451,22 @@ public final class RetraitTerminalMeTest {
 
         private record Mesure(Map<EmiRecipe, List<ItemStack>> piles, Set<EmiRecipe> inconnus) {
             // EXTRACTION_IDENTITE_MESURE
+
+            Releve projeter() {
+                var entrees = new HashMap<EmiRecipe, Integer>();
+                piles.forEach(
+                        (recette, items) ->
+                                entrees.put(
+                                        recette,
+                                        items.stream().mapToInt(ItemStack::getCount).sum()));
+                return new Releve(entrees, piles.keySet(), inconnus);
+            }
         }
 
         // EXTRACTION_MOUVEMENTS
 
         private Mesure mesurer(ServerPlayer p, Object visites, Object reserves) {
+            terminal = new WeakReference<>(p.containerMenu);
             return new Mesure(
                     verifierDestination
                             ? Map.of(
@@ -453,30 +483,27 @@ public final class RetraitTerminalMeTest {
         }
 
         private static long quantite(Object quantites, Object cle) {
-            return (int) quantites;
+            return (long) quantites;
         }
 
         // EXTRACTION_OBSERVER_SERVEUR
 
         // EXTRACTION_RETIRER_SERVEUR
 
+        // EXTRACTION_LIRE_SERVEUR
+
         void lire(
                 AbstractContainerMenu menu,
                 InstantaneArbreEmi arbre,
                 Map<Object, Long> annonce,
-                Consumer<Releve> rappel)
-                throws ReflectiveOperationException {
-            terminal = new WeakReference<>(menu);
-            derniere = observer(MC.player, Contexte.du(menu, arbre), annonce);
-            var mesure = derniere;
-            int n = dansLeBain;
-            reponseServeur =
-                    () ->
-                            rappel.accept(
-                                    new Releve(
-                                            verifierDestination ? Map.of(BAIN, n) : Map.of(),
-                                            mesure.piles().keySet(),
-                                            mesure.inconnus()));
+                Consumer<Releve> rappel) {
+            // La mesure et la livraison de sa réponse sont deux moments distincts du contrat.
+            releveEnCours = true;
+            try {
+                lireNatif(menu, arbre, annonce, rappel);
+            } finally {
+                releveEnCours = false;
+            }
         }
     }
 
@@ -621,7 +648,7 @@ public final class RetraitTerminalMeTest {
         connexion = MC.connection;
         arbreActuel = arbre = new InstantaneArbreEmi();
         PRODUIT = new ItemStack("cable", 1, max);
-        retraits = List.of(new Lot(7L, PRODUIT, demande));
+        retraits = List.of(new Lot(7L, PRODUIT.id, PRODUIT, demande));
         index = attendus = avant = recus = 0;
         destination = null;
         depotServeur = null;
@@ -668,14 +695,18 @@ public final class RetraitTerminalMeTest {
                         && MC.connection.depots == 1,
                 "deux confirmations directes et un dépôt de reliquat");
 
-        terminal = preparer(112, 64, 64, 64);
+        terminal = preparer(112, 64, 64, 64, 64);
         finir();
         var actions = new ArrayList<>(List.of(Action.SHIFT_CLICK, Action.SPLIT_OR_PLACE_SINGLE));
         actions.addAll(Collections.nCopies(16, Action.PICKUP_SINGLE));
         verifier(MC.connection.actions.equals(actions), "112 en 64 + 32 + 16 unités");
         verifier(
-                terminal.stock == 888 && recus == 112 && terminal.carried.isEmpty(),
-                "aucun surplus ni curseur occupé");
+                terminal.stock == 888
+                        && recus == 112
+                        && terminal.carried.isEmpty()
+                        && MC.player.inventory().getItem(1).getCount() == 48
+                        && MC.player.inventory().getItem(2).isEmpty(),
+                "sans poste, la demi-pile et le solde occupent la même case");
     }
 
     private static void taillesEtCapacite() throws ReflectiveOperationException {
@@ -961,8 +992,8 @@ public final class RetraitTerminalMeTest {
         finir();
         tick();
         verifier(
-                confirmations.equals(List.of(20, 32, 14)) && reception == null,
-                "le dépôt du reliquat compte une fois, la fin efface le callback");
+                confirmations.equals(List.of(20, 32, 12, 2)) && reception == null,
+                "la première poche se complète, les deux dernières unités sont confirmées à part");
 
         terminal = preparer(1, 64, 64);
         confirmations = surveillerReceptions();
@@ -1038,24 +1069,247 @@ public final class RetraitTerminalMeTest {
                         && MC.player.inventory().quantite(PRODUIT.id) == attendu
                         && terminal.carried.isEmpty(),
                 mesure);
-        if (attendu == 0)
+        if (attendu == 0) {
+            var ligne = vue.retraits().get(0);
             verifier(
-                    !vue.incertaines().isEmpty() && vue.retraits().get(0).quantite() == 0,
-                    "la suspension reste visible");
+                    !vue.incertaines().isEmpty()
+                            && ligne.quantite() == 0
+                            && vue.aVerifier().contains(ligne.serial())
+                            && vue.stock(ligne.serial()) == terminal.stock
+                            && terminal.stock > 0,
+                    "la suspension garde la ligne et son stock ME positif");
+        } else {
+            verifier(vue.aVerifier().isEmpty(), "aucun poste incertain sur le retrait confirmé");
+        }
     }
 
     private static int besoin = 2;
+
+    private static void redstoneDistante(boolean tout) throws ReflectiveOperationException {
+        MC.solo = false;
+        testerPoste = true;
+        besoin = 20;
+        var terminal = preparer(besoin, 64, 64, 64);
+        terminal.stock = 1920;
+        PRODUIT = new ItemStack("minecraft:redstone", 1, 64);
+        var poches = MC.player.inventory();
+        poches.setItem(1, new ItemStack(PRODUIT.id, 5, 64));
+        affiche = ecran;
+        menu = null;
+        observer(false, null);
+        var ligne = vue.retraits().get(0);
+        verifier(
+                vue.stock(ligne.serial()) == 1920
+                        && ligne.quantite() == 15
+                        && !vue.aVerifier().contains(ligne.serial()),
+                "redstone de la recette GT : 1920 en ME, 5 en poche, attendu 15 à prendre, obtenu "
+                        + ligne.quantite());
+        verifierClic(affiche, tout ? null : PRODUIT);
+        verifier(occupe() && reste == 15, "le clic distant admet le retrait des 15 redstones");
+        var confirmations = surveillerReceptions();
+        finir();
+        verifier(
+                terminal.stock == 1905
+                        && poches.getItem(1).getCount() == 20
+                        && poches.getItem(0).isEmpty()
+                        && terminal.carried.isEmpty()
+                        && recus == 15
+                        && confirmations.equals(List.of(15))
+                        && MC.connection.depots == 1
+                        && MC.connection.lotsServeur.isEmpty(),
+                "le bouton a complété la pile à 20 en un dépôt et débité 15 du réseau distant");
+    }
+
+    private static void reliquat(String scenario) throws ReflectiveOperationException {
+        boolean pileEntamee = !scenario.equals("tout-piles-poste");
+        MC.solo = !scenario.equals("prendre-pile-distante");
+        testerPoste = verifierDestination = MC.solo;
+        besoin = pileEntamee ? 64 : 207;
+        int[] capacites = new int[36];
+        java.util.Arrays.fill(capacites, 64);
+        var terminal = preparer(besoin, 64, capacites);
+        var inventaire = MC.player.inventory();
+        int initial = pileEntamee ? 49 : 0;
+        if (pileEntamee) inventaire.setItem(12, new ItemStack(PRODUIT.id, initial, 64));
+        affiche = ecran;
+        menu = null;
+        verifierClic(affiche, pileEntamee ? PRODUIT : null);
+        for (int i = 0; i < 512; i++) {
+            if (reponseServeur != null) {
+                var rappel = reponseServeur;
+                reponseServeur = null;
+                rappel.run();
+            }
+            if (!MC.connection.paquets.isEmpty()) MC.connection.confirmer();
+            if (!occupe()) break;
+            tick();
+        }
+        var piles =
+                inventaire.cases.stream()
+                        .filter(p -> !p.isEmpty())
+                        .map(ItemStack::getCount)
+                        .sorted()
+                        .toList();
+        int retire = besoin - initial;
+        verifier(
+                !occupe()
+                        && terminal.stock == 1000 - retire
+                        && recus == retire
+                        && terminal.carried.isEmpty()
+                        && inventaire.quantite(PRODUIT.id) == besoin,
+                "conservation du quota, des poches et du curseur");
+        var attendues = pileEntamee ? List.of(64) : List.of(15, 64, 64, 64);
+        verifier(piles.equals(attendues), "piles attendues " + attendues + ", reçues " + piles);
+        if (MC.solo) {
+            var groupes = pileEntamee ? List.of(15) : List.of(1, 1, 1, 15);
+            verifier(
+                    MC.connection.lotsServeur.equals(groupes),
+                    "interactions par tâche du serveur : " + MC.connection.lotsServeur);
+        } else {
+            verifier(
+                    MC.connection.lotsServeur.isEmpty()
+                            && MC.connection.actions.equals(
+                                    Collections.nCopies(15, Action.PICKUP_SINGLE)),
+                    "le client distant utilise les actions AE2 du terminal");
+        }
+        verifier(MC.connection.depots == 1, "le reliquat est déposé en une seule fois");
+    }
+
+    private static void refusPartielDuSolde() throws ReflectiveOperationException {
+        var terminal = preparer(15, 64, 64);
+        terminal.stock = 5;
+        var confirmations = surveillerReceptions();
+        tick();
+        MC.connection.confirmer();
+        verifier(
+                terminal.carried.getCount() == 5
+                        && confirmations.isEmpty()
+                        && MC.connection.lotsServeur.equals(List.of(6)),
+                "cinq unités au curseur, le premier refus arrête les interactions du groupe");
+        terminal.stock = 10;
+        finir();
+        verifier(
+                terminal.stock == 0
+                        && terminal.carried.isEmpty()
+                        && recus == 15
+                        && MC.player.inventory().getItem(0).getCount() == 15
+                        && confirmations.equals(List.of(5, 10))
+                        && MC.connection.depots == 2
+                        && MC.connection.lotsServeur.equals(List.of(6, 10)),
+                "après réimport, le second groupe complète le gain confirmé");
+    }
+
+    private static void reponsesDistantes(String scenario) throws ReflectiveOperationException {
+        MC.solo = false;
+        var terminal = preparer(15, 64, 64, 64);
+        var inventaire = MC.player.inventory();
+        inventaire.setItem(1, new ItemStack(PRODUIT.id, 49, 64));
+        var confirmations = surveillerReceptions();
+        tick();
+        verifier(
+                MC.connection.paquets.size() == 15 && terminal.stock == 1000,
+                "avant la première réponse, 15 actions AE2 du solde doivent être en vol, observé : "
+                        + MC.connection.paquets.size());
+        if (scenario.equals("refus-total-distant")) {
+            terminal.stock = 0;
+            for (int i = 0; i < 15; i++) MC.connection.confirmer();
+            tick();
+            verifier(
+                    occupe() && terminal.carried.isEmpty() && MC.connection.paquets.isEmpty(),
+                    "aucun clic de dépôt tant que le curseur est vide");
+            echeance = 0;
+            tick();
+            verifier(
+                    !occupe()
+                            && MC.connection.depots == 0
+                            && confirmations.isEmpty()
+                            && MC.connection.actions.size() == 15,
+                    "le refus total expire sans relance");
+            return;
+        }
+        boolean arreter = scenario.equals("arret-distant");
+        boolean fermer = scenario.equals("echap-distant");
+        boolean refus = scenario.equals("refus-distant");
+        boolean manquePlace = scenario.equals("place-distante");
+        if (refus) terminal.stock = 5;
+        for (int i = 0; i < 3; i++) MC.connection.confirmer();
+        if (arreter) terminer("Retrait ME arrêté."); // avant l'émission du dépôt
+        if (manquePlace) inventaire.setItem(1, new ItemStack(PRODUIT.id, 60, 64));
+        for (int i = 0; i < 4; i++) tick();
+        int depots = arreter ? 0 : 1;
+        verifier(
+                MC.connection.paquets.size() == 12 + depots
+                        && terminal.carried.getCount() == 3
+                        && MC.connection.depots == depots
+                        && confirmations.isEmpty(),
+                "au premier gain, un seul dépôt suit les extractions en vol, sauf après Arrêter");
+        if (fermer) echap(); // le clic de dépôt est déjà dans la file FIFO
+        for (int i = 0; i < 4; i++) MC.connection.confirmer();
+        tick();
+        verifier(
+                MC.connection.paquets.size() == 8 + depots
+                        && MC.connection.depots == depots
+                        && confirmations.isEmpty(),
+                "aucune relance ou validation intermédiaire");
+        for (int i = 0; i < 8; i++) MC.connection.confirmer();
+        tick();
+        int gain = refus ? 5 : 15;
+        verifier(
+                terminal.carried.getCount() == gain
+                        && confirmations.isEmpty()
+                        && MC.connection.paquets.size() == depots
+                        && MC.connection.actions.equals(
+                                Collections.nCopies(15, Action.PICKUP_SINGLE)),
+                "le serveur a traité toutes les prises, aucun crédit avant le dépôt");
+        if (arreter) {
+            verifier(
+                    !occupe() && terminal.stock == 985 && inventaire.getItem(1).getCount() == 49,
+                    "le lot déjà envoyé reste au curseur après Arrêter");
+            return;
+        }
+        MC.connection.confirmer();
+        if (refus) terminal.stock = 10; // stock de nouveau accessible après le dépôt partiel
+        tick();
+        int poche = manquePlace ? 0 : 1;
+        int avantDepot = manquePlace ? 0 : 49;
+        verifier(
+                terminal.carried.isEmpty()
+                        && confirmations.equals(List.of(gain))
+                        && inventaire.getItem(poche).getCount() == avantDepot + gain,
+                "le dépôt confirmé couvre le gain physique de la case choisie");
+        if (refus) {
+            finir();
+            verifier(
+                    terminal.stock == 0
+                            && confirmations.equals(List.of(5, 10))
+                            && MC.connection.actions.size() == 25
+                            && MC.connection.depots == 2
+                            && inventaire.getItem(1).getCount() == 64,
+                    "le complément est redemandé seulement après le dépôt confirmé de cinq");
+        } else {
+            verifier(
+                    !occupe()
+                            && terminal.stock == 985
+                            && MC.connection.paquets.isEmpty()
+                            && MC.connection.depots == 1
+                            && (manquePlace
+                                    ? inventaire.getItem(1).getCount() == 60
+                                    : inventaire.getItem(0).isEmpty()),
+                    "les quinze unités tiennent dans la case de destination, même après Échap");
+        }
+    }
 
     private static void testerSequence(String nom) throws ReflectiveOperationException {
         boolean recharge = nom.startsWith("reappro");
         boolean plafond = nom.equals("plafond");
         boolean perime = nom.equals("mesure");
-        besoin = recharge ? 3 : perime ? 1 : 2;
+        besoin = recharge ? 129 : perime ? 1 : 2;
         testerPoste = true;
         verifierDestination = perime || nom.equals("reappro-verifie");
-        var terminal = preparer(besoin, 64, 64);
+        var terminal = preparer(besoin, 64, 64, 64, 64);
         affiche = ecran;
-        terminal.stock = plafond ? 1_000_002 : 4;
+        long initial = plafond ? 3_000_000_002L : recharge ? 256 : 4;
+        terminal.stock = initial;
         menu = null;
         verifierClic(affiche, null);
         reponseServeur.run();
@@ -1071,13 +1325,13 @@ public final class RetraitTerminalMeTest {
                 var r = reponseServeur;
                 reponseServeur = null;
                 int perso = MC.player.inventory().quantite(PRODUIT.id);
-                if (recharge && perso == 1 && !injecteImport) {
-                    // Un import remplace la première canne retirée avant le relevé AE2.
+                if (recharge && perso == 64 && !injecteImport) {
+                    // Un import remplace la première pile retirée avant le relevé AE2.
                     System.out.printf(
-                            "import externe ME=%d->%d%n", terminal.stock, terminal.stock + 1);
-                    terminal.stock++;
+                            "import externe ME=%d->%d%n", terminal.stock, terminal.stock + 64);
+                    terminal.stock += 64;
                     injecteImport = true;
-                } else if (recharge && perso == 2 && !injecteExport) {
+                } else if (recharge && perso == 128 && !injecteExport) {
                     // Une autre canne est livrée entre les deux relevés, avant la 3e prise.
                     System.out.printf(
                             "export externe ME=%d->%d, bain=%d->%d%n",
@@ -1114,14 +1368,15 @@ public final class RetraitTerminalMeTest {
                 MC.player.inventory().quantite(PRODUIT.id),
                 terminal.carried.getCount(),
                 terminal.extractions);
-        int attendu = recharge ? 2 : 0;
+        int attendu = recharge ? 128 : 0;
         verifier(
                 !occupe()
                         && dansLeBain == 1
-                        && terminal.extractions == attendu
+                        && terminal.extractions == (recharge ? 2 : 0)
+                        && (!recharge || (injecteImport && injecteExport))
                         && terminal.carried.isEmpty()
                         && MC.player.inventory().quantite(PRODUIT.id) == attendu
-                        && terminal.stock == (plafond ? 1_000_001 : recharge ? 2 : 3),
+                        && terminal.stock == initial + (recharge ? 64 : 0) - 1 - attendu,
                 "retrait limité au quota certain");
     }
 
@@ -1132,6 +1387,17 @@ public final class RetraitTerminalMeTest {
     public static void main(String[] args) throws ReflectiveOperationException {
         ACCES = accesFixture();
         switch (args[0]) {
+            case "prendre-redstone-distante", "tout-redstone-distante" -> redstoneDistante(
+                    args[0].startsWith("tout"));
+            case "reponses-distantes",
+                    "arret-distant",
+                    "echap-distant",
+                    "refus-distant",
+                    "refus-total-distant",
+                    "place-distante" -> reponsesDistantes(args[0]);
+            case "tout-piles-poste", "prendre-pile-entamee", "prendre-pile-distante" -> reliquat(
+                    args[0]);
+            case "refus-partiel-solde" -> refusPartielDuSolde();
             case "reappro", "reappro-verifie", "mesure", "plafond" -> testerSequence(args[0]);
             case "livraison-inconnue", "livraison-verifiee", "retrait-identifie" -> livraison(
                     args[0]);

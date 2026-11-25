@@ -164,11 +164,13 @@ final class EntreesTerminalMe {
         }
         var mc = Minecraft.getInstance();
         var serveur = mc.getSingleplayerServer();
-        var inconnu = new Releve(Map.of(), Set.of(), Set.copyOf(recettes));
         if (serveur == null) {
-            retour.accept(inconnu);
+            // Le terminal distant synchronise son stock. Les entrées des machines distantes
+            // ne sont pas transmises : calculer le besoin de l'arbre avec les stocks connus.
+            retour.accept(VIDE);
             return;
         }
+        var inconnu = new Releve(Map.of(), Set.of(), Set.copyOf(recettes));
         var joueur = mc.player;
         var monde = mc.level;
         var contexte = Contexte.du(menu, arbre);
@@ -237,6 +239,7 @@ final class EntreesTerminalMe {
             ItemStack variante,
             int poche,
             Object action,
+            int repetitions,
             Method interaction,
             Consumer<Boolean> refus) {
         var mc = Minecraft.getInstance();
@@ -246,20 +249,19 @@ final class EntreesTerminalMe {
                 () -> {
                     try {
                         var p = contexte.joueur(serveur);
+                        boolean verifierPoste = !recettes.isEmpty();
                         if (p != null
-                                && derniere != null
-                                && p.containerMenu == terminal.get()
-                                && p.containerMenu.getCarried().isEmpty()) {
-                            var grille = reseau.get();
-                            var mesure = observer(p, contexte, Map.of());
-                            if (!derniere.identique(mesure) || grille != reseau.get()) {
-                                mc.execute(() -> refus.accept(true));
-                                return;
+                                && p.containerMenu.getCarried().isEmpty()
+                                && (!verifierPoste
+                                        || derniere != null && p.containerMenu == terminal.get())) {
+                            if (verifierPoste) {
+                                var grille = reseau.get();
+                                var mesure = observer(p, contexte, Map.of());
+                                if (!derniere.identique(mesure) || grille != reseau.get()) {
+                                    mc.execute(() -> refus.accept(true));
+                                    return;
+                                }
                             }
-                            // Même méthode que le paquet AE2, sur le menu du joueur et dans la
-                            // tâche
-                            // qui vient de vérifier ses entrées. Elle garde ses droits et son coût
-                            // AE.
                             var signature =
                                     interaction
                                             .getDeclaringClass()
@@ -271,15 +273,23 @@ final class EntreesTerminalMe {
                                             || (inventaire.getSlotWithRemainingSpace(variante) < 0
                                                     && inventaire.getFreeSlot() == poche);
                             var avant = mouvements.niveaux.get(cle);
-                            if (avant != null
+                            if ((!verifierPoste || avant != null)
                                     && destinationLibre
                                     && cle.equals(signature.invoke(p.containerMenu, serial))) {
-                                interaction.invoke(p.containerMenu, serial, action);
+                                // Chaque interaction conserve les droits et le coût AE2. Aucun
+                                // import ou export d'un autre tick ne s'intercale dans le lot.
+                                for (int i = 0; i < repetitions; i++) {
+                                    interaction.invoke(p.containerMenu, serial, action);
+                                    var curseur = p.containerMenu.getCarried();
+                                    if (curseur.getCount() != i + 1
+                                            || !ItemStack.isSameItemSameTags(variante, curseur))
+                                        break;
+                                }
                                 var recu =
                                         poche < 0
                                                 ? p.containerMenu.getCarried()
                                                 : inventaire.getItem(poche);
-                                if (ItemStack.isSameItemSameTags(variante, recu))
+                                if (avant != null && ItemStack.isSameItemSameTags(variante, recu))
                                     mouvements.niveaux.put(
                                             cle, Math.max(0L, avant - recu.getCount()));
                                 return;

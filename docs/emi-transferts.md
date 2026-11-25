@@ -93,8 +93,15 @@ l’objet choisi (clic sur son icône). Le clic relit le terminal et l’arbre �
 le retrait, les quantités restantes baissent, les objets terminés sont soulignés en vert et
 **Tout** devient **Arrêter**. Un clic ailleurs dans le terminal arrête aussi le retrait.
 Le retrait privilégie les piles entières de la taille de l’objet. Une pile peut aller directement
-dans une case libre. Quand le reste à prendre et la place suffisent, AE2 prend une demi-pile,
-puis ajuste le solde à l’unité. Chaque lot attend la confirmation du serveur avant de continuer.
+dans une case libre. Quand le reste à prendre et la place suffisent, AE2 prend une demi-pile.
+Le solde complète en priorité une pile du même objet et de la même variante. S’il te manque
+15 lingots et que tu en as déjà 5 dans une case, un seul dépôt y porte la pile à 20.
+Sur serveur distant, le panneau envoie à la suite les prises unitaires qu’accepte AE2.
+Il attend le dépôt dans les poches avant de passer au lot suivant.
+Le survol d’un ingrédient donne son stock dans ME et la quantité à prendre pour l’arbre.
+Les ingrédients des recettes GregTech sont disponibles avec **Prendre** et **Tout** même
+quand le serveur ne transmet pas le contenu des machines. Dans ce cas, des ingrédients
+déjà chargés au poste peuvent encore figurer dans la quantité proposée.
 Le relevé est valable tant que le menu du terminal est ouvert. Laisse le curseur vide avant
 de lancer le retrait ; en cas d’interruption, les objets déjà retirés peuvent se trouver sur
 le curseur. Les objets seulement autocraftables et les fluides du réseau restent à gérer dans

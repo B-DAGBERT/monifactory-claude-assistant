@@ -47,7 +47,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 public final class TerminalMe {
     private record Entree(long serial, Object cle, ItemStack pile, long quantite) {}
 
-    private record Lot(long serial, ItemStack pile, int quantite) {}
+    private record Lot(long serial, Object cle, ItemStack pile, int quantite) {}
 
     private record Acces(
             Class<?> menu,
@@ -81,7 +81,13 @@ public final class TerminalMe {
             List<PlanRetrait.Stock<EmiStack>> outils,
             EntreesTerminalMe.Releve postes,
             Set<EmiRecipe> incertaines,
-            List<Lot> retraits) {}
+            Set<Long> aVerifier,
+            List<Lot> retraits) {
+        long stock(long serial) {
+            for (var entree : stock) if (entree.serial() == serial) return entree.quantite();
+            return 0;
+        }
+    }
 
     private record Recherche(
             InstantaneArbreEmi arbre,
@@ -118,6 +124,7 @@ public final class TerminalMe {
     private static Slot destination;
     private static ItemStack depotServeur;
     private static boolean direct;
+    private static boolean soldeDistant;
     private static long echeance;
     private static boolean erreur;
     private static int ticks;
@@ -294,7 +301,8 @@ public final class TerminalMe {
         clicEnAttente = clic;
         var observateur = recherche(instantane).observateur();
         var quantites = new HashMap<Object, Long>();
-        if (!observateur.recettes().isEmpty())
+        if (Minecraft.getInstance().getSingleplayerServer() != null
+                && !observateur.recettes().isEmpty())
             for (var entree : lire(menu, instantane, clic))
                 quantites.put(entree.cle(), entree.quantite());
         observateur.lire(
@@ -365,12 +373,29 @@ public final class TerminalMe {
             quantites[prise.index()] = prise.quantite();
         }
         // Garder visible une ligne ramenée à zéro, avec ses vrais boutons désactivés.
-        if (!postes.entrees().isEmpty() || !incertaines.isEmpty())
-            for (var prise : couverture.retraitsReseau(instantane.machines(), instantane.lots()))
-                indices.add(prise.index());
+        var aVerifier = new HashSet<Long>();
+        if (!postes.entrees().isEmpty() || !incertaines.isEmpty()) {
+            var sansPostes = couverture.retraitsReseau(instantane.machines(), instantane.lots());
+            for (var prise : sansPostes) indices.add(prise.index());
+            if (!incertaines.isEmpty()) {
+                var sansIncertitude =
+                        postes.entrees().isEmpty()
+                                ? sansPostes
+                                : couverture.retraitsReseau(
+                                        instantane.machines(),
+                                        instantane.lots(),
+                                        postes.entrees(),
+                                        Set.of());
+                for (var prise : sansIncertitude) {
+                    if (prise.quantite() <= quantites[prise.index()]) continue;
+                    indices.add(prise.index());
+                    aVerifier.add(stock.get(prise.index()).serial());
+                }
+            }
+        }
         for (int i : indices) {
             var entree = stock.get(i);
-            retraits.add(new Lot(entree.serial(), entree.pile(), quantites[i]));
+            retraits.add(new Lot(entree.serial(), entree.cle(), entree.pile(), quantites[i]));
         }
         vue =
                 new Vue(
@@ -386,6 +411,7 @@ public final class TerminalMe {
                         outils,
                         postes,
                         Set.copyOf(incertaines),
+                        Set.copyOf(aVerifier),
                         List.copyOf(retraits));
         InventaireArbreEmi.invalider();
     }
@@ -504,9 +530,10 @@ public final class TerminalMe {
         Font font = Minecraft.getInstance().font;
         int mx = event.getMouseX(), my = event.getMouseY();
         boolean occupe = occupe();
+        if (!occupe && vue == null) return;
         PanneauAssistant.fond(g, d.cadre());
         long total = restantTotal();
-        boolean incertain = !occupe && vue != null && !vue.incertaines().isEmpty();
+        boolean incertain = !occupe && !vue.aVerifier().isEmpty();
         String detail =
                 incertain
                         ? "Poste à vérifier"
@@ -534,25 +561,40 @@ public final class TerminalMe {
             var lot = objets.get(n);
             var z = d.icone(rang);
             int quantite = restant(n);
+            boolean posteInconnu = !occupe && vue.aVerifier().contains(lot.serial());
             PanneauAssistant.caseIcone(
                     g, z, !occupe && ItemStack.isSameItemSameTags(lot.pile(), choisi));
             ItemStack icone = lot.pile().copy();
             icone.setCount(1);
             g.renderItem(icone, z.x() + 1, z.y() + 1);
-            PanneauAssistant.nombre(g, font, z, quantite);
+            if (posteInconnu && quantite == 0)
+                PanneauAssistant.indication(g, font, z, "?", Theme.JAUNE);
+            else PanneauAssistant.nombre(g, font, z, quantite);
             if (occupe && quantite == 0) PanneauAssistant.etat(g, z, Theme.VERT);
-            if (z.contient(mx, my))
-                infobulle =
-                        occupe
-                                ? List.of(
-                                        lot.pile().getHoverName(),
-                                        gris(quantite == 0 ? "Retiré" : quantite + " restants"))
-                                : List.of(
-                                        lot.pile().getHoverName(),
-                                        gris(quantite + " à prendre"),
-                                        Component.literal("Clic : choisir pour Prendre")
-                                                .withStyle(
-                                                        s -> s.withColor(PanneauAssistant.BLEU)));
+            if (z.contient(mx, my)) {
+                infobulle = new ArrayList<>();
+                infobulle.add(lot.pile().getHoverName());
+                if (occupe) {
+                    infobulle.add(gris(quantite == 0 ? "Retiré" : quantite + " restants"));
+                } else {
+                    infobulle.add(gris(vue.stock(lot.serial()) + " en stock dans le réseau ME"));
+                    if (quantite > 0) infobulle.add(gris(quantite + " à prendre"));
+                    if (posteInconnu) {
+                        infobulle.add(gris("Entrées machine à vérifier pour cette branche."));
+                        infobulle.add(gris("Retrait manuel dans le terminal AE2 pour le reste."));
+                    } else if (quantite == 0)
+                        infobulle.add(gris("Aucun retrait prévu pour l’arbre."));
+                    if (Minecraft.getInstance().getSingleplayerServer() == null
+                            && posteARevalider())
+                        infobulle.add(
+                                gris(
+                                        "Quantité calculée sans lire les entrées des machines du serveur."));
+                    if (quantite > 0)
+                        infobulle.add(
+                                Component.literal("Clic : choisir pour Prendre")
+                                        .withStyle(s -> s.withColor(PanneauAssistant.BLEU)));
+                }
+            }
         }
         if (d.pages()) {
             boolean avant =
@@ -761,11 +803,12 @@ public final class TerminalMe {
             if (curseur.isEmpty()
                     && ItemStack.isSameItemSameTags(pile, retraits.get(index).pile())
                     && gain > 0
-                    && (direct ? gain <= attendus : gain == avant)) {
-                if (direct) {
+                    && (direct || soldeDistant ? gain <= attendus : gain == avant)) {
+                if (direct || soldeDistant) {
                     reste -= gain;
                     attendus = 0;
                     direct = false;
+                    soldeDistant = false;
                 }
                 recus += gain;
                 avant = 0;
@@ -815,10 +858,14 @@ public final class TerminalMe {
                 terminer("Retrait ME interrompu : le curseur a changé.");
                 return;
             }
-            reste -= gain;
             avant = volume;
             deposerPile = attendus > 1;
-            attendus = 0;
+            // Sur un serveur distant, ce curseur peut encore recevoir la suite du solde
+            // déjà demandé. Seul le dépôt confirmera la quantité réellement prise.
+            if (!soldeDistant) {
+                reste -= gain;
+                attendus = 0;
+            }
         }
         if (avant != curseur.getCount()
                 || avant > 0 && !ItemStack.isSameItemSameTags(curseur, lot.pile())) {
@@ -835,6 +882,7 @@ public final class TerminalMe {
         Slot cible = null;
         Slot cibleDirecte = null;
         int place = 0;
+        boolean fusion = false;
         for (Slot slot : menu.slots) {
             if (slot.container != inventaire || !slot.isActive() || !slot.mayPlace(lot.pile()))
                 continue;
@@ -846,11 +894,16 @@ public final class TerminalMe {
                     && slot.getContainerSlot() == emplacementNatif
                     && ici.isEmpty()
                     && libre >= taillePile) cibleDirecte = slot;
-            if (libre <= place) continue;
+            if (libre <= 0 || libre < (soldeDistant ? attendus : avant)) continue;
+            // Une pile entière garde sa case. Pour le solde, compléter d'abord une pile entamée.
+            boolean completer = !ici.isEmpty() && (avant > 0 || reste < taillePile);
+            if (fusion && !completer) continue;
+            if (completer == fusion && libre <= place) continue;
             cible = slot;
             place = libre;
+            fusion = completer;
         }
-        if (cible == null || place < avant) {
+        if (cible == null) {
             terminer("Retrait ME arrêté : manque de place dans l’inventaire.");
             return;
         }
@@ -881,41 +934,50 @@ public final class TerminalMe {
             depotAvant = 0;
             direct = true;
             attendus = taillePile;
-            retirer(lot, ACCES.pileDirecte());
+            retirer(lot, ACCES.pileDirecte(), 1);
             return;
         }
         int volume = volumeRetrait(reste, taillePile, place, avant);
         Object action = ACCES.un();
+        int repetitions = 1;
         if (volume == taillePile && taillePile > 1) action = ACCES.pileEntiere();
         else if (volume > 1 && ACCES.demiPile() != null) action = ACCES.demiPile();
-        else volume = 1;
+        else {
+            // Le paquet AE2 ne précise pas de quantité. Réunir le solde au curseur.
+            if (avant == 0) repetitions = Math.min(reste, place);
+            volume = repetitions;
+        }
         attendus = volume;
-        retirer(lot, action);
+        retirer(lot, action, repetitions);
     }
 
-    private static void retirer(Lot lot, Object action) throws ReflectiveOperationException {
-        if (!posteARevalider() || Minecraft.getInstance().getSingleplayerServer() == null) {
+    private static void retirer(Lot lot, Object action, int repetitions)
+            throws ReflectiveOperationException {
+        if (Minecraft.getInstance().getSingleplayerServer() == null) {
+            // La connexion traite toutes les prises avant le clic de dépôt émis en réponse
+            // au premier gain. Le clic vide donc le curseur réel, même après un refus partiel.
+            soldeDistant = repetitions > 1;
+            for (int i = 0; i < repetitions; i++)
+                ACCES.retirer().invoke(menu, lot.serial(), action);
+            return;
+        }
+        if (!posteARevalider() && repetitions == 1) {
             ACCES.retirer().invoke(menu, lot.serial(), action);
             return;
         }
         var retrait = retraits;
-        var cle =
-                vue.stock().stream()
-                        .filter(e -> e.serial() == lot.serial())
-                        .findFirst()
-                        .orElseThrow()
-                        .cle();
         int poche = direct ? destination.getContainerSlot() : -1;
-        recherche
+        recherche(arbre)
                 .observateur()
                 .retirer(
                         menu,
                         arbre,
                         lot.serial(),
-                        cle,
+                        lot.cle(),
                         lot.pile().copy(),
                         poche,
                         action,
+                        repetitions,
                         ACCES.retirer(),
                         reessayer -> {
                             if (retrait != retraits || !occupe() || lot != retrait.get(index))
@@ -1009,6 +1071,7 @@ public final class TerminalMe {
     }
 
     private static void terminer(String texte) {
+        soldeDistant = false;
         menu = null;
         ecran = null;
         connexion = joueur = niveau = null;

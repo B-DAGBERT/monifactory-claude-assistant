@@ -120,10 +120,13 @@ public final class PanneauAssistant {
 
     /** Nombre court en bas à droite d'une icône, à la place de la quantité d'une pile. */
     public static void nombre(GuiGraphics g, Font font, Zone z, long n) {
-        String texte = Theme.nombre(n);
+        indication(g, font, z, Theme.nombre(n), Theme.TEXTE);
+    }
+
+    public static void indication(GuiGraphics g, Font font, Zone z, String texte, int couleur) {
         g.pose().pushPose();
         g.pose().translate(0, 0, 200);
-        g.drawString(font, texte, z.x() + 18 - font.width(texte), z.y() + 10, Theme.TEXTE, true);
+        g.drawString(font, texte, z.x() + 18 - font.width(texte), z.y() + 10, couleur, true);
         g.pose().popPose();
     }
 

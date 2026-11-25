@@ -62,6 +62,19 @@ piles de 64 et deux bûches, avec un débit de 130 dans le terminal. Refaire ave
 case presque pleine, puis avec **Arrêter** pendant le premier transfert. Comparer le stock
 restant dans ME, celui des poches et celui du curseur après la dernière confirmation.
 
+Pour vérifier que le solde rejoint une pile entamée, demander 20 plaques de cuivre à la
+cintreuse avec EMI, garder 5 lingots de cuivre dans une case et en stocker 70 dans ME.
+Laisser plusieurs cases libres et cliquer **Prendre** sur le cuivre. En solo, attendre un
+seul dépôt de 15 dans la case des 5 lingots. Elle doit en contenir 20, le terminal 55 et
+le curseur doit être vide.
+
+Sur un serveur dédié de test avec le mod uniquement sur le client, sélectionner une recette
+GregTech de papier qui consomme une canne par opération. Demander 20 opérations, porter
+5 cannes et en stocker 1 920 dans ME. Le panneau doit proposer 15 cannes et afficher le
+stock de 1 920 au survol. Essayer **Prendre**, puis **Tout** après remise en place du même
+stock. Dans les deux cas, vérifier 1 905 cannes dans ME, une seule pile de 20 en poche et un
+curseur vide.
+
 ### Chaîne sac, terminal et cintreuse à 63, 64 et 65 plaques
 
 Utiliser la copie du pack et le [pack de données de test](../tests/fixtures/craft_lab/). Dans

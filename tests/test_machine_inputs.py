@@ -48,7 +48,8 @@ STUBS["net.minecraft.client.Minecraft"] = (
     )
     .replace(
         "public static class ClientConnection {",
-        """public static class ClientConnection {
+        """public Object getSingleplayerServer(){return null;}
+        public static class ClientConnection {
             public java.util.function.Consumer<Object> sender;
             public void send(Object packet){sender.accept(packet);}""",
     )
