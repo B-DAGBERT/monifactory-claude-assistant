@@ -286,6 +286,8 @@ def compiler_retrait_me(dossier):
             "private static void lancer(",
             "private static void avancer(",
             "private static int volumeRetrait(",
+            "private static void clicCase(",
+            "private static String bilan(",
             "private static void attendre(",
             "private static void terminer(",
         )

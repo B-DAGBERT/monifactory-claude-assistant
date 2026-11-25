@@ -134,7 +134,14 @@ final class RetraitMeCycle {
         var couverture = StockFabricationEmi.courant(personnel.get(), reseau);
         var lots =
                 couverture.retraitsReseau(arbre.machines(), arbre.lots()).stream()
-                        .map(p -> new Lot(1, terminal.variante, terminal.variante, p.quantite()))
+                        .map(
+                                p ->
+                                        new Lot(
+                                                1,
+                                                terminal.variante,
+                                                terminal.variante,
+                                                null,
+                                                p.quantite()))
                         .toList();
         vue = new Vue(arbre, lots);
     }
@@ -145,6 +152,14 @@ final class RetraitMeCycle {
 
     private static void signaler(Throwable erreur) {
         throw new AssertionError(erreur);
+    }
+
+    private static class FluidStack {}
+
+    private static class RemplissageMe {}
+
+    private static void avancerFluide(Lot lot) {
+        throw new AssertionError("terminal sans liquide");
     }
 
     // ACTIONS_TERMINAL_ME

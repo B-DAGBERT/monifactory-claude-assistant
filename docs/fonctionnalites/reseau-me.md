@@ -16,7 +16,14 @@
   peut déjà compter ce tampon.
 - Déduire les poches, les sacs pris en compte et les tampons. Retenir les composants prêts avant
   les matières de leur branche. Seules les entrées natives en stock autorisent le retrait.
-  L’autofabrication et les fluides du réseau restent à gérer dans AE2.
+  L’autofabrication reste à gérer dans AE2. Le volume du réseau couvre la branche fluide de
+  l’arbre tant que le terminal est ouvert. **Prendre** et **Tout** mesurent ce volume en mB.
+- Pour un retrait sous 1 000 mB, essayer d’abord une **Glass Vial** compatible, puis un drum.
+  À partir de 1 000 mB, utiliser un drum. Pour une pile de contenants, il faut une case libre
+  pour en isoler un. AE2 remplit le contenant jusqu’à sa capacité ou à épuisement du stock.
+  Le volume peut dépasser le besoin affiché. Après confirmation du dépôt dans les poches,
+  le volume porté est pris en compte par EMI et peut servir à **Envoyer**. Si le contenant
+  manque, **Tout** poursuit avec les autres ingrédients disponibles.
 - Relire le terminal et l’arbre au clic. Prendre les piles entières lorsque la quantité et
   la place le permettent, puis les demi-piles. Pour le solde, compléter en priorité une pile
   de même variante. Le solde rejoint le curseur avant un seul dépôt par case. En solo, ses

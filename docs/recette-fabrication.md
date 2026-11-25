@@ -75,6 +75,16 @@ stock de 1 920 au survol. Essayer **Prendre**, puis **Tout** après remise en pl
 stock. Dans les deux cas, vérifier 1 905 cannes dans ME, une seule pile de 20 en poche et un
 curseur vide.
 
+### Retrait de liquide ME dans les poches
+
+Dans la copie du pack, choisir la recette de papier au bain chimique qui consomme 100 mB
+d’eau distillée par opération. Stocker 750 mB dans ME, garder les cannes en poche et demander
+5 opérations. Avec une pile de fioles, un drum et une case libre, **Tout** remplit une seule
+fiole. Le terminal débite 750 mB, les autres fioles restent empilées et le curseur est vide.
+Refaire sans fiole pour vérifier le repli sur le drum. Demander ensuite 10 puis 15 opérations,
+avec assez de liquide. Le panneau utilise un drum même si une fiole est disponible.
+Rejouer sans drum au-dessus du seuil et vérifier que le liquide reste dans ME.
+
 ### Chaîne sac, terminal et cintreuse à 63, 64 et 65 plaques
 
 Utiliser la copie du pack et le [pack de données de test](../tests/fixtures/craft_lab/). Dans

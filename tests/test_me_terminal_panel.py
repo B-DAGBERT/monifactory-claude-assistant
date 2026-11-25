@@ -66,7 +66,7 @@ class MeTerminalPanelTests(unittest.TestCase):
         lancer = corps(self.terminal, "private static void lancer(")
         self.assertIn("actualiser(true);", lancer)
         self.assertIn("selection == null", lancer)
-        self.assertIn("ItemStack.isSameItemSameTags(", lancer)
+        self.assertIn("l.serial() == selection", lancer)
         self.assertNotIn("clique à nouveau", lancer)
         self.assertLess(lancer.index("actualiser(true)"), lancer.index("receptionCollecte("))
 
@@ -82,11 +82,9 @@ class MeTerminalPanelTests(unittest.TestCase):
             "couverture.retraitsReseau(instantane.machines(), instantane.lots())", actualiser
         )
         self.assertIn("stock.get(i)", actualiser)
-        self.assertIn(
-            "new Lot(entree.serial(), entree.cle(), entree.pile(), quantites[i])", actualiser
-        )
+        self.assertRegex(actualiser, r"entree\.fluide\(\),\s+quantites\[i\]")
         lecture = corps(self.terminal, "private static List<Entree> lire(")
-        self.assertIn("entrees(repo, recherche.filtre(), complet)", lecture)
+        self.assertIn("entrees(repo, recherche.filtre(), complet || avecFluides)", lecture)
         self.assertIn("ComparaisonEmi.meme(emi, v)", lecture)
         entrees = corps(self.terminal, "private static Collection<?> entrees(")
         self.assertIn("!complet && index != null", entrees)
@@ -111,7 +109,9 @@ class MeTerminalPanelTests(unittest.TestCase):
             encoding="utf-8"
         )
         # Utiliser la quantité de production avant toute projection en entier pour le plan.
-        quantite = re.search(r"new Entree\(serial, cle, pile, (.+)\)\);", self.terminal).group(1)
+        quantite = re.search(
+            r"new Entree\(serial, cle, pile, null, (.+)\)\);", self.terminal
+        ).group(1)
         fixture = fixture.replace(
             "/* STOCK_NATIF */ actif.stock", re.sub(r"\bn\b", "actif.stock", quantite)
         )
@@ -138,6 +138,8 @@ class MeTerminalPanelTests(unittest.TestCase):
                 "private static void retirer(Lot",
                 "private static List<PlanRetrait.Stock<ItemStack>> stocks(",
                 "private static int volumeRetrait(",
+                "private static void clicCase(",
+                "private static String bilan(",
                 "private static Slot destinationFermee(",
                 "public static void confirmer(Object lien, int conteneur, int",
                 "public static void confirmer(Object lien, int conteneur, List",

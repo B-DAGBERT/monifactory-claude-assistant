@@ -67,7 +67,9 @@ public class CoffreTampon {
     "fr.assistantia.compat.emi.TerminalMe": """
 class TerminalMe {
  static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> stock = java.util.List.of();
+ static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> fluides = java.util.List.of();
  static java.util.List<fr.assistantia.PlanRetrait.Stock<net.minecraft.world.item.ItemStack>> stock(){return stock;}
+ static java.util.List<fr.assistantia.PlanRetrait.Stock<dev.emi.emi.api.stack.EmiStack>> stockFluides(){return fluides;}
 }
 """,
     "fr.assistantia.compat.emi.CoffresArbreEmi": """
@@ -213,6 +215,24 @@ def compiler_contrats(directory):
 
 
 class EmiBackpackTreeTests(unittest.TestCase):
+    def test_le_liquide_me_couvre_la_fabrication_apres_le_liquide_porte(self):
+        with tempfile.TemporaryDirectory() as directory:
+            java = compiler_contrats(directory)
+            result = subprocess.run(
+                [
+                    java,
+                    "-ea",
+                    "-cp",
+                    directory,
+                    "fr.assistantia.compat.emi.ParcoursStockTest",
+                    "fluides-me",
+                ],
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_variantes_nbt_dans_emi_et_les_entrees_du_terminal(self):
         with tempfile.TemporaryDirectory() as directory:
             java = compiler_contrats(directory)

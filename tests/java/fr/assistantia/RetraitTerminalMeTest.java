@@ -546,7 +546,9 @@ public final class RetraitTerminalMeTest {
 
     private record StockFabricationEmi(int personnel, List<PlanRetrait.Stock<ItemStack>> stock) {
         static StockFabricationEmi courant(
-                int personnel, List<PlanRetrait.Stock<ItemStack>> stock) {
+                int personnel,
+                List<PlanRetrait.Stock<ItemStack>> stock,
+                List<PlanRetrait.Stock<EmiStack>> fluides) {
             return new StockFabricationEmi(personnel, stock);
         }
 
@@ -572,7 +574,7 @@ public final class RetraitTerminalMeTest {
             AbstractContainerMenu actif, InstantaneArbreEmi instantane, boolean complet) {
         recherche(instantane);
         return actif.stock > 0
-                ? List.of(new Entree(7L, PRODUIT.id, PRODUIT, /* STOCK_NATIF */ actif.stock))
+                ? List.of(new Entree(7L, PRODUIT.id, PRODUIT, null, /* STOCK_NATIF */ actif.stock))
                 : List.of();
     }
 
@@ -630,6 +632,19 @@ public final class RetraitTerminalMeTest {
         message = texte;
     }
 
+    private static class FluidStack {}
+
+    private static class RemplissageMe {}
+
+    private static List<PlanRetrait.Stock<EmiStack>> stocksFluides(List<Entree> entrees) {
+        verifier(entrees.stream().noneMatch(e -> e.fluide() != null), "terminal sans liquide");
+        return List.of();
+    }
+
+    private static void avancerFluide(Lot lot) {
+        throw new AssertionError("terminal sans liquide");
+    }
+
     // EXTRACTION_TRAITEMENT
 
     private static AbstractContainerMenu preparer(int demande, int max, int... capacites) {
@@ -648,7 +663,7 @@ public final class RetraitTerminalMeTest {
         connexion = MC.connection;
         arbreActuel = arbre = new InstantaneArbreEmi();
         PRODUIT = new ItemStack("cable", 1, max);
-        retraits = List.of(new Lot(7L, PRODUIT.id, PRODUIT, demande));
+        retraits = List.of(new Lot(7L, PRODUIT.id, PRODUIT, null, demande));
         index = attendus = avant = recus = 0;
         destination = null;
         depotServeur = null;
@@ -1104,7 +1119,7 @@ public final class RetraitTerminalMeTest {
                         && !vue.aVerifier().contains(ligne.serial()),
                 "redstone de la recette GT : 1920 en ME, 5 en poche, attendu 15 à prendre, obtenu "
                         + ligne.quantite());
-        verifierClic(affiche, tout ? null : PRODUIT);
+        verifierClic(affiche, tout ? null : 7L);
         verifier(occupe() && reste == 15, "le clic distant admet le retrait des 15 redstones");
         var confirmations = surveillerReceptions();
         finir();
@@ -1133,7 +1148,7 @@ public final class RetraitTerminalMeTest {
         if (pileEntamee) inventaire.setItem(12, new ItemStack(PRODUIT.id, initial, 64));
         affiche = ecran;
         menu = null;
-        verifierClic(affiche, pileEntamee ? PRODUIT : null);
+        verifierClic(affiche, pileEntamee ? 7L : null);
         for (int i = 0; i < 512; i++) {
             if (reponseServeur != null) {
                 var rappel = reponseServeur;

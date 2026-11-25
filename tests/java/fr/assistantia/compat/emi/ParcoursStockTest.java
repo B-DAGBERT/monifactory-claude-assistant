@@ -81,6 +81,10 @@ public final class ParcoursStockTest {
         client.player = new Player();
         client.level = new Object();
         InventaireJoueur.sacs = List.of();
+        if (args.length == 1 && args[0].equals("fluides-me")) {
+            fluidesMe();
+            return;
+        }
         var arbreNatif = arbreNatif();
         CoffresArbreEmi.arbre = arbreNatif;
         var stockTerminal = TerminalMe.class.getDeclaredField("stock");
@@ -370,6 +374,38 @@ public final class ParcoursStockTest {
                 .filter(pile -> item.equals(pile.getId().toString()))
                 .mapToLong(EmiStack::getAmount)
                 .sum();
+    }
+
+    private static void fluidesMe() {
+        var eau = new net.minecraft.world.level.material.Fluid("test:water");
+        var liquide = EmiStack.of(eau, null, 1);
+        var minerai = EmiStack.of(new ItemStack(LINGOT, 1));
+        var lireEau =
+                new PlanMachines.Noeud<EmiStack, String>(
+                        s -> ComparaisonEmi.meme(s, liquide),
+                        700,
+                        100,
+                        false,
+                        "distiller",
+                        List.of());
+        var lireMinerai =
+                new PlanMachines.Noeud<EmiStack, String>(
+                        s -> ComparaisonEmi.meme(s, minerai), 2, 1, false, null, List.of());
+        var arbre =
+                new PlanMachines.Noeud<EmiStack, String>(
+                        s -> false, 1, 1, false, "bain", List.of(lireEau, lireMinerai));
+        var porte = List.of(new PlanRetrait.Stock<>(liquide, 200, true));
+        TerminalMe.stock = List.of(new PlanRetrait.Stock<>(new ItemStack(LINGOT, 1), 5, false));
+        TerminalMe.fluides = List.of(new PlanRetrait.Stock<>(liquide, 900, false));
+        var stock = StockFabricationEmi.courant(porte, TerminalMe.stock, TerminalMe.fluides);
+        assert stock.retraitsReseau(arbre, 1)
+                .equals(List.of(new PlanRetrait.Prise(0, 2), new PlanRetrait.Prise(1, 500)));
+        assert stock.operations(arbre, 1).stream().noneMatch(o -> o.recette().equals("distiller"));
+        assert StockFabricationEmi.pourMachines(porte).operations(arbre, 1).stream()
+                .anyMatch(o -> o.recette().equals("distiller"));
+        var inventaire = InventaireArbreEmi.completer(new EmiPlayerInventory(List.of()));
+        assert inventaire.inventory.values().stream()
+                .anyMatch(p -> p.getKey().equals(eau) && p.getAmount() == 900);
     }
 
     private static EmiStack plaque() {

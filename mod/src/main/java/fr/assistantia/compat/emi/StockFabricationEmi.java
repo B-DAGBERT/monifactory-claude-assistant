@@ -32,21 +32,29 @@ record StockFabricationEmi(
     static StockFabricationEmi courant(
             List<PlanRetrait.Stock<EmiStack>> personnel,
             List<PlanRetrait.Stock<ItemStack>> reseau) {
-        return courant(personnel, reseau, false);
+        return courant(personnel, reseau, List.of());
+    }
+
+    static StockFabricationEmi courant(
+            List<PlanRetrait.Stock<EmiStack>> personnel,
+            List<PlanRetrait.Stock<ItemStack>> reseau,
+            List<PlanRetrait.Stock<EmiStack>> fluidesMe) {
+        return courant(personnel, reseau, fluidesMe, false);
     }
 
     static StockFabricationEmi pourMachines(List<PlanRetrait.Stock<EmiStack>> personnel) {
-        return courant(personnel, List.of(), true);
+        return courant(personnel, List.of(), List.of(), true);
     }
 
     private static StockFabricationEmi courant(
             List<PlanRetrait.Stock<EmiStack>> personnel,
             List<PlanRetrait.Stock<ItemStack>> reseau,
+            List<PlanRetrait.Stock<EmiStack>> fluidesMe,
             boolean pourMachines) {
         var pilesTampon = CoffreTampon.piles();
         // Priorité aux acquisitions et aux lots avant les ingrédients à aller chercher.
         var tampons = tampons(pilesTampon, !pourMachines);
-        var stockMe = horsTampon(reseau, pilesTampon);
+        var stockMe = joindre(horsTampon(reseau, pilesTampon), fluidesMe);
         var externes = joindre(tampons, stockMe);
         var physiques = joindre(personnel, externes);
         var finaux =

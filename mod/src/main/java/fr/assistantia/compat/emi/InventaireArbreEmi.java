@@ -27,6 +27,7 @@ public final class InventaireArbreEmi {
             long tampon,
             long lots,
             List<PlanRetrait.Stock<ItemStack>> reseau,
+            List<PlanRetrait.Stock<EmiStack>> fluidesMe,
             List<PlanRetrait.Stock<ItemStack>> credits,
             List<PlanRetrait.Stock<EmiStack>> outils) {}
 
@@ -49,7 +50,9 @@ public final class InventaireArbreEmi {
         var mc = Minecraft.getInstance();
         if (mc.player == null || !InventaireJoueur.fabricationDisponible()) return natif;
         var resultat = personnel();
-        var stock = StockFabricationEmi.courant(physiques(resultat), TerminalMe.stock());
+        var stock =
+                StockFabricationEmi.courant(
+                        physiques(resultat), TerminalMe.stock(), TerminalMe.stockFluides());
         var reservations = stock.virtuels();
         boolean avecSacs = SacsFabrication.actif();
         if (avecSacs
@@ -195,6 +198,7 @@ public final class InventaireArbreEmi {
             if (!InventaireJoueur.fabricationDisponible()) return;
             var instantane = InstantaneArbreEmi.lire(arbre);
             var reseau = TerminalMe.stock();
+            var fluidesMe = TerminalMe.stockFluides();
             var sources =
                     new Sources(
                             instantane,
@@ -204,6 +208,7 @@ public final class InventaireArbreEmi {
                             CoffreTampon.revision(),
                             MachinesEmi.revisionLotsProduction(),
                             reseau,
+                            fluidesMe,
                             CycleArbreEmi.credits(),
                             MachinesEmi.outilsInstalles());
             var grille = grilles();
@@ -211,7 +216,7 @@ public final class InventaireArbreEmi {
             boolean plisChanges;
             if (modifie) {
                 var personnels = composer(InventaireJoueur.pilesFabrication(), grille);
-                var stock = StockFabricationEmi.courant(physiques(personnels), reseau);
+                var stock = StockFabricationEmi.courant(physiques(personnels), reseau, fluidesMe);
                 ajouter(personnels, stock.tampon());
                 ajouter(personnels, stock.reseau());
                 plisChanges = PLIS.actualiser(arbre, physiques(personnels), stock.virtuels());

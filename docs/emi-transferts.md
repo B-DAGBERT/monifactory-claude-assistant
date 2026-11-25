@@ -104,8 +104,12 @@ quand le serveur ne transmet pas le contenu des machines. Dans ce cas, des ingr�
 déjà chargés au poste peuvent encore figurer dans la quantité proposée.
 Le relevé est valable tant que le menu du terminal est ouvert. Laisse le curseur vide avant
 de lancer le retrait ; en cas d’interruption, les objets déjà retirés peuvent se trouver sur
-le curseur. Les objets seulement autocraftables et les fluides du réseau restent à gérer dans
-AE2. Sur un terminal de fabrication, le panneau **Remplir** de l’établi se place à côté de
+le curseur. Pour un liquide, garde une **Glass Vial** compatible en poche sous 1 000 mB,
+ou un drum compatible pour tout volume. À partir de 1 000 mB, le panneau utilise un drum.
+AE2 peut remplir le contenant au-delà du besoin affiché. Le panneau remet le contenant rempli
+dans les poches et EMI compte alors ce liquide sans le faire fabriquer.
+Les objets seulement autocraftables restent à gérer dans AE2.
+Sur un terminal de fabrication, le panneau **Remplir** de l’établi se place à côté de
 **Réseau ME** sans le recouvrir.
 
 ## Remplir l’établi

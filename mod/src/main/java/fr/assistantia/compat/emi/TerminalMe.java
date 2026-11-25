@@ -2,6 +2,7 @@ package fr.assistantia.compat.emi;
 
 import com.mojang.logging.LogUtils;
 import dev.emi.emi.api.stack.EmiStack;
+import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import fr.assistantia.CoffreTampon;
 import fr.assistantia.DispositionCoffre;
@@ -38,6 +39,7 @@ import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fluids.FluidStack;
 
 /**
  * L'inventaire ME est celui du menu AE2 synchronisé, valable le temps de son ouverture. Le retrait
@@ -45,9 +47,12 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
  * terminal, réservé auprès d'EMI, et dont l'appui comme le relâchement ne vont jamais au terminal.
  */
 public final class TerminalMe {
-    private record Entree(long serial, Object cle, ItemStack pile, long quantite) {}
+    private record Entree(
+            long serial, Object cle, ItemStack pile, FluidStack fluide, long quantite) {}
 
-    private record Lot(long serial, Object cle, ItemStack pile, int quantite) {}
+    private record Lot(long serial, Object cle, ItemStack pile, FluidStack fluide, int quantite) {}
+
+    private record AccesFluide(Class<?> cle, Method pile, Object remplir) {}
 
     private record Acces(
             Class<?> menu,
@@ -76,6 +81,7 @@ public final class TerminalMe {
             int menuRevision,
             List<Entree> stock,
             List<PlanRetrait.Stock<ItemStack>> stockCalcul,
+            List<PlanRetrait.Stock<EmiStack>> fluidesMe,
             long lots,
             List<PlanRetrait.Stock<ItemStack>> credits,
             List<PlanRetrait.Stock<EmiStack>> outils,
@@ -98,13 +104,14 @@ public final class TerminalMe {
     private static final String NOM = "Réseau ME", RETRAIT = "Retrait… ";
     private static final String PRENDRE = "Prendre", TOUT = "Tout", ARRETER = "Arrêter";
     private static final Acces ACCES = charger();
+    private static final AccesFluide ACCES_FLUIDE = chargerFluides();
 
     /** Terminal ouvert et son panneau : objets proposés, choix de Prendre, page. */
     private static AbstractContainerScreen<?> affiche;
 
     private static Disposition disposition;
     private static List<Lot> objets = List.of();
-    private static ItemStack choisi = ItemStack.EMPTY;
+    private static Long choisi;
     private static int page;
     private static long cleDisposition, placeLe;
     private static EntreesTerminalMe.Releve postes = EntreesTerminalMe.VIDE;
@@ -125,6 +132,9 @@ public final class TerminalMe {
     private static ItemStack depotServeur;
     private static boolean direct;
     private static boolean soldeDistant;
+    private static RemplissageMe remplissage;
+    private static long millibuckets;
+    private static boolean contenantManquant;
     private static long echeance;
     private static boolean erreur;
     private static int ticks;
@@ -174,6 +184,17 @@ public final class TerminalMe {
         }
     }
 
+    private static AccesFluide chargerFluides() {
+        if (ACCES == null) return null;
+        try {
+            var cle = Class.forName("appeng.api.stacks.AEFluidKey");
+            var action = Class.forName("appeng.helpers.InventoryAction").getField("FILL_ITEM");
+            return new AccesFluide(cle, cle.getMethod("toStack", int.class), action.get(null));
+        } catch (ReflectiveOperationException | LinkageError absent) {
+            return null;
+        }
+    }
+
     private static Method methodeIndex(Class<?> repo) {
         try {
             return repo.getMethod("getByIngredient", Ingredient.class);
@@ -199,13 +220,36 @@ public final class TerminalMe {
         return vue.stockCalcul();
     }
 
+    static List<PlanRetrait.Stock<EmiStack>> stockFluides() {
+        if (vue == null || vue.menu() != courant() || !InventaireJoueur.fabricationDisponible())
+            return List.of();
+        return vue.fluidesMe();
+    }
+
     private static List<PlanRetrait.Stock<ItemStack>> stocks(List<Entree> entrees) {
         return entrees.stream()
+                .filter(e -> e.fluide() == null)
                 .map(
                         e ->
                                 new PlanRetrait.Stock<>(
                                         e.pile(), (int) Math.min(1_000_000L, e.quantite()), false))
                 .toList();
+    }
+
+    private static List<PlanRetrait.Stock<EmiStack>> stocksFluides(List<Entree> entrees) {
+        return entrees.stream()
+                .filter(e -> e.fluide() != null)
+                .map(
+                        e ->
+                                new PlanRetrait.Stock<>(
+                                        ComparaisonEmi.pourInventaire(iconeFluide(e.fluide())),
+                                        (int) Math.min(1_000_000L, e.quantite()),
+                                        false))
+                .toList();
+    }
+
+    private static EmiStack iconeFluide(FluidStack fluide) {
+        return EmiStack.of(fluide.getFluid(), fluide.getTag(), 1);
     }
 
     private static boolean memeStock(List<Entree> avant, List<Entree> apres) {
@@ -260,24 +304,34 @@ public final class TerminalMe {
         if (repo == null) return List.of();
         var recherche = recherche(arbre);
         var variantes = recherche.variantes();
-        if (variantes.isEmpty()) return List.of();
+        boolean avecFluides = ACCES_FLUIDE != null && !arbre.fluides().isEmpty();
+        if (variantes.isEmpty() && !avecFluides) return List.of();
         var result = new ArrayList<Entree>();
         var vus = new HashSet<Long>();
-        for (Object e : entrees(repo, recherche.filtre(), complet)) {
+        for (Object e : entrees(repo, recherche.filtre(), complet || avecFluides)) {
             long n = (long) ACCES.quantite().invoke(e);
             if (n <= 0) continue;
             Object cle = ACCES.cle().invoke(e);
-            if (!ACCES.item().isInstance(cle)) continue;
-            var choix = variantes.get(ACCES.itemNatif().invoke(cle));
-            if (choix == null) continue;
             long serial = (long) ACCES.serial().invoke(e);
             if (serial == -1 || !vus.add(serial)) continue;
-            var pile = (ItemStack) ACCES.pile().invoke(cle);
-            var emi = ComparaisonEmi.pourInventaire(EmiStack.of(pile));
-            if (choix.stream().anyMatch(v -> ComparaisonEmi.meme(emi, v)))
-                result.add(new Entree(serial, cle, pile, n));
+            if (ACCES.item().isInstance(cle)) {
+                var choix = variantes.get(ACCES.itemNatif().invoke(cle));
+                if (choix == null) continue;
+                var pile = (ItemStack) ACCES.pile().invoke(cle);
+                var emi = ComparaisonEmi.pourInventaire(EmiStack.of(pile));
+                if (choix.stream().anyMatch(v -> ComparaisonEmi.meme(emi, v)))
+                    result.add(new Entree(serial, cle, pile, null, n));
+            } else if (avecFluides && ACCES_FLUIDE.cle().isInstance(cle)) {
+                var fluide = (FluidStack) ACCES_FLUIDE.pile().invoke(cle, 1);
+                var emi = ComparaisonEmi.pourInventaire(iconeFluide(fluide));
+                if (arbre.fluides().stream().anyMatch(v -> ComparaisonEmi.meme(emi, v)))
+                    result.add(new Entree(serial, cle, ItemStack.EMPTY, fluide, n));
+            }
         }
-        result.sort(java.util.Comparator.comparingLong(Entree::serial));
+        // Les indices du plan correspondent à la projection objets, suivie des fluides.
+        result.sort(
+                java.util.Comparator.comparing((Entree e) -> e.fluide() != null)
+                        .thenComparingLong(Entree::serial));
         return List.copyOf(result);
     }
 
@@ -304,7 +358,7 @@ public final class TerminalMe {
         if (Minecraft.getInstance().getSingleplayerServer() != null
                 && !observateur.recettes().isEmpty())
             for (var entree : lire(menu, instantane, clic))
-                quantites.put(entree.cle(), entree.quantite());
+                if (entree.fluide() == null) quantites.put(entree.cle(), entree.quantite());
         observateur.lire(
                 menu,
                 instantane,
@@ -359,9 +413,12 @@ public final class TerminalMe {
                 && vue.postes().equals(postes)
                 && vue.incertaines().equals(incertaines)) return;
         var stockCalcul = stockIdentique ? vue.stockCalcul() : stocks(stock);
+        var fluidesMe = stockIdentique ? vue.fluidesMe() : stocksFluides(stock);
         var couverture =
                 StockFabricationEmi.courant(
-                        InventaireArbreEmi.physiques(InventaireArbreEmi.personnel()), stockCalcul);
+                        InventaireArbreEmi.physiques(InventaireArbreEmi.personnel()),
+                        stockCalcul,
+                        fluidesMe);
         var retraits = new ArrayList<Lot>();
         var prises =
                 couverture.retraitsReseau(
@@ -395,7 +452,13 @@ public final class TerminalMe {
         }
         for (int i : indices) {
             var entree = stock.get(i);
-            retraits.add(new Lot(entree.serial(), entree.cle(), entree.pile(), quantites[i]));
+            retraits.add(
+                    new Lot(
+                            entree.serial(),
+                            entree.cle(),
+                            entree.pile(),
+                            entree.fluide(),
+                            quantites[i]));
         }
         vue =
                 new Vue(
@@ -406,6 +469,7 @@ public final class TerminalMe {
                         actif.getStateId(),
                         stock,
                         stockCalcul,
+                        fluidesMe,
                         lots,
                         credits,
                         outils,
@@ -425,6 +489,7 @@ public final class TerminalMe {
         affiche = terminal ? (AbstractContainerScreen<?>) event.getScreen() : null;
         disposition = null;
         objets = List.of();
+        choisi = null;
         page = 0;
     }
 
@@ -460,14 +525,36 @@ public final class TerminalMe {
         return total;
     }
 
-    private static int quantite(ItemStack item) {
+    private static Lot selection() {
         for (int n = 0; n < objets.size(); n++)
-            if (ItemStack.isSameItemSameTags(objets.get(n).pile(), item)) return restant(n);
-        return 0;
+            if (choisi != null && objets.get(n).serial() == choisi) return objets.get(n);
+        return null;
+    }
+
+    private static Component nom(Lot lot) {
+        return lot.fluide() == null ? lot.pile().getHoverName() : lot.fluide().getDisplayName();
+    }
+
+    private static String unites(Lot lot) {
+        return lot.fluide() == null ? "" : " mB";
     }
 
     private static String aPrendre(long total) {
         return Theme.nombre(total) + " à prendre";
+    }
+
+    private static String detailRetrait() {
+        long objetsRestants = 0, fluidesRestants = 0;
+        for (int i = 0; i < objets.size(); i++) {
+            if (objets.get(i).fluide() == null) objetsRestants += restant(i);
+            else fluidesRestants += restant(i);
+        }
+        if (fluidesRestants == 0)
+            return occupe() ? RETRAIT + Theme.nombre(objetsRestants) : aPrendre(objetsRestants);
+        String volume = Theme.nombre(fluidesRestants) + " mB";
+        return objetsRestants == 0
+                ? volume + " à prendre"
+                : Theme.nombre(objetsRestants) + " objets + " + volume;
     }
 
     private static int derniere() {
@@ -487,14 +574,13 @@ public final class TerminalMe {
             return;
         }
         // Le choix de Prendre survit au retrait de Tout, qui ne montre que ses propres lots.
-        if (!occupe()
-                && objets.stream().noneMatch(l -> ItemStack.isSameItemSameTags(l.pile(), choisi)))
+        if (!occupe() && selection() == null)
             choisi =
                     objets.stream()
                             .filter(l -> l.quantite() > 0)
                             .findFirst()
                             .orElse(objets.get(0))
-                            .pile();
+                            .serial();
         long cle = (objets.size() * 31L + affiche.width) * 31L + affiche.height;
         long maintenant = System.currentTimeMillis();
         if (disposition == null || cle != cleDisposition || maintenant - placeLe >= 1000) {
@@ -511,6 +597,7 @@ public final class TerminalMe {
                                             NOM,
                                             "Poste à vérifier",
                                             aPrendre(999_999),
+                                            "999k objets + 999k mB",
                                             RETRAIT + Theme.nombre(999_999)),
                                     List.of(PRENDRE),
                                     List.of(TOUT, ARRETER),
@@ -534,19 +621,13 @@ public final class TerminalMe {
         PanneauAssistant.fond(g, d.cadre());
         long total = restantTotal();
         boolean incertain = !occupe && !vue.aVerifier().isEmpty();
-        String detail =
-                incertain
-                        ? "Poste à vérifier"
-                        : occupe ? RETRAIT + Theme.nombre(total) : aPrendre(total);
+        String detail = incertain ? "Poste à vérifier" : detailRetrait();
         PanneauAssistant.titre(g, font, d.titre(), NOM, detail);
         List<Component> infobulle = null;
         if (d.titre().contient(mx, my))
             infobulle =
                     List.of(
-                            Component.literal(
-                                    NOM
-                                            + " · "
-                                            + (occupe ? RETRAIT + total : total + " à prendre")),
+                            Component.literal(NOM + " · " + detailRetrait()),
                             gris(
                                     incertain
                                             ? "Destination du bus ou entrées machine non vérifiables."
@@ -562,23 +643,36 @@ public final class TerminalMe {
             var z = d.icone(rang);
             int quantite = restant(n);
             boolean posteInconnu = !occupe && vue.aVerifier().contains(lot.serial());
-            PanneauAssistant.caseIcone(
-                    g, z, !occupe && ItemStack.isSameItemSameTags(lot.pile(), choisi));
-            ItemStack icone = lot.pile().copy();
-            icone.setCount(1);
-            g.renderItem(icone, z.x() + 1, z.y() + 1);
+            PanneauAssistant.caseIcone(g, z, !occupe && choisi != null && lot.serial() == choisi);
+            if (lot.fluide() == null) {
+                ItemStack icone = lot.pile().copy();
+                icone.setCount(1);
+                g.renderItem(icone, z.x() + 1, z.y() + 1);
+            } else {
+                iconeFluide(lot.fluide())
+                        .render(g, z.x() + 1, z.y() + 1, 0, EmiIngredient.RENDER_ICON);
+            }
             if (posteInconnu && quantite == 0)
                 PanneauAssistant.indication(g, font, z, "?", Theme.JAUNE);
             else PanneauAssistant.nombre(g, font, z, quantite);
             if (occupe && quantite == 0) PanneauAssistant.etat(g, z, Theme.VERT);
             if (z.contient(mx, my)) {
                 infobulle = new ArrayList<>();
-                infobulle.add(lot.pile().getHoverName());
+                infobulle.add(nom(lot));
                 if (occupe) {
-                    infobulle.add(gris(quantite == 0 ? "Retiré" : quantite + " restants"));
+                    infobulle.add(
+                            gris(quantite == 0 ? "Retiré" : quantite + unites(lot) + " restants"));
                 } else {
-                    infobulle.add(gris(vue.stock(lot.serial()) + " en stock dans le réseau ME"));
-                    if (quantite > 0) infobulle.add(gris(quantite + " à prendre"));
+                    infobulle.add(
+                            gris(
+                                    vue.stock(lot.serial())
+                                            + unites(lot)
+                                            + " en stock dans le réseau ME"));
+                    if (quantite > 0) infobulle.add(gris(quantite + unites(lot) + " à prendre"));
+                    if (quantite > 0 && lot.fluide() != null)
+                        infobulle.add(
+                                gris(
+                                        "AE2 remplit le contenant jusqu’à sa capacité ou au stock disponible."));
                     if (posteInconnu) {
                         infobulle.add(gris("Entrées machine à vérifier pour cette branche."));
                         infobulle.add(gris("Retrait manuel dans le terminal AE2 pour le reste."));
@@ -614,23 +708,25 @@ public final class TerminalMe {
                 infobulle =
                         List.of(Component.literal("Page " + (page + 1) + "/" + (derniere() + 1)));
         }
-        int choix = quantite(choisi);
+        Lot choisiActuel = selection();
+        int choix = choisiActuel == null ? 0 : choisiActuel.quantite();
         if (PanneauAssistant.bouton(
                 g, font, d.prendre(), PRENDRE, Theme.Genre.NORMAL, !occupe && choix > 0, mx, my))
             infobulle =
                     List.of(
                             Component.literal(
-                                    "Prendre " + choix + " " + choisi.getHoverName().getString()));
+                                    "Prendre "
+                                            + choix
+                                            + unites(choisiActuel)
+                                            + " "
+                                            + nom(choisiActuel).getString()));
         if (occupe) {
             if (PanneauAssistant.bouton(
                     g, font, d.tout(), ARRETER, Theme.Genre.DANGER, true, mx, my))
                 infobulle = List.of(Component.literal("Arrêter après l’action en cours"));
         } else if (PanneauAssistant.bouton(
                 g, font, d.tout(), TOUT, Theme.Genre.PRINCIPAL, total > 0, mx, my))
-            infobulle =
-                    List.of(
-                            Component.literal(
-                                    "Prendre les " + total + " objets du réseau pour l’arbre EMI"));
+            infobulle = List.of(Component.literal(detailRetrait() + " · arbre EMI"));
         if (infobulle != null) g.renderComponentTooltip(font, infobulle, mx, my);
     }
 
@@ -666,13 +762,15 @@ public final class TerminalMe {
         else if (d.pages() && d.suivant().contient(mx, my)) tourner(1);
         else if (occupe()) return;
         else if (d.prendre().contient(mx, my)) {
-            PanneauAssistant.son();
-            verifierClic(affiche, choisi.copy());
+            if (choisi != null) {
+                PanneauAssistant.son();
+                verifierClic(affiche, choisi);
+            }
         } else
             for (int rang = 0; rang < d.parPage(); rang++) {
                 int n = page * d.parPage() + rang;
                 if (n < objets.size() && d.icone(rang).contient(mx, my)) {
-                    choisi = objets.get(n).pile();
+                    choisi = objets.get(n).serial();
                     return;
                 }
             }
@@ -693,7 +791,7 @@ public final class TerminalMe {
      * Le clic relit le terminal et l'arbre : il retire ce qui manque à cet instant, jamais le plan
      * de l'image précédente. {@code selection} : un seul objet (Prendre), sinon tout (Tout).
      */
-    private static void verifierClic(AbstractContainerScreen<?> screen, ItemStack selection) {
+    private static void verifierClic(AbstractContainerScreen<?> screen, Long selection) {
         if (occupe() || clicEnAttente) return;
         try {
             observer(true, () -> lancer(screen, selection));
@@ -703,7 +801,7 @@ public final class TerminalMe {
         }
     }
 
-    private static void lancer(AbstractContainerScreen<?> screen, ItemStack selection) {
+    private static void lancer(AbstractContainerScreen<?> screen, Long selection) {
         var mc = Minecraft.getInstance();
         if (occupe()
                 || screen == null
@@ -723,11 +821,7 @@ public final class TerminalMe {
                             ? List.<Lot>of()
                             : vue.retraits().stream()
                                     .filter(l -> l.quantite() > 0)
-                                    .filter(
-                                            l ->
-                                                    selection == null
-                                                            || ItemStack.isSameItemSameTags(
-                                                                    l.pile(), selection))
+                                    .filter(l -> selection == null || l.serial() == selection)
                                     .toList();
             if (lots.isEmpty()) {
                 message(
@@ -737,7 +831,9 @@ public final class TerminalMe {
                 return;
             }
             reception =
-                    MachinesEmi.receptionCollecte(screen, lots.stream().map(Lot::pile).toList());
+                    MachinesEmi.receptionCollecte(
+                            screen,
+                            lots.stream().filter(l -> l.fluide() == null).map(Lot::pile).toList());
             ecran = screen;
             menu = screen.getMenu();
             arbre = vue.arbre();
@@ -750,6 +846,8 @@ public final class TerminalMe {
             destination = null;
             depotServeur = null;
             direct = false;
+            millibuckets = 0;
+            contenantManquant = false;
             reste = retraits.get(0).quantite();
         } catch (ReflectiveOperationException | RuntimeException ex) {
             signaler(ex);
@@ -830,7 +928,7 @@ public final class TerminalMe {
                     }
                 }
                 if (ferme) {
-                    terminer(recus + " objets récupérés dans le réseau ME.");
+                    terminer(bilan());
                     return;
                 }
             } else {
@@ -840,12 +938,16 @@ public final class TerminalMe {
         }
         if (reste == 0 && avant == 0) {
             if (++index == retraits.size()) {
-                terminer(recus + " objets récupérés dans le réseau ME.");
+                terminer(bilan());
                 return;
             }
             reste = retraits.get(index).quantite();
         }
         var lot = retraits.get(index);
+        if (lot.fluide() != null) {
+            avancerFluide(lot);
+            return;
+        }
         boolean deposerPile = false;
         if (attendus > 0) {
             int volume = ItemStack.isSameItemSameTags(curseur, lot.pile()) ? curseur.getCount() : 0;
@@ -912,16 +1014,7 @@ public final class TerminalMe {
             destination = cible;
             depotAvant = cible.getItem().getCount();
             // Pas de prédiction locale : attendre que le serveur confirme la case et le curseur.
-            mc.getConnection()
-                    .send(
-                            new ServerboundContainerClickPacket(
-                                    menu.containerId,
-                                    menu.getStateId(),
-                                    cible.index,
-                                    0,
-                                    ClickType.PICKUP,
-                                    curseur.copy(),
-                                    new Int2ObjectOpenHashMap<>()));
+            clicCase(cible, 0);
             return;
         }
         if (!(boolean) ACCES.powered().invoke(menu)) {
@@ -949,6 +1042,64 @@ public final class TerminalMe {
         }
         attendus = volume;
         retirer(lot, action, repetitions);
+    }
+
+    private static void avancerFluide(Lot lot) throws ReflectiveOperationException {
+        if (remplissage != null) {
+            int gain =
+                    remplissage.avancer(
+                            menu,
+                            TerminalMe::clicCase,
+                            () ->
+                                    ACCES.retirer()
+                                            .invoke(menu, lot.serial(), ACCES_FLUIDE.remplir()));
+            if (gain < 0)
+                terminer("Remplissage ME interrompu. Vérifie le contenant et le curseur.");
+            if (gain > 0) {
+                millibuckets += gain;
+                reste = Math.max(0, reste - gain);
+                remplissage = null;
+            }
+            return;
+        }
+        if (!menu.getCarried().isEmpty()) {
+            terminer("Pose d’abord l’objet tenu par la souris.");
+            return;
+        }
+        if (!(boolean) ACCES.powered().invoke(menu)) {
+            terminer("Retrait ME arrêté : terminal hors tension.");
+            return;
+        }
+        if (!verifierPrise(lot)) return;
+        var disponible = lot.fluide().copy();
+        // La simulation mesure toute la place compatible, comme l'action native d'AE2.
+        disponible.setAmount(Integer.MAX_VALUE);
+        remplissage =
+                RemplissageMe.choisir(
+                        menu.slots,
+                        Minecraft.getInstance().player.getInventory(),
+                        disponible,
+                        reste);
+        if (remplissage == null) {
+            contenantManquant = true;
+            reste = 0;
+            return;
+        }
+        remplissage.prendre(TerminalMe::clicCase);
+    }
+
+    private static void clicCase(Slot slot, int bouton) {
+        Minecraft.getInstance()
+                .getConnection()
+                .send(
+                        new ServerboundContainerClickPacket(
+                                menu.containerId,
+                                menu.getStateId(),
+                                slot.index,
+                                bouton,
+                                ClickType.PICKUP,
+                                menu.getCarried().copy(),
+                                new Int2ObjectOpenHashMap<>()));
     }
 
     private static void retirer(Lot lot, Object action, int repetitions)
@@ -1070,8 +1221,22 @@ public final class TerminalMe {
             terminer("Retrait ME interrompu : réponse du terminal absente. Vérifie le curseur.");
     }
 
+    private static String bilan() {
+        String resultat =
+                millibuckets == 0
+                        ? recus + " objets récupérés dans le réseau ME."
+                        : (recus == 0 ? "" : recus + " objets et ")
+                                + millibuckets
+                                + " mB récupérés dans le réseau ME.";
+        if (contenantManquant)
+            return resultat
+                    + " Prévois un drum ou une fiole compatible et une case libre si empilés.";
+        return resultat;
+    }
+
     private static void terminer(String texte) {
         soldeDistant = false;
+        remplissage = null;
         menu = null;
         ecran = null;
         connexion = joueur = niveau = null;
