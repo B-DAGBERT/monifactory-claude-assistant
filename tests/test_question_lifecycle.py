@@ -220,6 +220,83 @@ class QuestionLifecycleTests(TestCase):
         self.assertNotIn("Échanges précédents", sent[1][1])
         self.assertIn({"de": "toi", "texte": "Question hors partie"}, self.app.history)
 
+    def legacy_click(self, text, n, session=SESSION_A, dimension=OVERWORLD):
+        """A Discussion click in legacy mode: the request carries the Forge identity."""
+        app = self.app
+        receipt(app.bridge, WORLD_A, session, dimension)
+        dump(app.bridge.dir / "etat.json", state(WORLD_A, session, dimension))
+        app.game = app.bridge.state()
+        result = app.dispatch_queued_request(
+            {"type": "question", "texte": text, "n": n, **tags(WORLD_A, session, dimension)}
+        )
+        self.assertEqual(result["question"], {"n": n, "etat": "acceptee"})
+        self.run_worker()
+
+    def use_legacy_bridge(self):
+        self.app.bridge = setup_bridge(self.directory / "historique", active=False)
+        self.addCleanup(self.app.bridge.close_publications)
+        self.assertFalse(self.app.bridge.isolated)
+
+    def test_legacy_mode_keeps_the_thread_and_recall_of_the_forge_identity(self):
+        self.use_legacy_bridge()
+        sent = self.use_codex()
+        self.legacy_click("Comment faire le Micro Miner ?", 1)
+        self.app.poll()
+        self.legacy_click("Donc je suis bloqué ?", 2)
+        self.app.poll()
+        # A local window or F8 question reads the Forge identity at admission.
+        receipt(self.app.bridge, WORLD_A, SESSION_A)
+        self.exchange("Et pour le Vacuum Freezer ?")
+        self.assertEqual([thread for thread, _ in sent], ["thread-0"] * 3)
+        self.assertNotIn("Échanges précédents", sent[1][1])
+        self.clock.return_value += Conversation.MAX_IDLE + 1
+        self.legacy_click("Quelle suite ?", 3)
+        self.app.poll()
+        self.assertEqual(sent[3][0], "thread-3")
+        recall = sent[3][1].split("\n\n", 1)[0]
+        self.assertIn("Question : Donc je suis bloqué ?", recall)
+        self.assertIn("Question : Et pour le Vacuum Freezer ?", recall)
+        self.assertNotIn("Micro Miner", recall)
+        self.legacy_click("Question de la nouvelle connexion", 4, session=SESSION_B)
+        self.app.poll()
+        self.assertEqual(sent[4][0], "thread-4")
+        self.assertNotIn("Échanges précédents", sent[4][1])
+
+    def test_legacy_mode_keeps_the_claude_session_between_questions(self):
+        self.use_legacy_bridge()
+        use_fake_claude(self, self.directory)
+        self.app.conversation = Conversation(self.app.bridge.dir)
+        self.addCleanup(self.app.conversation.stop)
+        self.legacy_click("Il faut un Vacuum Freezer pour le Micro Miner ?", 1)
+        self.app.poll()
+        self.legacy_click("Donc en gros je suis bloqué ?", 2)
+        self.app.poll()
+        self.assertEqual(len(self.claude_trace("launches")), 1)
+        self.assertEqual(len(self.claude_trace("requests")), 2)
+        saved = json.loads((self.directory / "session_claude.json").read_text(encoding="utf-8"))
+        self.assertEqual((saved["questions"], saved["scope"]), (2, tags(WORLD_A, SESSION_A)))
+
+    def test_legacy_answer_delivered_in_another_dimension_is_visible_only(self):
+        self.use_legacy_bridge()
+        sent = self.use_codex()
+        self.legacy_click("Question livrée", 1)
+        self.app.poll()
+        self.legacy_click("Question lue depuis le Nether", 2)
+        receipt(self.app.bridge, WORLD_A, SESSION_A, NETHER)
+        self.app.poll()
+        self.assertEqual(
+            self.app.history[-2:],
+            [
+                {"de": "toi", "texte": "Question lue depuis le Nether"},
+                {"de": "claude", "texte": "Réponse du moteur."},
+            ],
+        )
+        self.clock.return_value += Conversation.MAX_IDLE + 1
+        self.legacy_click("Quelle suite ?", 3)
+        recall = sent[2][1].split("\n\n", 1)[0]
+        self.assertIn("Question : Question livrée", recall)
+        self.assertNotIn("Nether", recall)
+
     def test_display_notification_cannot_answer_a_failed_question_in_recall(self):
         sent = self.use_codex()
         self.enter_world()

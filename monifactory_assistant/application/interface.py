@@ -269,22 +269,29 @@ class InterfaceController:
         kind = request.get("type")
         # Les demandes d'un ancien mod (projet, objectif, étape) sont ignorées sans erreur.
         if kind == "question" and request.get("texte"):
-            self.question_ack = {"n": request.get("n"), "etat": "refusee"}
-            scope = None
-            if any(
-                field in request for field in ("monde_actif", "session_monde", "dimension_monde")
-            ):
-                scope = active_scope(self.bridge)
-                if scope is None or not scope.accepts(request):
-                    return "Demande d’une autre connexion ou dimension."
-            elif request.get("dimension_envoi") and request["dimension_envoi"] != (
-                self.game or {}
-            ).get("dimension"):
-                return "Le monde ou la dimension a changé ; renouvelle ton action."
-            if self.busy:
-                self.notify("Patience, je réfléchis encore…", 4)
-            elif self.start_question(str(request["texte"]), None, action_scope=scope):
-                self.question_ack["etat"] = "acceptee"
+            # start_question publie la vue. Le menu clôt son attente sur un refus de ce numéro
+            # et garde le brouillon : l’accusé n’est publié qu’une fois la décision prise, dans
+            # un nouveau dict, car la vue suivante compare ses valeurs à la dernière publiée.
+            ack = {"n": request.get("n"), "etat": "refusee"}
+            try:
+                scope = None
+                if any(
+                    field in request
+                    for field in ("monde_actif", "session_monde", "dimension_monde")
+                ):
+                    scope = active_scope(self.bridge)
+                    if scope is None or not scope.accepts(request):
+                        return "Demande d’une autre connexion ou dimension."
+                elif request.get("dimension_envoi") and request["dimension_envoi"] != (
+                    self.game or {}
+                ).get("dimension"):
+                    return "Le monde ou la dimension a changé ; renouvelle ton action."
+                if self.busy:
+                    self.notify("Patience, je réfléchis encore…", 4)
+                elif self.start_question(str(request["texte"]), None, action_scope=scope):
+                    ack["etat"] = "acceptee"
+            finally:
+                self.question_ack = ack
         elif kind == "info" and request.get("item"):
             self.show_info(request)
         elif kind == "reglage":
