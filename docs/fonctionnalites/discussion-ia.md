@@ -12,6 +12,7 @@
 
 - Texte et voix partagent l’état d’admission de Discussion. Un double clic ou un événement répété ne lance pas deux tours.
 - Le clic **Parler** ouvre Discussion. La transcription et la réponse appartiennent à la bonne demande. Une réponse tardive reste attachée à son contexte d’origine.
+- Le menu vide le champ quand `question_recue` accepte son numéro et garde le brouillon sur un refus. L’accusé d’une question n’est publié qu’une fois son admission décidée, dans un nouvel objet. La vue écrite pendant le démarrage du tour garde l’accusé précédent. `test_admission_never_publishes_a_provisional_refusal_of_the_question` le vérifie.
 - Le mod pilote la conversation. Le panneau local la suit en lecture seule. Le choix de fournisseur, les préférences et les sessions restent propres à l’installation.
 - Pour un chargement bloqué, vérifier l’accusé de la demande, l’état affiché et le journal du fournisseur. Garder distincts un envoi accepté et une réponse reçue.
 - Le journal note `Temps : premier mot X s, fin Y s`. Le premier mot correspond au premier aperçu non vide affiché, la fin à la remise de la réponse.
@@ -27,6 +28,8 @@ Chaque question joint environ 40 Ko de contexte du monde. Comme l’assistant d�
 Le compteur et l’heure de la dernière question survivent au redémarrage de l’assistant. La règle est commune à Claude et Codex.
 
 La reprise d’un fil exige aussi la même portée vérifiée (monde, connexion et dimension) et la même génération manuelle. La portée est fixée avant l’envoi et enregistrée avec l’identifiant dès son adoption, y compris si le tour échoue ensuite. Au redémarrage de l’assistant, seul le fichier principal peut autoriser une reprise. Une copie `.bak` peut contenir un fil déjà abandonné. Chaque question sans portée vérifiable démarre un fil neuf.
+
+Sans isolation des mondes (mode historique, sans `isolation_mondes.json`), le pont n’a pas de portée. Le fil et le rappel suivent alors l’identité Forge qui autorise les actions : celle jointe au clic, ou celle lue à l’admission pour une question locale. Une réponse livrée après un changement de cette identité reste visible, mais n’entre pas dans le rappel. `test_legacy_mode_keeps_the_thread_and_recall_of_the_forge_identity` et `test_legacy_mode_keeps_the_claude_session_between_questions` couvrent ce mode.
 
 Le renouvellement n’envoie rien. La question en cours part une seule fois, précédée d’au plus deux échanges livrés dans la même portée vérifiée (monde, connexion et dimension) et la même génération de conversation. Ce rappel est étiqueté « Échanges précédents ». Il conserve le texte des réponses sans leurs actions et borne chaque texte à environ 1 200 caractères. Une question restée sans réponse n’y figure pas et n’est jamais renvoyée. Si la première question de la session neuve échoue, la suivante porte encore le rappel admissible.
 

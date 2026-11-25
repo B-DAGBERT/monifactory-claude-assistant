@@ -64,6 +64,25 @@ class DiscussionMenuTests(unittest.TestCase):
         self.app.check_mod_requests()
         self.app.start_question.assert_called_once()
 
+    def test_admission_never_publishes_a_provisional_refusal_of_the_question(self):
+        # start_question refreshes vue_mod.json. The menu ends its wait on a refusal of its
+        # number and keeps the draft, and a dict mutated after publication looks unchanged
+        # to the next refresh, which compares values with the last view.
+        published = []
+
+        def start(*_args, **_options):
+            published.append((self.app.question_ack, json.dumps(self.app.question_ack)))
+            return True
+
+        self.app.start_question = Mock(side_effect=start)
+        self.write(self.request)
+        self.app.check_mod_requests()
+        self.assertEqual(self.app.question_ack, {"n": self.n, "etat": "acceptee"})
+        self.assertEqual(len(published), 1)
+        for ack, text in published:
+            self.assertEqual(json.dumps(ack), text)
+            self.assertNotEqual(json.loads(text).get("n"), self.n)
+
     def test_same_text_can_be_asked_again_with_a_new_id(self):
         self.write(self.request)
         self.app.check_mod_requests()

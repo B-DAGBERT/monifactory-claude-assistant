@@ -88,7 +88,12 @@ class ConversationController:
 
     def prepare_conversation(self):
         try:
-            self.conversation.prepare(self.bridge.routing.current())
+            bridge = self.bridge
+            self.conversation.prepare(
+                bridge.routing.current()
+                if getattr(bridge, "isolated", False) is True
+                else active_scope(bridge)
+            )
             log("Discussion prête pour le mod (aucune question envoyée).")
             self.events.put(("connection_ready",))
         except Exception as error:
@@ -257,6 +262,16 @@ class ConversationController:
             return frame
         return None
 
+    def question_thread_scope(self):
+        """Portée du fil du fournisseur et du rappel pour la question admise.
+
+        Le pont isolé fournit cette portée. Sans isolation, le pont n’en a pas : l’identité Forge
+        du clic ou de l’admission, celle qui autorise les actions, en tient lieu.
+        """
+        if getattr(getattr(self, "bridge", None), "isolated", False) is True:
+            return getattr(self, "question_scope", None)
+        return getattr(self, "question_action_scope", None)
+
     def question_generation_valid(self, generation):
         return generation is None or generation is self.conversation.generation
 
@@ -290,6 +305,7 @@ class ConversationController:
 
     def work_question(self, text, audio, shot):
         scope = getattr(self, "question_scope", None)
+        thread_scope = self.question_thread_scope()
         generation = self.question_generation
         timing = {"début": time.time()}  # pour le journal : où passe le temps
         try:
@@ -384,9 +400,9 @@ class ConversationController:
                 on_text,
                 on_tool,
                 show_preview,
-                previous=previous_exchanges(self.recall_exchanges, scope, generation),
+                previous=previous_exchanges(self.recall_exchanges, thread_scope, generation),
                 generation=generation,
-                scope=scope,
+                scope=thread_scope,
             )
             # Tk vérifiera la liaison et le reçu sans lancer d’attestation.
             verdict = production.delivery_verdict(proof) if proof is not None else None
@@ -481,8 +497,16 @@ class ConversationController:
             self.refresh(force=True)
             return
         self.add_history("claude", answer)
-        if scope is not None and generation is not None and answer:
-            exchange = RecallExchange(scope, generation, question, answer)
+        thread_scope = self.question_thread_scope()
+        # Isolé, la portée vient d’être revérifiée. En mode historique, une réponse livrée
+        # après un changement d’identité Forge reste visible sans entrer dans le rappel.
+        if (
+            thread_scope is not None
+            and generation is not None
+            and answer
+            and (scoped or self.world_action_scope() == thread_scope)
+        ):
+            exchange = RecallExchange(thread_scope, generation, question, answer)
             self.recall_exchanges = (*self.recall_exchanges, exchange)[-30:]
         if production_proof is not None and self.speak:
             production = self.production

@@ -27,6 +27,7 @@ class ConnectionDisplayTests(unittest.TestCase):
                 "on_connection_ready",
                 "on_connection_problem",
                 "question_scope_valid",
+                "question_thread_scope",
                 "question_generation_valid",
             }
         ]
