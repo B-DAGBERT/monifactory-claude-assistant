@@ -1,5 +1,6 @@
 """Startup updates against a local remote and real installation files, without AI or network."""
 
+import io
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +17,18 @@ from monifactory_assistant.commands.auto_update import (
 )
 
 GIT = shutil.which("git")
+
+
+class WindowsTextPipes(subprocess.Popen):
+    """Writes CRLF for each LF sent through a text-mode stdin, as Python does on Windows."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if isinstance(self.stdin, io.TextIOWrapper):
+            encoding = self.stdin.encoding
+            self.stdin = io.TextIOWrapper(
+                self.stdin.detach(), encoding=encoding, newline="\r\n", write_through=True
+            )
 
 
 class Harness(AutoUpdater):
@@ -192,7 +205,7 @@ class AutomaticUpdateTests(unittest.TestCase):
         copy = shutil.copy2
 
         def failing_copy(source, target, *args, **kwargs):
-            if "/jeu/assistant_ia.js" in str(source):
+            if Path(source).as_posix().endswith("/jeu/assistant_ia.js"):
                 raise OSError("disk unavailable")
             return copy(source, target, *args, **kwargs)
 
@@ -211,6 +224,31 @@ class AutomaticUpdateTests(unittest.TestCase):
         with patch.object(self.updater, "git", side_effect=failing_git):
             self.assertEqual(self.updater.check()["state"], "failed")
         self.assert_unchanged()
+
+    def test_windows_text_pipes_still_advance_main(self):
+        # shared.75 to shared.77 wrote the ref protocol as text; Git refused "start\r".
+        with patch("subprocess.Popen", WindowsTextPipes):
+            self.assertEqual(self.updater.check()["state"], "updated")
+        self.assertEqual(self.git("rev-parse", "HEAD", cwd=self.client), self.target)
+        self.assertEqual((self.jar.read_text(), self.script.read_text()), ("new jar", "new script"))
+
+    def test_refused_main_lock_restores_files_and_logs_git_reason(self):
+        hooks = Path(self.temp.name) / "hooks"
+        hooks.mkdir()
+        hook = hooks / "reference-transaction"
+        # Bytes keep LF line endings for sh on Windows too.
+        hook.write_bytes(
+            b'#!/bin/sh\n[ "$1" = prepared ] || exit 0\n'
+            b"while read -r old new ref; do\n"
+            b'  [ "$ref" = refs/heads/main ] && echo "main tenu par un autre outil" >&2 && exit 1\n'
+            b"done\nexit 0\n"
+        )
+        hook.chmod(0o755)
+        self.git("config", "core.hooksPath", str(hooks), cwd=self.client)
+        self.assertEqual(self.updater.check()["state"], "failed")
+        self.assert_unchanged()
+        log = (self.client / ".runtime/update.log").read_text(encoding="utf-8")
+        self.assertIn("main tenu par un autre outil", log)
 
     def test_branch_switched_after_install_recovers_main_pair_offline(self):
         deploy = self.updater.deploy

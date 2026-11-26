@@ -12,6 +12,7 @@
 - Avancer `main` sans écraser les modifications locales, les fichiers ignorés ou des commits divergents. Une installation interrompue doit pouvoir être reprise à partir du journal et de la sauvegarde.
 - Garder les lanceurs Mac et Windows et le choix Codex ou Claude. Distinguer compilation, installation, chargement réel du JAR et vérification du SHA distant.
 - Pour une régression de mise à jour, identifier le stade atteint dans le journal local avant de relancer ou de restaurer.
+- Écrire le protocole de `git update-ref --stdin` en octets. Sous Windows, un tube texte envoie CRLF et Git refuse `start`. Un refus de verrou écrit la raison de Git dans `.runtime/update.log`. [Tests](../../tests/test_auto_updates.py) : `test_windows_text_pipes_still_advance_main`, `test_refused_main_lock_restores_files_and_logs_git_reason`.
 
 Après l’installation du couple JAR/script, le lanceur verrouille la référence `main` à la révision de départ avant d’actualiser les fichiers suivis. Si le joueur a changé de branche, le journal reste disponible. Revenir sur `main` puis relancer permet la reprise, même hors ligne. La reprise vérifie la révision, les fichiers installés et le reçu.
 

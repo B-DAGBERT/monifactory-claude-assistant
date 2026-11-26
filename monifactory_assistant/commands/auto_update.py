@@ -293,17 +293,17 @@ class AutoUpdater:
         # Git locks main and its symbolic HEAD during prepare. The explicit old value
         # protects the branch tip even if another process committed during installation.
         self.require_main()
+        # Bytes, not text: a Windows text pipe writes CRLF for each LF and Git rejects "start\r".
         with subprocess.Popen(
             [self.git_bin, "update-ref", "--stdin"],
             cwd=self.root,
-            text=True,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         ) as transaction:
             try:
                 transaction.stdin.write(
-                    f"start\nupdate refs/heads/main {target} {before}\nprepare\n"
+                    f"start\nupdate refs/heads/main {target} {before}\nprepare\n".encode()
                 )
                 transaction.stdin.flush()
                 # A local reference-transaction hook can block during prepare. Keep
@@ -315,8 +315,13 @@ class AutoUpdater:
                     prepared = transaction.stdout.readline().strip()
                 finally:
                     watchdog.cancel()
-                if started != "start: ok" or prepared != "prepare: ok":
-                    raise RuntimeError("Git ne peut pas verrouiller main à la révision attendue.")
+                if started != b"start: ok" or prepared != b"prepare: ok":
+                    # Closing stdin aborts the transaction. Keep Git's reason for update.log.
+                    error = transaction.communicate(timeout=30)[1]
+                    raise RuntimeError(
+                        "Git ne peut pas verrouiller main à la révision attendue. "
+                        + error.decode(errors="replace").strip()
+                    )
                 self.require_main()
                 squash_message = self.root / self.git("rev-parse", "--git-path", "SQUASH_MSG")
                 if checkout:
@@ -338,10 +343,11 @@ class AutoUpdater:
                     self.resume_index(before, target)
                 self.verify_checkout(target)
                 squash_message.unlink(missing_ok=True)
-                output, error = transaction.communicate("commit\n", timeout=30)
-                if transaction.returncode or output.strip() != "commit: ok":
+                output, error = transaction.communicate(b"commit\n", timeout=30)
+                if transaction.returncode or output.strip() != b"commit: ok":
                     raise RuntimeError(
-                        "Git n’a pas confirmé l’avancement de main. " + error.strip()
+                        "Git n’a pas confirmé l’avancement de main. "
+                        + error.decode(errors="replace").strip()
                     )
             finally:
                 if transaction.poll() is None:
