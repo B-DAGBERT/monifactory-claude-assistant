@@ -552,6 +552,10 @@ public final class RetraitTerminalMeTest {
             return new StockFabricationEmi(personnel, stock);
         }
 
+        StockFabricationEmi avecMoulesDesCoffres(InstantaneArbreEmi arbre) {
+            return this;
+        }
+
         List<PlanRetrait.Prise> retraitsReseau(
                 String operation,
                 int lots,
@@ -644,6 +648,14 @@ public final class RetraitTerminalMeTest {
     private static void avancerFluide(Lot lot) {
         throw new AssertionError("terminal sans liquide");
     }
+
+    private static final class CoffresConnus {
+        static long revisionProches() {
+            return 0;
+        }
+    }
+
+    private static void releverMoules(AbstractContainerMenu menu) {}
 
     // EXTRACTION_TRAITEMENT
 

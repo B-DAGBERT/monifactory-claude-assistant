@@ -35,6 +35,7 @@ public final class OrdreMachines {
     public static final String DU_SAC = "À sortir du backpack : ",
             D_UN_COFFRE = "À prendre dans un coffre : ",
             DU_TAMPON = "À prendre dans le coffre tampon : ",
+            DU_RESEAU = "À prendre dans le réseau ME : ",
             A_REPRENDRE = "À reprendre en main : ";
 
     public enum Origine {
@@ -43,6 +44,7 @@ public final class OrdreMachines {
         SAC,
         TAMPON,
         COFFRE,
+        RESEAU_ME,
         DEPLACER
     }
 
@@ -575,17 +577,19 @@ public final class OrdreMachines {
             Set<String> sac = new LinkedHashSet<>(),
                     ailleurs = new LinkedHashSet<>(),
                     coffre = new LinkedHashSet<>(),
+                    reseau = new LinkedHashSet<>(),
                     tampon = new LinkedHashSet<>();
             for (var regle : regles) {
                 if (regle.quantite() == 0) continue;
                 var sources = correspondances.computeIfAbsent(regle, this::sources);
-                long direct = 0, enSac = 0, enCoffre = 0, enTampon = 0, autre = 0;
+                long direct = 0, enSac = 0, enCoffre = 0, enTampon = 0, enMe = 0, autre = 0;
                 for (int i = sources.nextSetBit(0); i >= 0; i = sources.nextSetBit(i + 1)) {
                     long q = Math.max(0, stock.get(i).stock().quantite());
                     switch (stock.get(i).origine()) {
                         case POCHES, MACHINE -> direct += q;
                         case SAC -> enSac += q;
                         case COFFRE -> enCoffre += q;
+                        case RESEAU_ME -> enMe += q;
                         case TAMPON -> enTampon += q;
                         case DEPLACER -> autre += q;
                     }
@@ -594,12 +598,14 @@ public final class OrdreMachines {
                 if (enSac > 0) sac.add(regle.nom());
                 else if (autre > 0) ailleurs.add(regle.nom());
                 else if (enTampon > 0) tampon.add(regle.nom());
+                else if (enMe > 0) reseau.add(regle.nom());
                 else if (enCoffre > 0) coffre.add(regle.nom());
             }
             List<String> parties = new ArrayList<>();
             if (!sac.isEmpty()) parties.add(DU_SAC + String.join(", ", sac));
             if (!ailleurs.isEmpty()) parties.add(A_REPRENDRE + String.join(", ", ailleurs));
             if (!tampon.isEmpty()) parties.add(DU_TAMPON + String.join(", ", tampon));
+            if (!reseau.isEmpty()) parties.add(DU_RESEAU + String.join(", ", reseau));
             if (!coffre.isEmpty()) parties.add(D_UN_COFFRE + String.join(", ", coffre));
             return parties.isEmpty() ? A_RECUPERER : String.join(" · ", parties);
         }

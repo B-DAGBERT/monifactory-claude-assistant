@@ -4,7 +4,9 @@ import dev.emi.emi.api.recipe.EmiPlayerInventory;
 import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.runtime.EmiFavorites;
 import fr.assistantia.CoffreTampon;
+import fr.assistantia.CoffresConnus;
 import fr.assistantia.InventaireJoueur;
+import fr.assistantia.MemoireCollecte;
 import fr.assistantia.PlanMachines;
 import fr.assistantia.PlanRetrait;
 import fr.assistantia.SacsFabrication;
@@ -81,6 +83,10 @@ public final class ParcoursStockTest {
         client.player = new Player();
         client.level = new Object();
         InventaireJoueur.sacs = List.of();
+        if (args.length == 1 && args[0].equals("moules-disponibles")) {
+            moulesDisponibles();
+            return;
+        }
         if (args.length == 1 && args[0].equals("fluides-me")) {
             fluidesMe();
             return;
@@ -406,6 +412,70 @@ public final class ParcoursStockTest {
         var inventaire = InventaireArbreEmi.completer(new EmiPlayerInventory(List.of()));
         assert inventaire.inventory.values().stream()
                 .anyMatch(p -> p.getKey().equals(eau) && p.getAmount() == 900);
+    }
+
+    private static void moulesDisponibles() throws ReflectiveOperationException {
+        String id = "gtceu:gear_casting_mold", autre = "gtceu:rotor_casting_mold";
+        String vierge = "gtceu:empty_mold";
+        var moule =
+                new PlisFabricationEmiTest.Node(id, 1, new PlisFabricationEmiTest.Node(vierge, 1));
+        moule.catalyst = true;
+        moule.recipe = new dev.emi.emi.api.recipe.EmiRecipe() {};
+        var racine = new PlisFabricationEmiTest.Node(PLAQUE, 1, moule);
+        racine.recipe = new dev.emi.emi.api.recipe.EmiRecipe() {};
+        var arbre = new PlisFabricationEmiTest.Tree(racine);
+        arbre.batches = 12;
+        CoffresArbreEmi.arbre = arbre;
+        var vue = InstantaneArbreEmi.lire(arbre);
+        var plan = StockFabricationEmi.pourMachines(List.of());
+        var natif = new EmiPlayerInventory(List.of());
+        CoffresConnus.stock = java.util.Map.of(autre, 1L);
+        assert quantite(InventaireArbreEmi.completerArbre(natif), id) == 0;
+        assert plan
+                .avecMoules(MoulesDisponibles.pourPlan(vue))
+                .operations(vue.machines(), vue.lots())
+                .stream()
+                .anyMatch(o -> o.recette() == moule.recipe && o.fois() == 1);
+
+        var viergesMe = new PlanRetrait.Stock<>(new ItemStack(vierge, 1), 20, false);
+        var terminal = StockFabricationEmi.courant(List.of(), List.of(viergesMe));
+        assert terminal.avecMoulesDesCoffres(vue)
+                        .retraitsReseau(vue.machines(), vue.lots())
+                        .equals(List.of(new PlanRetrait.Prise(0, 1)))
+                : "Un autre moule ne couvre pas le bon";
+
+        CoffresConnus.stock = java.util.Map.of(id, 1L, autre, 1L);
+        var mo = new PlanRetrait.Stock<>(new ItemStack(id, 1), 1, false);
+        assert quantite(InventaireArbreEmi.completerArbre(natif), id) == 1;
+        assert quantite(InventaireArbreEmi.completer(natif), id) == 0;
+        var reperage = new MemoireCollecte(vue.collecte(), vue.lots());
+        assert reperage.dansCoffres(
+                        List.of(
+                                new PlanRetrait.Stock<>(vierge, 20, false),
+                                new PlanRetrait.Stock<>(id, 1, false)))
+                .equals(List.of(new PlanRetrait.Prise(1, 1)));
+        assert terminal.retraitsReseau(vue.machines(), vue.lots())
+                        .equals(List.of(new PlanRetrait.Prise(0, 1)))
+                : "Reproduction sans relevé de coffres";
+        assert terminal.avecMoulesDesCoffres(vue)
+                        .retraitsReseau(vue.machines(), vue.lots())
+                        .isEmpty()
+                : "Le moule formé dans le coffre évite le retrait du moule vierge";
+        assert StockFabricationEmi.courant(List.of(), List.of(mo, viergesMe))
+                .avecMoulesDesCoffres(vue)
+                .retraitsReseau(vue.machines(), vue.lots())
+                .equals(List.of(new PlanRetrait.Prise(0, 1)));
+
+        MoulesDisponibles.releverReseau(List.of(mo));
+        assert MoulesDisponibles.pourPlan(vue).size() == 1;
+        CoffresConnus.stock = java.util.Map.of();
+        assert plan.avecMoules(MoulesDisponibles.pourPlan(vue))
+                .operations(vue.machines(), vue.lots())
+                .equals(List.of(new PlanMachines.Operation<>(racine.recipe, 12)));
+        assert quantite(InventaireArbreEmi.completerArbre(natif), id) == 1;
+        Minecraft.getInstance().connection = new Object();
+        assert quantite(InventaireArbreEmi.completerArbre(natif), id) == 0;
+        assert plan.physiques().isEmpty() : "Le moule connu reste à récupérer";
     }
 
     private static EmiStack plaque() {

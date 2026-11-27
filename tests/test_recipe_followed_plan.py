@@ -45,6 +45,7 @@ STUBS.update(
             "public interface EmiRecipe {",
             """public interface EmiRecipe {
  default net.minecraft.resources.ResourceLocation getId(){return null;}
+ default java.util.List<dev.emi.emi.api.stack.EmiIngredient> getCatalysts(){return java.util.List.of();}
  record Category(net.minecraft.network.chat.Component getName) {}
  default Category getCategory(){return new Category(new net.minecraft.network.chat.Component("Atelier"));}""",
         ),
@@ -79,7 +80,10 @@ public class Items {
 public record Fluid(String id) { public String getBucket() { return null; } }
 """,
         "net.minecraft.network.chat.Component": "public record Component(String getString) {}",
-        "net.minecraft.client.Minecraft": ROOT_STUBS["net.minecraft.client.Minecraft"],
+        "net.minecraft.client.Minecraft": ROOT_STUBS["net.minecraft.client.Minecraft"].replace(
+            "public Object screen;",
+            "public Object screen,level; public Object getConnection(){return null;}",
+        ),
         "fr.assistantia.InventaireJoueur": """
 import java.util.List;
 import net.minecraft.world.item.ItemStack;
@@ -321,6 +325,7 @@ class RecipeFollowedPlanTests(unittest.TestCase):
                         "ArbreRecette",
                         "DecisionTension",
                         "InstantaneArbreEmi",
+                        "MoulesDisponibles",
                         "RangsRecette",
                         "SelectionAlternatives",
                         "StockPersonnelEmi",

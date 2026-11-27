@@ -90,6 +90,32 @@ record StockFabricationEmi(
         return joindre(personnel, tampon, credits, attendus, outils, reseau);
     }
 
+    /**
+     * Un moule rangé évite sa fabrication. Si ME le propose, garder cette possibilité de retrait.
+     */
+    StockFabricationEmi avecMoulesDesCoffres(InstantaneArbreEmi arbre) {
+        var disponibles =
+                MoulesDisponibles.coffres(arbre).stream()
+                        .filter(
+                                s ->
+                                        reseau.stream()
+                                                .noneMatch(
+                                                        me ->
+                                                                me.quantite() > 0
+                                                                        && me.objet()
+                                                                                .isEqual(
+                                                                                        s.objet())))
+                        .map(s -> new PlanRetrait.Stock<>(s.objet(), s.quantite(), true))
+                        .toList();
+        return avecMoules(disponibles);
+    }
+
+    StockFabricationEmi avecMoules(List<PlanRetrait.Stock<EmiStack>> disponibles) {
+        if (disponibles.isEmpty()) return this;
+        return new StockFabricationEmi(
+                personnel, tampon, reseau, joindre(credits, disponibles), attendus, outils);
+    }
+
     <R> List<PlanMachines.Operation<R>> operations(
             PlanMachines.Noeud<EmiStack, R> arbre, long lots) {
         return PlanMachines.calculer(arbre, lots, couverture());

@@ -104,6 +104,7 @@ public final class MachinesEmi {
             long lots,
             long coffres,
             long tampons,
+            long moulesMe,
             List<PlanRetrait.Stock<ItemStack>> credits,
             List<PlanRetrait.Stock<EmiStack>> outils) {}
 
@@ -259,6 +260,7 @@ public final class MachinesEmi {
         List<PlanRetrait.Stock<EmiStack>> stock = new ArrayList<>();
         for (var variante : vue.variantes()) {
             String id = variante.getId().toString();
+            if (MoulesDisponibles.estMoule(id)) continue;
             if (!vus.add(id)) continue;
             long n = proches.getOrDefault(id, 0L) - deja.getOrDefault(id, 0L);
             if (n <= 0) continue;
@@ -946,17 +948,19 @@ public final class MachinesEmi {
                             lots.revision(),
                             fr.assistantia.CoffresConnus.revisionProches(),
                             fr.assistantia.CoffreTampon.revision(),
+                            MoulesDisponibles.revisionReseau(),
                             CycleArbreEmi.credits(),
                             outilsMachines());
             if (cle.equals(calculPrecedent)) return;
             var couverture = StockFabricationEmi.pourMachines(inventaire());
-            var stock = couverture.couverture();
-            toutes = couverture.operations(vue.machines(), vue.lots());
+            var plan = couverture.avecMoules(MoulesDisponibles.pourPlan(vue));
+            var stock = plan.couverture();
+            toutes = plan.operations(vue.machines(), vue.lots());
             operations = toutes.stream().filter(o -> estGT(o.recette())).toList();
             suivisNecessaires =
                     couverture.attendus().isEmpty()
                             ? java.util.Set.of()
-                            : couverture
+                            : plan
                                     .operationsSansSortiesAttendues(vue.machines(), vue.lots())
                                     .stream()
                                     .map(PlanMachines.Operation::recette)

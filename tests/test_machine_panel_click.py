@@ -47,7 +47,7 @@ class MachinePanelClickTests(unittest.TestCase):
     def test_machine_send_uses_demand_after_buffer_allocation(self):
         machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")
         arbre = corps(machines, "private static void actualiserArbre()")
-        demande = arbre.index("toutes = couverture.operations(vue.machines(), vue.lots())")
+        demande = arbre.index("toutes = plan.operations(vue.machines(), vue.lots())")
         self.assertIn("StockFabricationEmi.pourMachines(inventaire())", arbre[:demande])
         self.assertIn("operations = toutes.stream()", arbre[demande:])
         self.assertIn("stockCoffres(vue, horsPoches)", arbre[demande:])
@@ -73,7 +73,7 @@ class MachinePanelClickTests(unittest.TestCase):
         ):
             self.assertIn(source, arbre[:cache])
         self.assertGreater(arbre.index("pourMachines(inventaire())"), cache)
-        self.assertGreater(arbre.index("couverture.operations"), cache)
+        self.assertGreater(arbre.index("plan.operations"), cache)
 
     def test_observing_machine_inputs_does_not_require_an_emi_tree(self):
         machines = (EMI / "MachinesEmi.java").read_text(encoding="utf-8")

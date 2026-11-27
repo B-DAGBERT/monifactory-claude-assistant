@@ -6,6 +6,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.FluidUtil;
@@ -65,16 +66,13 @@ final class RemplissageMe {
             var pile = slot.getItem();
             if (pile.isEmpty() || !slot.mayPlace(pile)) continue;
             var id = BuiltInRegistries.ITEM.getKey(pile.getItem());
-            if (!id.getNamespace().equals("gtceu")) continue;
-            boolean fiole = id.getPath().equals("glass_vial");
-            if (fiole ? besoin >= 1_000 : !id.getPath().endsWith("_drum")) continue;
+            boolean fiole = id.getNamespace().equals("gtceu") && id.getPath().equals("glass_vial");
+            if (fiole ? besoin >= 1_000 : !drum(pile.getItem())) continue;
             var un = pile.copy();
             un.setCount(1);
-            var handler = FluidUtil.getFluidHandler(un).orElse(null);
-            if (handler == null) continue;
             int avant = volume(un, liquide);
             if (avant < 0) continue;
-            int place = handler.fill(liquide, FluidAction.SIMULATE);
+            int place = place(un, liquide);
             if (place <= 0) continue;
             if (choix != null) {
                 if (choix.fiole && !fiole) continue;
@@ -103,8 +101,45 @@ final class RemplissageMe {
         return choix;
     }
 
+    static boolean drum(Item item) {
+        var id = BuiltInRegistries.ITEM.getKey(item);
+        return id.getNamespace().equals("gtceu") && id.getPath().endsWith("_drum");
+    }
+
+    static RemplissageMe depuisMe(
+            List<Slot> slots, Inventory inventaire, ItemStack pile, FluidStack liquide) {
+        var un = pile.copy();
+        un.setCount(1);
+        if (volume(un, liquide) != 0) return null; // Ne jamais sortir un drum déjà rempli du ME.
+        int place = place(un, liquide);
+        if (place <= 0) return null;
+        for (Slot slot : slots)
+            if (slot.container == inventaire
+                    && slot.isActive()
+                    && slot.getItem().isEmpty()
+                    && slot.mayPlace(un))
+                return new RemplissageMe(null, slot, un, un, liquide, 0, place, false);
+        return null;
+    }
+
+    boolean preferableA(RemplissageMe autre, int besoin) {
+        if (autre == null) return true;
+        if (capacite < besoin || autre.capacite < besoin) return capacite > autre.capacite;
+        return capacite < autre.capacite;
+    }
+
+    private static int place(ItemStack un, FluidStack liquide) {
+        var handler = FluidUtil.getFluidHandler(un).orElse(null);
+        return handler == null ? 0 : handler.fill(liquide, FluidAction.SIMULATE);
+    }
+
     void prendre(BiConsumer<Slot, Integer> clic) {
         clic.accept(source, 0);
+        attendre(Etape.PRISE);
+    }
+
+    void prendreDansMe(Remplir prendre) throws ReflectiveOperationException {
+        prendre.envoyer();
         attendre(Etape.PRISE);
     }
 
@@ -114,8 +149,10 @@ final class RemplissageMe {
         ItemStack curseur = menu.getCarried();
         switch (etape) {
             case PRISE -> {
-                if (source.getItem().isEmpty() && ItemStack.matches(curseur, pile)) {
-                    if (source == depot) {
+                if ((source == null || source.getItem().isEmpty())
+                        && ItemStack.matches(curseur, pile)
+                        && volume(curseur, liquide) == volumeAvant) {
+                    if ((source == null || source == depot) && depot.getItem().isEmpty()) {
                         remplir.envoyer();
                         attendre(Etape.REMPLIR);
                     } else if (depot.getItem().isEmpty()) {

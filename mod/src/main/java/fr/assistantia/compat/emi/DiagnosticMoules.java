@@ -36,15 +36,20 @@ final class DiagnosticMoules {
         var base = stock.couverture();
         var suivi = observer(vue, base, moules);
         var recette = suivi;
-        if (!coffres.isEmpty()) {
+        var externes = MoulesDisponibles.pourPlan(vue);
+        if (!coffres.isEmpty() || !externes.isEmpty()) {
             base.addAll(coffres);
+            base.addAll(externes);
             recette = observer(vue, base, moules);
         }
+        var coffresMoules = new ArrayList<>(coffres);
+        coffresMoules.addAll(MoulesDisponibles.coffres(vue));
+        var reseau = MoulesDisponibles.reseau();
         var donnees = new ArrayList<Map.Entry<String, String>>();
         donnees.add(
                 Map.entry(
                         "Moules EMI",
-                        "Calculs de l’assistant : Suivi / Envoyer et onglet Recette. Le terminal ME est traité dans son propre menu."));
+                        "Le plan compte les moules à récupérer. Envoyer vérifie les entrées et les poches."));
         var demandes = recette;
         moules.sort(
                 java.util.Comparator.comparingInt(
@@ -58,7 +63,8 @@ final class DiagnosticMoules {
                     expliquer(
                             moule,
                             stock,
-                            coffres,
+                            coffresMoules,
+                            reseau,
                             releves,
                             memoirePrete,
                             sacs,
@@ -107,20 +113,17 @@ final class DiagnosticMoules {
                 collecte.variantes().stream()
                         .map(fr.assistantia.RessourceCollecte::idObjet)
                         .collect(java.util.stream.Collectors.toSet());
-        if (ids.stream().anyMatch(DiagnosticMoules::estMoule))
+        if (ids.stream().anyMatch(MoulesDisponibles::estMoule))
             moules.add(new Moule(noeud, ids, usage));
         for (int i = 0; i < collecte.enfants().size(); i++)
             chercher(collecte.enfants().get(i), noeud.enfants().get(i), noeud.recette(), moules);
-    }
-
-    private static boolean estMoule(String id) {
-        return id.startsWith("gtceu:") && id.endsWith("_casting_mold");
     }
 
     private static List<Map.Entry<String, String>> expliquer(
             Moule moule,
             StockFabricationEmi stock,
             List<PlanRetrait.Stock<EmiStack>> coffres,
+            List<PlanRetrait.Stock<EmiStack>> reseau,
             Map<String, Long> releves,
             boolean memoirePrete,
             List<ItemStack> sacs,
@@ -146,6 +149,7 @@ final class DiagnosticMoules {
         long virtuels = compter(moule, stock.credits()) + compter(moule, stock.attendus());
         long compatibles = personnel + tampons + machines + virtuels;
         long proches = compter(moule, coffres);
+        long enMe = compter(moule, reseau);
         long observes = moule.ids().stream().mapToLong(id -> releves.getOrDefault(id, 0L)).sum();
         String memoire =
                 memoirePrete
@@ -170,11 +174,12 @@ final class DiagnosticMoules {
                                 + " · Crédits et lots attendus : "
                                 + virtuels));
         lignes.add(Map.entry("Coffres à portée", memoire));
+        lignes.add(Map.entry("Réseau ME", enMe + " dans le dernier relevé du terminal"));
         var autres = new java.util.TreeMap<String, Long>();
         for (var source : List.of(stock.personnel(), stock.tampon()))
             for (var pile : source) {
                 String id = pile.objet().getId().toString();
-                if (estMoule(id) && !accepte.test(pile.objet()))
+                if (MoulesDisponibles.estMoule(id) && !accepte.test(pile.objet()))
                     autres.merge(id, (long) pile.quantite(), Long::sum);
             }
         if (!autres.isEmpty())
@@ -188,10 +193,16 @@ final class DiagnosticMoules {
                                             .map(e -> e.getKey() + " ×" + e.getValue())
                                             .toList())));
         String motifSuivi = decision(moule, suivi, compatibles);
-        if (suivi != null && suivi.manque() > 0 && proches > 0)
-            motifSuivi += " · le stock des coffres ordinaires est à récupérer.";
-        lignes.add(Map.entry("Suivi / Envoyer", motifSuivi));
-        lignes.add(Map.entry("Recette", decision(moule, recette, compatibles + proches)));
+        if (suivi != null && suivi.manque() > 0 && (proches > 0 || enMe > 0))
+            motifSuivi =
+                    enMe > 0
+                            ? "Moule à récupérer dans le réseau ME."
+                            : "Moule à récupérer dans un coffre.";
+        lignes.add(Map.entry("Envoyer", motifSuivi));
+        lignes.add(
+                Map.entry(
+                        "Recette",
+                        decision(moule, recette, compatibles + Math.max(proches, enMe))));
         return List.copyOf(lignes);
     }
 

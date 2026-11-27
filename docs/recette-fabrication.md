@@ -85,6 +85,12 @@ Refaire sans fiole pour vérifier le repli sur le drum. Demander ensuite 10 puis
 avec assez de liquide. Le panneau utilise un drum même si une fiole est disponible.
 Rejouer sans drum au-dessus du seuil et vérifier que le liquide reste dans ME.
 
+Avec un drum contenant déjà un autre liquide en poche, stocker dans ME 2 200 mB d’eau
+distillée, huit drums compatibles vides et un drum plein. Cliquer **Prendre** pour un besoin
+de 1 500 mB. Le drum des poches conserve son contenu, sept drums vides et le drum plein restent
+dans ME. Les poches reçoivent le drum de 2 200 mB et le curseur est vide. Refaire sans case
+libre et vérifier que le réseau conserve ses objets et ses fluides.
+
 ### Chaîne sac, terminal et cintreuse à 63, 64 et 65 plaques
 
 Utiliser la copie du pack et le [pack de données de test](../tests/fixtures/craft_lab/). Dans

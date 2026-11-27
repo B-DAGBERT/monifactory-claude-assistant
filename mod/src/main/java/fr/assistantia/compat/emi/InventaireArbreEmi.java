@@ -3,6 +3,7 @@ package fr.assistantia.compat.emi;
 import dev.emi.emi.api.recipe.EmiPlayerInventory;
 import dev.emi.emi.api.stack.EmiStack;
 import fr.assistantia.CoffreTampon;
+import fr.assistantia.CoffresConnus;
 import fr.assistantia.InventaireJoueur;
 import fr.assistantia.PlanRetrait;
 import fr.assistantia.SacsFabrication;
@@ -25,6 +26,8 @@ public final class InventaireArbreEmi {
             Object connexion,
             long inventaire,
             long tampon,
+            long coffres,
+            long moulesMe,
             long lots,
             List<PlanRetrait.Stock<ItemStack>> reseau,
             List<PlanRetrait.Stock<EmiStack>> fluidesMe,
@@ -76,6 +79,28 @@ public final class InventaireArbreEmi {
         ajouter(resultat, reservations);
         ORIGINES.put(resultat, natif);
         return resultat;
+    }
+
+    /** Le bilan de l'arbre peut couvrir un moule qu'il faut encore aller chercher. */
+    public static EmiPlayerInventory completerArbre(EmiPlayerInventory natif) {
+        var stock = completer(natif);
+        var arbre = CoffresArbreEmi.arbreActif();
+        if (arbre == null || !InventaireJoueur.fabricationDisponible()) return stock;
+        try {
+            var moules = MoulesDisponibles.pourPlan(InstantaneArbreEmi.lire(arbre));
+            if (moules.isEmpty()) return stock;
+            var resultat = new EmiPlayerInventory(List.of());
+            resultat.inventory.clear();
+            resultat.inventory.putAll(stock.inventory);
+            for (var moule : moules) {
+                var pile = moule.objet().copy().setAmount(moule.quantite());
+                resultat.inventory.merge(
+                        pile, pile, (a, b) -> a.getAmount() >= b.getAmount() ? a : b);
+            }
+            return resultat;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return stock;
+        }
     }
 
     /** Un handler EMI peut agréger A et B sous le seul NBT de la première pile. */
@@ -206,6 +231,8 @@ public final class InventaireArbreEmi {
                             mc.getConnection(),
                             InventaireJoueur.revisionFabrication(),
                             CoffreTampon.revision(),
+                            CoffresConnus.revisionProches(),
+                            MoulesDisponibles.revisionReseau(),
                             MachinesEmi.revisionLotsProduction(),
                             reseau,
                             fluidesMe,
@@ -219,7 +246,9 @@ public final class InventaireArbreEmi {
                 var stock = StockFabricationEmi.courant(physiques(personnels), reseau, fluidesMe);
                 ajouter(personnels, stock.tampon());
                 ajouter(personnels, stock.reseau());
-                plisChanges = PLIS.actualiser(arbre, physiques(personnels), stock.virtuels());
+                var aRecuperer = new ArrayList<>(stock.virtuels());
+                aRecuperer.addAll(MoulesDisponibles.pourPlan(instantane));
+                plisChanges = PLIS.actualiser(arbre, physiques(personnels), aRecuperer);
                 grillePrecedente = grille.stream().map(ItemStack::copy).toList();
             } else {
                 plisChanges = PLIS.surveiller();

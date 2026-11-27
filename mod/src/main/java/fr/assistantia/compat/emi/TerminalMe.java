@@ -5,6 +5,7 @@ import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import fr.assistantia.CoffreTampon;
+import fr.assistantia.CoffresConnus;
 import fr.assistantia.DispositionCoffre;
 import fr.assistantia.DispositionCoffre.Disposition;
 import fr.assistantia.InventaireJoueur;
@@ -27,6 +28,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -54,6 +56,8 @@ public final class TerminalMe {
 
     private record AccesFluide(Class<?> cle, Method pile, Object remplir) {}
 
+    private record ContenantMe(long serial, RemplissageMe remplissage) {}
+
     private record Acces(
             Class<?> menu,
             Class<?> ecran,
@@ -78,6 +82,7 @@ public final class TerminalMe {
             InstantaneArbreEmi arbre,
             long inventaire,
             long tampon,
+            long coffres,
             int menuRevision,
             List<Entree> stock,
             List<PlanRetrait.Stock<ItemStack>> stockCalcul,
@@ -121,6 +126,7 @@ public final class TerminalMe {
     private static Vue vue;
     private static Recherche recherche;
     private static Class<?> indexIndisponible;
+    private static Ingredient filtreMoules;
     private static AbstractContainerMenu menu;
     private static AbstractContainerScreen<?> ecran;
     private static InstantaneArbreEmi arbre;
@@ -383,6 +389,7 @@ public final class TerminalMe {
 
     private static void actualiser(boolean complet) throws ReflectiveOperationException {
         var actif = courant();
+        releverMoules(actif);
         Object tree = actif == null ? null : arbreCourant();
         if (tree == null || !InventaireJoueur.fabricationDisponible()) {
             if (vue != null) InventaireArbreEmi.invalider();
@@ -394,6 +401,7 @@ public final class TerminalMe {
         var stock = lire(actif, instantane, complet);
         long revision = InventaireJoueur.revisionFabrication(),
                 revisionTampon = CoffreTampon.revision(),
+                revisionCoffres = CoffresConnus.revisionProches(),
                 lots = MachinesEmi.revisionLotsProduction();
         var credits = CycleArbreEmi.credits();
         var outils = MachinesEmi.outilsInstalles();
@@ -406,6 +414,7 @@ public final class TerminalMe {
                 && vue.arbre() == instantane
                 && vue.inventaire() == revision
                 && vue.tampon() == revisionTampon
+                && vue.coffres() == revisionCoffres
                 && vue.menuRevision() == actif.getStateId()
                 && vue.lots() == lots
                 && vue.credits().equals(credits)
@@ -416,9 +425,10 @@ public final class TerminalMe {
         var fluidesMe = stockIdentique ? vue.fluidesMe() : stocksFluides(stock);
         var couverture =
                 StockFabricationEmi.courant(
-                        InventaireArbreEmi.physiques(InventaireArbreEmi.personnel()),
-                        stockCalcul,
-                        fluidesMe);
+                                InventaireArbreEmi.physiques(InventaireArbreEmi.personnel()),
+                                stockCalcul,
+                                fluidesMe)
+                        .avecMoulesDesCoffres(instantane);
         var retraits = new ArrayList<Lot>();
         var prises =
                 couverture.retraitsReseau(
@@ -466,6 +476,7 @@ public final class TerminalMe {
                         instantane,
                         revision,
                         revisionTampon,
+                        revisionCoffres,
                         actif.getStateId(),
                         stock,
                         stockCalcul,
@@ -480,9 +491,48 @@ public final class TerminalMe {
         InventaireArbreEmi.invalider();
     }
 
+    private static void releverMoules(AbstractContainerMenu actif)
+            throws ReflectiveOperationException {
+        if (actif == null) return; // La fermeture enlève les droits de retrait, pas le relevé.
+        if (!(boolean) ACCES.powered().invoke(actif)) {
+            MoulesDisponibles.oublierReseau();
+            return;
+        }
+        Object repo = ACCES.repo().invoke(actif);
+        if (repo == null) return;
+        if (filtreMoules == null)
+            filtreMoules =
+                    Ingredient.of(
+                            BuiltInRegistries.ITEM.entrySet().stream()
+                                    .filter(
+                                            e ->
+                                                    MoulesDisponibles.estMoule(
+                                                            e.getKey().location().toString()))
+                                    .map(Map.Entry::getValue)
+                                    .toArray(Item[]::new));
+        var stock = new ArrayList<PlanRetrait.Stock<ItemStack>>();
+        if (!filtreMoules.isEmpty())
+            for (Object entree : entrees(repo, filtreMoules, false)) {
+                long n = (long) ACCES.quantite().invoke(entree);
+                if (n <= 0) continue;
+                Object cle = ACCES.cle().invoke(entree);
+                if (!ACCES.item().isInstance(cle)) continue;
+                var item = (Item) ACCES.itemNatif().invoke(cle);
+                if (!MoulesDisponibles.estMoule(BuiltInRegistries.ITEM.getKey(item).toString()))
+                    continue;
+                stock.add(
+                        new PlanRetrait.Stock<>(
+                                (ItemStack) ACCES.pile().invoke(cle),
+                                (int) Math.min(1_000_000L, n),
+                                false));
+            }
+        MoulesDisponibles.releverReseau(stock);
+    }
+
     @SubscribeEvent
     public static void init(ScreenEvent.Init.Post event) {
         boolean terminal = ACCES != null && ACCES.ecran().isInstance(event.getScreen());
+        if (terminal && affiche != event.getScreen()) MoulesDisponibles.oublierReseau();
         demandePostes++;
         clicEnAttente = false;
         postes = EntreesTerminalMe.VIDE;
@@ -1074,18 +1124,44 @@ public final class TerminalMe {
         var disponible = lot.fluide().copy();
         // La simulation mesure toute la place compatible, comme l'action native d'AE2.
         disponible.setAmount(Integer.MAX_VALUE);
-        remplissage =
-                RemplissageMe.choisir(
-                        menu.slots,
-                        Minecraft.getInstance().player.getInventory(),
-                        disponible,
-                        reste);
-        if (remplissage == null) {
-            contenantManquant = true;
-            reste = 0;
+        var inventaire = Minecraft.getInstance().player.getInventory();
+        remplissage = RemplissageMe.choisir(menu.slots, inventaire, disponible, reste);
+        if (remplissage != null) {
+            remplissage.prendre(TerminalMe::clicCase);
             return;
         }
-        remplissage.prendre(TerminalMe::clicCase);
+        var contenant = contenantMe(disponible, reste);
+        if (contenant != null) {
+            remplissage = contenant.remplissage();
+            remplissage.prendreDansMe(
+                    () -> ACCES.retirer().invoke(menu, contenant.serial(), ACCES.un()));
+            return;
+        }
+        contenantManquant = true;
+        reste = 0;
+    }
+
+    private static ContenantMe contenantMe(FluidStack liquide, int besoin)
+            throws ReflectiveOperationException {
+        Object repo = ACCES.repo().invoke(menu);
+        if (repo == null) return null;
+        var inventaire = Minecraft.getInstance().player.getInventory();
+        ContenantMe choix = null;
+        for (Object entree : (Collection<?>) ACCES.entrees().invoke(repo)) {
+            if ((long) ACCES.quantite().invoke(entree) <= 0) continue;
+            Object cle = ACCES.cle().invoke(entree);
+            if (!ACCES.item().isInstance(cle)
+                    || !RemplissageMe.drum((Item) ACCES.itemNatif().invoke(cle))) continue;
+            long serial = (long) ACCES.serial().invoke(entree);
+            if (serial == -1) continue;
+            var candidat =
+                    RemplissageMe.depuisMe(
+                            menu.slots, inventaire, (ItemStack) ACCES.pile().invoke(cle), liquide);
+            if (candidat != null
+                    && candidat.preferableA(choix == null ? null : choix.remplissage(), besoin))
+                choix = new ContenantMe(serial, candidat);
+        }
+        return choix;
     }
 
     private static void clicCase(Slot slot, int bouton) {
@@ -1230,7 +1306,7 @@ public final class TerminalMe {
                                 + " mB récupérés dans le réseau ME.";
         if (contenantManquant)
             return resultat
-                    + " Prévois un drum ou une fiole compatible et une case libre si empilés.";
+                    + " Certains fluides restent dans ME. Il faut un contenant compatible par fluide et une case libre pour un drum pris dans ME ou un contenant empilé.";
         return resultat;
     }
 

@@ -56,6 +56,14 @@ public class InventaireJoueur {public static boolean sync=true;public static jav
 """,
     "fr.assistantia.SacsFabrication": """public class SacsFabrication {
  public static boolean actif=true;public static boolean actif(){return actif;}}""",
+    "fr.assistantia.CoffresConnus": """
+public class CoffresConnus {
+ public static java.util.Map<String,Long> stock=java.util.Map.of();
+ public static long revision;
+ public static java.util.Map<String,Long> proches(){return stock;}
+ public static long revisionProches(){return revision;}
+}
+""",
     "fr.assistantia.CoffreTampon": """
 public class CoffreTampon {
  public static java.util.List<net.minecraft.world.item.ItemStack> piles=java.util.List.of();
@@ -198,6 +206,7 @@ def compiler_contrats(directory):
             "mod/src/main/java/fr/assistantia/compat/emi/PlisFabricationEmi.java",
             "mod/src/main/java/fr/assistantia/compat/emi/InventaireArbreEmi.java",
             "mod/src/main/java/fr/assistantia/compat/emi/StockFabricationEmi.java",
+            "mod/src/main/java/fr/assistantia/compat/emi/MoulesDisponibles.java",
             "tests/java/fr/assistantia/compat/emi/PlisFabricationEmiTest.java",
             "tests/java/fr/assistantia/compat/emi/ParcoursStockTest.java",
             "tests/java/fr/assistantia/InventaireArbreEmiTest.java",
@@ -215,6 +224,24 @@ def compiler_contrats(directory):
 
 
 class EmiBackpackTreeTests(unittest.TestCase):
+    def test_un_moule_connu_supprime_sa_fabrication_et_reste_a_recuperer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            java = compiler_contrats(directory)
+            result = subprocess.run(
+                [
+                    java,
+                    "-ea",
+                    "-cp",
+                    directory,
+                    "fr.assistantia.compat.emi.ParcoursStockTest",
+                    "moules-disponibles",
+                ],
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_le_liquide_me_couvre_la_fabrication_apres_le_liquide_porte(self):
         with tempfile.TemporaryDirectory() as directory:
             java = compiler_contrats(directory)

@@ -88,6 +88,14 @@ public class MaterialNode {public dev.emi.emi.api.stack.EmiIngredient ingredient
 """
 STUBS.update(
     {
+        "fr.assistantia.CoffresConnus": """
+public class CoffresConnus {
+ public static java.util.Map<String,Long> stock=java.util.Map.of();
+ public static long revision;
+ public static java.util.Map<String,Long> proches(){return stock;}
+ public static long revisionProches(){return revision;}
+}
+""",
         "net.minecraft.world.level.material.Fluid": "public record Fluid(String id) {}",
         "net.minecraftforge.fluids.FluidStack": """
 public class FluidStack {
@@ -355,6 +363,7 @@ class MachineInputTests(unittest.TestCase):
                 "compat/emi/SuiviLotsEmi",
                 "compat/emi/LotMachine",
                 "compat/emi/StockFabricationEmi",
+                "compat/emi/MoulesDisponibles",
             )
         ]
         sources.append(compiler_retrait_me(cls.classes))

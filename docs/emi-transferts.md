@@ -106,6 +106,9 @@ Le relevé est valable tant que le menu du terminal est ouvert. Laisse le curseu
 de lancer le retrait ; en cas d’interruption, les objets déjà retirés peuvent se trouver sur
 le curseur. Pour un liquide, garde une **Glass Vial** compatible en poche sous 1 000 mB,
 ou un drum compatible pour tout volume. À partir de 1 000 mB, le panneau utilise un drum.
+Si aucun contenant compatible n’est accessible dans les poches, le panneau peut prendre
+un drum vide dans ME et ranger le drum rempli dans une case libre. Deux liquides différents
+utilisent deux contenants.
 AE2 peut remplir le contenant au-delà du besoin affiché. Le panneau remet le contenant rempli
 dans les poches et EMI compte alors ce liquide sans le faire fabriquer.
 Les objets seulement autocraftables restent à gérer dans AE2.

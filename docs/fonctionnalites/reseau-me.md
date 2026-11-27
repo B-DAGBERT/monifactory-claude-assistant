@@ -19,11 +19,14 @@
   L’autofabrication reste à gérer dans AE2. Le volume du réseau couvre la branche fluide de
   l’arbre tant que le terminal est ouvert. **Prendre** et **Tout** mesurent ce volume en mB.
 - Pour un retrait sous 1 000 mB, essayer d’abord une **Glass Vial** compatible, puis un drum.
-  À partir de 1 000 mB, utiliser un drum. Pour une pile de contenants, il faut une case libre
-  pour en isoler un. AE2 remplit le contenant jusqu’à sa capacité ou à épuisement du stock.
+  À partir de 1 000 mB, utiliser un drum. Si les poches ne contiennent aucun contenant
+  utilisable, prendre un drum vide compatible dans les objets stockés dans ME. Il faut
+  une case libre pour y ranger ce drum ou pour isoler un contenant empilé.
+  AE2 remplit le contenant jusqu’à sa capacité ou à épuisement du stock.
   Le volume peut dépasser le besoin affiché. Après confirmation du dépôt dans les poches,
-  le volume porté est pris en compte par EMI et peut servir à **Envoyer**. Si le contenant
-  manque, **Tout** poursuit avec les autres ingrédients disponibles.
+  le volume porté est pris en compte par EMI et peut servir à **Envoyer**. Chaque liquide
+  différent demande un contenant distinct. Si le contenant manque, **Tout** poursuit avec
+  les autres ingrédients disponibles.
 - Relire le terminal et l’arbre au clic. Prendre les piles entières lorsque la quantité et
   la place le permettent, puis les demi-piles. Pour le solde, compléter en priorité une pile
   de même variante. Le solde rejoint le curseur avant un seul dépôt par case. En solo, ses
@@ -63,6 +66,9 @@
   [Observation des entrées](../../mod/src/main/java/fr/assistantia/compat/emi/EntreesTerminalMe.java)
 - Fermer le terminal invalide son relevé. Un curseur occupé empêche le départ. Après un arrêt,
   vérifier le curseur et le stock restant avant de reprendre.
+- Pour le plan des moules, garder le dernier relevé des moules de fonderie et d’extrusion
+  après la fermeture du terminal. Une nouvelle ouverture, une déconnexion ou un changement
+  de dimension remplace ou efface ce relevé. Au clic, **Prendre** relit le stock du terminal ouvert.
 - **Prendre** et **Tout** signalent à Suivi les quantités déposées dans les poches. Le passage
   par le curseur reste une étape intermédiaire. Après Échap, seul le dernier dépôt déjà envoyé
   peut encore être confirmé, y compris par la mise à jour serveur de la case dans le menu fermé.

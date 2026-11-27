@@ -804,6 +804,8 @@ public final class AnalyseRecette {
                         + "|"
                         + CoffresConnus.revisionProches()
                         + "|"
+                        + MoulesDisponibles.revisionReseau()
+                        + "|"
                         + CoffresConnus.etat().pret()
                         + "|"
                         + CoffreTampon.revision()
@@ -844,6 +846,7 @@ public final class AnalyseRecette {
                 // récupérer : comme pour la surbrillance des machines d'un arbre suivi.
                 var stock = stockEmi();
                 stock.addAll(MachinesEmi.stockCoffres(vue, List.of()));
+                stock.addAll(MoulesDisponibles.pourPlan(vue));
                 stock.addAll(stockTampon());
                 operations = PlanMachines.calculer(vue.machines(), vue.lots(), stock);
             }
@@ -872,6 +875,17 @@ public final class AnalyseRecette {
                                 : List.of());
         if (InventaireJoueur.fabricationDisponible()) {
             sources.addAll(coffres(visibles));
+            var me = MoulesDisponibles.reseau();
+            for (var moule : MoulesDisponibles.pourPlan(vue))
+                sources.add(
+                        new OrdreMachines.StockSource<>(
+                                new PlanRetrait.Stock<>(
+                                        new OrdonnancementEmi.Objet(moule.objet(), false),
+                                        moule.quantite(),
+                                        false),
+                                me.contains(moule)
+                                        ? OrdreMachines.Origine.RESEAU_ME
+                                        : OrdreMachines.Origine.COFFRE));
             // Moules, presses, lentilles déjà installés dans une machine : présents, rien à
             // chercher (machine GregTech déjà ouverte, inscriber d'AE2 relevé par le serveur).
             for (var outil : MachinesEmi.outilsInstalles())
@@ -946,7 +960,9 @@ public final class AnalyseRecette {
                     if (!pile.getItemStack().isEmpty()) utiles.add(pile.getId().toString());
         List<OrdreMachines.StockSource<OrdonnancementEmi.Objet>> sources = new ArrayList<>();
         for (var e : CoffresConnus.proches().entrySet()) {
-            if (!utiles.contains(e.getKey()) || sources.size() >= 2048) continue;
+            if (!utiles.contains(e.getKey())
+                    || MoulesDisponibles.estMoule(e.getKey())
+                    || sources.size() >= 2048) continue;
             var objet = Pont.objet(e.getKey());
             if (objet.isEmpty()) continue;
             sources.add(
@@ -1326,6 +1342,7 @@ public final class AnalyseRecette {
         return raison.startsWith(OrdreMachines.DU_SAC)
                 || raison.startsWith(OrdreMachines.D_UN_COFFRE)
                 || raison.startsWith(OrdreMachines.DU_TAMPON)
+                || raison.startsWith(OrdreMachines.DU_RESEAU)
                 || raison.startsWith(OrdreMachines.A_REPRENDRE);
     }
 
@@ -1342,6 +1359,7 @@ public final class AnalyseRecette {
                     : "Dans ton backpack";
         if (raison.startsWith(OrdreMachines.A_REPRENDRE)) return "À reprendre en main";
         if (raison.startsWith(OrdreMachines.DU_TAMPON)) return "Dans le coffre tampon";
+        if (raison.startsWith(OrdreMachines.DU_RESEAU)) return "Dans le réseau ME";
         if (raison.startsWith(OrdreMachines.D_UN_COFFRE)) return "Dans un coffre";
         if (raison.startsWith(OrdreMachines.A_RECUPERER)) return "À sortir (sac, coffre)";
         if (raison.startsWith("Dépendance cyclique")) return "Cycle dans l’arbre";

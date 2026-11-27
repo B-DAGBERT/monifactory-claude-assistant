@@ -58,6 +58,7 @@ public final class RevisionEmiBenchmark {
                                     etat.lots(),
                                     etat.coffres(),
                                     etat.tampons(),
+                                    0,
                                     etat.credits(),
                                     etat.outils())
                             : ClesEmiMesure.cleStock(stock)

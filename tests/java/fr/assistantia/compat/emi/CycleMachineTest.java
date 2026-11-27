@@ -1274,9 +1274,7 @@ public final class CycleMachineTest {
                         true);
         assert comparatif.toString().contains("Moule recherché=" + ingot);
         assert comparatif.toString().contains("Moules non compatibles=" + plaque + " ×1");
-        assert comparatif
-                .toString()
-                .contains("Suivi / Envoyer=Compté : 0 sur 1 · manque 1 · fabrication prévue ×1");
+        assert comparatif.toString().contains("Envoyer=Moule à récupérer dans un coffre.");
         assert comparatif.toString().contains("Recette=Compté : 1 sur 1 · besoin couvert.");
         var sac = new ItemStack(ingot, 1);
         var porte =
@@ -1286,7 +1284,7 @@ public final class CycleMachineTest {
                 DiagnosticMoules.lire(
                         vue, porte, List.of(), java.util.Map.of(), true, List.of(sac), true);
         assert avecSac.toString().contains("Poches / curseur : 0 · Backpack : 1");
-        assert avecSac.toString().contains("Suivi / Envoyer=Compté : 1 sur 1 · besoin couvert.");
+        assert avecSac.toString().contains("Envoyer=Compté : 1 sur 1 · besoin couvert.");
         assert !avecSac.toString().contains("fabrication prévue");
     }
 

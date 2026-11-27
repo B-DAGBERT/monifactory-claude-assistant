@@ -28,6 +28,11 @@
   du stock transférable.
 - La comparaison conserve les variantes exigées, dont le NBT. L’usure et la charge ne changent
   pas le type d’un outil GregTech. Un moule ou un outil réutilisable ne se multiplie pas par lot.
+- Un moule GregTech de fonderie ou d’extrusion déjà repéré dans un coffre à portée, ou vu dans
+  le dernier terminal AE2 de cette connexion et dimension, couvre sa branche de fabrication
+  dans l’arbre EMI, Recette et le panneau machine. L’onglet Recette indique où le récupérer.
+  **Repérage** et **Prendre** gardent leurs sources de retrait. **Envoyer** vérifie le moule
+  dans les poches ou dans la bonne machine au moment du transfert.
 - Le circuit d’une recette GregTech est un réglage virtuel. Un circuit demandé comme résultat
   ou consommé par une recette reste un objet.
 - Pour un moule proposé alors qu’il existe déjà, vérifier son identifiant exact et l’écran qui
@@ -74,3 +79,9 @@ sélection restreinte du gestionnaire.
 
 Pour un changement de stock commun, rejouer le même cas dans EMI, Repérage, Réseau ME et
 Envoyer. [Parcours stock](../scenarios.md#parcours-stock) · [Ordonnancement](../ordonnancement-machines.md)
+
+Le contrat des moules rejoue douze fabrications avec un mauvais moule en coffre, puis le bon
+moule en coffre ou dans le dernier relevé ME. Avec des moules vierges dans ME, il vérifie que
+le mauvais moule laisse un seul vierge à prendre et que le bon moule en coffre supprime ce
+retrait. Repérage conserve le retrait du moule formé. Le contrat vérifie aussi sa prise directe
+si ME en possède un et la perte du relevé ME lors d’une nouvelle connexion.

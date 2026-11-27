@@ -21,6 +21,6 @@ public abstract class InventaireEcranArbreEmiMixin {
             remap = false,
             require = 1)
     private EmiPlayerInventory assistantia$inventaire(Player player) {
-        return InventaireArbreEmi.completer(EmiPlayerInventory.of(player));
+        return InventaireArbreEmi.completerArbre(EmiPlayerInventory.of(player));
     }
 }
