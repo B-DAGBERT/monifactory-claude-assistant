@@ -1,8 +1,15 @@
 package fr.assistantia;
 
+import java.util.List;
+
 /** État conservé à la fermeture du menu, indépendant de Minecraft pour être testable. */
 final class EtatDiscussion {
+    static final int LIMITE_HISTORIQUE = 50;
+
     private String brouillon = "", question = "", information = "";
+    private String brouillonAvantRappel = "";
+    private List<String> historique = List.of(), historiqueConsulte = List.of();
+    private int rappel = -1;
     private long demande;
     private int position, maximum;
     private boolean suivre = true;
@@ -14,6 +21,33 @@ final class EtatDiscussion {
     void brouillon(String texte) {
         brouillon = texte;
         if (!enAttente()) information = "";
+    }
+
+    void historique(List<String> messages) {
+        historique = List.copyOf(messages);
+    }
+
+    void rappeler(boolean precedent) {
+        if (enAttente()) return;
+        if (rappel < 0) {
+            if (!precedent || historique.isEmpty()) return;
+            brouillonAvantRappel = brouillon;
+            historiqueConsulte = historique;
+            rappel = historiqueConsulte.size();
+        }
+        rappel = Math.max(0, rappel + (precedent ? -1 : 1));
+        if (rappel < historiqueConsulte.size()) {
+            brouillon(historiqueConsulte.get(rappel));
+        } else {
+            brouillon(brouillonAvantRappel);
+            finRappel();
+        }
+    }
+
+    private void finRappel() {
+        rappel = -1;
+        historiqueConsulte = List.of();
+        brouillonAvantRappel = "";
     }
 
     boolean enAttente() {
@@ -49,6 +83,7 @@ final class EtatDiscussion {
             if ("acceptee".equals(etat)) {
                 brouillon = "";
                 information = "";
+                finRappel();
             } else {
                 information =
                         "expiree".equals(etat)

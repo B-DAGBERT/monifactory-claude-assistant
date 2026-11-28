@@ -9,26 +9,34 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from monifactory_assistant.config import write_json
+from monifactory_assistant.settings import QUESTION_HISTORY_LIMIT
 
 
-def recent_history(data_dir, provider):
-    """Restore the game's recent display after restart, excluding an unfinished answer."""
+def restore_discussion(data_dir, provider):
+    """Restore displayed messages and the input history, without resuming the provider thread."""
     try:
         view = json.loads((Path(data_dir) / "vue_mod.json").read_text(encoding="utf-8"))
         if view.get("moteur") != provider:
-            return []
-        rows = view["ecran"]["conversation"]
+            return [], []
+        screen = view["ecran"]
+        rows = screen["conversation"]
         if (view.get("bulle") or {}).get("en_cours"):
             rows = rows[:-1]
-        return [
+        messages = [
             {"de": row["de"], "texte": row["texte"]}
             for row in rows[-30:]
             if isinstance(row, dict)
             and row.get("de") in ("toi", "claude")
             and isinstance(row.get("texte"), str)
         ]
+        questions = screen.get("questions_recentes")
+        if not isinstance(questions, list):
+            questions = [row["texte"] for row in messages if row["de"] == "toi"]
+        return messages, [q for q in questions if isinstance(q, str) and q.strip()][
+            -QUESTION_HISTORY_LIMIT:
+        ]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return []
+        return [], []
 
 
 class DiscussionViewer:

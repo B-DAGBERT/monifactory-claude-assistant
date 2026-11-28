@@ -18,7 +18,7 @@ from monifactory_assistant.game.storage import Storage
 from monifactory_assistant.game.world import OBSERVATION_MAX_AGE_MS, observation_date
 from monifactory_assistant.prompts import ACTIONS_HELP
 from monifactory_assistant.providers.session import Conversation
-from monifactory_assistant.ui.discussion import recent_history
+from monifactory_assistant.ui.discussion import restore_discussion
 from tests.benchmarks.question_context import START
 from tests.test_discussion_session import use_fake_claude
 from tests.test_world_routing import (
@@ -201,7 +201,7 @@ class QuestionLifecycleTests(TestCase):
             {"de": "claude", "texte": "Réponse historique sans provenance"},
         ]
         dump(app.bridge.dir / "vue_mod.json", {"moteur": "Codex", "ecran": {"conversation": rows}})
-        app.history = recent_history(app.bridge.dir, "Codex")
+        app.history, app.question_history = restore_discussion(app.bridge.dir, "Codex")
         app.conversation = Conversation(app.bridge.dir)
         self.assertEqual(app.history, rows)
         self.after_idle("Question après restauration")

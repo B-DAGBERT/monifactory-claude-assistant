@@ -166,6 +166,7 @@ def build_mod_view(app, *, have, now, emi_search=None):
             for key, (name, text, _) in SETTINGS.items()
         ],
         "conversation": app.history[-30:],
+        "questions_recentes": getattr(app, "question_history", []),
         "machines": machines,
         "coffres": len(storage.containers),
         "joueurs": [f"{p['nom']} en {p['x']} {p['y']} {p['z']}" for p in app.world.players],

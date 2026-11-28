@@ -45,7 +45,8 @@ final class OngletDiscussion {
     private final BarreDefilement barre = new BarreDefilement();
     private Font font;
     private BoutonTheme derniers;
-    private JsonArray source;
+    private JsonArray source, sourceHistorique;
+    private boolean historiqueDedie;
     private boolean apercuCourant = true;
     private String attente = "", copie = "";
     private long copieJusqua;
@@ -81,6 +82,34 @@ final class OngletDiscussion {
                         : new JsonObject();
         etat.confirmer(
                 numero(recu, "n"), Pont.texte(recu, "etat"), numero(ecran, "derniere_demande"));
+        actualiserHistorique(ecran);
+    }
+
+    private void actualiserHistorique(JsonObject ecran) {
+        boolean dedie = ecran.get("questions_recentes") instanceof JsonArray;
+        var messages = ecran.get(dedie ? "questions_recentes" : "conversation");
+        if (!(messages instanceof JsonArray liste)
+                || (historiqueDedie == dedie && liste.equals(sourceHistorique))) return;
+        sourceHistorique = liste;
+        historiqueDedie = dedie;
+        var questions = new ArrayList<String>();
+        for (int i = Math.max(0, liste.size() - EtatDiscussion.LIMITE_HISTORIQUE);
+                i < liste.size();
+                i++) {
+            var message = liste.get(i);
+            if (!dedie) {
+                if (!(message instanceof JsonObject ligne)
+                        || !"toi".equals(Pont.texte(ligne, "de"))) continue;
+                message = ligne.get("texte");
+            }
+            if (message != null
+                    && message.isJsonPrimitive()
+                    && message.getAsJsonPrimitive().isString()) {
+                String question = message.getAsString();
+                if (!question.isBlank()) questions.add(question);
+            }
+        }
+        etat.historique(questions);
     }
 
     private static long numero(JsonObject objet, String cle) {

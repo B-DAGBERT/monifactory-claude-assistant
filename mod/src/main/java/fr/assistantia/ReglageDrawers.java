@@ -13,7 +13,7 @@ public final class ReglageDrawers {
     public static final String CLE = "local_drawers_pleins";
     private static final Path FICHIER =
             FMLPaths.CONFIGDIR.get().resolve("assistantia-drawers-pleins.txt");
-    private static volatile boolean actif;
+    private static volatile boolean actif = true;
     private static boolean modifie;
 
     static {
@@ -42,7 +42,7 @@ public final class ReglageDrawers {
 
     private static void charger() {
         try {
-            if (!"true".equals(Files.readString(FICHIER).strip())) return;
+            if (!"false".equals(Files.readString(FICHIER).strip())) return;
         } catch (NoSuchFileException absent) {
             return;
         } catch (IOException | SecurityException inaccessible) {
@@ -50,7 +50,7 @@ public final class ReglageDrawers {
             return;
         }
         synchronized (ReglageDrawers.class) {
-            if (!modifie) actif = true;
+            if (!modifie) actif = false;
         }
     }
 }

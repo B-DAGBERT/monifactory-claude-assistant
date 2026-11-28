@@ -307,6 +307,14 @@ public class EcranAssistant extends Screen {
 
     @Override
     public boolean keyPressed(int touche, int scancode, int modificateurs) {
+        if (onglet == Onglet.DISCUSSION
+                && saisie.isFocused()
+                && (touche == GLFW.GLFW_KEY_UP || touche == GLFW.GLFW_KEY_DOWN)) {
+            ETAT_DISCUSSION.rappeler(touche == GLFW.GLFW_KEY_UP);
+            if (!saisie.getValue().equals(ETAT_DISCUSSION.brouillon()))
+                saisie.setValue(ETAT_DISCUSSION.brouillon());
+            return true;
+        }
         if ((touche == GLFW.GLFW_KEY_ENTER || touche == GLFW.GLFW_KEY_KP_ENTER)
                 && saisie.isFocused()) {
             envoyerQuestion();

@@ -18,6 +18,7 @@ HOTKEY_NEW = "ctrl+f8"
 HOTKEY_HIDE = "f9"
 
 HOTKEY_VOICE = "f10"
+QUESTION_HISTORY_LIMIT = 50
 
 COACH = "normal"  # "calme" : aucune annonce ; "normal" ; "bavard" : il commente tout
 

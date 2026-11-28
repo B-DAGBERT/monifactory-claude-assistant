@@ -12,6 +12,7 @@
 - Garder **Réglages** à droite, montrer l’état courant d’une bascule et laisser assez de place aux listes à petite résolution. Réutiliser les widgets communs.
 - Échap revient au bon écran. Défilement, clic et relâchement restent dans le panneau qui les possède. Un clic lié à une ligne périmée ne déclenche pas l’action de la nouvelle ligne.
 - Les réglages IA s’enregistrent contre la révision affichée. Conserver les autres clés et les préférences du fournisseur, y compris lors d’une reprise depuis la sauvegarde.
+- **Drawers pleins** est activé par défaut. Un choix local de désactivation prime sur ce défaut lors du chargement.
 
 Quand `assistant.local.json` est illisible, le panneau peut modifier la configuration récupérée depuis son `.bak`. Il vérifie les deux fichiers avant d’appliquer la modification. Une édition externe impose de recharger les réglages. Pour les préférences de jeu, seule une version dictionnaire de `reglages.json` peut remplacer la copie de secours. Les tests `tests.test_ai_settings` et `tests.test_ai_action_guard` rejouent ces récupérations.
 

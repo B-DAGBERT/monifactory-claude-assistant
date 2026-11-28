@@ -13,6 +13,7 @@
 - Texte et voix partagent l’état d’admission de Discussion. Un double clic ou un événement répété ne lance pas deux tours.
 - Le clic **Parler** ouvre Discussion. La transcription et la réponse appartiennent à la bonne demande. Une réponse tardive reste attachée à son contexte d’origine.
 - Le menu vide le champ quand `question_recue` accepte son numéro et garde le brouillon sur un refus. L’accusé d’une question n’est publié qu’une fois son admission décidée, dans un nouvel objet. La vue écrite pendant le démarrage du tour garde l’accusé précédent. `test_admission_never_publishes_a_provisional_refusal_of_the_question` le vérifie.
+- Dans le champ de Discussion, ↑ et ↓ parcourent les 50 dernières questions saisies ou transcrites. Après la plus récente, ↓ remet le brouillon initial. `questions_recentes` est conservé dans la vue locale et restauré au redémarrage pour le même moteur. Rappeler une question n’envoie aucune demande.
 - Le mod pilote la conversation. Le panneau local la suit en lecture seule. Le choix de fournisseur, les préférences et les sessions restent propres à l’installation.
 - Pour un chargement bloqué, vérifier l’accusé de la demande, l’état affiché et le journal du fournisseur. Garder distincts un envoi accepté et une réponse reçue.
 - Le journal note `Temps : premier mot X s, fin Y s`. Le premier mot correspond au premier aperçu non vide affiché, la fin à la remise de la réponse.

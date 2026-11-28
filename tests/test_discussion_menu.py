@@ -15,6 +15,7 @@ from unittest.mock import Mock, patch
 
 from monifactory_assistant.application.conversation import ConversationController
 from monifactory_assistant.application.interface import InterfaceController
+from monifactory_assistant.ui.discussion import restore_discussion
 from tests.app_source import application_tree
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -225,6 +226,32 @@ class QuestionInputTests(unittest.TestCase):
         thread = patch("monifactory_assistant.application.conversation.threading.Thread")
         self.worker = thread.start()
         self.addCleanup(thread.stop)
+
+    def test_keeps_50_questions_even_with_more_answers_and_restores_them(self):
+        app = self.app
+        app.history = []
+        for index in range(60):
+            app.on_history("toi", f"Question {index}")
+            app.on_history("claude", "Réponse")
+            app.on_history("claude", "Notification")
+        app.on_history("toi", "  ")
+        questions = [f"Question {i}" for i in range(10, 60)]
+        self.assertEqual(app.question_history, questions)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "vue_mod.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "moteur": "Codex",
+                        "ecran": {
+                            "conversation": app.history[-30:],
+                            "questions_recentes": ["Plus ancienne", *questions, None, " ", 42],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(restore_discussion(directory, "Codex"), (app.history[-30:], questions))
 
     def test_mod_cannot_start_text_during_recording_and_voice_starts_once(self):
         app = self.app

@@ -64,6 +64,15 @@ def app(**changes):
 
 
 class ModViewTests(unittest.TestCase):
+    def test_question_input_history_is_published_beside_displayed_messages(self):
+        questions = [f"Question {i}" for i in range(50)]
+        history = [{"de": "toi", "texte": q} for q in questions]
+        screen = build_mod_view(app(history=history, question_history=questions), have={}, now=NOW)[
+            "ecran"
+        ]
+        self.assertEqual(screen["questions_recentes"], questions)
+        self.assertEqual(screen["conversation"], history[-30:])
+
     def test_no_project_or_objective_data_is_published(self):
         view = build_mod_view(app(), have={}, now=NOW)
         json.dumps(view)  # written as is in vue_mod.json

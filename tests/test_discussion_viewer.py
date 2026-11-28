@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from monifactory_assistant.ui.discussion import DiscussionViewer, recent_history
+from monifactory_assistant.ui.discussion import DiscussionViewer, restore_discussion
 from tests.app_source import application_tree
 
 
@@ -155,15 +155,16 @@ class ViewerTests(unittest.TestCase):
 
     def test_restore_recent_messages_but_not_unfinished_answer_or_other_provider(self):
         self.write_view("question")
-        self.assertEqual(recent_history(self.root, "Codex"), [{"de": "toi", "texte": "question"}])
+        messages = [{"de": "toi", "texte": "question"}]
+        self.assertEqual(restore_discussion(self.root, "Codex"), (messages, ["question"]))
         view = json.loads(self.path.read_text())
         view["ecran"]["conversation"].append({"de": "claude", "texte": "partiel"})
         view["bulle"] = {"en_cours": True, "texte": "partiel"}
         self.path.write_text(json.dumps(view))
-        self.assertEqual(len(recent_history(self.root, "Codex")), 1)
-        self.assertEqual(recent_history(self.root, "Claude"), [])
+        self.assertEqual(restore_discussion(self.root, "Codex"), (messages, ["question"]))
+        self.assertEqual(restore_discussion(self.root, "Claude"), ([], []))
         self.path.write_text("{")
-        self.assertEqual(recent_history(self.root, "Codex"), [])
+        self.assertEqual(restore_discussion(self.root, "Codex"), ([], []))
 
     def test_no_writes_no_arbitrary_files_and_no_cross_origin_reads(self):
         self.write_view()

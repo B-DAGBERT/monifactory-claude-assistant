@@ -33,7 +33,7 @@ public class MutableComponent extends Component {MutableComponent(String t){supe
  public MutableComponent withStyle(net.minecraft.ChatFormatting f){return this;}}
 """,
         "org.lwjgl.glfw.GLFW": """
-public class GLFW {public static final int GLFW_KEY_ENTER=257,GLFW_KEY_KP_ENTER=335,GLFW_KEY_PAGE_UP=266,GLFW_KEY_PAGE_DOWN=267,GLFW_MOUSE_BUTTON_LEFT=0;}
+public class GLFW {public static final int GLFW_KEY_ENTER=257,GLFW_KEY_KP_ENTER=335,GLFW_KEY_UP=265,GLFW_KEY_DOWN=264,GLFW_KEY_PAGE_UP=266,GLFW_KEY_PAGE_DOWN=267,GLFW_MOUSE_BUTTON_LEFT=0;}
 """,
         "org.slf4j.Logger": "public class Logger {public void warn(String m,Throwable t){}}",
         "com.mojang.logging.LogUtils": """
@@ -253,7 +253,12 @@ public class DashboardLayoutTest {
   etat.observer(new EtatReglages.Contexte("legacy",new Object(),new Object()),true,ecran,51603);
   assert !etat.enAttente()&&etat.information().contains("Connexion");
  }
- public static void main(String[] args)throws java.io.IOException{
+ public static void main(String[] args)throws Exception{
+  if(args.length>0&&args[0].equals("drawers-disabled")){
+   for(int i=0;i<100&&ReglageDrawers.actif();i++)Thread.sleep(10);
+   assert !ReglageDrawers.actif():"explicit false must survive restart";
+   return;
+  }
   etatReglages();
   var mc=Minecraft.getInstance();
   var ecran=new JsonObject();Pont.vue.add("ecran",ecran);Pont.vue.addProperty("moteur","Codex");
@@ -344,17 +349,17 @@ public class DashboardLayoutTest {
    s.mouseClicked(sac[0]+2,sac[1]+2,0);render(s);
    assert SacsFabrication.actif()&&Pont.envois.size()==avantSac:cas+": backpack option can be reenabled";
    Pont.actif=false;render(s);
-   int[] drawers=interrupteur("Drawers pleins","✘ Désactivé");
+   int[] drawers=interrupteur("Drawers pleins","✔ Activé");
    for(int k=0;k<4&&(drawers==null||drawers[1]+2>=ligneStatut-Theme.ECART);k++){
-    s.mouseScrolled(w/2,h/2,-1);render(s);drawers=interrupteur("Drawers pleins","✘ Désactivé");}
-   assert drawers!=null&&!ReglageDrawers.actif():cas+": visible drawer option defaults off with assistant stopped";
+    s.mouseScrolled(w/2,h/2,-1);render(s);drawers=interrupteur("Drawers pleins","✔ Activé");}
+   assert drawers!=null&&ReglageDrawers.actif():cas+": visible drawer option defaults on with assistant stopped";
    s.mouseClicked(drawers[0]+2,drawers[1]+2,0);render(s);
    var preference=java.nio.file.Path.of(System.getProperty("test.config"),"assistantia-drawers-pleins.txt");
-   assert ReglageDrawers.actif()&&java.nio.file.Files.readString(preference).equals("true"):cas+": drawer option applies and persists locally";
-   drawers=interrupteur("Drawers pleins","✔ Activé");assert drawers!=null:cas+": drawer option displays the applied value";
+   assert !ReglageDrawers.actif()&&java.nio.file.Files.readString(preference).equals("false"):cas+": drawer option applies and persists locally";
+   drawers=interrupteur("Drawers pleins","✘ Désactivé");assert drawers!=null:cas+": drawer option displays the applied value";
    s.mouseClicked(drawers[0]+2,drawers[1]+2,0);render(s);
-   assert !ReglageDrawers.actif()&&java.nio.file.Files.readString(preference).equals("false")
-       &&Pont.envois.size()==avantSac:cas+": drawer option turns off locally";
+   assert ReglageDrawers.actif()&&java.nio.file.Files.readString(preference).equals("true")
+       &&Pont.envois.size()==avantSac:cas+": drawer option can be restored locally";
    Pont.actif=true;
    s.mouseScrolled(w/2,h/2,-1);render(s);
    int[] voix=interrupteur("Lecture à voix","✘ Désactivé");
@@ -409,6 +414,31 @@ public class DashboardLayoutTest {
   accuse(ecran,requete.get("n").getAsLong(),Pont.texte(requete,"requete"),"refusee");
   render(echec);
   assert ecrit("Réglage refusé")!=null&&interrupteur("Lecture à voix","✘ Désactivé")!=null;
+  var saisie=question(echec);saisie.setFocused(true);saisie.setValue("Brouillon en cours");
+  assert !echec.keyPressed(265,0,0)&&saisie.getValue().equals("Brouillon en cours");
+  bouton(echec,"Discussion").onPress();render(echec);
+  assert echec.keyPressed(265,0,0)&&saisie.getValue().startsWith("Message 10"):"fallback for older assistant";
+  assert echec.keyPressed(264,0,0)&&saisie.getValue().equals("Brouillon en cours");
+  var questions=new JsonArray();for(int i=0;i<60;i++)questions.add("Question "+i);
+  ecran.add("questions_recentes",questions);render(echec);
+  int envois=Pont.envois.size();
+  assert echec.keyPressed(265,0,0)&&saisie.getValue().equals("Question 59");
+  for(int i=0;i<60;i++)assert echec.keyPressed(265,0,0);
+  assert saisie.getValue().equals("Question 10"):"only the last 50 questions";
+  questions=new JsonArray();questions.add("Nouvelle question vocale");
+  ecran.add("questions_recentes",questions);render(echec);
+  assert echec.keyPressed(264,0,0)&&saisie.getValue().equals("Question 11"):"stable position after refresh";
+  for(int i=0;i<60;i++)assert echec.keyPressed(264,0,0);
+  assert saisie.getValue().equals("Brouillon en cours");
+  assert echec.keyPressed(265,0,0)&&saisie.getValue().equals("Nouvelle question vocale");
+  assert Pont.envois.size()==envois:"recalling a message never sends it";
+  echec.keyPressed(257,0,0);render(echec);
+  assert Pont.envois.size()==envois+1&&saisie.getValue().equals("Nouvelle question vocale");
+  assert echec.keyPressed(264,0,0)&&saisie.getValue().equals("Nouvelle question vocale"):"no recall while awaiting acknowledgement";
+  requete=Pont.envois.get(envois);
+  ecran.add("question_recue",accuse(ecran,requete.get("n").getAsLong(),Pont.texte(requete,"requete"),"acceptee"));render(echec);
+  assert echec.keyPressed(264,0,0)&&saisie.getValue().isEmpty():"accepted send resets the draft";
+  ReglageDrawers.regler(false);
   System.out.println("PASS dashboard layout");
  }
 }
@@ -461,17 +491,18 @@ class DashboardLayoutTests(unittest.TestCase):
                 timeout=120,
             )
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            command = [
+                java,
+                "-ea",
+                "-Dfile.encoding=UTF-8",
+                "-Dstdout.encoding=UTF-8",
+                f"-Dtest.config={config}",
+                "-cp",
+                classpath,
+                "fr.assistantia.DashboardLayoutTest",
+            ]
             result = subprocess.run(
-                [
-                    java,
-                    "-ea",
-                    "-Dfile.encoding=UTF-8",
-                    "-Dstdout.encoding=UTF-8",
-                    f"-Dtest.config={config}",
-                    "-cp",
-                    classpath,
-                    "fr.assistantia.DashboardLayoutTest",
-                ],
+                command,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -480,6 +511,10 @@ class DashboardLayoutTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("PASS dashboard layout", result.stdout)
+            result = subprocess.run(
+                [*command, "drawers-disabled"], capture_output=True, text=True, timeout=10
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

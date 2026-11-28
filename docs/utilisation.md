@@ -9,6 +9,10 @@ pour chaque message. La molette, la barre de défilement (que l’on peut faire 
 touches Page précédente / Page suivante permettent de relire l’historique. **Derniers messages**
 ramène à la réponse en cours.
 
+Dans le champ de saisie de **Discussion**, **↑** rappelle les 50 dernières questions tapées ou
+transcrites et **↓** revient vers les plus récentes, puis à ton brouillon. Appuie sur **Entrée**
+pour envoyer le texte rappelé après l’avoir éventuellement modifié.
+
 Le brouillon reste disponible quand tu fermes le menu ou redimensionnes le jeu, pendant cette
 session Minecraft. Il est effacé uniquement après réception par l’assistant. Un second envoi
 est bloqué pendant la transmission et la réponse ; tu peux préparer la question suivante.
@@ -353,6 +357,7 @@ progression** concerne les quêtes terminées, les nouveaux filons et les machin
 **Drawers pleins** affiche une croix rouge sur les tiroirs Functional Storage proches
 une fois toutes leurs cases pleines. La croix devient orange lorsque le **Void Upgrade**
 est actif. Le calcul de la capacité tient compte des upgrades installés.
+Cette option est activée par défaut et peut être désactivée dans **Réglages**.
 
 La liste défile à la molette ou avec sa barre de défilement. **Modèles IA…** et **Diagnostic…**
 s’ouvrent depuis cet onglet.

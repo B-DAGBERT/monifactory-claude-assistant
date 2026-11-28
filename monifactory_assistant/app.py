@@ -47,7 +47,7 @@ from monifactory_assistant.settings import (
     SETTINGS,
     SETTINGS_FILE,
 )
-from monifactory_assistant.ui.discussion import DiscussionViewer, recent_history
+from monifactory_assistant.ui.discussion import DiscussionViewer, restore_discussion
 
 
 class App(GameController, ConversationController, InterfaceController):
@@ -103,7 +103,9 @@ class App(GameController, ConversationController, InterfaceController):
         self.world = World(enabled=not self.bridge.isolated)  # relevés du script serveur
         self.storage_monitor = StorageMonitor()
         # mod Minecraft : écran de l'assistant, surbrillance, faisceaux
-        self.history = recent_history(self.bridge.dir, ai_provider.label())
+        self.history, self.question_history = restore_discussion(
+            self.bridge.dir, ai_provider.label()
+        )
         self.last_mod_view = None
         self.mod_request_time, self.mod_request_n = None, None
         self.question_ack = {}

@@ -29,6 +29,7 @@ from monifactory_assistant.runtime import log
 from monifactory_assistant.settings import (
     HOTKEY_TALK,
     INFO_FILE,
+    QUESTION_HISTORY_LIMIT,
     SAMPLE_RATE,
     SENTENCE_END,
     SETTINGS,
@@ -111,6 +112,9 @@ class ConversationController:
 
     def add_history(self, who, text):
         self.history = (self.history + [{"de": who, "texte": text}])[-60:]
+        if who == "toi" and text.strip():
+            previous = getattr(self, "question_history", [])
+            self.question_history = [*previous, text][-QUESTION_HISTORY_LIMIT:]
 
     def on_history(self, who, text):
         self.add_history(who, text)
