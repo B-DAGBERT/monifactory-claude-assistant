@@ -73,5 +73,6 @@ public final class Client {
         MinecraftForge.EVENT_BUS.register(RetraitCoffre.class);
         MinecraftForge.EVENT_BUS.register(CoffreTampon.class);
         MinecraftForge.EVENT_BUS.register(Deconnexion.class);
+        MinecraftForge.EVENT_BUS.register(VolParDimension.class);
     }
 }

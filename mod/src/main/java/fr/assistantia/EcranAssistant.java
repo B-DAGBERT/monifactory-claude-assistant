@@ -263,6 +263,10 @@ public class EcranAssistant extends Screen {
             ReglageDrawers.regler(!ReglageDrawers.actif());
             return;
         }
+        if (VolParDimension.CLE.equals(cle)) {
+            VolParDimension.regler(!VolParDimension.actif());
+            return;
+        }
         JsonObject ecran = ecran();
         boolean actif = Pont.assistantActif();
         long maintenant = System.nanoTime() / 1_000_000;
@@ -529,6 +533,7 @@ public class EcranAssistant extends Screen {
         if (Fullbright.CLE.equals(cle)) return Fullbright.actif();
         if (SacsFabrication.CLE.equals(cle)) return SacsFabrication.actif();
         if (ReglageDrawers.CLE.equals(cle)) return ReglageDrawers.actif();
+        if (VolParDimension.CLE.equals(cle)) return VolParDimension.actif();
         return Pont.vrai(ligne, "valeur");
     }
 
@@ -593,6 +598,11 @@ public class EcranAssistant extends Screen {
                 SacsFabrication.description());
         ajouterReglageLocal(
                 reglages, ReglageDrawers.CLE, "Drawers pleins", ReglageDrawers.description());
+        ajouterReglageLocal(
+                reglages,
+                VolParDimension.CLE,
+                "Vol au changement de dimension",
+                VolParDimension.description());
         for (JsonElement reglage : Pont.liste(ecran, "reglages")) {
             if (!(reglage instanceof JsonObject ligne)) continue;
             String cle = Pont.texte(ligne, "cle");
@@ -658,6 +668,7 @@ public class EcranAssistant extends Screen {
                             Fullbright.CLE.equals(cle)
                                     || SacsFabrication.CLE.equals(cle)
                                     || ReglageDrawers.CLE.equals(cle)
+                                    || VolParDimension.CLE.equals(cle)
                                     || assistantActif && !ETAT_REGLAGES.enAttente();
                     bouton.render(g, mx, my, partialTick);
                     interrupteursVisibles.add(new Interrupteur(bouton, cle));

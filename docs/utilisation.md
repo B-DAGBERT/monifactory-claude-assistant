@@ -359,6 +359,10 @@ une fois toutes leurs cases pleines. La croix devient orange lorsque le **Void U
 est actif. Le calcul de la capacité tient compte des upgrades installés.
 Cette option est activée par défaut et peut être désactivée dans **Réglages**.
 
+**Vol au changement de dimension** exécute `/fly` deux fois après un passage dans une autre
+dimension. L’option est désactivée par défaut et fonctionne sur les serveurs où tu peux déjà
+utiliser `/fly`.
+
 La liste défile à la molette ou avec sa barre de défilement. **Modèles IA…** et **Diagnostic…**
 s’ouvrent depuis cet onglet.
 

@@ -42,12 +42,39 @@ public class LogUtils {public static org.slf4j.Logger getLogger(){return new org
         "net.minecraft.client.Minecraft": """
 public class Minecraft {private static Minecraft instance;public final net.minecraft.client.gui.Font font=new net.minecraft.client.gui.Font();
  public final MouseHandler mouseHandler=new MouseHandler();public net.minecraft.client.gui.screens.Screen screen;
- public Object player=new Object(),level=new Object(),connexion=new Object();public final Clavier keyboardHandler=new Clavier();
- public Object getConnection(){return connexion;}
+ public final Player player=new Player();public net.minecraft.world.level.Level level=new net.minecraft.world.level.Level();
+ public net.minecraft.client.multiplayer.ClientPacketListener connexion=new net.minecraft.client.multiplayer.ClientPacketListener();
+ public final Clavier keyboardHandler=new Clavier();
+ public net.minecraft.client.multiplayer.ClientPacketListener getConnection(){return connexion;}
+ public class Player {public net.minecraft.world.level.Level level(){return level;}}
  public static class Clavier {public String copie="";public void setClipboard(String s){copie=s;}}
  public static Minecraft getInstance(){if(instance==null)instance=new Minecraft();return instance;}
  public void setScreen(net.minecraft.client.gui.screens.Screen s){screen=s;}}
 """,
+        "net.minecraft.resources.ResourceKey": "public record ResourceKey<T>(String name) {}",
+        "net.minecraft.world.level.Level": """
+public record Level(net.minecraft.resources.ResourceKey<Level> dimension) {
+ public Level(){this(new net.minecraft.resources.ResourceKey<>("overworld"));}}
+""",
+        "net.minecraft.client.multiplayer.ClientPacketListener": """
+public class ClientPacketListener {
+ public final java.util.List<String> commandes=new java.util.ArrayList<>();public boolean connected=true;
+ public ClientPacketListener getConnection(){return this;}public boolean isConnected(){return connected;}
+ public void sendCommand(String s){commandes.add(s);}}
+""",
+        "net.minecraft.client.gui.screens.ReceivingLevelScreen": """
+public class ReceivingLevelScreen extends Screen {
+ public ReceivingLevelScreen(){super(net.minecraft.network.chat.Component.empty());}}
+""",
+        "net.minecraftforge.client.event.ClientPlayerNetworkEvent": """
+public class ClientPlayerNetworkEvent {public static class LoggingOut {}}
+""",
+        "net.minecraftforge.event.TickEvent": """
+public class TickEvent {
+ public enum Phase {START,END}
+ public static class ClientTickEvent {public final Phase phase;public ClientTickEvent(Phase p){phase=p;}}}
+""",
+        "net.minecraftforge.eventbus.api.SubscribeEvent": "public @interface SubscribeEvent {}",
         "net.minecraft.client.gui.components.EditBox": """
 import net.minecraft.client.gui.Font;import net.minecraft.network.chat.Component;
 public class EditBox extends AbstractWidget {private String value="";private java.util.function.Consumer<String> responder=s->{};public boolean editable=true;
@@ -253,7 +280,46 @@ public class DashboardLayoutTest {
   etat.observer(new EtatReglages.Contexte("legacy",new Object(),new Object()),true,ecran,51603);
   assert !etat.enAttente()&&etat.information().contains("Connexion");
  }
+ static void ticks(int n){
+  for(int i=0;i<n;i++)for(var phase:net.minecraftforge.event.TickEvent.Phase.values())
+   VolParDimension.tick(new net.minecraftforge.event.TickEvent.ClientTickEvent(phase));
+ }
+ static void vol(Minecraft mc){
+  var surface=new net.minecraft.world.level.Level();
+  var nether=new net.minecraft.world.level.Level(new net.minecraft.resources.ResourceKey<>("nether"));
+  var commandes=mc.connexion.commandes;
+  assert !VolParDimension.actif();
+  mc.level=surface;ticks(1);mc.level=nether;ticks(25);
+  assert commandes.isEmpty():"idle when disabled";
+  VolParDimension.regler(true);ticks(25);
+  assert commandes.isEmpty():"activating is not a dimension change";
+  mc.level=surface;mc.screen=new net.minecraft.client.gui.screens.ReceivingLevelScreen();ticks(30);
+  assert commandes.isEmpty():"waits for the terrain screen";
+  mc.screen=null;ticks(9);assert commandes.isEmpty();
+  ticks(1);assert commandes.equals(java.util.List.of("fly"));
+  ticks(9);assert commandes.size()==1;
+  ticks(21);assert commandes.equals(java.util.List.of("fly","fly")):"exactly two spaced commands";
+  mc.level=new net.minecraft.world.level.Level();ticks(25);
+  assert commandes.size()==2:"respawn in the same dimension sends nothing";
+  mc.level=nether;ticks(1);VolParDimension.regler(false);VolParDimension.regler(true);ticks(25);
+  assert commandes.size()==2:"disabling cancels pending sends";
+  mc.level=surface;ticks(11);assert commandes.size()==3;
+  mc.level=nether;ticks(25);assert commandes.size()==5:"only the new pair runs after another change";
+  mc.level=surface;ticks(1);mc.connexion.connected=false;ticks(25);
+  assert commandes.size()==5:"a closed connection receives nothing";
+  VolParDimension.deconnexion(new net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingOut());
+  mc.connexion=new net.minecraft.client.multiplayer.ClientPacketListener();
+  mc.level=nether;ticks(25);
+  assert mc.connexion.commandes.isEmpty()&&commandes.size()==5:"first dimension on reconnect does not send";
+  VolParDimension.regler(false);VolParDimension.deconnexion(null);
+  mc.level=surface;
+ }
  public static void main(String[] args)throws Exception{
+  if(args.length>0&&args[0].equals("vol-enabled")){
+   for(int i=0;i<100&&!VolParDimension.actif();i++)Thread.sleep(10);
+   assert VolParDimension.actif():"explicit activation survives restart";
+   return;
+  }
   if(args.length>0&&args[0].equals("drawers-disabled")){
    for(int i=0;i<100&&ReglageDrawers.actif();i++)Thread.sleep(10);
    assert !ReglageDrawers.actif():"explicit false must survive restart";
@@ -284,7 +350,7 @@ public class DashboardLayoutTest {
   boolean premier=true;
   for(int[] taille:new int[][]{{320,240},{480,270},{640,360}}){
    int w=taille[0],h=taille[1];String cas=w+"x"+h;
-   mc.level=new Object();
+   mc.level=new net.minecraft.world.level.Level();
    var s=new EcranAssistant();mc.screen=s;s.init(mc,w,h);
    List<BoutonTheme> onglets=new ArrayList<>();for(String n:ONGLETS)onglets.add(bouton(s,n));
    render(s);
@@ -360,6 +426,17 @@ public class DashboardLayoutTest {
    s.mouseClicked(drawers[0]+2,drawers[1]+2,0);render(s);
    assert ReglageDrawers.actif()&&java.nio.file.Files.readString(preference).equals("true")
        &&Pont.envois.size()==avantSac:cas+": drawer option can be restored locally";
+   int[] vol=interrupteur("Vol au changement","✘ Désactivé");
+   for(int k=0;k<4&&(vol==null||vol[1]+2>=ligneStatut-Theme.ECART);k++){
+    s.mouseScrolled(w/2,h/2,-1);render(s);vol=interrupteur("Vol au changement","✘ Désactivé");}
+   assert vol!=null&&!VolParDimension.actif():cas+": flight option defaults off";
+   s.mouseClicked(vol[0]+2,vol[1]+2,0);render(s);
+   var preferenceVol=preference.resolveSibling("assistantia-vol-dimension.txt");
+   assert VolParDimension.actif()&&java.nio.file.Files.readString(preferenceVol).equals("true");
+   vol=interrupteur("Vol au changement","✔ Activé");assert vol!=null;
+   s.mouseClicked(vol[0]+2,vol[1]+2,0);render(s);
+   assert !VolParDimension.actif()&&java.nio.file.Files.readString(preferenceVol).equals("false")
+       &&Pont.envois.size()==avantSac:cas+": flight option works without the assistant";
    Pont.actif=true;
    s.mouseScrolled(w/2,h/2,-1);render(s);
    int[] voix=interrupteur("Lecture à voix","✘ Désactivé");
@@ -399,7 +476,7 @@ public class DashboardLayoutTest {
    assert GuiGraphics.textes.stream().anyMatch(t->t.contains("Machine 19"))&&GuiGraphics.textes.stream().noneMatch(t->t.contains("Machine 00")):cas+": scrolled to the last machine";
    for(int k=0;k<40;k++)s.mouseScrolled(w/2,h/2,1);
   }
-  mc.level=new Object();
+  mc.level=new net.minecraft.world.level.Level();
   var echec=new EcranAssistant();echec.init(mc,640,360);bouton(echec,"Réglages").onPress();render(echec);
   int[] voix=interrupteur("Lecture à voix","✘ Désactivé");
   assert voix!=null:"voice visible before injected failure";
@@ -408,7 +485,7 @@ public class DashboardLayoutTest {
   echec.mouseClicked(voix[0]+2,voix[1]+2,0);echec.mouseClicked(voix[0]+2,voix[1]+2,0);render(echec);
   assert Pont.envois.size()==avant&&Pont.tentatives==tentatives+1:"failed write and double click submit no extra request";
   assert ecrit("Envoi du réglage impossible")!=null&&interrupteur("Lecture à voix","✘ Désactivé")!=null;
-  Pont.envoiPossible=true;mc.level=new Object();render(echec);
+  Pont.envoiPossible=true;mc.level=new net.minecraft.world.level.Level();render(echec);
   echec.mouseClicked(voix[0]+2,voix[1]+2,0);
   var requete=Pont.envois.get(avant);
   accuse(ecran,requete.get("n").getAsLong(),Pont.texte(requete,"requete"),"refusee");
@@ -439,6 +516,8 @@ public class DashboardLayoutTest {
   ecran.add("question_recue",accuse(ecran,requete.get("n").getAsLong(),Pont.texte(requete,"requete"),"acceptee"));render(echec);
   assert echec.keyPressed(264,0,0)&&saisie.getValue().isEmpty():"accepted send resets the draft";
   ReglageDrawers.regler(false);
+  mc.screen=null;
+  vol(mc);
   System.out.println("PASS dashboard layout");
  }
 }
@@ -477,6 +556,7 @@ class DashboardLayoutTests(unittest.TestCase):
                 "EtatDiscussion",
                 "EtatReglages",
                 "ReglageDrawers",
+                "VolParDimension",
                 "AvisMiseAJour",
                 "GroupesMachines",
             ):
@@ -513,6 +593,11 @@ class DashboardLayoutTests(unittest.TestCase):
             self.assertIn("PASS dashboard layout", result.stdout)
             result = subprocess.run(
                 [*command, "drawers-disabled"], capture_output=True, text=True, timeout=10
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            (Path(config) / "assistantia-vol-dimension.txt").write_text("true", encoding="utf-8")
+            result = subprocess.run(
+                [*command, "vol-enabled"], capture_output=True, text=True, timeout=10
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
